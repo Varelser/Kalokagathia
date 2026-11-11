@@ -1,0 +1,17 @@
+
+> kalokagathia@0.0.0 verify:library
+> node scripts/verify-library.mjs
+
+browserType.launch: Executable doesn't exist at /home/oai/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell
+╔═════════════════════════════════════════════════════════════════════════╗
+║ Looks like Playwright Test or Playwright was just installed or updated. ║
+║ Please run the following command to download new browsers:              ║
+║                                                                         ║
+║     npx playwright install                                              ║
+║                                                                         ║
+║ <3 Playwright Team                                                      ║
+╚═════════════════════════════════════════════════════════════════════════╝
+    at main (/mnt/data/work_phase87/scripts/verify-library.mjs:86:34)
+    at /mnt/data/work_phase87/scripts/verify-library.mjs:164:1 {
+  name: 'Error'
+}

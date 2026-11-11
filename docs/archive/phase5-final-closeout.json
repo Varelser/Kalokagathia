@@ -1,0 +1,41 @@
+{
+  "actionsRequiredNow": [
+    "Install dependencies and run npm ci in an environment with registry access.",
+    "Commit at least one browser-captured real export fixture under fixtures/project-state/real-export/.",
+    "Capture npm ci / verify:project-state / verify:phase5 / build logs under docs/archive/phase5-proof-input/.",
+    "Re-run npm run verify:project-state, npm run verify:phase5, and npm run build after environment blockers are removed.",
+    "Provide the missing proof logs under docs/archive/phase5-proof-input: npm-ci.log, verify-project-state.log, verify-phase5.log, build.log",
+    "Optional: add docs/archive/phase5-proof-input/real-export-capture-notes.md with browser capture details."
+  ],
+  "blockers": {
+    "environment": [
+      "Dependencies are not installed in the current checkout.",
+      "node_modules directory is missing; npm run verify:phase5 and npm run build cannot be executed in this checkout yet.",
+      "No browser-captured real-export fixture is committed under fixtures/project-state/real-export/."
+    ],
+    "operator": [
+      "At least one browser-captured real export fixture still needs to be committed.",
+      "Required proof logs have not all been provided yet."
+    ],
+    "repo": []
+  },
+  "evidence": [
+    "docs/archive/phase5-evidence-index.json",
+    "docs/archive/phase5-proof-intake.json",
+    "docs/archive/phase5-execution-readiness-report.json",
+    "docs/archive/phase5-external-blockers-report.json",
+    "docs/archive/phase5-auto-closeout.json",
+    "docs/archive/phase5-closeout-checklist.json"
+  ],
+  "generatedAt": "2026-03-31T07:48:50.666Z",
+  "phase": "phase5",
+  "status": "repo-complete-awaiting-external-proof",
+  "verdict": {
+    "executionProven": false,
+    "executionReady": false,
+    "proofBundlePresent": false,
+    "proofBundleVerified": false,
+    "realExportFixturePresent": false,
+    "repoReady": true
+  }
+}

@@ -1,0 +1,275 @@
+@import "tailwindcss";
+
+/* Section folding (organize): headers marked .mg-h toggle .mg-fold on their section container */
+.mg-h { cursor: pointer; }
+.mg-h:hover { color: rgba(255, 255, 255, 0.85) !important; }
+.mg-h::after { content: '\2212'; float: right; opacity: 0.45; font-weight: 400; letter-spacing: 0; }
+.mg-fold .mg-h::after { content: '+'; }
+.mg-fold > *:not(.mg-keep) { display: none !important; }
+
+/* Settings-search reveal flash */
+.mg-flash { animation: mg-flash-pulse 1.7s ease-out; border-radius: 8px; }
+@keyframes mg-flash-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+  15% { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 20px 3px rgba(255, 255, 255, 0.35); }
+  60% { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5), 0 0 10px 1px rgba(255, 255, 255, 0.2); }
+}
+
+/* Cinema (viewing) mode: fade every root overlay except the canvas and the hint */
+.mg-cinema > *:not(:first-child):not(.mg-cinema-hint) { opacity: 0 !important; pointer-events: none !important; }
+
+.mg-root > * { transition: opacity 0.45s ease; }
+
+/* Changed-vs-baseline markers */
+.mg-dot-on { position: relative; }
+.mg-dot-on::after { content: ''; position: absolute; top: 2px; right: -6px; width: 6px; height: 6px; border-radius: 9999px; background: #38bdf8; box-shadow: 0 0 6px rgba(56, 189, 248, 0.85); }
+.mg-changed-only .mg-dot-off { display: none !important; }
+
+/* Basic (simple) deck mode: non-primary rows/sections are hidden, never removed */
+.mg-basic-only .mg-basic-off { display: none !important; }
+
+/* Readability Phase 4 (2026-11-11): font floor inside the deck. .mg-deck is
+   the ControlPanel root (ControlPanel.tsx); canvas-adjacent overlays outside
+   it keep their sizes. 7/8/9/10px utilities are raised to the 11px floor.
+   11px stays 11px: the floor is the requirement, and +1 on the ~100 existing
+   11px uses in dense Play-tab grids / preset cards risks clipping. 12px and
+   up are untouched. Unlayered author rules beat Tailwind v4 layered
+   utilities, so no component class strings needed editing. */
+.mg-deck .text-\[7px\] { font-size: 11px; }
+.mg-deck .text-\[8px\] { font-size: 11px; }
+.mg-deck .text-\[9px\] { font-size: 11px; }
+.mg-deck .text-\[10px\] { font-size: 11px; }
+
+/* Readability Phase 4: Japanese dual labels. The DOM pass in
+   controlPanelTabs.tsx tags each catalog row's label header with
+   data-jp="<short Japanese gloss>"; the gloss renders as a sublabel line
+   under the English label via ::after, so the label's own textContent
+   (read by the change-dot / Basic-mode / reveal matchers) never changes. */
+.mg-deck [data-jp] { flex-wrap: wrap; }
+.mg-deck [data-jp]::after {
+  content: attr(data-jp);
+  display: block;
+  flex: 0 0 100%;
+  order: 10;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: rgba(255, 255, 255, 0.58);
+  white-space: normal;
+}
+
+/* Mobile bottom sheet (item 9, 2026-11-11): the sheet handle bar exists in
+   the DOM at every size but is only shown on small screens; the media
+   block at the end of this file carries all small-screen behaviour. */
+.mg-sheet-bar { display: none; }
+
+/* Level-2 folding (sub-blocks inside a section) */
+.mg-fold2 > *:not(.mg-keep2) { display: none !important; }
+.mg-h2 { cursor: pointer; }
+.mg-h2::after { content: '−'; float: right; opacity: 0.55; font-weight: 700; margin-left: 8px; }
+.mg-fold2 > .mg-h2::after { content: '+'; }
+
+/* ==========================================================================
+   Mobile / touch optimisation (item 9, 2026-11-11)
+   EVERY rule below is inside max-width:640px, so desktop rendering is
+   untouched. Unlayered author rules beat Tailwind v4's layered utilities
+   (the same mechanism Phase 4 relies on), so the deck's Tailwind class
+   strings need no small-screen variants.
+   ========================================================================== */
+@media (max-width: 640px) {
+  /* --- 1. Bottom-sheet deck ---------------------------------------------
+     The deck root stops being a full-height right-side column and becomes
+     a bottom-anchored container; the sheet caps at 68dvh so the canvas
+     stays visible and interactive above it. Glass styling is inherited
+     from the panel's own classes. */
+  .mg-deck {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: auto;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+    padding: 0 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .mg-deck .mg-sheet {
+    width: 100%;
+    max-width: 100%;
+    height: 68dvh;
+    max-height: 68dvh;
+    align-items: stretch;
+    /* --- 4. Auto-fade is hover-driven and hostile on touch: a tap has no
+       reliable pointer-leave pair, and a 0.22-opacity deck reads as broken.
+       On small screens the sheet is always fully opaque (pointerdown in
+       ControlPanel.tsx also restores deckHover for good measure). */
+    opacity: 1;
+  }
+  .mg-deck .mg-sheet-panel {
+    width: 100%;
+    border-radius: 24px;
+  }
+  /* Collapsed: only the handle bar remains — a slim bar at the bottom. */
+  .mg-deck .mg-sheet-collapsed { height: auto; max-height: none; }
+  .mg-deck .mg-sheet-collapsed .mg-sheet-panel { height: auto; }
+  .mg-deck .mg-sheet-collapsed .mg-sheet-panel > *:not(.mg-sheet-bar) { display: none !important; }
+
+  /* Sheet handle bar (expand / collapse + cinema) */
+  .mg-sheet-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .mg-sheet-toggle {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    border-radius: 12px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+  }
+  .mg-sheet-grip {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    width: 44px;
+    height: 4px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.35);
+    transform: translateX(-50%);
+  }
+  .mg-cinema-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+  }
+
+  /* Compact chrome so the scrollable content keeps usable height. The
+     header description paragraph is desktop-context text; the tab label
+     itself remains as the heading on small screens. */
+  .mg-deck .mg-header { padding: 10px 16px; }
+  .mg-deck .mg-header p { display: none; }
+  .mg-deck .mg-header-eyebrow { display: none; }
+  .mg-deck .mg-actions { padding: 8px 16px; }
+  .mg-deck .mg-footer { padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  /* The footer's secondary row (Transparent BG / export Resolution) is
+     hidden on small screens: pinned above the sheet's scroll area it would
+     leave almost no visible content height at 68dvh. The primary Save
+     button stays pinned; those two settings remain available on desktop
+     (and Transparent BG defaults carry over). Documented compromise. */
+  .mg-deck .mg-footer-secondary { display: none; }
+
+  /* --- 2. Touch targets ≥44px --------------------------------------------
+     Primary buttons across the deck get a 44px floor. Small toggle pills
+     (h-5 / h-6 switch buttons, whose knob geometry is absolute-positioned
+     inside a 20–24px pill) are the one deliberate exception — stretching
+     them would break the switch rendering; they are not primary controls
+     and their labelled rows remain the tap context. See the report. */
+  .mg-deck button { min-height: 44px; }
+  .mg-deck button[class*="h-5"], .mg-deck button[class*="h-6"] { min-height: 0; }
+  .mg-deck .mg-tabbar-row button { flex: 0 0 auto; min-width: 64px; padding-top: 10px; white-space: nowrap; }
+  .mg-deck .mg-tier-switch { margin-bottom: 6px; }
+  .mg-deck .mg-tier-switch button { min-height: 44px; }
+  /* Section fold headers (level 1 + level 2) become full tap rows. */
+  .mg-deck .mg-h {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .mg-deck .mg-h::after { float: none; margin-left: auto; }
+  .mg-deck .mg-h2 {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .mg-deck .mg-h2::after { float: none; margin-left: auto; }
+
+  /* Inputs: 44px tall and ≥16px text so iOS Safari does not auto-zoom on
+     focus. This covers the AI tab input/send row and the sync section. */
+  .mg-deck input[type="text"],
+  .mg-deck input[type="password"],
+  .mg-deck input[type="search"],
+  .mg-deck textarea,
+  .mg-deck select {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .mg-deck [data-testid="ai-send"],
+  .mg-deck [data-testid="ai-undo"] { min-height: 44px; }
+  .mg-deck [data-testid="preset-sync-section"] button,
+  .mg-deck [data-testid="preset-sync-section"] input { min-height: 44px; }
+
+  /* Sliders: enlarge the effective hit area and thumb without changing
+     desktop density (this block is small-screen only). The track stays
+     visually thin via the runnable-track rules. */
+  .mg-deck input[type="range"] {
+    height: 32px;
+    min-height: 32px;
+    cursor: pointer;
+  }
+  .mg-deck input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.25);
+  }
+  .mg-deck input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    margin-top: -12px;
+    border-radius: 9999px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  }
+  .mg-deck input[type="range"]::-moz-range-track {
+    height: 4px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.25);
+  }
+  .mg-deck input[type="range"]::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  }
+
+  /* --- 3. Overlays outside the deck move clear of the sheet -------------
+     The stream widget sat at bottom-right, exactly where the sheet's
+     footer controls are; on small screens it docks top-left above the
+     sheet instead. Diagnostics (off by default, pointer-events-none)
+     move to the top as well so they can never cover sheet controls. */
+  .mg-stream-widget {
+    top: 10px;
+    left: 10px;
+    right: auto;
+    bottom: auto;
+    align-items: flex-start;
+  }
+  .mg-diagnostics { top: 64px; left: 10px; bottom: auto; }
+}

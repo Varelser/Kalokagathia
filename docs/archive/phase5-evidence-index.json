@@ -1,0 +1,103 @@
+{
+  "generatedAt": "2026-03-31T07:48:50.847Z",
+  "notes": [
+    "This index condenses the scattered Phase 5 reports into one file so closure status can be reviewed without opening each report manually.",
+    "repoReady means mandatory Phase 5 criteria are complete and the lockfile is synchronized.",
+    "executionReady means repoReady plus a dependency-installed checkout with no current execution blockers.",
+    "executionProven remains false until the dependency-installed commands are re-run successfully and at least one browser-captured real export fixture is committed."
+  ],
+  "phase": "phase5",
+  "remainingSteps": [
+    "Install dependencies and run npm ci in an environment with registry access.",
+    "Commit at least one browser-captured real export fixture under fixtures/project-state/real-export/.",
+    "Capture npm ci / verify:project-state / verify:phase5 / build logs under docs/archive/phase5-proof-input/.",
+    "Re-run npm run verify:project-state, npm run verify:phase5, and npm run build after environment blockers are removed."
+  ],
+  "reports": [
+    {
+      "exists": true,
+      "generatedAt": "2026-03-31T07:31:21.979Z",
+      "path": "docs/archive/phase5-completion-report.json",
+      "sha256": "aa65111c845e65473683caf230820b4bf946f058abef4b05a4d2f4d64ac3dfd4",
+      "sizeBytes": 4207
+    },
+    {
+      "exists": true,
+      "generatedAt": "2026-03-31T00:00:00.000Z",
+      "path": "docs/archive/phase5-import-report.json",
+      "sha256": "4d4bbb2044d7c0e9acca8c79166d518a024a6b1e7b9500a5cb4a0046afc06a13",
+      "sizeBytes": 15399
+    },
+    {
+      "exists": true,
+      "generatedAt": "2026-03-31T00:00:00.000Z",
+      "path": "docs/archive/phase5-drift-report.json",
+      "sha256": "6485c612e9145f6df1ed39dbed7051b847d1a86a020eccbdf096dd5fb9854b3e",
+      "sizeBytes": 4043
+    },
+    {
+      "exists": true,
+      "generatedAt": "2026-03-31T00:00:00.000Z",
+      "path": "docs/archive/phase5-real-export-readiness-report.json",
+      "sha256": "e8734e2a3d6e9765a1d75a36375c8caf14d048f62ba682e67226293b579cfedc",
+      "sizeBytes": 434
+    },
+    {
+      "exists": true,
+      "generatedAt": "2026-03-31T07:07:16.439Z",
+      "path": "docs/archive/phase5-execution-readiness-report.json",
+      "sha256": "104282e3e90411b5503f57a36c57a6c3620bec646926c43118809e5f2f567bf7",
+      "sizeBytes": 1318
+    },
+    {
+      "exists": true,
+      "generatedAt": "2026-03-31T07:31:21.308Z",
+      "path": "docs/archive/phase5-proof-intake.json",
+      "sha256": "6bd5fa03e687a90a7ea53bd149eca8fa2d6b8ef3643297eb00a06c96209f98ba",
+      "sizeBytes": 1618
+    },
+    {
+      "exists": true,
+      "generatedAt": "2026-03-31T07:48:50.666Z",
+      "path": "docs/archive/phase5-final-closeout.json",
+      "sha256": "98bae539e24b004e9c104ea394245805cbb9579bc38771be65d3b0af18697aa3",
+      "sizeBytes": 1900
+    }
+  ],
+  "summary": {
+    "completionCriteriaDone": 5,
+    "completionCriteriaTotal": 6,
+    "driftGeneratedFixtureCount": 5,
+    "executionProven": false,
+    "executionReady": false,
+    "importAggregateSummary": {
+      "droppedOrphanSequenceSteps": 1,
+      "preservedPresetPayloads": 8,
+      "preservedSequencePayloads": 7,
+      "presetReferenceRemaps": 5,
+      "regeneratedSequenceIds": 4,
+      "remappedPresetIds": 5,
+      "retainedPresetIds": 3,
+      "retainedSequenceIds": 3
+    },
+    "importScenarioCount": 4,
+    "proofBundlePresent": false,
+    "proofBundleVerified": false,
+    "readinessBlockerCount": 2,
+    "realExportFailingCount": 0,
+    "realExportFixtureCount": 0,
+    "realExportStatusCounts": {
+      "invalid-json": 0,
+      "invalid-name": 0,
+      "invalid-project-payload": 0,
+      "manifest-entry-missing": 0,
+      "manifest-metadata-drift": 0,
+      "manifest-sha256-drift": 0,
+      "roundtrip-drift": 0,
+      "verified": 0
+    },
+    "realExportVerifiedCount": 0,
+    "repoReady": true,
+    "staleRealExportManifestEntryCount": 0
+  }
+}

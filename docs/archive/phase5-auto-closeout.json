@@ -1,0 +1,26 @@
+{
+  "derivedFrom": [
+    "docs/archive/phase5-proof-intake.json",
+    "docs/archive/phase5-real-export-readiness-report.json",
+    "docs/archive/phase5-execution-readiness-report.json",
+    "docs/archive/phase5-evidence-index.json",
+    "docs/archive/phase5-closeout-checklist.json"
+  ],
+  "flags": {
+    "executionProven": false,
+    "executionReady": false,
+    "proofBundlePresent": false,
+    "proofBundleVerified": false,
+    "realExportFixturePresent": false,
+    "repoReady": true
+  },
+  "generatedAt": "2026-03-31T07:48:51.246Z",
+  "nextSteps": [
+    "Install dependencies and run npm ci in an environment with registry access.",
+    "Commit at least one browser-captured real export fixture under fixtures/project-state/real-export/.",
+    "Capture npm ci / verify:project-state / verify:phase5 / build logs under docs/archive/phase5-proof-input/.",
+    "Re-run npm run verify:project-state, npm run verify:phase5, and npm run build after environment blockers are removed."
+  ],
+  "phase": "phase5",
+  "status": "repo-ready"
+}

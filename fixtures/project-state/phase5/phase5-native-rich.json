@@ -1,0 +1,596 @@
+{
+  "activePresetId": "preset-alpha",
+  "currentConfig": {
+    "gpgpuEnabled": true,
+    "gpgpuFluidEnabled": true,
+    "layer2Enabled": true,
+    "layer2Source": "video",
+    "layer2Type": "surface_shell",
+    "layer3Enabled": true,
+    "layer3Source": "text",
+    "layer3Type": "fiber_field",
+    "postBloomEnabled": true,
+    "postFxStackProfile": "dream-smear"
+  },
+  "exportedAt": "2026-03-31T00:00:00.000Z",
+  "manifest": {
+    "coverage": {
+      "activeProductPackCoverageScore": 0,
+      "augmentationSuggestionCount": 0,
+      "averagePackCoverageScore": 0,
+      "bestPackCoverageScore": 0,
+      "computeBackendCount": 2,
+      "computeBackends": [
+        "webgl",
+        "webgpu"
+      ],
+      "coverageGapCount": 0,
+      "currentCoverageScore": 0,
+      "currentTargetHitCount": 0,
+      "currentTargetTotal": 0,
+      "depictionMethodCount": 3,
+      "depictionMethods": [
+        "particle",
+        "surface",
+        "fiber"
+      ],
+      "geometryFamilies": [
+        "icosa",
+        "tube",
+        "sphere"
+      ],
+      "geometryFamilyCount": 3,
+      "gpgpuFeatureCount": 2,
+      "motionFamilies": [
+        "rewrite",
+        "recur"
+      ],
+      "motionFamilyCount": 2,
+      "overallCoverageScore": 0,
+      "overallTargetHitCount": 0,
+      "overallTargetTotal": 0,
+      "physicalFamilies": [],
+      "physicalFamilyCount": 0,
+      "postFamilies": [
+        "bloom"
+      ],
+      "postFamilyCount": 1,
+      "postStackTemplateCount": 1,
+      "productPackCount": 0,
+      "productPackFamilies": [],
+      "productPackFamilyCount": 0,
+      "productPackScorecardCount": 0,
+      "renderFamilies": [
+        "particles",
+        "surfaces",
+        "lines",
+        "metaballs"
+      ],
+      "renderFamilyCount": 4,
+      "solverFamilies": [
+        "particle-field",
+        "gpu-particles"
+      ],
+      "solverFamilyCount": 2,
+      "sourceFamilies": [
+        "video",
+        "text",
+        "gpgpu"
+      ],
+      "sourceFamilyCount": 3,
+      "specialistFamilies": [],
+      "specialistFamilyCount": 0,
+      "temporalFamilies": [
+        "rewrite",
+        "recur"
+      ],
+      "temporalFamilyCount": 2
+    },
+    "execution": [
+      {
+        "capabilityFlags": [
+          "webgl-stable"
+        ],
+        "enabled": true,
+        "hybridKind": null,
+        "key": "layer1",
+        "label": "Layer 1",
+        "mode": "spheres",
+        "notes": [],
+        "overrideId": "",
+        "path": "points",
+        "proceduralSystemId": null,
+        "reason": "baseline",
+        "renderClass": "particles",
+        "requestedEngine": "cpu-geometry",
+        "resolvedEngine": "cpu-geometry",
+        "sceneBranches": [
+          "particle-core"
+        ],
+        "simulationClass": "cpu-field"
+      },
+      {
+        "capabilityFlags": [
+          "webgl-stable"
+        ],
+        "enabled": true,
+        "hybridKind": null,
+        "key": "layer2",
+        "label": "Layer 2",
+        "mode": "surface_shell",
+        "notes": [],
+        "overrideId": "",
+        "path": "points",
+        "proceduralSystemId": null,
+        "reason": "baseline",
+        "renderClass": "surfaces",
+        "requestedEngine": "webgl-particle",
+        "resolvedEngine": "webgl-particle",
+        "sceneBranches": [
+          "hybrid-surface"
+        ],
+        "simulationClass": "particle-field"
+      },
+      {
+        "capabilityFlags": [
+          "webgl-stable"
+        ],
+        "enabled": true,
+        "hybridKind": null,
+        "key": "layer3",
+        "label": "Layer 3",
+        "mode": "fiber_field",
+        "notes": [],
+        "overrideId": "",
+        "path": "points",
+        "proceduralSystemId": null,
+        "reason": "baseline",
+        "renderClass": "lines",
+        "requestedEngine": "webgl-particle",
+        "resolvedEngine": "webgl-particle",
+        "sceneBranches": [
+          "fiber"
+        ],
+        "simulationClass": "particle-field"
+      },
+      {
+        "capabilityFlags": [
+          "webgpu-preferred"
+        ],
+        "enabled": true,
+        "hybridKind": null,
+        "key": "gpgpu",
+        "label": "GPGPU",
+        "mode": "metaball",
+        "notes": [],
+        "overrideId": "",
+        "path": "points",
+        "proceduralSystemId": null,
+        "reason": "preferred",
+        "renderClass": "metaballs",
+        "requestedEngine": "webgpu",
+        "resolvedEngine": "webgpu",
+        "sceneBranches": [
+          "gpgpu"
+        ],
+        "simulationClass": "gpu-particles"
+      }
+    ],
+    "layers": [
+      {
+        "enabled": true,
+        "features": [
+          "core"
+        ],
+        "geometry": "sphere-cloud",
+        "key": "layer1",
+        "label": "Layer 1",
+        "material": "particle-color",
+        "mode": "spheres",
+        "source": "builtin"
+      },
+      {
+        "connectionStyle": "filament",
+        "enabled": true,
+        "features": [
+          "ghost-trail",
+          "glyph-outline"
+        ],
+        "geometry": "icosa",
+        "key": "layer2",
+        "label": "Layer 2",
+        "material": "glass",
+        "mode": "surface_shell",
+        "source": "video"
+      },
+      {
+        "enabled": true,
+        "features": [
+          "fiber"
+        ],
+        "geometry": "tube",
+        "key": "layer3",
+        "label": "Layer 3",
+        "material": "glass",
+        "mode": "fiber_field",
+        "source": "text"
+      },
+      {
+        "capabilityFlags": [
+          "webgpu-preferred"
+        ],
+        "enabled": true,
+        "features": [
+          "metaball",
+          "volumetric"
+        ],
+        "geometry": "sphere",
+        "key": "gpgpu",
+        "label": "GPGPU",
+        "material": "particle-color",
+        "mode": "metaball",
+        "source": "sphere"
+      }
+    ],
+    "schemaVersion": 11,
+    "serializationSchemaVersion": 2,
+    "stats": {
+      "presetCount": 2,
+      "sequenceCount": 2,
+      "sequenceLoopEnabled": true
+    }
+  },
+  "name": "Phase 5 Native Rich Fixture",
+  "presetBlendDuration": 1.8,
+  "presets": [
+    {
+      "config": {
+        "layer2Enabled": true,
+        "layer2Source": "image",
+        "layer2Type": "surface_shell"
+      },
+      "createdAt": "2026-03-31T00:00:00.000Z",
+      "id": "preset-alpha",
+      "name": "Alpha",
+      "updatedAt": "2026-03-31T00:00:00.000Z"
+    },
+    {
+      "config": {
+        "layer3Enabled": true,
+        "layer3Source": "text",
+        "layer3Type": "fiber_field"
+      },
+      "createdAt": "2026-03-31T00:00:00.000Z",
+      "id": "preset-beta",
+      "name": "Beta",
+      "updatedAt": "2026-03-31T00:00:00.000Z"
+    }
+  ],
+  "presetSequence": [
+    {
+      "holdSeconds": 2,
+      "id": "seq-1",
+      "keyframeConfig": null,
+      "label": "Open",
+      "presetId": "preset-alpha",
+      "screenSequenceDriveMode": "inherit",
+      "screenSequenceDriveMultiplier": 1,
+      "screenSequenceDriveStrengthMode": "inherit",
+      "screenSequenceDriveStrengthOverride": 1,
+      "transitionEasing": "ease-in-out",
+      "transitionSeconds": 1.2
+    },
+    {
+      "holdSeconds": 2.4,
+      "id": "seq-2",
+      "keyframeConfig": {
+        "layer2Enabled": true,
+        "layer2Type": "reaction_diffusion"
+      },
+      "label": "Close",
+      "presetId": "preset-beta",
+      "screenSequenceDriveMode": "on",
+      "screenSequenceDriveMultiplier": 0.85,
+      "screenSequenceDriveStrengthMode": "override",
+      "screenSequenceDriveStrengthOverride": 1.3,
+      "transitionEasing": "linear",
+      "transitionSeconds": 1.4
+    }
+  ],
+  "schema": {
+    "format": "monosphere-project",
+    "manifestSchemaVersion": 11,
+    "migratedFromProjectDataVersion": null,
+    "migrationState": "native",
+    "projectDataVersion": 13,
+    "serializationSchemaVersion": 2
+  },
+  "sequenceLoopEnabled": true,
+  "serialization": {
+    "layers": [
+      {
+        "blocks": {
+          "execution": {
+            "id": "execution",
+            "label": "Execution",
+            "values": [
+              "cpu-geometry",
+              "points",
+              "cpu-noise-field",
+              "requested:cpu-geometry",
+              "resolved:cpu-geometry",
+              "path:points",
+              "render:point-cloud",
+              "simulation:cpu-noise-field",
+              "override:baseline",
+              "webgl-stable",
+              "mobile-risky",
+              "branch:particle-core",
+              "note:classic sprite path"
+            ]
+          },
+          "postfx": {
+            "id": "postfx",
+            "label": "Post FX",
+            "values": [
+              "dream-smear",
+              "bloom"
+            ]
+          },
+          "primitive": {
+            "id": "primitive",
+            "label": "Primitive",
+            "values": [
+              "sphere-cloud",
+              "sprite"
+            ]
+          },
+          "shading": {
+            "id": "shading",
+            "label": "Shading",
+            "values": [
+              "classic-particle",
+              "white",
+              "black"
+            ]
+          },
+          "simulation": {
+            "id": "simulation",
+            "label": "Simulation",
+            "values": [
+              "spheres",
+              "cpu-noise-field",
+              "pulse-drive"
+            ]
+          },
+          "source": {
+            "id": "source",
+            "label": "Source",
+            "values": [
+              "builtin",
+              "single-source"
+            ]
+          }
+        },
+        "key": "layer1",
+        "label": "Layer 1",
+        "modeId": "spheres"
+      },
+      {
+        "blocks": {
+          "execution": {
+            "id": "execution",
+            "label": "Execution",
+            "values": [
+              "webgl-procedural-surface",
+              "surface",
+              "webgl-procedural-family",
+              "requested:webgl-procedural-surface",
+              "resolved:webgl-procedural-surface",
+              "path:surface",
+              "render:shell",
+              "simulation:webgl-procedural-family",
+              "override:auto",
+              "procedural:surface-shell",
+              "webgl-stable",
+              "mobile-risky",
+              "branch:procedural:surface-shell",
+              "note:source-field:unified-field",
+              "note:distance-field ready",
+              "note:flow-sampling ready"
+            ]
+          },
+          "postfx": {
+            "id": "postfx",
+            "label": "Post FX",
+            "values": [
+              "dream-smear",
+              "bloom"
+            ]
+          },
+          "primitive": {
+            "id": "primitive",
+            "label": "Primitive",
+            "values": [
+              "icosa",
+              "ghost-trail",
+              "glyph-outline",
+              "connections:filament"
+            ]
+          },
+          "shading": {
+            "id": "shading",
+            "label": "Shading",
+            "values": [
+              "classic",
+              "procedural:surface-shell"
+            ]
+          },
+          "simulation": {
+            "id": "simulation",
+            "label": "Simulation",
+            "values": [
+              "surface_shell",
+              "surface-shell",
+              "steady"
+            ]
+          },
+          "source": {
+            "id": "source",
+            "label": "Source",
+            "values": [
+              "video",
+              "luminance-map"
+            ]
+          }
+        },
+        "key": "layer2",
+        "label": "Layer 2",
+        "modeId": "surface_shell"
+      },
+      {
+        "blocks": {
+          "execution": {
+            "id": "execution",
+            "label": "Execution",
+            "values": [
+              "webgl-procedural-surface",
+              "surface",
+              "webgl-procedural-family",
+              "requested:webgl-procedural-surface",
+              "resolved:webgl-procedural-surface",
+              "path:surface",
+              "render:line-field",
+              "simulation:webgl-procedural-family",
+              "override:auto",
+              "procedural:fiber-field",
+              "webgl-stable",
+              "branch:procedural:fiber-field",
+              "note:source-field:unified-field",
+              "note:distance-field ready",
+              "note:flow-sampling ready"
+            ]
+          },
+          "postfx": {
+            "id": "postfx",
+            "label": "Post FX",
+            "values": [
+              "dream-smear",
+              "bloom"
+            ]
+          },
+          "primitive": {
+            "id": "primitive",
+            "label": "Primitive",
+            "values": [
+              "tube"
+            ]
+          },
+          "shading": {
+            "id": "shading",
+            "label": "Shading",
+            "values": [
+              "classic",
+              "procedural:fiber-field"
+            ]
+          },
+          "simulation": {
+            "id": "simulation",
+            "label": "Simulation",
+            "values": [
+              "fiber_field",
+              "fiber-field",
+              "steady"
+            ]
+          },
+          "source": {
+            "id": "source",
+            "label": "Source",
+            "values": [
+              "text",
+              "glyph-map"
+            ]
+          }
+        },
+        "key": "layer3",
+        "label": "Layer 3",
+        "modeId": "fiber_field"
+      },
+      {
+        "blocks": {
+          "execution": {
+            "id": "execution",
+            "label": "Execution",
+            "values": [
+              "webgl-gpgpu",
+              "points",
+              "webgl-gpgpu + fluid-field",
+              "requested:webgl-gpgpu",
+              "resolved:webgl-gpgpu",
+              "path:points",
+              "render:gpu-particles",
+              "simulation:webgl-gpgpu + fluid-field",
+              "override:auto",
+              "webgl-stable",
+              "branch:gpgpu-core",
+              "note:supported:particles",
+              "note:unsupported:fluid-field"
+            ]
+          },
+          "postfx": {
+            "id": "postfx",
+            "label": "Post FX",
+            "values": [
+              "dream-smear",
+              "bloom"
+            ]
+          },
+          "primitive": {
+            "id": "primitive",
+            "label": "Primitive",
+            "values": [
+              "sphere",
+              "metaball",
+              "volumetric"
+            ]
+          },
+          "shading": {
+            "id": "shading",
+            "label": "Shading",
+            "values": [
+              "particle-color"
+            ]
+          },
+          "simulation": {
+            "id": "simulation",
+            "label": "Simulation",
+            "values": [
+              "fluid-field",
+              "gpu-particles"
+            ]
+          },
+          "source": {
+            "id": "source",
+            "label": "Source",
+            "values": [
+              "sphere",
+              "gpu-emitter"
+            ]
+          }
+        },
+        "key": "gpgpu",
+        "label": "GPGPU",
+        "modeId": "metaball"
+      }
+    ],
+    "schemaVersion": 2
+  },
+  "ui": {
+    "isPanelOpen": true,
+    "isPlaying": false,
+    "videoDurationSeconds": 9,
+    "videoExportMode": "sequence",
+    "videoFps": 30
+  },
+  "version": 13
+}

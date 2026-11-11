@@ -1,0 +1,82 @@
+{
+  "activePresetId": "preset-alpha",
+  "currentConfig": {
+    "gpgpuEnabled": true,
+    "gpgpuFluidEnabled": true,
+    "layer2Enabled": true,
+    "layer2Source": "image",
+    "layer2Type": "reaction_diffusion",
+    "layer3Enabled": true,
+    "layer3Source": "video",
+    "layer3Type": "surface_shell",
+    "postBloomEnabled": true,
+    "postFxStackProfile": "dream-smear"
+  },
+  "exportedAt": "2026-03-31T00:00:00.000Z",
+  "name": "Phase 5 Legacy v24 Fixture",
+  "presetBlendDuration": 1.8,
+  "presets": [
+    {
+      "config": {
+        "layer2Enabled": true,
+        "layer2Source": "image",
+        "layer2Type": "surface_shell"
+      },
+      "createdAt": "2026-03-31T00:00:00.000Z",
+      "id": "preset-alpha",
+      "name": "Alpha",
+      "updatedAt": "2026-03-31T00:00:00.000Z"
+    },
+    {
+      "config": {
+        "layer3Enabled": true,
+        "layer3Source": "text",
+        "layer3Type": "fiber_field"
+      },
+      "createdAt": "2026-03-31T00:00:00.000Z",
+      "id": "preset-beta",
+      "name": "Beta",
+      "updatedAt": "2026-03-31T00:00:00.000Z"
+    }
+  ],
+  "presetSequence": [
+    {
+      "holdSeconds": 2,
+      "id": "seq-1",
+      "keyframeConfig": null,
+      "label": "Open",
+      "presetId": "preset-alpha",
+      "screenSequenceDriveMode": "inherit",
+      "screenSequenceDriveMultiplier": 1,
+      "screenSequenceDriveStrengthMode": "inherit",
+      "screenSequenceDriveStrengthOverride": 1,
+      "transitionEasing": "ease-in-out",
+      "transitionSeconds": 1.2
+    },
+    {
+      "holdSeconds": 2.4,
+      "id": "seq-2",
+      "keyframeConfig": {
+        "layer2Enabled": true,
+        "layer2Type": "reaction_diffusion"
+      },
+      "label": "Close",
+      "presetId": "preset-beta",
+      "screenSequenceDriveMode": "on",
+      "screenSequenceDriveMultiplier": 0.85,
+      "screenSequenceDriveStrengthMode": "override",
+      "screenSequenceDriveStrengthOverride": 1.3,
+      "transitionEasing": "linear",
+      "transitionSeconds": 1.4
+    }
+  ],
+  "sequenceLoopEnabled": true,
+  "ui": {
+    "isPanelOpen": true,
+    "isPlaying": false,
+    "videoDurationSeconds": 9,
+    "videoExportMode": "sequence",
+    "videoFps": 30
+  },
+  "version": 24
+}

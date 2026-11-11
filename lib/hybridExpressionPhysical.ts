@@ -1,0 +1,41 @@
+import type { HybridExpressionRecipe } from './hybridExpressionTypes';
+
+export const HYBRID_EXPRESSION_PHYSICAL_RECIPES: HybridExpressionRecipe[] = [
+  {
+    id: 'physical-band-crossfade',
+    name: 'Physical Band Crossfade',
+    summary: 'cloth / viscous / granular の物理帯域を横断して比較するレシピ。',
+    layer2Modes: ['cloth_membrane', 'viscous_flow'],
+    layer3Modes: ['granular_fall', 'surface_patch', 'deposition_field'],
+    emphasis: ['drape', 'pooling', 'granular pile'],
+  },
+  {
+    id: 'granular-fracture-grammar',
+    name: 'Granular Fracture Grammar',
+    summary: 'granular fall と fracture grammar を組み合わせ、堆積と破断の接続差を見るレシピ。',
+    layer2Modes: ['granular_fall', 'fracture_grammar'],
+    layer3Modes: ['deposition_field', 'growth_field', 'stipple_field'],
+    emphasis: ['pile spread', 'crack gate', 'plate syntax'],
+  },
+  {
+    id: 'growth-rewrite-codex',
+    name: 'Growth Rewrite Codex',
+    summary: 'growth grammar と text 系 layer を組み合わせ、再記述の時間差を見るレシピ。',
+    layer2Modes: ['growth_grammar'],
+    layer3Modes: ['shell_script', 'glyph_weave', 'ink_bleed'],
+    emphasis: ['grammar depth', 'rewrite cadence', 'text adherence'],
+  },
+  { id: 'elastic-capillary-ledger', name: 'Elastic Capillary Ledger', summary: 'elastic sheet と capillary sheet を組み合わせ、張力面と吸い込み面の差を確認するレシピ。', layer2Modes: ['elastic_sheet'], layer3Modes: ['capillary_sheet', 'ink_bleed'], emphasis: ['surface rebound', 'wicking lift', 'ledger soak'] },
+  { id: 'sediment-front-delta', name: 'Sediment Front Delta', summary: 'sediment stack と cellular front を組み合わせ、堆積体と前線の衝突を確認するレシピ。', layer2Modes: ['sediment_stack', 'granular_fall'], layer3Modes: ['cellular_front', 'reaction_diffusion'], emphasis: ['strata compression', 'front edge', 'delta spread'] },
+  { id: 'lattice-membrane-span', name: 'Lattice Membrane Span', summary: 'elastic lattice と elastic sheet を組み合わせ、足場と張力膜の span 差を見るレシピ。', layer2Modes: ['elastic_lattice'], layer3Modes: ['elastic_sheet', 'cloth_membrane'], emphasis: ['span tension', 'rebound sheet', 'tether rhythm'] },
+  { id: 'recur-growth-codex', name: 'Recur Growth Codex', summary: 'growth grammar と text 系 layer を組み合わせ、recur の再帰循環を見るレシピ。', layer2Modes: ['growth_grammar'], layer3Modes: ['glyph_weave', 'shell_script', 'capillary_sheet'], emphasis: ['recursive cadence', 'glyph return', 'rewrite soak'] },
+  { id: 'memory-percolation-ledger', name: 'Memory Percolation Ledger', summary: 'viscoelastic membrane と percolation sheet を組み合わせ、垂れの記憶と浸潤経路を同時に見るレシピ。', layer2Modes: ['viscoelastic_membrane', 'elastic_sheet'], layer3Modes: ['percolation_sheet', 'capillary_sheet'], emphasis: ['memory sag', 'wick channels', 'ledger soak'] },
+  { id: 'talus-corrosion-front', name: 'Talus Corrosion Front', summary: 'talus heap と corrosion front を組み合わせ、崩積斜面と穴食い前線を同時に比較するレシピ。', layer2Modes: ['talus_heap', 'sediment_stack'], layer3Modes: ['corrosion_front', 'cellular_front'], emphasis: ['slope slip', 'etch edge', 'front crawl'] },
+  { id: 'creep-memory-span', name: 'Creep Memory Span', summary: 'viscoelastic membrane と creep lattice を組み合わせ、span memory と slow drag を比較するレシピ。', layer2Modes: ['viscoelastic_membrane', 'cloth_membrane'], layer3Modes: ['creep_lattice', 'elastic_lattice'], emphasis: ['rebound lag', 'beam creep', 'span memory'] },
+  { id: 'percolation-corrode-codex', name: 'Percolation Corrode Codex', summary: 'text source に寄せた percolation と corrosion の受け皿差を確認するレシピ。', layer2Modes: ['percolation_sheet', 'ink_bleed'], layer3Modes: ['corrosion_front', 'rune_smoke'], emphasis: ['channel retention', 'etch text edge', 'inscribed soak'] },
+  { id: 'talus-ossify-span', name: 'Talus Ossify Span', summary: 'talus heap と creep lattice を組み合わせ、崩れと硬化 span の差を確認するレシピ。', layer2Modes: ['talus_heap', 'granular_fall'], layer3Modes: ['creep_lattice', 'elastic_lattice'], emphasis: ['heap ossify', 'slow span drag', 'slope memory'] },
+  { id: 'advection-pressure-ledger', name: 'Advection Pressure Ledger', summary: 'advection flow と pressure cells を重ね、lane shear と basin compression の差を確認するレシピ。', layer2Modes: ['advection_flow'], layer3Modes: ['pressure_cells', 'ink_bleed'], emphasis: ['flow lanes', 'cell basins', 'receiving surface'] },
+  { id: 'avalanche-jam-stack', name: 'Avalanche Jam Stack', summary: 'avalanche field と jammed pack を重ね、runout と lock の差を確認するレシピ。', layer2Modes: ['avalanche_field', 'granular_fall'], layer3Modes: ['jammed_pack', 'talus_heap'], emphasis: ['runout spread', 'packing lock', 'slope memory'] },
+  { id: 'melt-condense-cycle', name: 'Melt Condense Cycle', summary: 'melt front と condense field を重ね、軟化面と凝縮体の前線差を確認するレシピ。', layer2Modes: ['melt_front', 'evaporative_sheet'], layer3Modes: ['condense_field', 'ink_bleed'], emphasis: ['thermal bleed', 'droplet core', 'receiving retreat'] },
+  { id: 'freeze-sublimate-shell', name: 'Freeze Sublimate Shell', summary: 'freeze skin と sublimate cloud を重ね、凍結殻と昇華雲の密度反転差を見るレシピ。', layer2Modes: ['freeze_skin'], layer3Modes: ['sublimate_cloud', 'condense_field'], emphasis: ['frost lock', 'hollow lift', 'phase reversal'] },
+];

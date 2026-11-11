@@ -1,0 +1,7 @@
+{
+  "description": "A high-performance, monochromatic 3D particle sphere generator. Customize particle count, physics, and movement. Switch between Black/White themes. Export as high-quality transparent PNG.",
+  "name": "MonoSphere Particle Generator",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

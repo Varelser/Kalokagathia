@@ -1,0 +1,14 @@
+{
+  "generatedAt": "2026-03-31T00:00:00.000Z",
+  "mode": "pipeline",
+  "nextSteps": [
+    "Run npm run generate:phase5-refresh-closeout in a dependency-installed environment to refresh every closeout report in order."
+  ],
+  "phase": "phase5",
+  "steps": [],
+  "summary": {
+    "failedCount": 0,
+    "skippedCount": 16,
+    "successCount": 0
+  }
+}

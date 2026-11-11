@@ -1,0 +1,37 @@
+{
+  "dependencySnapshots": [
+    {
+      "declaredInPackageJson": true,
+      "name": "esbuild",
+      "presentInPackageLock": true,
+      "version": "0.25.12"
+    },
+    {
+      "declaredInPackageJson": true,
+      "name": "skia-canvas",
+      "presentInPackageLock": true,
+      "version": "3.0.8"
+    }
+  ],
+  "environmentBlockers": [
+    "node_modules directory is missing; npm run verify:phase5 and npm run build cannot be executed in this checkout yet.",
+    "No browser-captured real-export fixture is committed under fixtures/project-state/real-export/."
+  ],
+  "generatedAt": "2026-03-31T07:07:16.439Z",
+  "lockfileSynchronized": true,
+  "nodeModulesPresent": false,
+  "notes": [
+    "This report separates repository-level readiness from environment-level blockers.",
+    "Lockfile synchronization for esbuild/skia-canvas is a repository requirement because Phase 5 verification depends on those packages directly.",
+    "Browser-captured real-export fixtures remain optional for core Phase 5 completion but are still listed as a follow-through blocker for execution-proven closure."
+  ],
+  "phase": "phase5",
+  "readyForRepoLevelExecution": true,
+  "realExportFixtureCount": 0,
+  "requiredCommands": [
+    "npm ci",
+    "npm run verify:project-state",
+    "npm run verify:phase5",
+    "npm run build"
+  ]
+}

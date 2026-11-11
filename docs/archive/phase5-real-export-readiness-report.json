@@ -1,0 +1,19 @@
+{
+  "entries": [],
+  "failingCount": 0,
+  "fixtureCount": 0,
+  "generatedAt": "2026-03-31T00:00:00.000Z",
+  "manifestEntryCount": 0,
+  "staleManifestEntries": [],
+  "statusCounts": {
+    "invalid-json": 0,
+    "invalid-name": 0,
+    "invalid-project-payload": 0,
+    "manifest-entry-missing": 0,
+    "manifest-metadata-drift": 0,
+    "manifest-sha256-drift": 0,
+    "roundtrip-drift": 0,
+    "verified": 0
+  },
+  "verifiedCount": 0
+}

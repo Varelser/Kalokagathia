@@ -1,0 +1,82 @@
+{
+  "generatedAt": "2026-03-31T07:48:51.599Z",
+  "nextActions": [
+    "Run the required commands in a dependency-installed environment and save each stdout/stderr log to docs/archive/phase5-proof-input using the fixed file names.",
+    "Capture at least one browser-exported monosphere-project-*.json file and place it in fixtures/project-state/real-export/.",
+    "Add real-export-capture-notes.md describing browser, route, and capture date if a real export fixture is added.",
+    "Run npm run generate:phase5-refresh-closeout to refresh all reports and auto-closeout status."
+  ],
+  "proofInputs": {
+    "directory": "docs/archive/phase5-proof-input",
+    "files": [
+      {
+        "fileName": "npm-ci.log",
+        "present": false,
+        "sha256": null,
+        "sizeBytes": 0
+      },
+      {
+        "fileName": "verify-project-state.log",
+        "present": false,
+        "sha256": null,
+        "sizeBytes": 0
+      },
+      {
+        "fileName": "verify-phase5.log",
+        "present": false,
+        "sha256": null,
+        "sizeBytes": 0
+      },
+      {
+        "fileName": "build.log",
+        "present": false,
+        "sha256": null,
+        "sizeBytes": 0
+      }
+    ],
+    "optionalFiles": [
+      {
+        "fileName": "real-export-capture-notes.md",
+        "present": false,
+        "sha256": null,
+        "sizeBytes": 0
+      }
+    ]
+  },
+  "realExportFixtureIntake": {
+    "directory": "fixtures/project-state/real-export",
+    "expectedPattern": "monosphere-project-*.json",
+    "fixtureCount": 0,
+    "readinessStatuses": {
+      "invalid-json": 0,
+      "invalid-name": 0,
+      "invalid-project-payload": 0,
+      "manifest-entry-missing": 0,
+      "manifest-metadata-drift": 0,
+      "manifest-sha256-drift": 0,
+      "roundtrip-drift": 0,
+      "verified": 0
+    }
+  },
+  "requiredCommands": [
+    "npm ci",
+    "npm run verify:project-state",
+    "npm run verify:phase5",
+    "npm run build",
+    "npm run generate:phase5-refresh-closeout"
+  ],
+  "status": "repo-ready",
+  "summary": {
+    "executionProven": false,
+    "executionReady": false,
+    "pendingChecklistItems": [
+      "dependency-installed-verification-ready",
+      "browser-real-export-fixture-committed",
+      "proof-logs-verified",
+      "execution-proven-closeout"
+    ],
+    "proofBundleVerified": false,
+    "realExportFixtureCount": 0,
+    "repoReady": true
+  }
+}

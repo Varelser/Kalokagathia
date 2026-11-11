@@ -1,0 +1,12 @@
+
+> kalokagathia@0.0.0 verify:public-library
+> node scripts/verify-public-library.mjs
+
+{
+  "target": "public-library.json",
+  "presets": 28,
+  "sequenceSteps": 17,
+  "activePresetId": "public-fluid-curl",
+  "normalizedMatch": true,
+  "passed": true
+}

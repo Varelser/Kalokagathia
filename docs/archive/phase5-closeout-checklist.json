@@ -1,0 +1,70 @@
+{
+  "counts": {
+    "done": 2,
+    "pending": 4
+  },
+  "generatedAt": "2026-03-31T07:48:51.420Z",
+  "items": [
+    {
+      "category": "repo",
+      "evidence": [
+        "docs/archive/phase5-completion-report.json"
+      ],
+      "id": "repo-core-complete",
+      "status": "done",
+      "summary": "Core Phase 5 repository criteria are complete."
+    },
+    {
+      "category": "repo",
+      "evidence": [
+        "package.json",
+        "package-lock.json",
+        "docs/archive/phase5-execution-readiness-report.json"
+      ],
+      "id": "lockfile-synchronized",
+      "status": "done",
+      "summary": "package-lock.json is synchronized with package.json for Phase 5 direct verifier dependencies."
+    },
+    {
+      "category": "execution",
+      "evidence": [
+        "docs/archive/phase5-execution-readiness-report.json",
+        "docs/archive/phase5-proof-intake.json"
+      ],
+      "id": "dependency-installed-verification-ready",
+      "status": "pending",
+      "summary": "A dependency-installed checkout is present so verify/build commands can be executed."
+    },
+    {
+      "category": "real-export",
+      "evidence": [
+        "fixtures/project-state/real-export/",
+        "docs/archive/phase5-real-export-readiness-report.json"
+      ],
+      "id": "browser-real-export-fixture-committed",
+      "status": "pending",
+      "summary": "At least one browser-captured real export fixture is committed."
+    },
+    {
+      "category": "execution",
+      "evidence": [
+        "docs/archive/phase5-proof-intake.json",
+        "docs/archive/phase5-evidence-index.json"
+      ],
+      "id": "proof-logs-verified",
+      "status": "pending",
+      "summary": "Required proof logs are present and show success markers for npm ci / verify / build commands."
+    },
+    {
+      "category": "execution",
+      "evidence": [
+        "docs/archive/phase5-evidence-index.json",
+        "docs/archive/phase5-proof-intake.json"
+      ],
+      "id": "execution-proven-closeout",
+      "status": "pending",
+      "summary": "Phase 5 has execution-proven closure, not only repo-level readiness."
+    }
+  ],
+  "phase": "phase5"
+}

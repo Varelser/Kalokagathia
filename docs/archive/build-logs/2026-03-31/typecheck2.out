@@ -1,0 +1,78 @@
+
+> kalokagathia@0.0.0 typecheck
+> tsc --noEmit
+
+App.tsx(284,53): error TS2345: Argument of type '{ activePresetId: string; activeSequenceItemId: string; audioNotice: Notice; audioSourceMode: AudioSourceMode; config: ParticleConfig; contactAmount: number; ... 95 more ...; videoNotice: Notice; }' is not assignable to parameter of type 'UseAppControlPanelPropsArgs'.
+  Property 'projectInputRef' is missing in type '{ activePresetId: string; activeSequenceItemId: string; audioNotice: Notice; audioSourceMode: AudioSourceMode; config: ParticleConfig; contactAmount: number; ... 95 more ...; videoNotice: Notice; }' but required in type 'Omit<ControlPanelProps, "onReset" | "togglePlay" | "onSave">'.
+components/AppComparePreview.tsx(39,11): error TS2322: Type 'MutableRefObject<{ bass: number; treble: number; pulse: number; }>' is not assignable to type 'SceneAudioRef'.
+  Type '{ bass: number; treble: number; pulse: number; }' is missing the following properties from type 'SceneAudioLevels': bandA, bandB
+components/controlPanelGlobalDisplay.tsx(213,10): error TS2740: Type '{ config: ParticleConfig; updateConfig: UpdateConfig; applyScreenFxPreset: (preset: ScreenFxPreset) => void; }' is missing the following properties from type 'ControlPanelContentProps': activeTab, contactAmount, isPublicLibrary, lockedPanelClass, and 114 more.
+components/controlPanelProjectIOManifestSection.tsx(43,68): error TS2551: Property 'bestProductPackCoverageScore' does not exist on type 'ProjectManifestStats'. Did you mean 'bestPackCoverageScore'?
+components/sceneBrushSurfaceSystemShared.ts(245,3): error TS2353: Object literal may only specify known properties, and 'paint_daubs' does not exist in type 'Partial<Record<Layer2Type, Partial<BrushProfile>>>'.
+lib/productPackDetailControls.ts(9,31): error TS2304: Cannot find name 'ProductPackDetailGroup'.
+lib/productPackDetailControls.ts(9,58): error TS2304: Cannot find name 'ProductPackDetailGroup'.
+lib/productPackDetailControls.ts(18,69): error TS2304: Cannot find name 'ProductPackDetailGroup'.
+lib/productPackDetailControls.ts(28,31): error TS2304: Cannot find name 'ProductPackDetailGroup'.
+lib/projectState.ts(2,3): error TS2459: Module '"./projectStateShared"' declares 'DEFAULT_PROJECT_UI' locally, but it is not exported.
+lib/projectState.ts(7,3): error TS2459: Module '"./projectStateShared"' declares 'isPlainObject' locally, but it is not exported.
+lib/projectState.ts(8,3): error TS2459: Module '"./projectStateShared"' declares 'normalizePresetRecord' locally, but it is not exported.
+lib/projectState.ts(9,3): error TS2459: Module '"./projectStateShared"' declares 'normalizeSequenceItem' locally, but it is not exported.
+lib/projectState.ts(10,3): error TS2459: Module '"./projectStateShared"' declares 'uniqueNonEmpty' locally, but it is not exported.
+lib/projectStateManifest.ts(21,43): error TS2459: Module '"./projectStateShared"' declares 'isPlainObject' locally, but it is not exported.
+lib/projectStateManifest.ts(21,58): error TS2459: Module '"./projectStateShared"' declares 'uniqueNonEmpty' locally, but it is not exported.
+lib/projectStateManifest.ts(245,57): error TS2339: Property 'layers' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(245,91): error TS2339: Property 'stats' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(251,36): error TS2339: Property 'layers' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(252,79): error TS2339: Property 'key' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(256,29): error TS2339: Property 'label' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(256,58): error TS2339: Property 'label' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(257,31): error TS2339: Property 'enabled' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(257,63): error TS2339: Property 'enabled' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(258,28): error TS2339: Property 'mode' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(258,56): error TS2339: Property 'mode' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(259,30): error TS2339: Property 'source' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(259,60): error TS2339: Property 'source' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(260,32): error TS2339: Property 'material' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(260,64): error TS2339: Property 'material' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(261,32): error TS2339: Property 'geometry' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(261,64): error TS2339: Property 'geometry' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(262,39): error TS2339: Property 'connectionStyle' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(262,78): error TS2339: Property 'connectionStyle' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(263,39): error TS2339: Property 'features' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(263,74): error TS2339: Property 'features' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(267,49): error TS2339: Property 'coverage' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(267,69): error TS2339: Property 'coverage' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(268,32): error TS2339: Property 'stats' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(270,35): error TS2339: Property 'schemaVersion' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(270,72): error TS2339: Property 'schemaVersion' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(4,3): error TS2459: Module '"./projectStateShared"' declares 'DEFAULT_PROJECT_UI' locally, but it is not exported.
+lib/projectStateStorage.ts(8,3): error TS2459: Module '"./projectStateShared"' declares 'isPlainObject' locally, but it is not exported.
+lib/projectStateStorage.ts(9,3): error TS2459: Module '"./projectStateShared"' declares 'normalizePresetRecord' locally, but it is not exported.
+lib/projectStateStorage.ts(10,3): error TS2459: Module '"./projectStateShared"' declares 'normalizeSequenceItem' locally, but it is not exported.
+lib/projectStateStorage.ts(15,57): error TS2339: Property 'presets' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(15,92): error TS2339: Property 'presetSequence' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(19,27): error TS2339: Property 'presets' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(24,34): error TS2339: Property 'presetSequence' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(29,43): error TS2339: Property 'ui' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(29,57): error TS2339: Property 'ui' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(38,49): error TS2339: Property 'currentConfig' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(39,53): error TS2339: Property 'manifest' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(42,29): error TS2339: Property 'version' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(42,60): error TS2339: Property 'version' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(43,32): error TS2339: Property 'exportedAt' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(43,66): error TS2339: Property 'exportedAt' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(44,26): error TS2339: Property 'name' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(44,55): error TS2339: Property 'name' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(44,88): error TS2339: Property 'name' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(46,36): error TS2339: Property 'activePresetId' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(46,74): error TS2339: Property 'activePresetId' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(47,41): error TS2339: Property 'presetBlendDuration' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(47,98): error TS2339: Property 'presetBlendDuration' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(48,41): error TS2339: Property 'sequenceLoopEnabled' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(48,85): error TS2339: Property 'sequenceLoopEnabled' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(77,5): error TS2322: Type 'unknown[]' is not assignable to type 'PresetRecord[]'.
+  Type '{}' is missing the following properties from type 'PresetRecord': id, name, config, createdAt, updatedAt
+lib/projectStateStorage.ts(78,5): error TS2322: Type 'unknown[]' is not assignable to type 'PresetSequenceItem[]'.
+  Type '{}' is missing the following properties from type 'PresetSequenceItem': id, presetId, label, holdSeconds, and 6 more.
+lib/projectStateStorage.ts(83,54): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'PresetRecord[]'.
+  Type '{}' is missing the following properties from type 'PresetRecord': id, name, config, createdAt, updatedAt

@@ -1,0 +1,485 @@
+
+> kalokagathia@0.0.0 typecheck
+> tsc --noEmit
+
+App.tsx(1,34): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+App.tsx(50,23): error TS2347: Untyped function calls may not accept type arguments.
+App.tsx(50,30): error TS2503: Cannot find namespace 'THREE'.
+App.tsx(51,36): error TS2347: Untyped function calls may not accept type arguments.
+App.tsx(52,27): error TS2347: Untyped function calls may not accept type arguments.
+App.tsx(284,53): error TS2345: Argument of type '{ activePresetId: any; activeSequenceItemId: any; audioNotice: any; audioSourceMode: any; config: any; contactAmount: any; frameNotice: any; isAudioActive: any; isFrameExporting: any; isOpen: any; ... 91 more ...; videoNotice: any; }' is not assignable to parameter of type 'UseAppControlPanelPropsArgs'.
+  Property 'projectInputRef' is missing in type '{ activePresetId: any; activeSequenceItemId: any; audioNotice: any; audioSourceMode: any; config: any; contactAmount: any; frameNotice: any; isAudioActive: any; isFrameExporting: any; isOpen: any; ... 91 more ...; videoNotice: any; }' but required in type 'Omit<ControlPanelProps, "onReset" | "togglePlay" | "onSave">'.
+components/AppScene.tsx(2,10): error TS2305: Module '"@react-three/fiber"' has no exported member 'Canvas'.
+components/AppScene.tsx(2,18): error TS2305: Module '"@react-three/fiber"' has no exported member 'extend'.
+components/AppScene.tsx(32,23): error TS2347: Untyped function calls may not accept type arguments.
+components/AppScene.tsx(34,26): error TS2347: Untyped function calls may not accept type arguments.
+components/AppSceneTypes.ts(21,39): error TS2503: Cannot find namespace 'THREE'.
+components/StandaloneSynthWindow.tsx(28,31): error TS2347: Untyped function calls may not accept type arguments.
+components/StandaloneSynthWindow.tsx(30,31): error TS2347: Untyped function calls may not accept type arguments.
+components/StandaloneSynthWindow.tsx(35,20): error TS2347: Untyped function calls may not accept type arguments.
+components/StandaloneSynthWindow.tsx(38,29): error TS2347: Untyped function calls may not accept type arguments.
+components/canvasStreamWidget.tsx(5,36): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+components/canvasStreamWidget.tsx(11,32): error TS2503: Cannot find namespace 'THREE'.
+components/canvasStreamWidget.tsx(16,27): error TS2347: Untyped function calls may not accept type arguments.
+components/controlPanelGlobalDisplay.tsx(213,10): error TS2740: Type '{ config: ParticleConfig; updateConfig: UpdateConfig; applyScreenFxPreset: (preset: ScreenFxPreset) => void; }' is missing the following properties from type 'ControlPanelContentProps': activeTab, contactAmount, isPublicLibrary, lockedPanelClass, and 114 more.
+components/controlPanelGlobalPresets.tsx(43,47): error TS2347: Untyped function calls may not accept type arguments.
+components/controlPanelPartsSourceMedia.tsx(1,45): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+components/controlPanelPartsSourceMedia.tsx(64,20): error TS2347: Untyped function calls may not accept type arguments.
+components/controlPanelPartsSourceMedia.tsx(65,20): error TS2347: Untyped function calls may not accept type arguments.
+components/controlPanelPartsSourceMedia.tsx(66,23): error TS2347: Untyped function calls may not accept type arguments.
+components/controlPanelPartsSourceMedia.tsx(67,24): error TS2347: Untyped function calls may not accept type arguments.
+components/controlPanelPartsSourceShared.tsx(1,17): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+components/controlPanelProjectIOManifestSection.tsx(43,68): error TS2551: Property 'bestProductPackCoverageScore' does not exist on type 'ProjectManifestStats'. Did you mean 'bestPackCoverageScore'?
+components/gpgpuAssetShared.ts(4,39): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuAssetShared.ts(18,13): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuAssetShared.ts(19,11): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuDiagnostics.ts(31,7): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuDiagnostics.ts(32,11): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuExecutionRouting.ts(8,9): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuExecutionRouting.ts(9,9): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuExecutionRouting.ts(10,9): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuExecutionRouting.ts(11,9): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuExecutionRouting.ts(19,21): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuExecutionRouting.ts(44,21): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuExecutionRouting.ts(45,23): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(11,13): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(12,11): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(13,15): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(14,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(15,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(25,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(26,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(27,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(28,7): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(29,13): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(30,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(31,15): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(43,13): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(44,13): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(46,19): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(47,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(48,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(49,7): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(50,13): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(51,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(102,15): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(103,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(104,7): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(105,13): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(106,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(107,10): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(108,11): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(109,10): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(110,11): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(111,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(112,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(113,15): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(114,15): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuSimulationPasses.ts(116,17): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(10,7): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(11,11): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(12,13): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(13,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(14,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(15,15): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(17,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(18,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(19,17): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(20,15): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(21,5): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(67,7): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(68,13): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(69,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(70,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(71,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(72,13): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(74,15): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(90,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(91,12): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(92,14): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(113,15): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(114,15): error TS2503: Cannot find namespace 'THREE'.
+components/gpgpuVisualUpdates.ts(115,17): error TS2503: Cannot find namespace 'THREE'.
+components/sceneBrushSurfaceSystem.tsx(23,20): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneBrushSurfaceSystem.tsx(23,27): error TS2503: Cannot find namespace 'THREE'.
+components/sceneBrushSurfaceSystem.tsx(24,24): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneBrushSurfaceSystem.tsx(24,31): error TS2503: Cannot find namespace 'THREE'.
+components/sceneBrushSurfaceSystemRender.tsx(7,40): error TS2503: Cannot find namespace 'THREE'.
+components/sceneBrushSurfaceSystemRuntime.ts(40,10): error TS2503: Cannot find namespace 'THREE'.
+components/sceneBrushSurfaceSystemRuntime.ts(41,40): error TS2503: Cannot find namespace 'THREE'.
+components/sceneBrushSurfaceSystemRuntime.ts(83,43): error TS2503: Cannot find namespace 'THREE'.
+components/sceneBrushSurfaceSystemShared.ts(78,13): error TS2503: Cannot find namespace 'THREE'.
+components/sceneBrushSurfaceSystemShared.ts(245,3): error TS2353: Object literal may only specify known properties, and 'paint_daubs' does not exist in type 'Partial<Record<Layer2Type, Partial<BrushProfile>>>'.
+components/sceneCrystalAggregateSystem.tsx(281,40): error TS2503: Cannot find namespace 'THREE'.
+components/sceneCrystalAggregateSystem.tsx(318,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneCrystalAggregateSystem.tsx(318,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneCrystalAggregateSystem.tsx(319,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneCrystalAggregateSystem.tsx(319,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneCrystalDepositionSystem.tsx(218,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneCrystalDepositionSystem.tsx(290,20): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneCrystalDepositionSystem.tsx(290,27): error TS2503: Cannot find namespace 'THREE'.
+components/sceneCrystalDepositionSystem.tsx(291,28): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneCrystalDepositionSystem.tsx(291,35): error TS2503: Cannot find namespace 'THREE'.
+components/sceneCrystalDepositionSystem.tsx(292,30): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneCrystalDepositionSystem.tsx(292,37): error TS2503: Cannot find namespace 'THREE'.
+components/sceneCrystalDepositionSystem.tsx(293,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneCrystalDepositionSystem.tsx(293,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneDepositionFieldSystem.tsx(275,20): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneDepositionFieldSystem.tsx(275,27): error TS2503: Cannot find namespace 'THREE'.
+components/sceneDepositionFieldSystem.tsx(276,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneDepositionFieldSystem.tsx(276,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneErosionTrailSystem.tsx(230,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneErosionTrailSystem.tsx(230,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneErosionTrailSystem.tsx(231,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneErosionTrailSystem.tsx(231,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneErosionTrailSystem.tsx(232,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneErosionTrailSystem.tsx(232,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneErosionTrailSystem.tsx(269,63): error TS2503: Cannot find namespace 'THREE'.
+components/sceneErosionTrailSystem.tsx(270,58): error TS2503: Cannot find namespace 'THREE'.
+components/sceneFiberFieldSystem.tsx(227,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneFiberFieldSystem.tsx(227,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneFiberFieldSystem.tsx(228,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneFiberFieldSystem.tsx(228,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneFiberFieldSystem.tsx(229,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneFiberFieldSystem.tsx(229,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneFiberFieldSystem.tsx(272,63): error TS2503: Cannot find namespace 'THREE'.
+components/sceneFiberFieldSystem.tsx(273,58): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGlyphOutlineSystem.tsx(167,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneGlyphOutlineSystem.tsx(167,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGlyphOutlineSystem.tsx(181,39): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGpgpuSmoothTube.tsx(30,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneGpgpuSmoothTube.tsx(119,47): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGpgpuSystem.tsx(47,30): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneGroup.tsx(7,20): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneGroup.tsx(7,27): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGrowthFieldSystem.tsx(12,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneGrowthFieldSystem.tsx(12,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGrowthFieldSystem.tsx(13,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneGrowthFieldSystem.tsx(13,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGrowthFieldSystem.tsx(14,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneGrowthFieldSystem.tsx(14,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGrowthFieldSystemRender.tsx(10,35): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGrowthFieldSystemRender.tsx(11,39): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGrowthFieldSystemRuntime.ts(58,35): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGrowthFieldSystemRuntime.ts(59,39): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGrowthFieldSystemRuntime.ts(60,39): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGrowthFieldSystemRuntime.ts(86,63): error TS2503: Cannot find namespace 'THREE'.
+components/sceneGrowthFieldSystemRuntime.ts(87,59): error TS2503: Cannot find namespace 'THREE'.
+components/sceneHybridGranularFieldSystem.tsx(111,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneHybridGranularFieldSystem.tsx(111,32): error TS2503: Cannot find namespace 'THREE'.
+components/sceneHybridMembraneSystem.tsx(21,9): error TS2503: Cannot find namespace 'THREE'.
+components/sceneHybridMembraneSystem.tsx(135,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneHybridMembraneSystem.tsx(135,32): error TS2503: Cannot find namespace 'THREE'.
+components/sceneHybridSurfacePatchSystem.tsx(23,9): error TS2503: Cannot find namespace 'THREE'.
+components/sceneHybridSurfacePatchSystem.tsx(145,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneHybridSurfacePatchSystem.tsx(145,32): error TS2503: Cannot find namespace 'THREE'.
+components/sceneLineSystem.tsx(8,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneLineSystem.tsx(8,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneLineSystem.tsx(9,20): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneLineSystem.tsx(9,27): error TS2503: Cannot find namespace 'THREE'.
+components/sceneLineSystemRender.tsx(7,203): error TS2503: Cannot find namespace 'THREE'.
+components/sceneLineSystemRender.tsx(7,257): error TS2503: Cannot find namespace 'THREE'.
+components/sceneLineSystemRuntime.ts(3,27): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+components/sceneLineSystemRuntime.ts(6,87): error TS2503: Cannot find namespace 'THREE'.
+components/sceneLineSystemRuntime.ts(6,141): error TS2503: Cannot find namespace 'THREE'.
+components/sceneLineSystemRuntime.ts(23,53): error TS2503: Cannot find namespace 'THREE'.
+components/sceneLineSystemRuntime.ts(24,54): error TS2503: Cannot find namespace 'THREE'.
+components/sceneLineSystemShared.ts(284,41): error TS2503: Cannot find namespace 'THREE'.
+components/sceneMembraneSystem.tsx(328,30): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneMembraneSystem.tsx(328,37): error TS2503: Cannot find namespace 'THREE'.
+components/sceneMembraneSystem.tsx(329,27): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneMembraneSystem.tsx(329,34): error TS2503: Cannot find namespace 'THREE'.
+components/sceneMembraneSystem.tsx(356,58): error TS2503: Cannot find namespace 'THREE'.
+components/sceneMetaballSystem.tsx(25,18): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneMetaballSystem.tsx(25,25): error TS2503: Cannot find namespace 'THREE'.
+components/sceneMetaballSystem.tsx(26,18): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneMetaballSystem.tsx(53,9): error TS2339: Property 'scale' does not exist on type 'MarchingCubes'.
+components/sceneMotionEstimator.ts(19,28): error TS2503: Cannot find namespace 'THREE'.
+components/sceneMotionEstimator.ts(19,49): error TS2503: Cannot find namespace 'THREE'.
+components/sceneMotionEstimator.ts(48,11): error TS2503: Cannot find namespace 'THREE'.
+components/sceneMotionEstimator.ts(49,11): error TS2503: Cannot find namespace 'THREE'.
+components/sceneOverlay.tsx(9,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneOverlay.tsx(9,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneOverlay.tsx(18,50): error TS2503: Cannot find namespace 'THREE'.
+components/sceneParticleSystem.tsx(1,34): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+components/sceneParticleSystem.tsx(23,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneParticleSystem.tsx(23,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneParticleSystem.tsx(26,31): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneParticleSystem.tsx(27,27): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneParticleSystem.tsx(43,63): error TS2345: Argument of type 'string' is not assignable to parameter of type 'AuxMode'.
+components/sceneParticleSystem.tsx(51,58): error TS2345: Argument of type 'string' is not assignable to parameter of type 'AuxMode'.
+components/sceneParticleSystem.tsx(66,71): error TS2503: Cannot find namespace 'THREE'.
+components/sceneParticleSystem.tsx(70,31): error TS2339: Property 'value' does not exist on type 'unknown'.
+components/sceneParticleSystem.tsx(92,45): error TS2503: Cannot find namespace 'THREE'.
+components/sceneParticleSystem.tsx(238,63): error TS2345: Argument of type 'string' is not assignable to parameter of type 'AuxMode'.
+components/sceneParticleSystem.tsx(370,79): error TS2503: Cannot find namespace 'THREE'.
+components/sceneParticleSystem.tsx(428,5): error TS2322: Type 'string' is not assignable to type 'AuxMode'.
+components/sceneParticleSystemRender.tsx(17,28): error TS2503: Cannot find namespace 'THREE'.
+components/sceneParticleSystemRender.tsx(19,14): error TS2503: Cannot find namespace 'THREE'.
+components/sceneReactionDiffusionSystemRender.tsx(5,20): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSdfSurfaceShellSystem.tsx(22,9): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSdfSurfaceShellSystem.tsx(212,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSdfSurfaceShellSystem.tsx(212,32): error TS2503: Cannot find namespace 'THREE'.
+components/sceneShared.ts(4,47): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystem.tsx(16,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfacePatchSystem.tsx(16,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystem.tsx(17,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfacePatchSystem.tsx(17,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystem.tsx(18,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfacePatchSystem.tsx(18,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystem.tsx(19,27): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfacePatchSystem.tsx(19,34): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystem.tsx(20,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfacePatchSystem.tsx(20,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRender.tsx(9,35): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRender.tsx(10,39): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRender.tsx(11,39): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRender.tsx(12,43): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRuntime.ts(23,35): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRuntime.ts(24,39): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRuntime.ts(25,39): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRuntime.ts(26,43): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRuntime.ts(27,39): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRuntime.ts(44,32): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfacePatchSystemRuntime.ts(81,63): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfacePatchSystemRuntime.ts(82,59): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystem.tsx(20,28): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfaceShellSystem.tsx(20,35): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystem.tsx(21,27): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfaceShellSystem.tsx(21,34): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystem.tsx(22,24): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfaceShellSystem.tsx(22,31): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystem.tsx(23,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfaceShellSystem.tsx(23,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemRender.tsx(9,37): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemRender.tsx(10,36): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemRender.tsx(11,33): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemRender.tsx(12,32): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemRuntime.ts(22,31): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemRuntime.ts(23,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemRuntime.ts(24,27): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemRuntime.ts(25,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemRuntime.ts(42,24): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfaceShellSystemRuntime.ts(42,31): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemRuntime.ts(43,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneSurfaceShellSystemRuntime.ts(43,30): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemShared.ts(342,50): error TS2503: Cannot find namespace 'THREE'.
+components/sceneSurfaceShellSystemShared.ts(344,12): error TS2339: Property 'computeVertexNormals' does not exist on type 'ConvexGeometry'.
+components/sceneSurfaceShellSystemShared.ts(345,12): error TS2339: Property 'computeBoundingSphere' does not exist on type 'ConvexGeometry'.
+components/sceneVolumeFogSystemMaterial.ts(11,13): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemRuntime.ts(11,35): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemRuntime.ts(12,40): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemRuntime.ts(13,42): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemRuntime.ts(17,16): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemRuntime.ts(34,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneVolumeFogSystemRuntime.ts(34,32): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemRuntime.ts(35,24): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneVolumeFogSystemRuntime.ts(35,37): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemRuntime.ts(36,25): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneVolumeFogSystemRuntime.ts(36,39): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemTypes.ts(48,13): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemTypes.ts(49,13): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemTypes.ts(50,10): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumeFogSystemTypes.ts(54,16): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumetricFieldSystem.tsx(26,9): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVolumetricFieldSystem.tsx(272,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneVolumetricFieldSystem.tsx(272,36): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVoxelLatticeSystem.tsx(248,40): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVoxelLatticeSystem.tsx(274,19): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneVoxelLatticeSystem.tsx(274,26): error TS2503: Cannot find namespace 'THREE'.
+components/sceneVoxelLatticeSystem.tsx(275,23): error TS2347: Untyped function calls may not accept type arguments.
+components/sceneVoxelLatticeSystem.tsx(275,30): error TS2503: Cannot find namespace 'THREE'.
+components/useControlPanelLocalState.ts(1,18): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+components/useControlPanelLocalState.ts(12,27): error TS2347: Untyped function calls may not accept type arguments.
+components/useGlobalDisplayProductPacks.tsx(123,55): error TS2347: Untyped function calls may not accept type arguments.
+components/useGlobalDisplayProductPacks.tsx(178,53): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuMeshAssets.ts(11,18): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(19,32): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(30,37): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(46,11): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(47,11): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(48,11): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(49,11): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(52,34): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(53,35): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(54,33): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(55,33): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(57,32): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(58,32): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(60,37): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(65,7): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(71,17): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuRuntime.ts(72,11): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(73,11): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(74,11): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(75,11): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(78,24): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuRuntime.ts(78,31): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(79,25): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuRuntime.ts(79,32): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(80,23): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuRuntime.ts(80,30): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(81,23): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuRuntime.ts(81,30): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(83,22): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuRuntime.ts(83,29): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(84,22): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuRuntime.ts(84,29): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuRuntime.ts(85,26): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuRuntime.ts(86,27): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuRuntime.ts(86,34): error TS2503: Cannot find namespace 'THREE'.
+components/useGpgpuSimulationAssets.ts(148,22): error TS2347: Untyped function calls may not accept type arguments.
+components/useGpgpuSimulationAssets.ts(148,29): error TS2503: Cannot find namespace 'THREE'.
+lib/appStateCollision.ts(6,11): error TS2503: Cannot find namespace 'THREE'.
+lib/appStateCollision.ts(11,11): error TS2503: Cannot find namespace 'THREE'.
+lib/appStateCollision.ts(102,112): error TS2503: Cannot find namespace 'THREE'.
+lib/audioSourceTypes.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/audioSourceTypes.ts(1,38): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/productPackDetailControls.ts(9,31): error TS2304: Cannot find name 'ProductPackDetailGroup'.
+lib/productPackDetailControls.ts(9,58): error TS2304: Cannot find name 'ProductPackDetailGroup'.
+lib/productPackDetailControls.ts(18,69): error TS2304: Cannot find name 'ProductPackDetailGroup'.
+lib/productPackDetailControls.ts(28,31): error TS2304: Cannot find name 'ProductPackDetailGroup'.
+lib/projectState.ts(2,3): error TS2459: Module '"./projectStateShared"' declares 'DEFAULT_PROJECT_UI' locally, but it is not exported.
+lib/projectState.ts(7,3): error TS2459: Module '"./projectStateShared"' declares 'isPlainObject' locally, but it is not exported.
+lib/projectState.ts(8,3): error TS2459: Module '"./projectStateShared"' declares 'normalizePresetRecord' locally, but it is not exported.
+lib/projectState.ts(9,3): error TS2459: Module '"./projectStateShared"' declares 'normalizeSequenceItem' locally, but it is not exported.
+lib/projectState.ts(10,3): error TS2459: Module '"./projectStateShared"' declares 'uniqueNonEmpty' locally, but it is not exported.
+lib/projectStateManifest.ts(21,43): error TS2459: Module '"./projectStateShared"' declares 'isPlainObject' locally, but it is not exported.
+lib/projectStateManifest.ts(21,58): error TS2459: Module '"./projectStateShared"' declares 'uniqueNonEmpty' locally, but it is not exported.
+lib/projectStateManifest.ts(245,57): error TS2339: Property 'layers' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(245,91): error TS2339: Property 'stats' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(251,36): error TS2339: Property 'layers' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(252,79): error TS2339: Property 'key' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(256,29): error TS2339: Property 'label' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(256,58): error TS2339: Property 'label' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(257,31): error TS2339: Property 'enabled' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(257,63): error TS2339: Property 'enabled' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(258,28): error TS2339: Property 'mode' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(258,56): error TS2339: Property 'mode' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(259,30): error TS2339: Property 'source' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(259,60): error TS2339: Property 'source' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(260,32): error TS2339: Property 'material' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(260,64): error TS2339: Property 'material' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(261,32): error TS2339: Property 'geometry' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(261,64): error TS2339: Property 'geometry' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(262,39): error TS2339: Property 'connectionStyle' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(262,78): error TS2339: Property 'connectionStyle' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(263,39): error TS2339: Property 'features' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(263,74): error TS2339: Property 'features' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(267,49): error TS2339: Property 'coverage' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(267,69): error TS2339: Property 'coverage' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(268,32): error TS2339: Property 'stats' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(270,35): error TS2339: Property 'schemaVersion' does not exist on type 'unknown'.
+lib/projectStateManifest.ts(270,72): error TS2339: Property 'schemaVersion' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(4,3): error TS2459: Module '"./projectStateShared"' declares 'DEFAULT_PROJECT_UI' locally, but it is not exported.
+lib/projectStateStorage.ts(8,3): error TS2459: Module '"./projectStateShared"' declares 'isPlainObject' locally, but it is not exported.
+lib/projectStateStorage.ts(9,3): error TS2459: Module '"./projectStateShared"' declares 'normalizePresetRecord' locally, but it is not exported.
+lib/projectStateStorage.ts(10,3): error TS2459: Module '"./projectStateShared"' declares 'normalizeSequenceItem' locally, but it is not exported.
+lib/projectStateStorage.ts(15,57): error TS2339: Property 'presets' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(15,92): error TS2339: Property 'presetSequence' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(19,27): error TS2339: Property 'presets' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(24,34): error TS2339: Property 'presetSequence' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(29,43): error TS2339: Property 'ui' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(29,57): error TS2339: Property 'ui' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(38,49): error TS2339: Property 'currentConfig' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(39,53): error TS2339: Property 'manifest' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(42,29): error TS2339: Property 'version' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(42,60): error TS2339: Property 'version' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(43,32): error TS2339: Property 'exportedAt' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(43,66): error TS2339: Property 'exportedAt' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(44,26): error TS2339: Property 'name' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(44,55): error TS2339: Property 'name' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(44,88): error TS2339: Property 'name' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(46,36): error TS2339: Property 'activePresetId' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(46,74): error TS2339: Property 'activePresetId' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(47,41): error TS2339: Property 'presetBlendDuration' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(47,98): error TS2339: Property 'presetBlendDuration' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(48,41): error TS2339: Property 'sequenceLoopEnabled' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(48,85): error TS2339: Property 'sequenceLoopEnabled' does not exist on type 'unknown'.
+lib/projectStateStorage.ts(77,5): error TS2322: Type 'unknown[]' is not assignable to type 'PresetRecord[]'.
+  Type '{}' is missing the following properties from type 'PresetRecord': id, name, config, createdAt, updatedAt
+lib/projectStateStorage.ts(78,5): error TS2322: Type 'unknown[]' is not assignable to type 'PresetSequenceItem[]'.
+  Type '{}' is missing the following properties from type 'PresetSequenceItem': id, presetId, label, holdSeconds, and 6 more.
+lib/projectStateStorage.ts(83,54): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'PresetRecord[]'.
+  Type '{}' is missing the following properties from type 'PresetRecord': id, name, config, createdAt, updatedAt
+lib/sequenceEditingMutations.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/sequenceEditingMutations.ts(1,38): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/sequenceEditingShared.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/sequenceEditingShared.ts(1,20): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/sequencePlaybackHelpers.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/sequencePlaybackHelpers.ts(1,20): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/useAppControlPanelProps.ts(1,10): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useAppLayerPreview.ts(1,10): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useAppLayerPreview.ts(2,15): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/useAppLayerPreview.ts(2,25): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/useAppPresetActions.ts(1,10): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useAppSnapshots.ts(1,10): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useAppSnapshots.ts(1,40): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+lib/useAppSnapshots.ts(2,26): error TS2614: Module '"react"' has no exported member 'ChangeEvent'. Did you mean to use 'import ChangeEvent from "react"' instead?
+lib/useAppSnapshots.ts(36,27): error TS2347: Untyped function calls may not accept type arguments.
+lib/useAudioController.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/useAudioController.ts(1,38): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/useAudioController.ts(1,54): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useAudioController.ts(1,86): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+lib/useAudioController.ts(22,20): error TS2347: Untyped function calls may not accept type arguments.
+lib/useAudioController.ts(23,23): error TS2347: Untyped function calls may not accept type arguments.
+lib/useAudioController.ts(24,27): error TS2347: Untyped function calls may not accept type arguments.
+lib/useAudioController.ts(25,31): error TS2347: Untyped function calls may not accept type arguments.
+lib/useAudioController.ts(26,32): error TS2347: Untyped function calls may not accept type arguments.
+lib/useAudioController.ts(27,26): error TS2347: Untyped function calls may not accept type arguments.
+lib/useAudioController.ts(28,36): error TS2347: Untyped function calls may not accept type arguments.
+lib/useAudioController.ts(29,39): error TS2347: Untyped function calls may not accept type arguments.
+lib/useAudioController.ts(31,30): error TS2347: Untyped function calls may not accept type arguments.
+lib/useCanvasStream.ts(5,10): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useCanvasStream.ts(5,42): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+lib/useCanvasStream.ts(26,32): error TS2503: Cannot find namespace 'THREE'.
+lib/useCanvasStream.ts(35,26): error TS2347: Untyped function calls may not accept type arguments.
+lib/useCanvasStream.ts(36,23): error TS2347: Untyped function calls may not accept type arguments.
+lib/useCanvasStream.ts(37,21): error TS2347: Untyped function calls may not accept type arguments.
+lib/useCanvasStream.ts(38,20): error TS2347: Untyped function calls may not accept type arguments.
+lib/useExportController.ts(1,28): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useExportController.ts(13,33): error TS2503: Cannot find namespace 'THREE'.
+lib/useFrameExport.ts(1,28): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useFrameExport.ts(1,60): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+lib/useFrameExport.ts(9,33): error TS2503: Cannot find namespace 'THREE'.
+lib/useFrameExport.ts(33,35): error TS2347: Untyped function calls may not accept type arguments.
+lib/useFrameExport.ts(34,28): error TS2347: Untyped function calls may not accept type arguments.
+lib/useFrameExport.ts(35,31): error TS2347: Untyped function calls may not accept type arguments.
+lib/useLibraryTransfer.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/useLibraryTransfer.ts(1,20): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/useLibraryTransfer.ts(1,36): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/usePresetLibrary.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/usePresetLibrary.ts(1,20): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/usePresetLibrary.ts(1,36): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/usePresetLibrary.ts(1,69): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+lib/usePresetTransition.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/usePresetTransition.ts(1,38): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/usePresetTransition.ts(1,54): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/usePresetTransition.ts(19,30): error TS2347: Untyped function calls may not accept type arguments.
+lib/useProjectTransfer.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/useProjectTransfer.ts(1,20): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/useProjectTransfer.ts(1,36): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useProjectTransfer.ts(1,60): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+lib/useSequenceController.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/useSequenceController.ts(1,38): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/useSequenceController.ts(1,54): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+lib/useSequenceEditingActions.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/useSequenceEditingActions.ts(1,38): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/useSequenceEditingActions.ts(1,54): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useSequencePlayback.ts(1,10): error TS2614: Module '"react"' has no exported member 'Dispatch'. Did you mean to use 'import Dispatch from "react"' instead?
+lib/useSequencePlayback.ts(1,20): error TS2614: Module '"react"' has no exported member 'SetStateAction'. Did you mean to use 'import SetStateAction from "react"' instead?
+lib/useSequencePlayback.ts(1,36): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useSequencePlayback.ts(1,77): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+lib/useSequencePlayback.ts(40,28): error TS2347: Untyped function calls may not accept type arguments.
+lib/useSequencePlayback.ts(41,36): error TS2347: Untyped function calls may not accept type arguments.
+lib/useSequencePlayback.ts(42,36): error TS2347: Untyped function calls may not accept type arguments.
+lib/useVideoExport.ts(1,28): error TS2614: Module '"react"' has no exported member 'useCallback'. Did you mean to use 'import useCallback from "react"' instead?
+lib/useVideoExport.ts(1,60): error TS2614: Module '"react"' has no exported member 'useState'. Did you mean to use 'import useState from "react"' instead?
+lib/useVideoExport.ts(21,33): error TS2503: Cannot find namespace 'THREE'.
+lib/useVideoExport.ts(52,28): error TS2347: Untyped function calls may not accept type arguments.
+lib/useVideoExport.ts(53,26): error TS2347: Untyped function calls may not accept type arguments.
+lib/useVideoExport.ts(54,35): error TS2347: Untyped function calls may not accept type arguments.
+lib/useVideoExport.ts(55,26): error TS2347: Untyped function calls may not accept type arguments.
+lib/useVideoExport.ts(56,29): error TS2347: Untyped function calls may not accept type arguments.
+lib/useVideoExport.ts(57,35): error TS2347: Untyped function calls may not accept type arguments.
+lib/useVideoExport.ts(58,28): error TS2347: Untyped function calls may not accept type arguments.

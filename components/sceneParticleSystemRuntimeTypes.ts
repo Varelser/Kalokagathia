@@ -1,0 +1,120 @@
+import type React from 'react';
+import type { RootState } from '@react-three/fiber';
+import * as THREE from 'three';
+import type { ParticleConfig } from '../types';
+import type { AuxMode } from './particleData';
+
+export type ParticleSystemAudioRef = React.MutableRefObject<{
+  bass: number;
+  treble: number;
+  pulse: number;
+  bandA: number;
+  bandB: number;
+}>;
+
+export interface ParticleSystemCollider {
+  center: THREE.Vector3;
+  radius: number;
+}
+
+export interface UpdateParticleSystemFrameArgs {
+  config: ParticleConfig;
+  layerIndex: 1 | 2 | 3 | 4;
+  isAux: boolean;
+  auxMode: AuxMode;
+  audioRef: ParticleSystemAudioRef;
+  isPlaying: boolean;
+  contactAmount: number;
+  state: RootState;
+  delta: number;
+  meshRef: React.MutableRefObject<THREE.InstancedMesh | null>;
+  windRef: React.MutableRefObject<THREE.Vector3>;
+  spinRef: React.MutableRefObject<THREE.Vector3>;
+  prevAudioEnabledRef: React.MutableRefObject<boolean>;
+  prevLayerKeyRef: React.MutableRefObject<string>;
+  interLayerColliders: ParticleSystemCollider[];
+  activeInterLayerColliderCount: number;
+  ghostMats: THREE.ShaderMaterial[];
+  maxGhost: number;
+}
+
+export type ParticleLayerUniformState = {
+  // Serial motion chain stage 2/3 MOTION_MAP codes; -1 = stage absent.
+  chainType2: number;
+  chainType3: number;
+  routeType: number;
+  routeChainType2: number;
+  routeChainType3: number;
+  routeSpeed: number;
+  routeAmp: number;
+  routeFreq: number;
+  routeNoise: number;
+  routeComplexity: number;
+  routeEvol: number;
+  routeFluid: number;
+  routeVis: number;
+  routeFid: number;
+  routeOct: number;
+  routeWind: THREE.Vector3;
+  graphSteps: THREE.Vector4[];
+  graphStepCount: number;
+  dagNodes: THREE.Vector4[];
+  dagMotions: number[];
+  dagNodeCount: number;
+  dagOutput: number;
+  warpEnabled: number;
+  warpAmount: number;
+  warpScale: number;
+  speed: number;
+  amp: number;
+  noise: number;
+  evol: number;
+  fid: number;
+  oct: number;
+  freq: number;
+  rad: number;
+  size: number;
+  grav: number;
+  vis: number;
+  fluid: number;
+  affectPos: number;
+  mouseForce: number;
+  mouseRadius: number;
+  complexity: number;
+  resistance: number;
+  moveWithWind: number;
+  neighborForce: number;
+  collisionMode: number;
+  collisionRadius: number;
+  repulsion: number;
+  trail: number;
+  life: number;
+  lifeSpread: number;
+  lifeSizeBoost: number;
+  lifeSizeTaper: number;
+  burst: number;
+  burstPhase: number;
+  burstMode: number;
+  burstWaveform: number;
+  burstSweepSpeed: number;
+  burstSweepTilt: number;
+  burstConeWidth: number;
+  emitterOrbitSpeed: number;
+  emitterOrbitRadius: number;
+  emitterPulseAmount: number;
+  trailDrag: number;
+  trailTurbulence: number;
+  trailDrift: number;
+  velocityGlow: number;
+  velocityAlpha: number;
+  flickerAmount: number;
+  flickerSpeed: number;
+  streak: number;
+  spriteMode: number;
+  auxLife: number;
+  wind: THREE.Vector3;
+  spin: THREE.Vector3;
+  boundaryY: number;
+  boundaryEnabled: number;
+  boundaryBounce: number;
+};

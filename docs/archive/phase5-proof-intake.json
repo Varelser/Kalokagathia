@@ -1,0 +1,63 @@
+{
+  "generatedAt": "2026-03-31T07:31:21.308Z",
+  "nextSteps": [
+    "Provide the missing proof logs under docs/archive/phase5-proof-input: npm-ci.log, verify-project-state.log, verify-phase5.log, build.log",
+    "Optional: add docs/archive/phase5-proof-input/real-export-capture-notes.md with browser capture details."
+  ],
+  "optionalFiles": [
+    {
+      "detectedReason": null,
+      "exists": false,
+      "fileName": "real-export-capture-notes.md",
+      "sha256": null,
+      "sizeBytes": 0,
+      "status": "missing"
+    }
+  ],
+  "phase": "phase5",
+  "proofInputDir": "docs/archive/phase5-proof-input",
+  "requiredFiles": [
+    {
+      "detectedReason": null,
+      "exists": false,
+      "fileName": "npm-ci.log",
+      "sha256": null,
+      "sizeBytes": 0,
+      "status": "missing"
+    },
+    {
+      "detectedReason": null,
+      "exists": false,
+      "fileName": "verify-project-state.log",
+      "sha256": null,
+      "sizeBytes": 0,
+      "status": "missing"
+    },
+    {
+      "detectedReason": null,
+      "exists": false,
+      "fileName": "verify-phase5.log",
+      "sha256": null,
+      "sizeBytes": 0,
+      "status": "missing"
+    },
+    {
+      "detectedReason": null,
+      "exists": false,
+      "fileName": "build.log",
+      "sha256": null,
+      "sizeBytes": 0,
+      "status": "missing"
+    }
+  ],
+  "summary": {
+    "executionProofBundlePresent": false,
+    "executionProofBundleVerified": false,
+    "failedRequiredCount": 0,
+    "optionalPresentCount": 0,
+    "requiredPresentCount": 0,
+    "requiredTotalCount": 4,
+    "successfulRequiredCount": 0,
+    "unknownRequiredCount": 0
+  }
+}

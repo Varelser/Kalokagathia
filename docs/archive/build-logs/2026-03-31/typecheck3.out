@@ -1,0 +1,8 @@
+
+> kalokagathia@0.0.0 typecheck
+> tsc --noEmit
+
+App.tsx(52,9): error TS2451: Cannot redeclare block-scoped variable 'projectInputRef'.
+App.tsx(250,5): error TS2339: Property 'projectInputRef' does not exist on type '{ compareConfig: ParticleConfig; handleCaptureSnapshot: (slotIndex: number) => void; handleClearSnapshot: (slotIndex: number) => void; handleLoadSnapshot: (slotIndex: number) => void; ... 5 more ...; snapshotSlots: { ...; }[]; }'.
+App.tsx(250,5): error TS2451: Cannot redeclare block-scoped variable 'projectInputRef'.
+components/sceneMotionMap.ts(3,14): error TS2741: Property 'paint_daubs' is missing in type '{ flow: number; smoke: number; liquid: number; wind: number; gravity: number; explosion: number; linear: number; field: number; morph: number; attractor: number; swirl: number; wave: number; curl: number; ... 183 more ...; sublimate_cloud: number; }' but required in type 'Record<Layer2Type, number>'.

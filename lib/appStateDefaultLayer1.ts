@@ -1,0 +1,31 @@
+import type { ParticleConfig } from '../types';
+
+export const APP_STATE_DEFAULT_LAYER_1: Partial<ParticleConfig> = {
+  // Layer 1
+  layer1Enabled: true,
+  layer1Color: '#ffffff',
+  layer1Count: 2000,
+  layer1SourceCount: 1,
+  layer1SourceSpread: 200,
+  layer1SourcePositions: [],
+  layer1Counts: [],
+  layer1Radii: [],
+  layer1Volumes: [],
+  layer1Jitters: [],
+  layer1Sizes: [],
+  layer1PulseSpeeds: [],
+  layer1PulseAmps: [],
+  baseSize: 1.0,
+  sphereRadius: 50,
+  layer1Volume: 0.0,
+  jitter: 0.0,
+  pulseSpeed: 0.003,
+  pulseAmplitude: 0.5,
+  layer1SdfEnabled: false,
+  layer1SdfShape: 'sphere' as const,
+  layer1SdfLightX: 0.5,
+  layer1SdfLightY: 0.7,
+  layer1SdfSpecular: 0.8,
+  layer1SdfShininess: 16.0,
+  layer1SdfAmbient: 0.3,
+};

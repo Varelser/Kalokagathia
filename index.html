@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kalokagathia</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Monosphere" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Kalokagathia — Monosphere" />
+    <meta property="og:title" content="Kalokagathia — Monosphere" />
+    <meta property="og:description" content="モノクロ3DパーティクルのWebアプリ。723種のプリセットとモーションの自由配線、AIによるパラメータ調整。" />
+    <meta property="og:url" content="https://monosphere.pages.dev/" />
+    <meta property="og:image" content="https://monosphere.pages.dev/catalog/thumbs/coverage-370-cube-fronds-20261109.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://monosphere.pages.dev/catalog/thumbs/coverage-370-cube-fronds-20261109.jpg" />
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        /* Background is now handled by the React App component */
+        font-family: 'Inter', sans-serif;
+      }
+      /* Custom scrollbar for the control panel */
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(128, 128, 128, 0.4);
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(128, 128, 128, 0.6);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {
+            /* PWA install is optional; the app works without it */
+          });
+        });
+      }
+    </script>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

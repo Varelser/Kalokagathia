@@ -1,0 +1,492 @@
+{
+  "aggregateSummary": {
+    "droppedOrphanSequenceSteps": 1,
+    "preservedPresetPayloads": 8,
+    "preservedSequencePayloads": 7,
+    "presetReferenceRemaps": 5,
+    "regeneratedSequenceIds": 4,
+    "remappedPresetIds": 5,
+    "retainedPresetIds": 3,
+    "retainedSequenceIds": 3
+  },
+  "compareSummary": [
+    {
+      "droppedOrphanSequenceSteps": 0,
+      "fileName": "phase5-native-rich.json",
+      "id": "native-rich-replace",
+      "importMode": "replace",
+      "preservedPresetPayloads": 2,
+      "preservedSequencePayloads": 2,
+      "presetReferenceRemaps": 0,
+      "regeneratedSequenceIds": 0,
+      "remappedPresetIds": 0,
+      "retainedPresetIds": 2,
+      "retainedSequenceIds": 2
+    },
+    {
+      "droppedOrphanSequenceSteps": 0,
+      "fileName": "phase5-native-rich.json",
+      "id": "native-rich-merge",
+      "importMode": "merge",
+      "preservedPresetPayloads": 2,
+      "preservedSequencePayloads": 2,
+      "presetReferenceRemaps": 2,
+      "regeneratedSequenceIds": 1,
+      "remappedPresetIds": 2,
+      "retainedPresetIds": 0,
+      "retainedSequenceIds": 1
+    },
+    {
+      "droppedOrphanSequenceSteps": 0,
+      "fileName": "phase5-duplicate-ids-invalid-active.json",
+      "id": "duplicate-merge",
+      "importMode": "merge",
+      "preservedPresetPayloads": 2,
+      "preservedSequencePayloads": 2,
+      "presetReferenceRemaps": 2,
+      "regeneratedSequenceIds": 2,
+      "remappedPresetIds": 2,
+      "retainedPresetIds": 0,
+      "retainedSequenceIds": 0
+    },
+    {
+      "droppedOrphanSequenceSteps": 1,
+      "fileName": "phase5-orphan-sequence.json",
+      "id": "orphan-merge",
+      "importMode": "merge",
+      "preservedPresetPayloads": 2,
+      "preservedSequencePayloads": 1,
+      "presetReferenceRemaps": 1,
+      "regeneratedSequenceIds": 1,
+      "remappedPresetIds": 1,
+      "retainedPresetIds": 1,
+      "retainedSequenceIds": 0
+    }
+  ],
+  "generatedAt": "2026-03-31T00:00:00.000Z",
+  "scenarioCount": 4,
+  "scenarios": [
+    {
+      "diagnostics": {
+        "activePresetFallbackApplied": false,
+        "droppedOrphanSequenceCount": 0,
+        "regeneratedSequenceIdCount": 0,
+        "remappedPresetIdCount": 0
+      },
+      "exactIdChangeReport": {
+        "droppedOrphanSequenceIds": [],
+        "presetContentChanges": [
+          {
+            "configChanged": false,
+            "importedId": "preset-alpha",
+            "index": 0,
+            "nameChanged": false,
+            "sourceId": "preset-alpha",
+            "timestampChanged": false
+          },
+          {
+            "configChanged": false,
+            "importedId": "preset-beta",
+            "index": 1,
+            "nameChanged": false,
+            "sourceId": "preset-beta",
+            "timestampChanged": false
+          }
+        ],
+        "presetIdChanges": [
+          {
+            "changed": false,
+            "importedId": "preset-alpha",
+            "index": 0,
+            "sourceId": "preset-alpha"
+          },
+          {
+            "changed": false,
+            "importedId": "preset-beta",
+            "index": 1,
+            "sourceId": "preset-beta"
+          }
+        ],
+        "sequenceContentChanges": [
+          {
+            "driveChanged": false,
+            "dropped": false,
+            "importedId": "seq-1",
+            "index": 0,
+            "keyframeChanged": false,
+            "labelChanged": false,
+            "presetReferenceChanged": false,
+            "sourceId": "seq-1",
+            "timingChanged": false
+          },
+          {
+            "driveChanged": false,
+            "dropped": false,
+            "importedId": "seq-2",
+            "index": 1,
+            "keyframeChanged": false,
+            "labelChanged": false,
+            "presetReferenceChanged": false,
+            "sourceId": "seq-2",
+            "timingChanged": false
+          }
+        ],
+        "sequenceIdChanges": [
+          {
+            "changed": false,
+            "dropped": false,
+            "importedId": "seq-1",
+            "importedPresetId": "preset-alpha",
+            "index": 0,
+            "sourceId": "seq-1",
+            "sourcePresetId": "preset-alpha"
+          },
+          {
+            "changed": false,
+            "dropped": false,
+            "importedId": "seq-2",
+            "importedPresetId": "preset-beta",
+            "index": 1,
+            "sourceId": "seq-2",
+            "sourcePresetId": "preset-beta"
+          }
+        ],
+        "summary": {
+          "droppedOrphanSequenceCount": 0,
+          "preservedPresetPayloadCount": 2,
+          "preservedSequencePayloadCount": 2,
+          "presetIdChangedCount": 0,
+          "presetReferenceRemapCount": 0,
+          "retainedPresetIdCount": 2,
+          "retainedSequenceIdCount": 2,
+          "sequenceIdChangedCount": 0
+        }
+      },
+      "fileName": "phase5-native-rich.json",
+      "id": "native-rich-replace",
+      "importMode": "replace",
+      "importedPresetCount": 2,
+      "importedSequenceCount": 2,
+      "notice": "Project loaded: 2 presets restored (schema v13 / manifest v11).",
+      "sourcePresetCount": 2,
+      "sourceSequenceCount": 2
+    },
+    {
+      "diagnostics": {
+        "activePresetFallbackApplied": false,
+        "droppedOrphanSequenceCount": 0,
+        "regeneratedSequenceIdCount": 1,
+        "remappedPresetIdCount": 2
+      },
+      "exactIdChangeReport": {
+        "droppedOrphanSequenceIds": [],
+        "presetContentChanges": [
+          {
+            "configChanged": false,
+            "importedId": "preset-alpha-import-rpt-merge-01",
+            "index": 0,
+            "nameChanged": false,
+            "sourceId": "preset-alpha",
+            "timestampChanged": false
+          },
+          {
+            "configChanged": false,
+            "importedId": "preset-beta-import-rpt-merge-02",
+            "index": 1,
+            "nameChanged": false,
+            "sourceId": "preset-beta",
+            "timestampChanged": false
+          }
+        ],
+        "presetIdChanges": [
+          {
+            "changed": true,
+            "importedId": "preset-alpha-import-rpt-merge-01",
+            "index": 0,
+            "sourceId": "preset-alpha"
+          },
+          {
+            "changed": true,
+            "importedId": "preset-beta-import-rpt-merge-02",
+            "index": 1,
+            "sourceId": "preset-beta"
+          }
+        ],
+        "sequenceContentChanges": [
+          {
+            "driveChanged": false,
+            "dropped": false,
+            "importedId": "seq-1-import-rpt-merge-03",
+            "index": 0,
+            "keyframeChanged": false,
+            "labelChanged": false,
+            "presetReferenceChanged": true,
+            "sourceId": "seq-1",
+            "timingChanged": false
+          },
+          {
+            "driveChanged": false,
+            "dropped": false,
+            "importedId": "seq-2",
+            "index": 1,
+            "keyframeChanged": false,
+            "labelChanged": false,
+            "presetReferenceChanged": true,
+            "sourceId": "seq-2",
+            "timingChanged": false
+          }
+        ],
+        "sequenceIdChanges": [
+          {
+            "changed": true,
+            "dropped": false,
+            "importedId": "seq-1-import-rpt-merge-03",
+            "importedPresetId": "preset-alpha-import-rpt-merge-01",
+            "index": 0,
+            "sourceId": "seq-1",
+            "sourcePresetId": "preset-alpha"
+          },
+          {
+            "changed": false,
+            "dropped": false,
+            "importedId": "seq-2",
+            "importedPresetId": "preset-beta-import-rpt-merge-02",
+            "index": 1,
+            "sourceId": "seq-2",
+            "sourcePresetId": "preset-beta"
+          }
+        ],
+        "summary": {
+          "droppedOrphanSequenceCount": 0,
+          "preservedPresetPayloadCount": 2,
+          "preservedSequencePayloadCount": 2,
+          "presetIdChangedCount": 2,
+          "presetReferenceRemapCount": 2,
+          "retainedPresetIdCount": 0,
+          "retainedSequenceIdCount": 1,
+          "sequenceIdChangedCount": 1
+        }
+      },
+      "fileName": "phase5-native-rich.json",
+      "id": "native-rich-merge",
+      "importMode": "merge",
+      "importedPresetCount": 2,
+      "importedSequenceCount": 2,
+      "notice": "Project loaded: 2 presets restored (schema v13 / manifest v11) · 2 preset IDs remapped · 1 sequence IDs regenerated.",
+      "sourcePresetCount": 2,
+      "sourceSequenceCount": 2
+    },
+    {
+      "diagnostics": {
+        "activePresetFallbackApplied": true,
+        "droppedOrphanSequenceCount": 0,
+        "regeneratedSequenceIdCount": 2,
+        "remappedPresetIdCount": 2
+      },
+      "exactIdChangeReport": {
+        "droppedOrphanSequenceIds": [],
+        "presetContentChanges": [
+          {
+            "configChanged": false,
+            "importedId": "preset-duplicate-import-rpt-dup-01",
+            "index": 0,
+            "nameChanged": false,
+            "sourceId": "preset-duplicate",
+            "timestampChanged": false
+          },
+          {
+            "configChanged": false,
+            "importedId": "preset-duplicate-import-rpt-dup-02",
+            "index": 1,
+            "nameChanged": false,
+            "sourceId": "preset-duplicate",
+            "timestampChanged": false
+          }
+        ],
+        "presetIdChanges": [
+          {
+            "changed": true,
+            "importedId": "preset-duplicate-import-rpt-dup-01",
+            "index": 0,
+            "sourceId": "preset-duplicate"
+          },
+          {
+            "changed": true,
+            "importedId": "preset-duplicate-import-rpt-dup-02",
+            "index": 1,
+            "sourceId": "preset-duplicate"
+          }
+        ],
+        "sequenceContentChanges": [
+          {
+            "driveChanged": false,
+            "dropped": false,
+            "importedId": "seq-duplicate-import-rpt-dup-03",
+            "index": 0,
+            "keyframeChanged": false,
+            "labelChanged": false,
+            "presetReferenceChanged": true,
+            "sourceId": "seq-duplicate",
+            "timingChanged": false
+          },
+          {
+            "driveChanged": false,
+            "dropped": false,
+            "importedId": "seq-duplicate-import-rpt-dup-04",
+            "index": 1,
+            "keyframeChanged": false,
+            "labelChanged": false,
+            "presetReferenceChanged": true,
+            "sourceId": "seq-duplicate",
+            "timingChanged": false
+          }
+        ],
+        "sequenceIdChanges": [
+          {
+            "changed": true,
+            "dropped": false,
+            "importedId": "seq-duplicate-import-rpt-dup-03",
+            "importedPresetId": "preset-duplicate-import-rpt-dup-01",
+            "index": 0,
+            "sourceId": "seq-duplicate",
+            "sourcePresetId": "preset-duplicate"
+          },
+          {
+            "changed": true,
+            "dropped": false,
+            "importedId": "seq-duplicate-import-rpt-dup-04",
+            "importedPresetId": "preset-duplicate-import-rpt-dup-01",
+            "index": 1,
+            "sourceId": "seq-duplicate",
+            "sourcePresetId": "preset-duplicate"
+          }
+        ],
+        "summary": {
+          "droppedOrphanSequenceCount": 0,
+          "preservedPresetPayloadCount": 2,
+          "preservedSequencePayloadCount": 2,
+          "presetIdChangedCount": 2,
+          "presetReferenceRemapCount": 2,
+          "retainedPresetIdCount": 0,
+          "retainedSequenceIdCount": 0,
+          "sequenceIdChangedCount": 2
+        }
+      },
+      "fileName": "phase5-duplicate-ids-invalid-active.json",
+      "id": "duplicate-merge",
+      "importMode": "merge",
+      "importedPresetCount": 2,
+      "importedSequenceCount": 2,
+      "notice": "Project loaded: 2 presets restored (schema v13 / manifest v11) · 2 preset IDs remapped · 2 sequence IDs regenerated · active preset reset.",
+      "sourcePresetCount": 2,
+      "sourceSequenceCount": 2
+    },
+    {
+      "diagnostics": {
+        "activePresetFallbackApplied": false,
+        "droppedOrphanSequenceCount": 1,
+        "regeneratedSequenceIdCount": 1,
+        "remappedPresetIdCount": 1
+      },
+      "exactIdChangeReport": {
+        "droppedOrphanSequenceIds": [
+          "seq-orphan"
+        ],
+        "presetContentChanges": [
+          {
+            "configChanged": false,
+            "importedId": "preset-alpha-import-rpt-orphan-01",
+            "index": 0,
+            "nameChanged": false,
+            "sourceId": "preset-alpha",
+            "timestampChanged": false
+          },
+          {
+            "configChanged": false,
+            "importedId": "preset-beta",
+            "index": 1,
+            "nameChanged": false,
+            "sourceId": "preset-beta",
+            "timestampChanged": false
+          }
+        ],
+        "presetIdChanges": [
+          {
+            "changed": true,
+            "importedId": "preset-alpha-import-rpt-orphan-01",
+            "index": 0,
+            "sourceId": "preset-alpha"
+          },
+          {
+            "changed": false,
+            "importedId": "preset-beta",
+            "index": 1,
+            "sourceId": "preset-beta"
+          }
+        ],
+        "sequenceContentChanges": [
+          {
+            "driveChanged": false,
+            "dropped": false,
+            "importedId": "seq-valid-import-rpt-orphan-02",
+            "index": 0,
+            "keyframeChanged": false,
+            "labelChanged": false,
+            "presetReferenceChanged": true,
+            "sourceId": "seq-valid",
+            "timingChanged": false
+          },
+          {
+            "driveChanged": false,
+            "dropped": true,
+            "importedId": null,
+            "index": 1,
+            "keyframeChanged": false,
+            "labelChanged": false,
+            "presetReferenceChanged": false,
+            "sourceId": "seq-orphan",
+            "timingChanged": false
+          }
+        ],
+        "sequenceIdChanges": [
+          {
+            "changed": true,
+            "dropped": false,
+            "importedId": "seq-valid-import-rpt-orphan-02",
+            "importedPresetId": "preset-alpha-import-rpt-orphan-01",
+            "index": 0,
+            "sourceId": "seq-valid",
+            "sourcePresetId": "preset-alpha"
+          },
+          {
+            "changed": false,
+            "dropped": true,
+            "importedId": null,
+            "importedPresetId": null,
+            "index": 1,
+            "sourceId": "seq-orphan",
+            "sourcePresetId": "preset-gone"
+          }
+        ],
+        "summary": {
+          "droppedOrphanSequenceCount": 1,
+          "preservedPresetPayloadCount": 2,
+          "preservedSequencePayloadCount": 1,
+          "presetIdChangedCount": 1,
+          "presetReferenceRemapCount": 1,
+          "retainedPresetIdCount": 1,
+          "retainedSequenceIdCount": 0,
+          "sequenceIdChangedCount": 1
+        }
+      },
+      "fileName": "phase5-orphan-sequence.json",
+      "id": "orphan-merge",
+      "importMode": "merge",
+      "importedPresetCount": 2,
+      "importedSequenceCount": 1,
+      "notice": "Project loaded: 2 presets restored (schema v13 / manifest v11) · 1 preset IDs remapped · 1 sequence IDs regenerated · 1 orphan sequence steps dropped.",
+      "sourcePresetCount": 2,
+      "sourceSequenceCount": 2
+    }
+  ]
+}

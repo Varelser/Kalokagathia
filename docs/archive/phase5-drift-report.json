@@ -1,0 +1,171 @@
+{
+  "generatedAt": "2026-03-31T00:00:00.000Z",
+  "generatedFixtures": [
+    {
+      "fileName": "phase5-duplicate-ids-invalid-active.json",
+      "fingerprint": {
+        "activePresetId": "preset-missing",
+        "executionKeys": [
+          "layer1",
+          "layer2",
+          "layer3",
+          "gpgpu"
+        ],
+        "presetIds": [
+          "preset-duplicate",
+          "preset-duplicate"
+        ],
+        "projectName": "Phase 5 Duplicate IDs + Invalid Active Fixture",
+        "sequenceIds": [
+          "seq-duplicate",
+          "seq-duplicate"
+        ],
+        "sequencePresetIds": [
+          "preset-duplicate",
+          "preset-duplicate"
+        ],
+        "serializationLayerKeys": [
+          "layer1",
+          "layer2",
+          "layer3",
+          "gpgpu"
+        ]
+      },
+      "fingerprintStable": true,
+      "manifestExecutionStable": true,
+      "parsed": true,
+      "serializationStable": true
+    },
+    {
+      "fileName": "phase5-legacy-v24.json",
+      "fingerprint": {
+        "activePresetId": "preset-alpha",
+        "executionKeys": [],
+        "presetIds": [
+          "preset-alpha",
+          "preset-beta"
+        ],
+        "projectName": "Phase 5 Legacy v24 Fixture",
+        "sequenceIds": [
+          "seq-1",
+          "seq-2"
+        ],
+        "sequencePresetIds": [
+          "preset-alpha",
+          "preset-beta"
+        ],
+        "serializationLayerKeys": []
+      },
+      "fingerprintStable": true,
+      "manifestExecutionStable": true,
+      "parsed": true,
+      "serializationStable": true
+    },
+    {
+      "fileName": "phase5-native-rich.json",
+      "fingerprint": {
+        "activePresetId": "preset-alpha",
+        "executionKeys": [
+          "layer1",
+          "layer2",
+          "layer3",
+          "gpgpu"
+        ],
+        "presetIds": [
+          "preset-alpha",
+          "preset-beta"
+        ],
+        "projectName": "Phase 5 Native Rich Fixture",
+        "sequenceIds": [
+          "seq-1",
+          "seq-2"
+        ],
+        "sequencePresetIds": [
+          "preset-alpha",
+          "preset-beta"
+        ],
+        "serializationLayerKeys": [
+          "layer1",
+          "layer2",
+          "layer3",
+          "gpgpu"
+        ]
+      },
+      "fingerprintStable": true,
+      "manifestExecutionStable": true,
+      "parsed": true,
+      "serializationStable": true
+    },
+    {
+      "fileName": "phase5-orphan-sequence.json",
+      "fingerprint": {
+        "activePresetId": "preset-alpha",
+        "executionKeys": [
+          "layer1",
+          "layer2",
+          "layer3",
+          "gpgpu"
+        ],
+        "presetIds": [
+          "preset-alpha",
+          "preset-beta"
+        ],
+        "projectName": "Phase 5 Orphan Sequence Fixture",
+        "sequenceIds": [
+          "seq-valid",
+          "seq-orphan"
+        ],
+        "sequencePresetIds": [
+          "preset-alpha",
+          "preset-gone"
+        ],
+        "serializationLayerKeys": [
+          "layer1",
+          "layer2",
+          "layer3",
+          "gpgpu"
+        ]
+      },
+      "fingerprintStable": true,
+      "manifestExecutionStable": true,
+      "parsed": true,
+      "serializationStable": true
+    },
+    {
+      "fileName": "phase5-sparse-layer2-custom.json",
+      "fingerprint": {
+        "activePresetId": "preset-alpha",
+        "executionKeys": [
+          "layer1",
+          "layer2",
+          "layer3",
+          "gpgpu"
+        ],
+        "presetIds": [
+          "preset-alpha",
+          "preset-beta"
+        ],
+        "projectName": "Phase 5 Sparse Layer2 Fixture",
+        "sequenceIds": [
+          "seq-1",
+          "seq-2"
+        ],
+        "sequencePresetIds": [
+          "preset-alpha",
+          "preset-beta"
+        ],
+        "serializationLayerKeys": [
+          "layer1",
+          "layer2",
+          "layer3",
+          "gpgpu"
+        ]
+      },
+      "fingerprintStable": true,
+      "manifestExecutionStable": true,
+      "parsed": true,
+      "serializationStable": true
+    }
+  ],
+  "realExportFixtures": []
+}

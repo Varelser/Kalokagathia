@@ -1,0 +1,15 @@
+1. Open Terminal.
+
+2. Type: cd 
+
+3. Drag this folder into Terminal and press Enter.
+
+4. Run:
+
+   npm install
+
+   npm start
+
+5. Open the localhost URL shown in Terminal.
+
+

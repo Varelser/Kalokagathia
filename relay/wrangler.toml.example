@@ -1,0 +1,28 @@
+# Example wrangler config for the strict rate-limiter Worker.
+# STATUS: DEPLOYED (2026-11-11) via the API route — see relay/DEPLOYMENT_RUNBOOK.md
+# and STRICT_RATELIMIT_IMPL_REPORT_20261111.md. This file remains the reference config.
+# Copy to wrangler.toml (outside the repo copy that gets uploaded to Pages)
+# when deploying. The API-only deployment route is also documented in the
+# DEPLOYMENT_RUNBOOK.md; whichever route is used, the bindings/migrations below must hold.
+
+name = "monosphere-ai-limiter"
+main = "monosphere-ai-limiter.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+# Durable Object binding: the Worker binds its OWN class. One instance per
+# "<route>|<ip>" name (idFromName), which serialises checks per key and is
+# therefore globally consistent for that key.
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+# First deployment only: create the DO class as SQLite-backed storage.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimiter"]
+
+# Secret (NEVER put the value in this file):
+#   wrangler secret put LIMITER_HMAC_SECRET
+# or via the API (see DEPLOYMENT_RUNBOOK.md). The same value goes to the Pages project as
+# a secret env var, plus LIMITER_URL (plain text) with this Worker's URL.
