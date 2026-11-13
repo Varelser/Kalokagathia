@@ -4,7 +4,7 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
-## [Unreleased]
+## [1.1.0] — 2026-11-14
 
 ### Added
 - **Chua catalog integration** — the 4 Chua double-scroll presets (2 GPGPU
