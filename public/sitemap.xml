@@ -2,6 +2,10 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://monosphere.pages.dev/</loc><priority>1.0</priority></url>
   <url><loc>https://monosphere.pages.dev/catalog/</loc><priority>0.8</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/chua-att-double-scroll</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/chua-att-tight-scroll</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/chua-motion-double-scroll</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/chua-motion-twin-layer</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/coverage-001-cube-aero-20261109</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/coverage-002-grid-epicycle-20261109</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/coverage-003-grid-tidal-lock-20261109</loc><priority>0.6</priority></url>

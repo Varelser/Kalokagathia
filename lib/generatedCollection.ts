@@ -28,6 +28,7 @@ const KNOWN_SERIES: GeneratedSeries[] = [
   { key: 'coverage', label: 'Coverage' },
   { key: 'ignition', label: 'Ignition' },
   { key: 'theory', label: 'Theory' },
+  { key: 'chua', label: 'Chua' },
   { key: 'lenia', label: 'Lenia' },
   { key: 'plife', label: 'Particle Life' },
   { key: 'dla', label: 'DLA' },

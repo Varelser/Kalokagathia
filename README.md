@@ -10,11 +10,25 @@ React 19 + Three.js (WebGL) + GPGPU で、反応拡散・群れ・自己組織�
 |---|---|---|
 | Coverage 001 — Cube × Aero | Ignition 05 — Volumetric Braidshell | Theory: Domain Warp (Strong) |
 
-プリセットは全 **746** 件。生成コレクションの一覧は[カタログ](https://monosphere.pages.dev/catalog/)で見られます（画像クリックで各プリセットの共有ページへ）。
+プリセットは全 **750** 件。生成コレクションの一覧は[カタログ](https://monosphere.pages.dev/catalog/)で見られます（画像クリックで各プリセットの共有ページへ）。
 
 - **公開デモ**: https://monosphere.pages.dev/
 - **ライセンス**: MIT（`LICENSE` を参照）
-- プリセットカタログ: 746 件（類似プリセット検索つき）
+- プリセットカタログ: 750 件（類似プリセット検索つき）
+
+## Overview (English)
+
+**Kalokagathia / Monosphere** is a monochrome 3D particle and generative-art playground that runs entirely in the browser. It explores mathematical models — reaction-diffusion, strange attractors (now including the Chua double-scroll), GPGPU swarms, Lenia, DLA, L-systems, raymarching and audio-reactive FFT — through **750 presets** and free-wired, real-time parameter control across three scene layers.
+
+- **Live demo:** https://monosphere.pages.dev/
+- **Preset catalog:** https://monosphere.pages.dev/catalog/
+- Four-edge UI (header / rail / preset shelf / bottom deck) that never covers the canvas centre; Basic and Pro modes
+- Evolution Lab (crossover & mutation breeding), parameter timelines and morphing playback
+- AI tab: generate presets and adjust parameters from natural language (bring your own Groq / Gemini key, or use the built-in relay)
+- Optional cloud sync of your own presets (Neon Postgres)
+- Platform features: Wake Lock, Document Picture-in-Picture, Web Share, PNG copy, fullscreen, PWA
+- Tech: React 19 · TypeScript · Vite · Three.js (WebGL / GPGPU) · Cloudflare Pages
+- License: MIT
 
 ## できること
 
