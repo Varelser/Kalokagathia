@@ -15,6 +15,43 @@ React 19 + Three.js (WebGL) + GPGPU で、反応拡散・群れ・自己組織�
 - AI タブ: 自然言語の指示からプリセット生成・パラメータ調整（BYOK、下記参照）
 - プリセットのクラウド同期（任意、Neon Postgres、下記「アーキテクチャ」参照）
 
+### UI（4辺分割レイアウト）
+
+コントロールは画面の4辺に分散し、中央は常にキャンバスだけに保ちます。各辺は個別にたためます。
+
+- **上**: 細いヘッダー（タイトル、今のプリセット名、PLAY / DESIGN / LAB の階層切替、Basic / Pro 切替、共有）
+- **左**: 縦レール（デッキ切替、Wake Lock、Document PiP、全画面、鑑賞モード）
+- **右**: プリセット棚（検索・カテゴリ・タグ絞り込み、ジャンル別セクション）
+- **下**: 再生コントロールとマクロスライダー。詳細パラメータは下から開くシートに展開（高さはドラッグで調整可）
+
+### プリセット棚と生成コレクション
+
+- 内蔵ライブラリ **444件**をジャンル別セクションで格納（折りたたみ状態は記憶されます）
+- 生成コレクション **746件**も棚に統合済み。「生成コレクション · Generated」グループに
+  シリーズ別（Coverage / Ignition / Theory / Lenia / Particle Life / DLA / L-System /
+  Raymarch / Audio FFT）で並び、実サムネイル付きカードからそのまま適用できます
+- 746件分の目次は別ファイル（`generated-collection.json`、約66KB）として分離し、
+  グループを初めて開く時（または検索時）にだけ読み込む遅延式なので、初回表示は軽いままです
+- 棚のヘッダーには生成プリセットのカタログ（ギャラリー）へのリンクがあります
+
+### プラットフォーム機能
+
+- **Wake Lock**（再生中だけ画面を消さない）、**Document Picture-in-Picture**（キャンバスを小窓化）
+- **全画面表示**、静止画の **PNG コピー**（クリップボード）、**Web Share**（共有シート）
+- **File System Access** によるファイル保存、キーボードショートカット
+- ローカル保存は **IndexedDB** ベース（保存データが自動削除されにくいよう `storage.persist()` も申請）
+- PWA 対応（インストール可能。サービスワーカーはキャッシュせず常時最新版を取得する設計）
+
+### カタログと共有ページ
+
+- 生成プリセット746件のギャラリーを https://monosphere.pages.dev/catalog/ で公開
+  （サムネイル一覧＋類似プリセット検索）。棚の「Catalog」リンクからも開けます
+- 各プリセットには共有ページ（`/share/<id>`）と JSON（`/presets/<id>.json`）があり、
+  共有リンクを開くとそのプリセットがシーンに読み込まれます
+- `robots.txt` と `sitemap.xml`（トップ＋カタログ＋共有746ページ）を同梱。
+  sitemap はビルド前に `scripts/build-sitemap.mjs` がプリセット実データから自動生成します
+- 存在しないファイル（`.json` など拡張子付きパス）には、アプリ本体ではなく本物の 404 を返します
+
 ### 新しめの表現システム（2026-11 追加）
 
 1. **Lenia** — 連続セルオートマトンを第 3 の反応モデルとして追加
@@ -55,7 +92,7 @@ AI タブは利用者自身の API キーで動きます（キーはブラウザ
 ```bash
 npm install
 npm run dev      # 開発サーバ
-npm run build    # 型チェック + 本番ビルド
+npm run build    # 型チェック + 本番ビルド（prebuild で生成コレクション目次と sitemap を再生成）
 npm run typecheck
 npm run verify:project-state  # ほか verify:* スクリプト群
 ```
@@ -66,9 +103,11 @@ npm run verify:project-state  # ほか verify:* スクリプト群
 ## アーキテクチャ
 
 - **フロント**: Vite + React 19 + Three.js。Cloudflare Pages に静的配信（Direct Upload）。
+  ローカルのプリセット・設定保存は IndexedDB が正本です。
 - **リレー**: `public/_worker.js`（Pages Functions 相当の Worker）が `/api/ai`（AI プロキシ＋
   Durable Objects によるグローバルレート制限）と `/api/sync/*`（プリセット同期）を担当。
   秘密情報はすべて環境変数（`GROQ_API_KEY` 等）参照で、コードには含まれません。
+  静的ファイルの配信もこの Worker が担い、無いファイルには実 404 を返します。
 - **同期（任意）**: Neon Postgres に同期コードの SHA-256 ハッシュのみを保存し、
   プリセットを端末間で union / newest-wins マージします。既定は OFF です。
 - **GPU ティア**: `lib/gpuTier.ts`（判定・分類表・ベンチマーク）、`lib/gpuTierWarnings.ts`（推奨警告）。
