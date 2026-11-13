@@ -1,5 +1,6 @@
 import type { ParticleConfig } from '../types';
 import { normalizeConfig } from './appStateConfig';
+import { getHydratedPayload, putStoragePayload } from './storageDb';
 
 export interface CustomProductPackRecord {
   id: string;
@@ -85,7 +86,11 @@ export function loadCustomProductPackRecords(): CustomProductPackRecord[] {
   }
 
   try {
-    const raw = window.localStorage.getItem(CUSTOM_PRODUCT_PACK_STORAGE_KEY);
+    // IndexedDB first once hydration has settled (Phase 1 renewal);
+    // localStorage fallback before that and whenever IndexedDB is
+    // unavailable — the stored format is the same JSON string in both.
+    const raw = getHydratedPayload(CUSTOM_PRODUCT_PACK_STORAGE_KEY)
+      ?? window.localStorage.getItem(CUSTOM_PRODUCT_PACK_STORAGE_KEY);
     if (!raw) {
       return [];
     }
@@ -123,7 +128,10 @@ export function saveCustomProductPackRecords(records: CustomProductPackRecord[])
   if (typeof window === 'undefined') {
     return;
   }
-  window.localStorage.setItem(CUSTOM_PRODUCT_PACK_STORAGE_KEY, JSON.stringify(records));
+  // IndexedDB is the primary store (storageDb mirrors back into
+  // localStorage while the payload fits the legacy cap, and falls back
+  // to a plain localStorage write when IndexedDB is unavailable).
+  putStoragePayload(CUSTOM_PRODUCT_PACK_STORAGE_KEY, JSON.stringify(records));
 }
 
 export function inferActiveCustomProductPackRecordId(config: ParticleConfig, records: CustomProductPackRecord[]) {

@@ -1,6 +1,5 @@
 import publicLibrarySeed from '../public-library.json';
 import type { ParticleConfig, PresetLibraryData, PresetRecord, PresetSequenceItem } from '../types';
-import { STARTER_PRESET_LIBRARY } from './starterLibrary';
 import {
   normalizeConfig,
   normalizeSequenceDriveMode,
@@ -9,6 +8,7 @@ import {
   normalizeSequenceDriveStrengthOverride,
   normalizeSequenceTransitionEasing,
 } from './appStateConfig';
+import { getHydratedPayload } from './storageDb';
 
 declare const __LIBRARY_SCOPE__: string | undefined;
 
@@ -87,12 +87,73 @@ function normalizePersistedSequenceItem(item: Partial<PresetSequenceItem> & { id
   };
 }
 
-export function loadPresetRecords(): PresetRecord[] {
+/**
+ * Parses a raw persisted preset payload (the exact JSON string stored for
+ * PRESET_STORAGE_KEY, from either storage backend) into records. Returns
+ * null when the payload is absent, unparseable, not an array, or an empty
+ * array — the cases every reader treats as "no persisted library". A
+ * non-empty array whose items are all invalid yields an empty list, not
+ * null, matching the historical localStorage read semantics.
+ */
+export function parsePersistedPresetRecords(raw: string | null): PresetRecord[] | null {
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  return dedupePresetRecords(
+    parsed
+      .filter((item): item is Partial<PresetRecord> & { id: string; name: string } => Boolean(item && typeof item.id === 'string' && typeof item.name === 'string'))
+      .map(normalizePersistedPreset),
+  );
+}
+
+/**
+ * Parses a raw persisted sequence payload into items filtered by the
+ * valid preset ids. Returns null under the same "absent" conditions as
+ * parsePersistedPresetRecords; a non-empty payload whose items are all
+ * filtered out yields an empty list.
+ */
+export function parsePersistedPresetSequence(raw: string | null, validPresetIds: Set<string>): PresetSequenceItem[] | null {
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  return dedupePresetSequence(
+    parsed
+      .filter((item): item is Partial<PresetSequenceItem> & { id: string; presetId: string } => (
+        Boolean(item && typeof item.id === 'string' && typeof item.presetId === 'string')
+      ))
+      .filter((item) => validPresetIds.has(item.presetId))
+      .map(normalizePersistedSequenceItem),
+  );
+}
+
+export function loadPresetRecords(starterLibrary?: PresetLibraryData | null): PresetRecord[] {
   if (typeof window === 'undefined') return [];
+
+  // IndexedDB is the primary store once hydration has settled (Phase 1
+  // renewal): its payload has no length cap, unlike the localStorage read
+  // below. Before hydration (or when IndexedDB is unavailable) the
+  // localStorage path runs exactly as before.
+  const idbRaw = getHydratedPayload(PRESET_STORAGE_KEY);
+  if (typeof idbRaw === 'string') {
+    const fromIdb = parsePersistedPresetRecords(idbRaw);
+    if (fromIdb) return fromIdb;
+  }
 
   const parsed = readLocalStorageJson(PRESET_STORAGE_KEY);
   if (!Array.isArray(parsed) || parsed.length === 0) {
-    return dedupePresetRecords(STARTER_PRESET_LIBRARY.presets);
+    // Starter fallback needs the lazily loaded starter library; without it
+    // the caller renders an empty placeholder and fills in on arrival.
+    return starterLibrary ? dedupePresetRecords(starterLibrary.presets) : [];
   }
 
   return dedupePresetRecords(
@@ -104,12 +165,33 @@ export function loadPresetRecords(): PresetRecord[] {
 
 export function hasPersistedPresetRecords(): boolean {
   if (typeof window === 'undefined') return false;
+  const idbRaw = getHydratedPayload(PRESET_STORAGE_KEY);
+  if (typeof idbRaw === 'string') {
+    return parsePersistedPresetRecords(idbRaw) !== null;
+  }
   const parsed = readLocalStorageJson(PRESET_STORAGE_KEY);
   return Array.isArray(parsed) && parsed.length > 0;
 }
 
-export function loadInitialPrivateConfig(): ParticleConfig {
-  return normalizeConfig(STARTER_PRESET_LIBRARY.currentConfig);
+export function loadInitialPrivateConfig(starterLibrary?: PresetLibraryData | null): ParticleConfig {
+  // Without the starter library this is the default config placeholder; the
+  // starter currentConfig replaces it on arrival (see App.tsx).
+  return starterLibrary ? normalizeConfig(starterLibrary.currentConfig) : normalizeConfig({});
+}
+
+export function hasPersistedPresetSequence(): boolean {
+  if (typeof window === 'undefined') return false;
+  const idbRaw = getHydratedPayload(PRESET_SEQUENCE_STORAGE_KEY);
+  if (typeof idbRaw === 'string') {
+    try {
+      const parsedIdb: unknown = JSON.parse(idbRaw);
+      if (Array.isArray(parsedIdb) && parsedIdb.length > 0) return true;
+    } catch {
+      // Fall through to the localStorage check.
+    }
+  }
+  const parsed = readLocalStorageJson(PRESET_SEQUENCE_STORAGE_KEY);
+  return Array.isArray(parsed) && parsed.length > 0;
 }
 
 export function createPresetId() {
@@ -120,12 +202,26 @@ export function createSequenceItemId() {
   return `sequence-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function loadPresetSequence(validPresetIds: Set<string>): PresetSequenceItem[] {
+export function loadPresetSequence(validPresetIds: Set<string>, starterLibrary?: PresetLibraryData | null): PresetSequenceItem[] {
   if (typeof window === 'undefined') return [];
+
+  // Same IndexedDB-first discipline as loadPresetRecords: once hydration
+  // has settled, the IndexedDB payload (no length cap) is authoritative;
+  // a payload that parses as a non-empty array is used even when every
+  // item is filtered out, mirroring the localStorage branch below.
+  const idbRaw = getHydratedPayload(PRESET_SEQUENCE_STORAGE_KEY);
+  if (typeof idbRaw === 'string') {
+    const fromIdb = parsePersistedPresetSequence(idbRaw, validPresetIds);
+    if (fromIdb) return fromIdb;
+  }
 
   const parsed = readLocalStorageJson(PRESET_SEQUENCE_STORAGE_KEY);
   if (!Array.isArray(parsed) || parsed.length === 0) {
-    return dedupePresetSequence(STARTER_PRESET_LIBRARY.presetSequence.filter((item) => validPresetIds.has(item.presetId)));
+    // Starter fallback needs the lazily loaded starter library; without it
+    // the caller renders an empty placeholder and fills in on arrival.
+    return starterLibrary
+      ? dedupePresetSequence(starterLibrary.presetSequence.filter((item) => validPresetIds.has(item.presetId)))
+      : [];
   }
 
   return dedupePresetSequence(

@@ -9,9 +9,9 @@ export const Slider: React.FC<{
   onChange: (val: number) => void;
 }> = ({ label, value, min, max, step, onChange }) => (
   <div className="mb-4">
-    <div className="flex justify-between mb-1.5 text-[10px] uppercase tracking-widest font-medium opacity-70">
+    <div className="flex justify-between mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">
       <span>{label}</span>
-      <span className="font-mono">{value.toFixed(step < 0.1 ? 3 : 1)}</span>
+      <span className="font-mono tabular-nums text-[#a3a3a3]">{value.toFixed(step < 0.1 ? 3 : 1)}</span>
     </div>
     <input
       type="range"
@@ -20,8 +20,7 @@ export const Slider: React.FC<{
       step={step}
       value={value}
       onChange={(e) => onChange(parseFloat(e.target.value))}
-      className="w-full h-1 bg-current rounded-lg appearance-none cursor-pointer focus:outline-none opacity-50 hover:opacity-100 transition-opacity"
-      style={{ accentColor: 'currentColor' }}
+      className="w-full appearance-none cursor-pointer focus:outline-none"
     />
   </div>
 );
@@ -38,18 +37,18 @@ export const Toggle = <T extends string | boolean | number>({
   onChange: (val: T) => void;
 }) => (
   <div className="mb-5">
-    <div className="mb-2 text-[10px] uppercase tracking-widest font-medium opacity-70">
+    <div className="mb-2 text-[10px] uppercase tracking-widest font-medium text-white/65">
       {label}
     </div>
-    <div className="flex gap-2">
+    <div className="flex gap-1">
       {options.map((opt) => (
         <button
           key={String(opt.val)}
           onClick={() => onChange(opt.val)}
-          className={`flex-1 py-1.5 text-[10px] font-bold border uppercase transition-all duration-200 ${
+          className={`flex-1 rounded-md py-1.5 text-[10px] font-bold uppercase transition-all duration-200 ${
             value === opt.val
-              ? 'bg-white text-black border-transparent opacity-100'
-              : 'border-white/30 bg-transparent text-white opacity-50 hover:opacity-80'
+              ? 'bg-[#f5f5f5] text-black'
+              : 'bg-transparent text-[#737373] hover:text-white'
           }`}
         >
           {opt.label}
@@ -85,8 +84,7 @@ export const SynthPatternEditor: React.FC<{
               nextPattern[index] = parseInt(event.target.value, 10);
               onChange(nextPattern);
             }}
-            className="w-full h-1 bg-current rounded-lg appearance-none cursor-pointer focus:outline-none opacity-50 hover:opacity-100 transition-opacity"
-            style={{ accentColor: 'currentColor' }}
+            className="w-full appearance-none cursor-pointer focus:outline-none"
           />
         </div>
       ))}

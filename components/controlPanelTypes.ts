@@ -44,6 +44,10 @@ export interface ControlPanelPresetProps {
   isPresetDirty: boolean;
   onCreatePreset: (name: string) => void;
   onLoadPreset: (presetId: string) => void;
+  /** Load a GENERATED-collection preset (not in the bundled library):
+   *  fetched from /presets/<id>.json via the share-link path, appended
+   *  to the library, and applied. Resolves false when unfetchable. */
+  onLoadGeneratedPreset?: (presetId: string) => Promise<boolean>;
   onOverwritePreset: (presetId: string) => void;
   onRenamePreset: (presetId: string, nextName: string) => void;
   onDuplicatePreset: (presetId: string) => void;

@@ -136,4 +136,5 @@ export const MOTION_MAP: Record<Layer2Type, number> = {
   ikeda: 156,
   quasicrystal: 157,
   hopf: 158,
+  chua: 163,
 };

@@ -9,6 +9,7 @@ import {
   serializeProjectData,
 } from './projectTransferShared';
 import type { Notice } from './audioControllerTypes';
+import { saveBlobFile } from './platformFeatures';
 
 type UseProjectTransferArgs = {
   activePresetId: string | null;
@@ -104,7 +105,7 @@ export function useProjectTransfer({
     saveProjectData(buildSnapshot('Autosave Project'));
   }, [buildSnapshot, isPublicLibraryMode]);
 
-  const handleExportProject = useCallback(() => {
+  const handleExportProject = useCallback(async () => {
     if (isPublicLibraryMode) {
       setProjectNotice({ tone: 'error', message: 'Project export is disabled in the public build.' });
       return;
@@ -112,15 +113,14 @@ export function useProjectTransfer({
 
     const payload = buildSnapshot('Workspace Project');
     const blob = new Blob([serializeProjectData(payload)], { type: 'application/json' });
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = buildProjectExportFileName(payload.exportedAt);
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.URL.revokeObjectURL(url);
-    setProjectNotice({ tone: 'success', message: 'Project exported.' });
+    // File System Access picker where available; anchor download else.
+    const result = await saveBlobFile(blob, buildProjectExportFileName(payload.exportedAt), {
+      description: 'JSON project',
+      accept: { 'application/json': ['.json'] },
+    });
+    if (result !== 'cancelled') {
+      setProjectNotice({ tone: 'success', message: 'Project exported.' });
+    }
   }, [buildSnapshot, isPublicLibraryMode]);
 
   const handleImportProject = useCallback(async (file: File) => {

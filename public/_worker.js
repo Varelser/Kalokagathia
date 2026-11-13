@@ -479,6 +479,24 @@ export default {
       }
     }
     const res = await env.ASSETS.fetch(request);
+    // Real 404 for missing files (audit 2026-11-14): the Pages assets layer
+    // answers a miss with the SPA shell (200, text/html), which made missing
+    // preset JSONs, robots.txt etc. indistinguishable from real content.
+    // A request whose path carries a file extension is a file request: when
+    // the assets layer reports 404, or returns the HTML shell for a
+    // non-HTML extension, the file does not exist — say so. Extensionless
+    // routes keep the SPA fallback untouched.
+    const assetExt = /\.([A-Za-z0-9]+)$/.exec(url.pathname)?.[1]?.toLowerCase() ?? null;
+    if (assetExt) {
+      const servedType = res.headers.get('Content-Type') || '';
+      const shellForFile = res.status === 200 && assetExt !== 'html' && assetExt !== 'htm' && servedType.includes('text/html');
+      if (res.status === 404 || shellForFile) {
+        return new Response('Not Found\n', {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=0, must-revalidate' },
+        });
+      }
+    }
     // Repeat-visit speed: Vite/Rolldown asset filenames are content-hashed, so
     // they can be cached immutably; id-keyed media (thumbs, per-preset JSON,
     // icons) changes rarely and gets a week. HTML and everything else keeps

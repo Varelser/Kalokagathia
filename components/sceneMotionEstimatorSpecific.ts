@@ -269,6 +269,16 @@ export function applySpecificMotionEstimate(
     );
     return true;
   }
+  if (motionType === MOTION_MAP.chua) {
+    const x = source.x * 0.01; const y = source.y * 0.01; const z = source.z * 0.01;
+    const fx = -0.714 * x - 0.2145 * (Math.abs(x + 1) - Math.abs(x - 1));
+    target.set(
+      source.x + 15.6 * (y - x - fx) * amp * 0.002,
+      source.y + (x - y + z) * amp * 0.002,
+      source.z + (-28 * y) * amp * 0.002,
+    );
+    return true;
+  }
   if (motionType === MOTION_MAP.lu) {
     const x = source.x * 0.01; const y = source.y * 0.01; const z = source.z * 0.01;
     target.set(

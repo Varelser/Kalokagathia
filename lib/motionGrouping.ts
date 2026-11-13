@@ -8,7 +8,7 @@ export const MOTION_GROUPS: { label: MotionGroupName; ids: Layer2Type[] }[] = [
     label: 'Fluid',
     ids: ['flow', 'field', 'curl', 'liquid', 'smoke', 'noise', 'ridged_mf', 'crosscurrent', 'tidal', 'caustic', 'eddy', 'nebula', 'cyclone', 'aero', 'wind', 'liquid_smear', 'dust_plume', 'ashfall', 'flock_drift', 'vapor_canopy', 'foam_drift', 'soot_veil', 'charge_veil', 'prism_smoke', 'rune_smoke', 'mirage_smoke', 'ion_rain', 'velvet_ash', 'static_smoke', 'viscous_flow', 'capillary_sheet', 'percolation_sheet', 'advection_flow', 'vortex_transport', 'pressure_cells', 'condense_field', 'sublimate_cloud'],
   },
-  { label: 'Chaos', ids: ['lorenz', 'aizawa', 'rossler', 'thomas', 'euler', 'clifford', 'hopalong', 'halvorsen', 'chen', 'lu', 'sprott', 'rabinovich', 'dejong', 'ikeda'] },
+  { label: 'Chaos', ids: ['lorenz', 'aizawa', 'rossler', 'thomas', 'euler', 'clifford', 'hopalong', 'halvorsen', 'chen', 'lu', 'sprott', 'rabinovich', 'dejong', 'ikeda', 'chua'] },
   { label: 'Orbit', ids: ['orbit', 'orbit_swarm', 'spiral_motion', 'helix', 'pendulum', 'epicycle', 'toroidal', 'torus_knot', 'hopf', 'helio', 'coil', 'gyro', 'braid', 'braidshell', 'pinwheel', 'braid_stream', 'vortex_sheet', 'tidal_lock'] },
   { label: 'Pattern', ids: ['lissajous', 'rose_curve', 'mandala', 'petals', 'kaleidoscope', 'prism', 'starburst', 'radial_steps', 'fronds', 'gyroflower', 'runes', 'phyllotaxis', 'gyre', 'crystal', 'quasicrystal', 'interference_wave', 'stipple_field', 'contour_echo', 'echo_rings', 'standing_interference', 'resonance_flux', 'lattice_surge'] },
   { label: 'Structure', ids: ['lattice', 'cellular', 'tessellate', 'web', 'grid_wave', 'pulse_grid', 'sheet', 'filament', 'labyrinth', 'monolith', 'surface_shell', 'surface_patch', 'brush_surface', 'fiber_field', 'growth_field', 'deposition_field', 'crystal_aggregate', 'erosion_trail', 'voxel_lattice', 'crystal_deposition', 'reaction_diffusion', 'physarum', 'dla', 'l-system', 'raymarch', 'volume_fog', 'shard_debris', 'aura_shell', 'mesh_weave', 'halo_bloom', 'ink_bleed', 'plasma_thread', 'skin_lattice', 'branch_propagation', 'biofilm_skin', 'static_lace', 'fracture_pollen', 'tremor_lattice', 'nerve_web', 'mirror_skin', 'cinder_web', 'membrane_pollen', 'spectral_mesh', 'ember_lace', 'spore_halo', 'calcified_skin', 'aurora_threads', 'residue_skin', 'sigil_dust', 'frost_lattice', 'shell_script', 'prism_threads', 'pollen_lattice', 'eclipse_halo', 'resin_shell', 'cloth_membrane', 'granular_fall', 'growth_grammar', 'elastic_sheet', 'sediment_stack', 'cellular_front', 'elastic_lattice', 'viscoelastic_membrane', 'talus_heap', 'corrosion_front', 'creep_lattice', 'avalanche_field', 'jammed_pack', 'freeze_skin'] },
@@ -48,14 +48,22 @@ export function getMotionGroupIndexByValue(motionType: number) {
 }
 
 export function buildMotionFamilyGlsl() {
-  const branches = MOTION_GROUPS.map((group) => {
-    const checks = group.ids
-      .map((id) => {
-        const value = MOTION_MAP[id];
-        return `abs(motionType - ${value.toFixed(1)}) < 0.5`;
-      })
-      .join(' || ');
-    return `    if (${checks}) return ${MOTION_GROUP_INDEX[group.label].toFixed(1)};`;
+  // ANGLE Metal expression-complexity fix (2026-11-13): emit at most 10
+  // checks per if statement. The largest group previously produced a single
+  // if with 66 '||' terms. Checks stay in the original group/id order, so
+  // first-match semantics are unchanged.
+  const CHECKS_PER_IF = 10;
+  const branches = MOTION_GROUPS.flatMap((group) => {
+    const checks = group.ids.map((id) => {
+      const value = MOTION_MAP[id];
+      return `abs(motionType - ${value.toFixed(1)}) < 0.5`;
+    });
+    const lines: string[] = [];
+    for (let i = 0; i < checks.length; i += CHECKS_PER_IF) {
+      const chunk = checks.slice(i, i + CHECKS_PER_IF).join(' || ');
+      lines.push(`    if (${chunk}) return ${MOTION_GROUP_INDEX[group.label].toFixed(1)};`);
+    }
+    return lines;
   }).join('\n');
 
   return `\n  float getMotionFamily(float motionType) {\n${branches}\n    return ${MOTION_GROUP_INDEX.Transform.toFixed(1)};\n  }\n`;

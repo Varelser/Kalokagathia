@@ -418,7 +418,7 @@ const ENUMS: { key: keyof ParticleConfig; gloss: string; values: readonly string
     key: 'layer3Source', gloss: 'レイヤー3の発生形状',
     values: ['sphere', 'ring', 'grid', 'cube', 'cylinder', 'torus', 'spiral', 'plane', 'text', 'image', 'video'],
   },
-  { key: 'gpgpuAttractorType', gloss: 'GPGPUアトラクタの種類', values: ['lorenz', 'thomas', 'rossler', 'halvorsen', 'chen', 'lu', 'aizawa', 'sprott', 'rabinovich', 'dejong', 'ikeda'] },
+  { key: 'gpgpuAttractorType', gloss: 'GPGPUアトラクタの種類', values: ['lorenz', 'thomas', 'rossler', 'halvorsen', 'chen', 'lu', 'aizawa', 'sprott', 'rabinovich', 'dejong', 'ikeda', 'chua'] },
   { key: 'gpgpuParticleLifePreset', gloss: 'GPGPU Particle Lifeの行列プリセット', values: ['cells', 'snakes', 'community', 'random'] },
   { key: 'gpgpuVFieldType', gloss: 'GPGPUベクトル場の種類', values: ['spiral', 'dipole', 'source', 'saddle', 'abc', 'gyre', 'worley'] },
   // --- Expansion 2026-11-11: major enums (value sets copied from the config types) ---

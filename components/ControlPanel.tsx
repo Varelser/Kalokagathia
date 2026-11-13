@@ -1,34 +1,183 @@
 import React from 'react';
-import { ChevronDown, ChevronUp, Clapperboard } from 'lucide-react';
+import { flushSync } from 'react-dom';
 import {
-  ControlPanelActions,
-  ControlPanelFooter,
-  ControlPanelHeader,
   ControlPanelRail,
-  ControlPanelTabBar,
-  ControlPanelTrigger,
+  ControlPanelShelf,
+  ControlPanelTopBar,
+  ControlPanelTransportBar,
+  MG_EDGE_PANEL_CLASS,
   getTabTier,
   getTabsForTier,
+  mgFadeClass,
+  mgGlassStyle,
+  type EdgeFxProps,
   type PanelTier,
 } from './controlPanelChrome';
-import { ControlPanelContent } from './controlPanelTabs';
+import { ControlPanelContent, DECK_MODE_STORAGE_KEY, loadDeckMode, type DeckMode } from './controlPanelTabs';
 import { CommandPalette } from './CommandPalette';
 import { ControlPanelProps } from './controlPanelTypes';
 import { useControlPanelState } from './useControlPanelState';
+import { toggleFullscreen } from '../lib/platformFeatures';
+import { encodeConfigPayload } from '../lib/shareLink';
+import { normalizeConfig } from '../lib/appStateConfig';
+
+/**
+ * Four-edge layout (2026-11-13): persisted collapse state for the
+ * independently collapsible edges (top header, left rail, right shelf).
+ * The detail sheet's open state stays App-owned (isOpen), as before.
+ * Defaults: header + rail open; the shelf starts open on wide screens
+ * (≥1024px, where it costs little canvas) and closed on narrow ones.
+ */
+const EDGES_STORAGE_KEY = 'kalokagathia.edges.v1';
+type EdgeState = { header: boolean; rail: boolean; shelf: boolean };
+const loadEdges = (): EdgeState => {
+  const fallback: EdgeState = {
+    header: true,
+    rail: true,
+    shelf: typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
+  };
+  try {
+    const raw = localStorage.getItem(EDGES_STORAGE_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<EdgeState>;
+    return {
+      header: typeof parsed.header === 'boolean' ? parsed.header : fallback.header,
+      rail: typeof parsed.rail === 'boolean' ? parsed.rail : fallback.rail,
+      shelf: typeof parsed.shelf === 'boolean' ? parsed.shelf : fallback.shelf,
+    };
+  } catch {
+    return fallback;
+  }
+};
+
+/**
+ * Detail-sheet height (2026-11-13 addendum): the sheet's default height is
+ * a CSS default (30dvh desktop / 45dvh mobile, styles.css --mg-sheet-h).
+ * Dragging the sheet's top-edge grab handle stores a user-chosen height
+ * (dvh, clamped 18–50) in this small settings key; ControlPanel applies it
+ * as an inline --mg-sheet-h override on the deck root. Double-clicking the
+ * handle clears the key and returns to the CSS default. Not an IndexedDB
+ * payload key.
+ */
+const SHEET_HEIGHT_STORAGE_KEY = 'kalokagathia.sheetHeight.v1';
+const SHEET_HEIGHT_MIN_VH = 18;
+const SHEET_HEIGHT_MAX_VH = 50;
+const clampSheetHeight = (vh: number) => Math.min(SHEET_HEIGHT_MAX_VH, Math.max(SHEET_HEIGHT_MIN_VH, vh));
+const loadSheetHeight = (): number | null => {
+  try {
+    const raw = localStorage.getItem(SHEET_HEIGHT_STORAGE_KEY);
+    if (!raw) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? clampSheetHeight(value) : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Phase 2: run a deck chrome update (open/close, tab/tier switch) inside a
+ * View Transition when the browser supports it. Only the deck sheet carries
+ * a view-transition-name (styles.css), so only the deck animates; the root
+ * (including the WebGL canvas) swaps instantly and is never cross-faded.
+ * Falls back to a plain update where startViewTransition is unavailable
+ * (older Safari/Firefox) and for prefers-reduced-motion users.
+ */
+const runDeckTransition = (update: () => void) => {
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  const reduceMotion = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (typeof doc.startViewTransition === 'function' && !reduceMotion) {
+    doc.startViewTransition(() => {
+      flushSync(update);
+    });
+  } else {
+    update();
+  }
+};
 
 export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
-  const [isWide, setIsWide] = React.useState(false);
-  // Mobile bottom sheet (item 9): expanded = capped sheet (68dvh, see
-  // styles.css), collapsed = slim handle bar only so the canvas is fully
-  // visible. Desktop ignores this state (the toggle is display:none >640px).
-  const [sheetCollapsed, setSheetCollapsed] = React.useState(false);
+  // Four-edge layout (2026-11-13): the deck chrome is split across the
+  // four screen edges (top header, left rail, right preset shelf, bottom
+  // transport bar + detail sheet) and the centre is canvas-only. isOpen
+  // (App-owned) is the detail sheet's expanded state. The Basic/Pro deck
+  // mode is lifted here so the top header can switch it at any time —
+  // same state, same localStorage key ControlPanelContent has always
+  // used. Edge collapse state persists in kalokagathia.edges.v1.
+  const [edges, setEdges] = React.useState<EdgeState>(loadEdges);
+  const toggleEdge = React.useCallback((key: keyof EdgeState) => {
+    runDeckTransition(() => {
+      setEdges((prev) => {
+        const next = { ...prev, [key]: !prev[key] };
+        try {
+          localStorage.setItem(EDGES_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          /* storage unavailable */
+        }
+        return next;
+      });
+    });
+  }, []);
+  // Detail-sheet height override (null = CSS default 30dvh / 45dvh).
+  const [sheetHeightVh, setSheetHeightVh] = React.useState<number | null>(loadSheetHeight);
+  const sheetDragRef = React.useRef<{ startY: number; startVh: number } | null>(null);
+  const handleSheetResizeStart = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const panel = event.currentTarget.closest('.mg-sheet-panel');
+    const measured = panel ? (panel.getBoundingClientRect().height / window.innerHeight) * 100 : null;
+    sheetDragRef.current = {
+      startY: event.clientY,
+      startVh: clampSheetHeight(sheetHeightVh ?? measured ?? 30),
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* capture unsupported — move/up on the handle still work nearby */
+    }
+  }, [sheetHeightVh]);
+  const handleSheetResizeMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = sheetDragRef.current;
+    if (!drag) return;
+    const deltaVh = ((drag.startY - event.clientY) / window.innerHeight) * 100;
+    setSheetHeightVh(clampSheetHeight(drag.startVh + deltaVh));
+  }, []);
+  const handleSheetResizeEnd = React.useCallback(() => {
+    if (!sheetDragRef.current) return;
+    sheetDragRef.current = null;
+    setSheetHeightVh((current) => {
+      if (current != null) {
+        try {
+          localStorage.setItem(SHEET_HEIGHT_STORAGE_KEY, String(Math.round(current * 10) / 10));
+        } catch {
+          /* storage unavailable */
+        }
+      }
+      return current;
+    });
+  }, []);
+  const handleSheetResizeReset = React.useCallback(() => {
+    sheetDragRef.current = null;
+    setSheetHeightVh(null);
+    try {
+      localStorage.removeItem(SHEET_HEIGHT_STORAGE_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+  const [deckMode, setDeckMode] = React.useState<DeckMode>(loadDeckMode);
+  const chooseDeckMode = React.useCallback((mode: DeckMode) => {
+    setDeckMode(mode);
+    try {
+      localStorage.setItem(DECK_MODE_STORAGE_KEY, mode);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
   const [deckHover, setDeckHover] = React.useState(true);
   const [deckFocus, setDeckFocus] = React.useState(false);
   // Gloss auto-adjust (idea 6): sample the scene behind the deck and deepen the
   // glass tint on bright scenes so text stays readable; dark scenes keep v7 gloss.
   const [glossBoost, setGlossBoost] = React.useState(0);
   React.useEffect(() => {
-    if (!props.isOpen) return undefined;
     let cancelled = false;
     const sample = () => {
       try {
@@ -44,7 +193,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
             if (!ctx) return;
             const w = canvas.width;
             const h = canvas.height;
-            ctx.drawImage(canvas, w * 0.55, 0, w * 0.45, h, 0, 0, 8, 8);
+            // The deck overlays the bottom edge now: sample the bottom band.
+            ctx.drawImage(canvas, 0, h * 0.78, w, h * 0.22, 0, 0, 8, 8);
             const data = ctx.getImageData(0, 0, 8, 8).data;
             let sum = 0;
             for (let i = 0; i < data.length; i += 4) {
@@ -68,7 +218,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [props.isOpen]);
+  }, []);
   const deckActive = deckHover || deckFocus;
   const {
     config,
@@ -126,14 +276,18 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
     setConfig,
   });
 
-  const handleSelectTier = (tier: PanelTier) => {
+  const selectTier = (tier: PanelTier) => {
     setPanelTier(tier);
     if (!getTabsForTier(tier).some((tab) => tab.id === activeTab)) {
       setActiveTab('play');
     }
   };
 
-  const handleJumpToTab = (tab: typeof activeTab) => {
+  const handleSelectTier = (tier: PanelTier) => {
+    runDeckTransition(() => selectTier(tier));
+  };
+
+  const jumpToTab = (tab: typeof activeTab) => {
     const needed = getTabTier(tab);
     const rank = { play: 0, design: 1, lab: 2 } as const;
     if (rank[needed] > rank[panelTier]) {
@@ -142,224 +296,383 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
     setActiveTab(tab);
   };
 
-  if (!isOpen) {
-    return (
-      <>
-      <CommandPalette presets={props.presets} onLoadPreset={props.onLoadPreset} onJumpToTab={(tab) => { setIsOpen(true); handleJumpToTab(tab); }} onRevealParameter={(entry) => { (window as unknown as { __mgPendingReveal?: unknown }).__mgPendingReveal = { ...entry, at: Date.now() }; window.dispatchEvent(new CustomEvent('kalokagathia:reveal-setting', { detail: entry })); }} />
-      <ControlPanelTrigger
-        activeTab={activeTab}
-        backgroundColor={config.backgroundColor}
-        onOpen={() => setIsOpen(true)}
-        onSelectTab={setActiveTab}
-        tier={panelTier}
-      />
-      </>
-    );
-  }
+  const handleJumpToTab = (tab: typeof activeTab) => {
+    runDeckTransition(() => jumpToTab(tab));
+  };
+
+  const activePresetName = props.presets.find((preset) => preset.id === props.activePresetId)?.name ?? null;
+
+  // Share (four-edge layout: the action lives in the top header now; the
+  // logic is unchanged from the deck-header era). Builds the cleanest
+  // URL for the current scene — catalog share page when the config is
+  // untouched, #p= when the preset is clean, an inline #c= payload
+  // otherwise — then prefers the OS share sheet, falls back to the
+  // clipboard, then to a prompt.
+  const [shareNote, setShareNote] = React.useState('');
+  const handleShare = async () => {
+    const { activePresetId, isPresetDirty } = props;
+    const origin = window.location.origin;
+    let url: string | null = null;
+    // For catalog presets, decide clean/dirty against the normalized record:
+    // the library's isPresetDirty stringifies the raw record, which never
+    // matches the normalized live config for fetched/imported records.
+    const canonical = (o: Record<string, unknown>) => Object.keys(o).sort().map((k) => `${k}=${JSON.stringify(o[k])}`).join('|');
+    let catalogClean: boolean | null = null;
+    if (activePresetId) {
+      try {
+        const r = await fetch(`/presets/${encodeURIComponent(activePresetId)}.json`);
+        if ((r.headers.get('content-type') || '').includes('json')) {
+          const rec = (await r.json()) as { config?: Record<string, unknown> } | null;
+          if (rec?.config) {
+            catalogClean = canonical(normalizeConfig(rec.config) as unknown as Record<string, unknown>)
+              === canonical(config as unknown as Record<string, unknown>);
+          }
+        }
+      } catch {
+        catalogClean = null;
+      }
+    }
+    if (activePresetId && catalogClean === true) {
+      url = `${origin}/share/${activePresetId}`;
+    } else if (activePresetId && catalogClean === null && !isPresetDirty) {
+      url = `${origin}/#p=${activePresetId}`;
+    } else {
+      const payload = await encodeConfigPayload('Monosphere scene', config);
+      if (payload) url = `${origin}/#c=${payload}`;
+    }
+    if (!url) {
+      setShareNote('共有リンクを作れませんでした');
+      return;
+    }
+    // Web Share (tech batch): prefer the OS share sheet where the browser
+    // offers one; a user dismissal (AbortError) ends the flow quietly, any
+    // other failure falls back to the clipboard copy below.
+    const navWithShare = navigator as Navigator & { share?: (data: ShareData) => Promise<void> };
+    if (typeof navWithShare.share === 'function') {
+      try {
+        await navWithShare.share({ title: 'Kalokagathia', url });
+        setShareNote('共有しました');
+        window.setTimeout(() => setShareNote(''), 3000);
+        return;
+      } catch (error) {
+        if ((error as DOMException | null)?.name === 'AbortError') {
+          setShareNote('');
+          return;
+        }
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareNote('共有リンクをコピーしました');
+    } catch {
+      window.prompt('共有リンク', url);
+      setShareNote('');
+      return;
+    }
+    window.setTimeout(() => setShareNote(''), 3000);
+  };
+
+  // Deck-wide hover/focus tracking for the idle auto-fade: every edge
+  // panel spreads these handlers and shares the faded state.
+  const edgeFx: EdgeFxProps = {
+    onMouseEnter: () => setDeckHover(true),
+    onMouseLeave: () => setDeckHover(false),
+    onPointerDown: () => setDeckHover(true),
+    onFocusCapture: (e) => { const t = e.target as HTMLElement; setDeckFocus(t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable); },
+    onBlurCapture: (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDeckFocus(false); },
+  };
+  const deckFaded = !deckActive;
+
+  const handleSelectBarTab = (tab: typeof activeTab) => {
+    if (isOpen) {
+      runDeckTransition(() => setActiveTab(tab));
+    } else {
+      runDeckTransition(() => {
+        setIsOpen(true);
+        setActiveTab(tab);
+      });
+    }
+  };
+
+  // Keyboard shortcuts (tech batch, desktop): Space = play/pause,
+  // [ / ] = previous/next preset in shelf order, F = fullscreen,
+  // B = expand/collapse the bottom sheet. Text entry is never hijacked:
+  // the handler bows out when focus is in an input / textarea / select /
+  // contenteditable, and with any modifier held. When a button has focus,
+  // Space keeps its native meaning (it clicks that button — for the play
+  // button that IS play/pause), so the shortcut only claims Space when
+  // focus is on the canvas / page body.
+  const shortcutStateRef = React.useRef({
+    activePresetId: props.activePresetId,
+    isOpen,
+    onLoadPreset: props.onLoadPreset,
+    presets: props.presets,
+    togglePlay: props.togglePlay,
+  });
+  shortcutStateRef.current = {
+    activePresetId: props.activePresetId,
+    isOpen,
+    onLoadPreset: props.onLoadPreset,
+    presets: props.presets,
+    togglePlay: props.togglePlay,
+  };
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return;
+      }
+      const state = shortcutStateRef.current;
+      if (event.code === 'Space') {
+        if (event.repeat) return;
+        if (target && target.tagName === 'BUTTON') return;
+        event.preventDefault();
+        state.togglePlay();
+        return;
+      }
+      if (event.key === '[' || event.key === ']') {
+        const list = state.presets;
+        if (list.length === 0) return;
+        const index = list.findIndex((preset) => preset.id === state.activePresetId);
+        const nextIndex = event.key === ']'
+          ? (index < 0 ? 0 : (index + 1) % list.length)
+          : (index < 0 ? list.length - 1 : (index - 1 + list.length) % list.length);
+        const next = list[nextIndex];
+        if (next && next.id !== state.activePresetId) state.onLoadPreset(next.id);
+        return;
+      }
+      if (event.repeat) return;
+      if (event.key === 'f' || event.key === 'F') {
+        toggleFullscreen();
+      } else if (event.key === 'b' || event.key === 'B') {
+        runDeckTransition(() => setIsOpen(!shortcutStateRef.current.isOpen));
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [setIsOpen]);
 
   return (
-    <div className="mg-deck pointer-events-none absolute inset-y-0 right-0 z-50 flex w-full justify-end p-3 text-white sm:p-4">
-      <div className="pointer-events-auto">
-        <CommandPalette presets={props.presets} onLoadPreset={props.onLoadPreset} onJumpToTab={handleJumpToTab} onRevealParameter={(entry) => { (window as unknown as { __mgPendingReveal?: unknown }).__mgPendingReveal = { ...entry, at: Date.now() }; window.dispatchEvent(new CustomEvent('kalokagathia:reveal-setting', { detail: entry })); }} />
-      </div>
-      <div
-        onMouseEnter={() => setDeckHover(true)}
-        onMouseLeave={() => setDeckHover(false)}
-        onPointerDown={() => setDeckHover(true)}
-        onFocusCapture={(e) => { const t = e.target as HTMLElement; setDeckFocus(t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable); }}
-        onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDeckFocus(false); }}
-        className={`mg-sheet flex h-full w-full items-stretch justify-end transition-opacity duration-500 ${deckActive ? 'opacity-100' : 'opacity-[0.22]'} ${sheetCollapsed ? 'mg-sheet-collapsed' : ''} ${isWide ? 'max-w-[min(96vw,78rem)]' : 'max-w-[min(96vw,37rem)]'}`}>
+    <div style={sheetHeightVh == null ? undefined : ({ '--mg-sheet-h': `${sheetHeightVh}dvh` } as React.CSSProperties)} className={`mg-deck pointer-events-none absolute inset-0 z-50 flex flex-col gap-2 p-2 text-white sm:p-3 ${edges.header ? 'mg-header-open' : ''}`}>
+      <CommandPalette presets={props.presets} onLoadPreset={props.onLoadPreset} onJumpToTab={(tab) => { runDeckTransition(() => { setIsOpen(true); jumpToTab(tab); }); }} onRevealParameter={(entry) => { (window as unknown as { __mgPendingReveal?: unknown }).__mgPendingReveal = { ...entry, at: Date.now() }; window.dispatchEvent(new CustomEvent('kalokagathia:reveal-setting', { detail: entry })); }} />
+      <ControlPanelTopBar
+        activePresetName={activePresetName}
+        collapsed={!edges.header}
+        deckMode={deckMode}
+        faded={deckFaded}
+        fx={edgeFx}
+        glossBoost={glossBoost}
+        isPublicLibrary={isPublicLibrary}
+        onDeckModeChange={chooseDeckMode}
+        onSelectTier={handleSelectTier}
+        onShare={() => { void handleShare(); }}
+        onToggleCollapsed={() => toggleEdge('header')}
+        shareNote={shareNote}
+        tier={panelTier}
+      />
+      <div className="pointer-events-none flex min-h-0 flex-1 items-stretch gap-2">
         <ControlPanelRail
           activeTab={activeTab}
-          isWide={isWide}
-          onClose={() => setIsOpen(false)}
-          onSelectTab={setActiveTab}
-          onToggleWidth={() => setIsWide((prev) => !prev)}
+          collapsed={!edges.rail}
+          faded={deckFaded}
+          fx={edgeFx}
+          glossBoost={glossBoost}
+          isPlaying={props.isPlaying}
+          onSelectTab={handleSelectBarTab}
+          onToggleCollapsed={() => toggleEdge('rail')}
           tier={panelTier}
-          onSelectTier={handleSelectTier}
         />
-        <div style={{ backgroundImage: `linear-gradient(118deg, rgba(255,255,255,${(0.15 - 0.05 * glossBoost).toFixed(3)}), rgba(255,255,255,0.03) 34%, rgba(0,0,0,${(0.08 + 0.14 * glossBoost).toFixed(3)}) 62%, rgba(0,0,0,${(0.16 + 0.22 * glossBoost).toFixed(3)}))` }} className="mg-sheet-panel pointer-events-auto flex min-w-0 flex-1 flex-col overflow-hidden rounded-[30px] border border-white/25 bg-[linear-gradient(118deg,rgba(255,255,255,0.15),rgba(255,255,255,0.03)_34%,rgba(0,0,0,0.08)_62%,rgba(0,0,0,0.16))] shadow-[0_30px_90px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.38),inset_0_26px_38px_-24px_rgba(255,255,255,0.30),inset_0_-20px_32px_-20px_rgba(255,255,255,0.12)] backdrop-blur-md backdrop-saturate-200">
-          <div className="mg-sheet-bar">
-            <button
-              type="button"
-              data-testid="sheet-toggle"
-              aria-expanded={!sheetCollapsed}
-              onClick={() => setSheetCollapsed((prev) => !prev)}
-              className="mg-sheet-toggle"
-              title={sheetCollapsed ? 'コントロールを開く' : 'シートをたたんで作品だけ見る'}
-            >
-              <span className="mg-sheet-grip" aria-hidden="true" />
-              <span className="mg-sheet-toggle-label">{sheetCollapsed ? 'コントロールを開く' : 'たたむ'}</span>
-              {sheetCollapsed ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-            </button>
-            <button
-              type="button"
-              data-testid="cinema-toggle"
-              onClick={() => window.dispatchEvent(new CustomEvent('kalokagathia:toggle-cinema'))}
-              className="mg-cinema-toggle"
-              title="鑑賞モード（UIを隠す）— 画面タップで戻る"
-            >
-              <Clapperboard size={16} />
-              <span>鑑賞</span>
-            </button>
-          </div>
-          <ControlPanelHeader
-            activeTab={activeTab}
-            isPublicLibrary={isPublicLibrary}
-            isWide={isWide}
-            onClose={() => setIsOpen(false)}
-            onToggleWidth={() => setIsWide((prev) => !prev)}
-          />
-          <ControlPanelActions
-            isPlaying={props.isPlaying}
-            isPublicLibrary={isPublicLibrary}
-            onRandomize={props.onRandomize}
-            onReset={props.onReset}
-            togglePlay={props.togglePlay}
-          />
-          <ControlPanelTabBar activeTab={activeTab} onSelectTab={setActiveTab} tier={panelTier} onSelectTier={handleSelectTier} />
-
-          <ControlPanelContent
-            activeTab={activeTab}
-            config={config}
-            contactAmount={contactAmount}
-            isPublicLibrary={isPublicLibrary}
-            lockedPanelClass={lockedPanelClass}
-            updateConfig={updateConfig}
-            applyPerformancePreset={applyPerformancePreset}
-            applyScreenFxPreset={applyScreenFxPreset}
-            presetName={presetName}
-            setPresetName={setPresetName}
-            handleCreatePreset={handleCreatePreset}
-            activePresetId={props.activePresetId}
-            onOverwritePreset={props.onOverwritePreset}
-            isPresetTransitioning={props.isPresetTransitioning}
-            onStopPresetTransition={props.onStopPresetTransition}
-            presetBlendDuration={props.presetBlendDuration}
-            onPresetBlendDurationChange={props.onPresetBlendDurationChange}
-            libraryInputRef={libraryInputRef}
-            handleLibraryFileChange={handleLibraryFileChange}
-            handleProjectFileChange={props.handleProjectFileChange}
-            onDismissProjectNotice={props.onDismissProjectNotice}
-            onExportLibrary={props.onExportLibrary}
-            onExportProject={props.onExportProject}
-            libraryImportMode={libraryImportMode}
-            setLibraryImportMode={setLibraryImportMode}
-            libraryNotice={props.libraryNotice}
-            onDismissLibraryNotice={props.onDismissLibraryNotice}
-            sequenceLoopEnabled={props.sequenceLoopEnabled}
-            onSequenceLoopEnabledChange={props.onSequenceLoopEnabledChange}
-            isSequencePlaying={props.isSequencePlaying}
-            onStartSequencePlayback={props.onStartSequencePlayback}
-            onStopSequencePlayback={props.onStopSequencePlayback}
-            presetSequence={props.presetSequence}
-            activeSequenceItemId={props.activeSequenceItemId}
-            sequenceSinglePassDuration={props.sequenceSinglePassDuration}
-            onLoadSequenceItem={props.onLoadSequenceItem}
-            sequenceStepProgress={props.sequenceStepProgress}
-            draggingSequenceItemId={draggingSequenceItemId}
-            dropTargetSequenceItemId={dropTargetSequenceItemId}
-            handleSequenceDragStart={handleSequenceDragStart}
-            handleSequenceDragOver={handleSequenceDragOver}
-            handleSequenceDrop={handleSequenceDrop}
-            handleSequenceDragEnd={handleSequenceDragEnd}
-            presets={props.presets}
-            projectInputRef={props.projectInputRef}
-            projectManifest={props.projectManifest}
-            projectNotice={props.projectNotice}
-            layerFocusMode={props.layerFocusMode}
-            comparePreviewEnabled={props.comparePreviewEnabled}
-            onSetComparePreviewEnabled={props.onSetComparePreviewEnabled}
-            comparePreviewOrientation={props.comparePreviewOrientation}
-            onSetComparePreviewOrientation={props.onSetComparePreviewOrientation}
-            comparePreviewSlotIndex={props.comparePreviewSlotIndex}
-            onSetComparePreviewSlotIndex={props.onSetComparePreviewSlotIndex}
-            onSetLayerFocusMode={props.onSetLayerFocusMode}
-            layerMuteState={props.layerMuteState}
-            onToggleLayerMute={props.onToggleLayerMute}
-            layerLockState={props.layerLockState}
-            onToggleLayerLock={props.onToggleLayerLock}
-            snapshotSlots={props.snapshotSlots}
-            onCaptureSnapshot={props.onCaptureSnapshot}
-            onLoadSnapshot={props.onLoadSnapshot}
-            onMorphSnapshot={props.onMorphSnapshot}
-            onClearSnapshot={props.onClearSnapshot}
-            onRenameSnapshot={props.onRenameSnapshot}
-            onSetSnapshotNote={props.onSetSnapshotNote}
-            compareReferenceConfig={props.compareReferenceConfig}
-            onRenameSequenceItem={props.onRenameSequenceItem}
-            onSequenceHoldChange={props.onSequenceHoldChange}
-            onSequenceTransitionChange={props.onSequenceTransitionChange}
-            onSequenceTransitionEasingChange={props.onSequenceTransitionEasingChange}
-            onSequenceDriveModeChange={props.onSequenceDriveModeChange}
-            onSequenceDriveStrengthModeChange={props.onSequenceDriveStrengthModeChange}
-            onSequenceDriveStrengthOverrideChange={props.onSequenceDriveStrengthOverrideChange}
-            onSequenceDriveMultiplierChange={props.onSequenceDriveMultiplierChange}
-            onCaptureSequenceKeyframe={props.onCaptureSequenceKeyframe}
-            onResetSequenceKeyframe={props.onResetSequenceKeyframe}
-            onDuplicateSequenceItem={props.onDuplicateSequenceItem}
-            onMoveSequenceItem={props.onMoveSequenceItem}
-            onRemoveSequenceItem={props.onRemoveSequenceItem}
-            videoExportMode={props.videoExportMode}
-            onVideoExportModeChange={props.onVideoExportModeChange}
-            videoFps={props.videoFps}
-            onVideoFpsChange={props.onVideoFpsChange}
-            videoDurationSeconds={props.videoDurationSeconds}
-            onVideoDurationSecondsChange={props.onVideoDurationSecondsChange}
-            isVideoRecording={props.isVideoRecording}
-            onStartVideoRecording={props.onStartVideoRecording}
-            onStopVideoRecording={props.onStopVideoRecording}
-            isFrameExporting={props.isFrameExporting}
-            onStartFrameExport={props.onStartFrameExport}
-            onStopFrameExport={props.onStopFrameExport}
-            videoNotice={props.videoNotice}
-            onDismissVideoNotice={props.onDismissVideoNotice}
-            frameNotice={props.frameNotice}
-            onDismissFrameNotice={props.onDismissFrameNotice}
-            editingPresetId={editingPresetId}
-            editingPresetName={editingPresetName}
-            setEditingPresetId={setEditingPresetId}
-            setEditingPresetName={setEditingPresetName}
-            handleSubmitRename={handleSubmitRename}
-            handleStartRename={handleStartRename}
-            onLoadPreset={props.onLoadPreset}
-            onApplyConfig={props.onApplyConfig}
-            onSaveBredPreset={props.onSaveBredPreset}
-            onSyncApplyPresets={props.onSyncApplyPresets}
-            onSyncNotice={props.onSyncNotice}
-            onJumpToTab={handleJumpToTab}
-            configHistoryEntries={props.configHistoryEntries}
-            onClearConfigHistory={props.onClearConfigHistory}
-            pointCloudCaptureRef={props.pointCloudCaptureRef}
-            formatPresetDate={formatPresetDate}
-            isPresetDirty={props.isPresetDirty}
-            onTransitionToPreset={props.onTransitionToPreset}
-            onAddPresetToSequence={props.onAddPresetToSequence}
-            onDuplicatePreset={props.onDuplicatePreset}
-            onDeletePreset={props.onDeletePreset}
-            updatePositionArray={updatePositionArray}
-            updateLayerArray={updateLayerArray}
-            updateLayer1Array={updateLayer1Array}
-            updateMotionArray={updateMotionArray}
-            audioSourceMode={props.audioSourceMode}
-            onAudioSourceModeChange={props.onAudioSourceModeChange}
-            audioLevelsRef={props.audioLevelsRef}
-            isAudioActive={props.isAudioActive}
-            stopAudio={props.stopAudio}
-            startAudio={props.startAudio}
-            audioActionLabel={audioActionLabel}
-            audioNotice={props.audioNotice}
-            onDismissAudioNotice={props.onDismissAudioNotice}
-          />
-
-          <ControlPanelFooter
-            config={config}
-            isPublicLibrary={isPublicLibrary}
-            onSave={props.onSave}
-            updateConfig={updateConfig}
-          />
-        </div>
+        <div className="min-w-0 flex-1" aria-hidden="true" />
       </div>
+      <div className={`mg-shelf-anchor pointer-events-none ${edges.shelf ? 'mg-shelf-anchor-open' : 'mg-shelf-anchor-closed'}`}>
+        <ControlPanelShelf
+          activePresetId={props.activePresetId}
+          config={config}
+          faded={deckFaded}
+          fx={edgeFx}
+          glossBoost={glossBoost}
+          isPublicLibrary={isPublicLibrary}
+          onLoadPreset={props.onLoadPreset}
+          onLoadGeneratedPreset={props.onLoadGeneratedPreset}
+          onSave={props.onSave}
+          onToggleOpen={() => toggleEdge('shelf')}
+          open={edges.shelf}
+          presets={props.presets}
+          updateConfig={updateConfig}
+        />
+      </div>
+      {isOpen && (
+        <div {...edgeFx} className={`mg-sheet w-full shrink-0 ${mgFadeClass(deckFaded)}`}>
+          <div style={mgGlassStyle(glossBoost)} className={`mg-sheet-panel mg-panel-open ${MG_EDGE_PANEL_CLASS} flex w-full flex-col`}>
+              <div
+                id="sheet-resize-handle"
+                data-testid="sheet-resize-handle"
+                className="mg-sheet-resize"
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="シートの高さをドラッグで調整（ダブルクリックで既定に戻す）"
+                title="ドラッグで高さ調整 · ダブルクリックで既定に戻す"
+                onPointerDown={handleSheetResizeStart}
+                onPointerMove={handleSheetResizeMove}
+                onPointerUp={handleSheetResizeEnd}
+                onPointerCancel={handleSheetResizeEnd}
+                onDoubleClick={handleSheetResizeReset}
+              >
+                <span className="mg-sheet-resize-grip" aria-hidden="true" />
+              </div>
+              <ControlPanelContent
+                activeTab={activeTab}
+                config={config}
+                contactAmount={contactAmount}
+                deckMode={deckMode}
+                onDeckModeChange={chooseDeckMode}
+                isPublicLibrary={isPublicLibrary}
+                lockedPanelClass={lockedPanelClass}
+                updateConfig={updateConfig}
+                applyPerformancePreset={applyPerformancePreset}
+                applyScreenFxPreset={applyScreenFxPreset}
+                presetName={presetName}
+                setPresetName={setPresetName}
+                handleCreatePreset={handleCreatePreset}
+                activePresetId={props.activePresetId}
+                onOverwritePreset={props.onOverwritePreset}
+                isPresetTransitioning={props.isPresetTransitioning}
+                onStopPresetTransition={props.onStopPresetTransition}
+                presetBlendDuration={props.presetBlendDuration}
+                onPresetBlendDurationChange={props.onPresetBlendDurationChange}
+                libraryInputRef={libraryInputRef}
+                handleLibraryFileChange={handleLibraryFileChange}
+                handleProjectFileChange={props.handleProjectFileChange}
+                onDismissProjectNotice={props.onDismissProjectNotice}
+                onExportLibrary={props.onExportLibrary}
+                onExportProject={props.onExportProject}
+                libraryImportMode={libraryImportMode}
+                setLibraryImportMode={setLibraryImportMode}
+                libraryNotice={props.libraryNotice}
+                onDismissLibraryNotice={props.onDismissLibraryNotice}
+                sequenceLoopEnabled={props.sequenceLoopEnabled}
+                onSequenceLoopEnabledChange={props.onSequenceLoopEnabledChange}
+                isSequencePlaying={props.isSequencePlaying}
+                onStartSequencePlayback={props.onStartSequencePlayback}
+                onStopSequencePlayback={props.onStopSequencePlayback}
+                presetSequence={props.presetSequence}
+                activeSequenceItemId={props.activeSequenceItemId}
+                sequenceSinglePassDuration={props.sequenceSinglePassDuration}
+                onLoadSequenceItem={props.onLoadSequenceItem}
+                sequenceStepProgress={props.sequenceStepProgress}
+                draggingSequenceItemId={draggingSequenceItemId}
+                dropTargetSequenceItemId={dropTargetSequenceItemId}
+                handleSequenceDragStart={handleSequenceDragStart}
+                handleSequenceDragOver={handleSequenceDragOver}
+                handleSequenceDrop={handleSequenceDrop}
+                handleSequenceDragEnd={handleSequenceDragEnd}
+                presets={props.presets}
+                projectInputRef={props.projectInputRef}
+                projectManifest={props.projectManifest}
+                projectNotice={props.projectNotice}
+                layerFocusMode={props.layerFocusMode}
+                comparePreviewEnabled={props.comparePreviewEnabled}
+                onSetComparePreviewEnabled={props.onSetComparePreviewEnabled}
+                comparePreviewOrientation={props.comparePreviewOrientation}
+                onSetComparePreviewOrientation={props.onSetComparePreviewOrientation}
+                comparePreviewSlotIndex={props.comparePreviewSlotIndex}
+                onSetComparePreviewSlotIndex={props.onSetComparePreviewSlotIndex}
+                onSetLayerFocusMode={props.onSetLayerFocusMode}
+                layerMuteState={props.layerMuteState}
+                onToggleLayerMute={props.onToggleLayerMute}
+                layerLockState={props.layerLockState}
+                onToggleLayerLock={props.onToggleLayerLock}
+                snapshotSlots={props.snapshotSlots}
+                onCaptureSnapshot={props.onCaptureSnapshot}
+                onLoadSnapshot={props.onLoadSnapshot}
+                onMorphSnapshot={props.onMorphSnapshot}
+                onClearSnapshot={props.onClearSnapshot}
+                onRenameSnapshot={props.onRenameSnapshot}
+                onSetSnapshotNote={props.onSetSnapshotNote}
+                compareReferenceConfig={props.compareReferenceConfig}
+                onRenameSequenceItem={props.onRenameSequenceItem}
+                onSequenceHoldChange={props.onSequenceHoldChange}
+                onSequenceTransitionChange={props.onSequenceTransitionChange}
+                onSequenceTransitionEasingChange={props.onSequenceTransitionEasingChange}
+                onSequenceDriveModeChange={props.onSequenceDriveModeChange}
+                onSequenceDriveStrengthModeChange={props.onSequenceDriveStrengthModeChange}
+                onSequenceDriveStrengthOverrideChange={props.onSequenceDriveStrengthOverrideChange}
+                onSequenceDriveMultiplierChange={props.onSequenceDriveMultiplierChange}
+                onCaptureSequenceKeyframe={props.onCaptureSequenceKeyframe}
+                onResetSequenceKeyframe={props.onResetSequenceKeyframe}
+                onDuplicateSequenceItem={props.onDuplicateSequenceItem}
+                onMoveSequenceItem={props.onMoveSequenceItem}
+                onRemoveSequenceItem={props.onRemoveSequenceItem}
+                videoExportMode={props.videoExportMode}
+                onVideoExportModeChange={props.onVideoExportModeChange}
+                videoFps={props.videoFps}
+                onVideoFpsChange={props.onVideoFpsChange}
+                videoDurationSeconds={props.videoDurationSeconds}
+                onVideoDurationSecondsChange={props.onVideoDurationSecondsChange}
+                isVideoRecording={props.isVideoRecording}
+                onStartVideoRecording={props.onStartVideoRecording}
+                onStopVideoRecording={props.onStopVideoRecording}
+                isFrameExporting={props.isFrameExporting}
+                onStartFrameExport={props.onStartFrameExport}
+                onStopFrameExport={props.onStopFrameExport}
+                videoNotice={props.videoNotice}
+                onDismissVideoNotice={props.onDismissVideoNotice}
+                frameNotice={props.frameNotice}
+                onDismissFrameNotice={props.onDismissFrameNotice}
+                editingPresetId={editingPresetId}
+                editingPresetName={editingPresetName}
+                setEditingPresetId={setEditingPresetId}
+                setEditingPresetName={setEditingPresetName}
+                handleSubmitRename={handleSubmitRename}
+                handleStartRename={handleStartRename}
+                onLoadPreset={props.onLoadPreset}
+                onApplyConfig={props.onApplyConfig}
+                onSaveBredPreset={props.onSaveBredPreset}
+                onSyncApplyPresets={props.onSyncApplyPresets}
+                onSyncNotice={props.onSyncNotice}
+                onJumpToTab={handleJumpToTab}
+                configHistoryEntries={props.configHistoryEntries}
+                onClearConfigHistory={props.onClearConfigHistory}
+                pointCloudCaptureRef={props.pointCloudCaptureRef}
+                formatPresetDate={formatPresetDate}
+                isPresetDirty={props.isPresetDirty}
+                onTransitionToPreset={props.onTransitionToPreset}
+                onAddPresetToSequence={props.onAddPresetToSequence}
+                onDuplicatePreset={props.onDuplicatePreset}
+                onDeletePreset={props.onDeletePreset}
+                updatePositionArray={updatePositionArray}
+                updateLayerArray={updateLayerArray}
+                updateLayer1Array={updateLayer1Array}
+                updateMotionArray={updateMotionArray}
+                audioSourceMode={props.audioSourceMode}
+                onAudioSourceModeChange={props.onAudioSourceModeChange}
+                audioLevelsRef={props.audioLevelsRef}
+                isAudioActive={props.isAudioActive}
+                stopAudio={props.stopAudio}
+                startAudio={props.startAudio}
+                audioActionLabel={audioActionLabel}
+                audioNotice={props.audioNotice}
+                onDismissAudioNotice={props.onDismissAudioNotice}
+              />
+          </div>
+        </div>
+      )}
+      <ControlPanelTransportBar
+        config={config}
+        expanded={isOpen}
+        faded={deckFaded}
+        fx={edgeFx}
+        glossBoost={glossBoost}
+        isPlaying={props.isPlaying}
+        isPublicLibrary={isPublicLibrary}
+        onRandomize={props.onRandomize}
+        onReset={props.onReset}
+        onToggleExpanded={() => runDeckTransition(() => setIsOpen(!isOpen))}
+        togglePlay={props.togglePlay}
+        updateConfig={updateConfig}
+      />
     </div>
   );
 };

@@ -23,6 +23,11 @@ export type Notice = { tone: 'success' | 'error'; message: string } | null;
 
 export interface ControlPanelContentProps {
   activeTab: ControlPanelTab;
+  /** Basic/Pro deck mode, lifted to ControlPanel so the bottom bar can
+   * switch it while the panel is collapsed. Optional: ControlPanelContent
+   * falls back to its own state (same localStorage key) when not provided. */
+  deckMode?: 'basic' | 'pro';
+  onDeckModeChange?: (mode: 'basic' | 'pro') => void;
   config: ParticleConfig;
   contactAmount: number;
   isPublicLibrary: boolean;

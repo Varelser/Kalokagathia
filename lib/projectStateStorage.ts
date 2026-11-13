@@ -21,6 +21,7 @@ import {
 } from './projectStateShared';
 import { buildProjectManifest, normalizeProjectManifest } from './projectStateManifest';
 import { buildProjectSerializationSnapshot, normalizeProjectSerializationSnapshot } from './projectSerializationSnapshot';
+import { getHydratedPayload, isIndexedDbAvailable, isStorageHydrationSettled, putStoragePayload } from './storageDb';
 
 
 const PRESET_STORAGE_KEY = 'monosphere-presets-v1';
@@ -55,6 +56,34 @@ function readLocalStorageJson(key: string): unknown {
     return JSON.parse(raw);
   } catch (error) {
     console.warn(`Failed to read ${key}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Reads a payload as parsed JSON, preferring the IndexedDB copy once
+ * hydration has settled (Phase 1 renewal): the IndexedDB string has no
+ * length cap, while the localStorage read below keeps the legacy
+ * 4,000,000-char guard for the fallback path. Returns null when neither
+ * backend yields a payload.
+ */
+function readPayloadJson(key: string): unknown {
+  const idbRaw = getHydratedPayload(key);
+  if (typeof idbRaw === 'string') {
+    try {
+      return JSON.parse(idbRaw);
+    } catch (error) {
+      console.warn(`Failed to parse IndexedDB payload for ${key}:`, error);
+    }
+  }
+  return readLocalStorageJson(key);
+}
+
+function parseRawArray(raw: string): unknown[] | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
     return null;
   }
 }
@@ -116,7 +145,9 @@ function buildMinimalProjectPayload(project: ProjectData): Record<string, unknow
 function loadPersistedPresetRecords(): PresetRecord[] {
   if (typeof window === 'undefined') return [];
 
-  const parsed = readLocalStorageJson(PRESET_STORAGE_KEY);
+  const idbRaw = getHydratedPayload(PRESET_STORAGE_KEY);
+  const idbParsed = typeof idbRaw === 'string' ? parseRawArray(idbRaw) : null;
+  const parsed = idbParsed ?? readLocalStorageJson(PRESET_STORAGE_KEY);
   if (!Array.isArray(parsed) || parsed.length === 0) return [];
   return dedupePresetRecords(
     parsed
@@ -128,7 +159,9 @@ function loadPersistedPresetRecords(): PresetRecord[] {
 function loadPersistedPresetSequence(validPresetIds: Set<string>): PresetSequenceItem[] {
   if (typeof window === 'undefined') return [];
 
-  const parsed = readLocalStorageJson(PRESET_SEQUENCE_STORAGE_KEY);
+  const idbRaw = getHydratedPayload(PRESET_SEQUENCE_STORAGE_KEY);
+  const idbParsed = typeof idbRaw === 'string' ? parseRawArray(idbRaw) : null;
+  const parsed = idbParsed ?? readLocalStorageJson(PRESET_SEQUENCE_STORAGE_KEY);
   if (!Array.isArray(parsed) || parsed.length === 0) return [];
   return dedupePresetSequence(
     parsed
@@ -275,7 +308,7 @@ export function loadProjectData(): ProjectData | null {
   if (typeof window === 'undefined') return null;
 
   try {
-    const parsedPayload = readLocalStorageJson(PROJECT_STORAGE_KEY) ?? readLocalStorageJson(PROJECT_STORAGE_KEY_LEGACY);
+    const parsedPayload = readPayloadJson(PROJECT_STORAGE_KEY) ?? readLocalStorageJson(PROJECT_STORAGE_KEY_LEGACY);
     if (parsedPayload) {
       const parsed = parseProjectData(parsedPayload);
       if (parsed) {
@@ -319,6 +352,19 @@ export function loadProjectData(): ProjectData | null {
 export function saveProjectData(project: ProjectData) {
   if (typeof window === 'undefined') return;
 
+  // IndexedDB is the primary store (Phase 1 renewal): the full payload is
+  // written through storageDb, whose write queue itself waits for
+  // hydration to settle, so an autosave fired during the first render can
+  // never race the migration copy. Oversized projects now persist instead
+  // of being silently reduced. storageDb also mirrors the payload into
+  // localStorage while it fits the legacy cap.
+  if (!isStorageHydrationSettled() || isIndexedDbAvailable()) {
+    putStoragePayload(PROJECT_STORAGE_KEY, JSON.stringify(project));
+    return;
+  }
+
+  // Hydration settled without IndexedDB (private mode, old browser, …):
+  // the legacy tiered localStorage saves, unchanged.
   if (safelySetLocalStorageItem(PROJECT_STORAGE_KEY, project)) {
     return;
   }

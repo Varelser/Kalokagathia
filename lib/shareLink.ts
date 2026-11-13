@@ -1,3 +1,5 @@
+import type { PresetRecord } from '../types';
+
 // Share links and shared-view mode.
 //
 // Link forms:
@@ -86,6 +88,25 @@ export async function encodeConfigPayload(name: string, config: unknown): Promis
     const raw = new TextEncoder().encode(JSON.stringify({ name, config }));
     const packed = await pipeThrough(raw, new CompressionStream('deflate-raw'));
     return bytesToBase64Url(packed);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch one catalog preset record from /presets/<id>.json — the exact
+ * resolution step share links (/#p=<id>) use for presets that are not in
+ * the bundled/local library. Returns null when the origin does not serve
+ * a matching JSON record (unknown id, SPA-shell fallback, network error),
+ * so callers can degrade quietly.
+ */
+export async function fetchCatalogPreset(presetId: string): Promise<PresetRecord | null> {
+  try {
+    const r = await fetch(`/presets/${encodeURIComponent(presetId)}.json`);
+    if (!(r.headers.get('content-type') || '').includes('json')) return null;
+    const rec = (await r.json()) as PresetRecord | null;
+    if (rec && rec.id === presetId && rec.config && typeof rec.config === 'object') return rec;
+    return null;
   } catch {
     return null;
   }

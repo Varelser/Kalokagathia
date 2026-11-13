@@ -51,7 +51,7 @@ export interface ParticleConfigGpgpu {
   gpgpuBoidsRadius: number;
   // Strange Attractor
   gpgpuAttractorEnabled: boolean;
-  gpgpuAttractorType: 'lorenz' | 'rossler' | 'thomas' | 'halvorsen' | 'chen' | 'lu' | 'aizawa' | 'sprott' | 'rabinovich' | 'dejong' | 'ikeda';
+  gpgpuAttractorType: 'lorenz' | 'rossler' | 'thomas' | 'halvorsen' | 'chen' | 'lu' | 'aizawa' | 'sprott' | 'rabinovich' | 'dejong' | 'ikeda' | 'chua';
   gpgpuAttractorStrength: number;
   gpgpuAttractorScale: number;
   // Vortex

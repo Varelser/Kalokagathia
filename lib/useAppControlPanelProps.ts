@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { PUBLIC_PRESET_LIBRARY, loadInitialPrivateConfig, normalizeConfig } from './appState';
+import { getCachedStarterPresetLibrary } from './lazyStarterLibrary';
 import { ControlPanelProps } from '../components/controlPanelTypes';
 import type { ParticleConfig } from '../types';
 
@@ -29,7 +30,10 @@ export function useAppControlPanelProps({
     setConfig(
       isPublicLibraryMode
         ? normalizeConfig(PUBLIC_PRESET_LIBRARY.currentConfig)
-        : loadInitialPrivateConfig(),
+        // The starter library is loaded lazily at mount in private mode, so
+        // by reset time it is cached; if it somehow is not, this falls back
+        // to the default config, matching loadInitialPrivateConfig().
+        : loadInitialPrivateConfig(getCachedStarterPresetLibrary()),
     );
   }, [isPublicLibraryMode, setConfig]);
 

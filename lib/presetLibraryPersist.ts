@@ -19,6 +19,7 @@
 // compaction is lossless. The starter library compacts to ~366K characters.
 
 import { DEFAULT_CONFIG } from './appStateConfig';
+import { getHydratedPayload, writePayloadVerified } from './storageDb';
 import type { ParticleConfig, PresetRecord } from '../types';
 
 export interface PresetStorageLike {
@@ -113,4 +114,79 @@ export function persistPresetRecordsVerified(
     }
   }
   return { ok: true };
+}
+
+function verifyPayloadContents(payload: string, presets: readonly PresetRecord[]): PresetPersistResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return { ok: false, reason: 'readback-invalid' };
+  }
+  if (!Array.isArray(parsed)) {
+    return { ok: false, reason: 'readback-invalid' };
+  }
+  if (parsed.length !== presets.length) {
+    return { ok: false, reason: 'readback-mismatch' };
+  }
+  const ids = new Set(
+    parsed.map((record) => (
+      record && typeof record === 'object' ? (record as { id?: unknown }).id : undefined
+    )),
+  );
+  for (const preset of presets) {
+    if (!ids.has(preset.id)) {
+      return { ok: false, reason: 'readback-mismatch' };
+    }
+  }
+  return { ok: true };
+}
+
+// IndexedDB-backed verified persistence (Phase 1 renewal). The payload is
+// built with the exact same compaction as the localStorage path, then
+// written through storageDb's writePayloadVerified, which stores it in
+// IndexedDB, reads it back and string-compares — the same guarantee the
+// synchronous helper gives for localStorage, without the 4,000,000-char
+// cap: oversized libraries now persist instead of failing with
+// 'too-large'. When IndexedDB is unavailable the call degrades to the
+// legacy synchronous localStorage path (cap included). Calls are
+// serialized through a module-level chain so rapid successive saves can
+// never land in IndexedDB out of order.
+let idbPersistChain: Promise<unknown> = Promise.resolve();
+
+export function persistPresetRecordsVerifiedIdb(
+  key: string,
+  presets: readonly PresetRecord[],
+): Promise<PresetPersistResult> {
+  const run = async (): Promise<PresetPersistResult> => {
+    let payload: string;
+    try {
+      payload = JSON.stringify(presets.map(compactPresetRecord));
+    } catch {
+      return { ok: false, reason: 'serialize' };
+    }
+
+    const outcome = await writePayloadVerified(key, payload);
+    if (outcome === 'idb') {
+      const readBack = getHydratedPayload(key);
+      if (typeof readBack !== 'string') {
+        return { ok: false, reason: 'readback-missing' };
+      }
+      return verifyPayloadContents(readBack, presets);
+    }
+    if (outcome === 'failed') {
+      return getHydratedPayload(key) === payload
+        ? { ok: false, reason: 'write' }
+        : { ok: false, reason: 'readback-mismatch' };
+    }
+    // IndexedDB unavailable: legacy localStorage verified write.
+    if (typeof window === 'undefined') {
+      return { ok: false, reason: 'write' };
+    }
+    return persistPresetRecordsVerified(window.localStorage, key, presets);
+  };
+
+  const result = idbPersistChain.then(run, run);
+  idbPersistChain = result.catch(() => undefined);
+  return result;
 }

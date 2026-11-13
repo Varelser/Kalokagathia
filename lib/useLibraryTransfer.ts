@@ -13,6 +13,7 @@ import {
   PRESET_LIBRARY_VERSION,
 } from './appState';
 import type { Notice } from './audioControllerTypes';
+import { saveBlobFile } from './platformFeatures';
 
 type UseLibraryTransferArgs = {
   activePresetId: string | null;
@@ -55,7 +56,7 @@ export function useLibraryTransfer({
   stopSequencePlayback,
   validPresetIds,
 }: UseLibraryTransferArgs) {
-  const handleExportLibrary = useCallback(() => {
+  const handleExportLibrary = useCallback(async () => {
     if (isPublicLibraryMode) {
       setLibraryNotice({ tone: 'error', message: 'Export from your private workspace build instead.' });
       return;
@@ -73,15 +74,15 @@ export function useLibraryTransfer({
     };
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `kalokagathia-library-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.URL.revokeObjectURL(url);
-    setLibraryNotice({ tone: 'success', message: 'Library exported.' });
+    // File System Access picker where available; anchor download else.
+    const result = await saveBlobFile(
+      blob,
+      `kalokagathia-library-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
+      { description: 'JSON library', accept: { 'application/json': ['.json'] } },
+    );
+    if (result !== 'cancelled') {
+      setLibraryNotice({ tone: 'success', message: 'Library exported.' });
+    }
   }, [activePresetId, config, isPublicLibraryMode, presetBlendDuration, presetSequence, presets, sequenceLoopEnabled, setLibraryNotice]);
 
   const handleImportLibrary = useCallback(async (file: File, mode: 'append' | 'replace') => {

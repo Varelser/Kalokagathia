@@ -15,7 +15,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Kalokagathia — Monosphere" />
     <meta property="og:title" content="Kalokagathia — Monosphere" />
-    <meta property="og:description" content="モノクロ3DパーティクルのWebアプリ。723種のプリセットとモーションの自由配線、AIによるパラメータ調整。" />
+    <meta property="og:description" content="モノクロ3DパーティクルのWebアプリ。746種のプリセットとモーションの自由配線、AIによるパラメータ調整。" />
     <meta property="og:url" content="https://monosphere.pages.dev/" />
     <meta property="og:image" content="https://monosphere.pages.dev/catalog/thumbs/coverage-370-cube-fronds-20261109.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -24,10 +24,61 @@
       body {
         margin: 0;
         overflow: hidden;
-        /* Background is now handled by the React App component */
+        /* Dark base matches the app so there is no white flash before mount;
+           the React App component takes over the background after that. */
+        background: #000;
         font-family: 'Inter', sans-serif;
       }
-      /* Custom scrollbar for the control panel */
+      /* Inline loading placeholder (no external assets); React replaces the
+         contents of #root on mount. */
+      .app-loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #000;
+        color: #e8e8e8;
+      }
+      .app-loading-title {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.42em;
+        text-indent: 0.42em;
+        text-transform: uppercase;
+      }
+      .app-loading-sub {
+        font-size: 10px;
+        letter-spacing: 0.3em;
+        text-indent: 0.3em;
+        text-transform: uppercase;
+        color: #777;
+      }
+      .app-loading-bar {
+        width: 168px;
+        height: 2px;
+        background: #262626;
+        overflow: hidden;
+      }
+      .app-loading-bar span {
+        display: block;
+        height: 100%;
+        width: 40%;
+        background: #999;
+        animation: app-loading-slide 1.1s ease-in-out infinite;
+      }
+      @keyframes app-loading-slide {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(280%); }
+      }
+      /* Custom scrollbar for the control panel — Phase 2: Noise values
+         (4px / thumb #333 / hover #555, radius 2px) */
+      html {
+        scrollbar-width: thin;
+        scrollbar-color: #333 transparent;
+      }
       ::-webkit-scrollbar {
         width: 4px;
       }
@@ -35,16 +86,22 @@
         background: transparent;
       }
       ::-webkit-scrollbar-thumb {
-        background: rgba(128, 128, 128, 0.4);
-        border-radius: 4px;
+        background: #333;
+        border-radius: 2px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: rgba(128, 128, 128, 0.6);
+        background: #555;
       }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-loading" role="status" aria-label="Loading Kalokagathia">
+        <div class="app-loading-title">Kalokagathia</div>
+        <div class="app-loading-bar"><span></span></div>
+        <div class="app-loading-sub">Loading</div>
+      </div>
+    </div>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

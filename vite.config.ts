@@ -43,7 +43,16 @@ export default defineConfig(({ mode }) => {
                 { name: 'ui-vendor', priority: 75, test: /lucide-react/ },
                 { name: 'jszip', priority: 76, test: /\/node_modules\/(jszip|pako|lie|setimmediate|readable-stream|inherits|core-util-is|process-nextick-args|util-deprecate|isarray|string_decoder|safe-buffer)\// },
                 { name: 'vendor', priority: 70, test: /\/node_modules\// },
-                { name: 'starter-library-data', priority: 60, test: /\/public-library\.json|\/lib\/(starterLibrary|operatorGeneratedStarters)/ },
+                { name: 'public-library-data', priority: 62, test: /\/public-library\.json/ },
+                // Lowest priority on purpose: this group backs the lazily
+                // imported starter library. Groups capture their modules'
+                // still-unclaimed dependencies, so a high priority here would
+                // pull shared app modules (appStateConfig & friends, also
+                // needed by the initial chunks) into the lazy chunk and make
+                // it a static dependency of the entry again. At priority 10
+                // every other group claims its shared dependencies first and
+                // only the starter/operator data itself lands in this chunk.
+                { name: 'starter-library-data', priority: 10, test: /\/lib\/(starterLibrary|operatorGeneratedStarters)/ },
                 { name: 'depiction-catalog', priority: 55, test: /\/lib\/(depiction|productPack|temporalProfiles|renderModeRegistry|materialMoodBundles|motionArchitecture|expressionAtlas|hybridExpression|hybridTemporalVariant)/ },
                 { name: 'scene-gpgpu', priority: 50, test: /\/components\/(gpgpu|useGpgpu|sceneGpgpu)/ },
                 { name: 'scene-surface-families', priority: 45, test: /\/components\/(sceneSurface|sceneVolume|sceneBrushSurface|sceneGrowthField|sceneMembrane|sceneFiberField|sceneDepositionField|sceneCrystal|sceneErosionTrail|sceneSdfSurfaceShell|sceneVolumetricField)/ },

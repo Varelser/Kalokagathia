@@ -174,6 +174,7 @@ const MOTION_OPTION_OVERRIDES: Partial<Record<Layer2Type, { label: string; icon:
   rabinovich: { label: 'Rabinovich', icon: Hexagon },
   dejong: { label: 'De Jong', icon: Flower2 },
   ikeda: { label: 'Ikeda', icon: Waves },
+  chua: { label: 'Chua', icon: InfinityIcon },
   quasicrystal: { label: 'Quasicrystal', icon: Hexagon },
   hopf: { label: 'Hopf', icon: Orbit },
   physarum: { label: 'Physarum', icon: Network },

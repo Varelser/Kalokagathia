@@ -7,8 +7,7 @@ import { AiTabContent } from './controlPanelAiTab';
 import { ControlPanelContentProps } from './controlPanelTabsShared';
 import { PARAMETER_CATALOG } from '../lib/parameterCatalog';
 import { BASIC_PRIMARY_KEYS, basicAppliesTo } from '../lib/basicPrimaryParameters';
-import { encodeConfigPayload, isSharedView, subscribeSharedView } from '../lib/shareLink';
-import { normalizeConfig } from '../lib/appStateConfig';
+import { isSharedView, subscribeSharedView } from '../lib/shareLink';
 import { getParameterDescription } from '../lib/parameterDescriptions';
 
 const FOLD_STORAGE_KEY = 'kalokagathia.folds.v1';
@@ -21,9 +20,9 @@ const loadFolds = (): FoldMap => {
   }
 };
 
-const DECK_MODE_STORAGE_KEY = 'kalokagathia.deckMode.v1';
-type DeckMode = 'basic' | 'pro';
-const loadDeckMode = (): DeckMode => {
+export const DECK_MODE_STORAGE_KEY = 'kalokagathia.deckMode.v1';
+export type DeckMode = 'basic' | 'pro';
+export const loadDeckMode = (): DeckMode => {
   try {
     // Basic on first visit only; the choice is remembered afterwards.
     return localStorage.getItem(DECK_MODE_STORAGE_KEY) === 'pro' ? 'pro' : 'basic';
@@ -33,21 +32,18 @@ const loadDeckMode = (): DeckMode => {
 };
 
 export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) => {
-  const { activeTab, isPublicLibrary, config, activePresetId, isPresetTransitioning, isPresetDirty } = props;
+  const { activeTab, isPublicLibrary, config, activePresetId, isPresetTransitioning } = props;
   const rootRef = React.useRef<HTMLDivElement>(null);
   const [changedOnly, setChangedOnly] = React.useState(false);
-  const [deckMode, setDeckMode] = React.useState<DeckMode>(loadDeckMode);
+  const [ownDeckMode] = React.useState<DeckMode>(loadDeckMode);
+  // Four-edge layout: the mode state is lifted to ControlPanel (the top
+  // header switches it at any time). The local state is only the
+  // standalone fallback initialised from the same localStorage key;
+  // ControlPanel always passes deckMode + onDeckModeChange.
+  const deckMode = props.deckMode ?? ownDeckMode;
   const [basicHiddenCount, setBasicHiddenCount] = React.useState(0);
   const deckModeRef = React.useRef(deckMode);
   deckModeRef.current = deckMode;
-  const chooseDeckMode = (mode: DeckMode) => {
-    setDeckMode(mode);
-    try {
-      localStorage.setItem(DECK_MODE_STORAGE_KEY, mode);
-    } catch {
-      /* storage unavailable */
-    }
-  };
 
 
   // --- Changed-vs-baseline tracking (idea 3) --------------------------------
@@ -74,54 +70,8 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
     [activeTab, changedKeys],
   );
 
-  const [shareNote, setShareNote] = React.useState('');
   const [sharedView, setSharedView] = React.useState(isSharedView());
   React.useEffect(() => subscribeSharedView(() => setSharedView(isSharedView())), []);
-
-  const handleShare = async () => {
-    const origin = window.location.origin;
-    let url: string | null = null;
-    // For catalog presets, decide clean/dirty against the normalized record:
-    // the library's isPresetDirty stringifies the raw record, which never
-    // matches the normalized live config for fetched/imported records.
-    const canonical = (o: Record<string, unknown>) => Object.keys(o).sort().map((k) => `${k}=${JSON.stringify(o[k])}`).join('|');
-    let catalogClean: boolean | null = null;
-    if (activePresetId) {
-      try {
-        const r = await fetch(`/presets/${encodeURIComponent(activePresetId)}.json`);
-        if ((r.headers.get('content-type') || '').includes('json')) {
-          const rec = (await r.json()) as { config?: Record<string, unknown> } | null;
-          if (rec?.config) {
-            catalogClean = canonical(normalizeConfig(rec.config) as unknown as Record<string, unknown>)
-              === canonical(config as unknown as Record<string, unknown>);
-          }
-        }
-      } catch {
-        catalogClean = null;
-      }
-    }
-    if (activePresetId && catalogClean === true) {
-      url = `${origin}/share/${activePresetId}`;
-    } else if (activePresetId && catalogClean === null && !isPresetDirty) {
-      url = `${origin}/#p=${activePresetId}`;
-    } else {
-      const payload = await encodeConfigPayload('Monosphere scene', config);
-      if (payload) url = `${origin}/#c=${payload}`;
-    }
-    if (!url) {
-      setShareNote('共有リンクを作れませんでした');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-      setShareNote('共有リンクをコピーしました');
-    } catch {
-      window.prompt('共有リンク', url);
-      setShareNote('');
-      return;
-    }
-    window.setTimeout(() => setShareNote(''), 3000);
-  };
 
   // Refs keep markChanges referentially stable across config edits, so the
   // structural effect below does not re-run (and re-scan) on every tick.
@@ -607,7 +557,7 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
   };
 
   return (
-    <div ref={rootRef} onClick={handleFoldClick} onMouseOver={handleTipOver} onMouseOut={handleTipOut} onScroll={hideTip} className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+    <div ref={rootRef} onClick={handleFoldClick} onMouseOver={handleTipOver} onMouseOut={handleTipOut} onScroll={hideTip} className="mg-content-scroll flex-1 overflow-y-auto px-5 py-5 sm:px-6">
       {tip && (
         <div
           className="pointer-events-none fixed z-[120] w-64 max-w-[80vw] rounded-xl border border-white/25 px-3 py-2 text-[11px] leading-relaxed text-white/90 shadow-[0_10px_30px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md backdrop-saturate-200"
@@ -626,7 +576,7 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
           Public exhibition mode: scene parameters and sequence editing are locked. You can still load, morph, play, and export.
         </div>
       )}
-      <div className="mx-auto mb-4 flex w-full max-w-4xl flex-wrap items-center gap-2">
+      <div className="mb-4 flex w-full flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => {
@@ -643,7 +593,7 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
             try { localStorage.setItem(FOLD_STORAGE_KEY, JSON.stringify(folds)); } catch { /* storage unavailable */ }
             applyFolds();
           }}
-          className="rounded-full border border-white/15 px-3 py-1 text-[10px] tracking-wider text-white/60 transition-colors hover:border-white/35 hover:text-white"
+          className="rounded-md px-3 py-1.5 text-[10px] tracking-wider text-[#a3a3a3] transition-colors hover:bg-white/[0.08] hover:text-white"
         >
           すべて開く
         </button>
@@ -663,58 +613,27 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
             try { localStorage.setItem(FOLD_STORAGE_KEY, JSON.stringify(folds)); } catch { /* storage unavailable */ }
             applyFolds();
           }}
-          className="rounded-full border border-white/15 px-3 py-1 text-[10px] tracking-wider text-white/60 transition-colors hover:border-white/35 hover:text-white"
+          className="rounded-md px-3 py-1.5 text-[10px] tracking-wider text-[#a3a3a3] transition-colors hover:bg-white/[0.08] hover:text-white"
         >
           すべて閉じる
         </button>
         <span className="flex-1" />
-        <span className="flex overflow-hidden rounded-full border border-white/15" title="Basic: 主要な設定だけ表示 / Pro: 全ての設定を表示（従来どおり）">
-          <button
-            type="button"
-            data-testid="deck-mode-basic"
-            onClick={() => chooseDeckMode('basic')}
-            className={`px-3 py-1 text-[10px] tracking-wider transition-colors ${
-              deckMode === 'basic' ? 'bg-white text-black' : 'text-white/60 hover:text-white'
-            }`}
-          >
-            Basic 基本
-          </button>
-          <button
-            type="button"
-            data-testid="deck-mode-pro"
-            onClick={() => chooseDeckMode('pro')}
-            className={`px-3 py-1 text-[10px] tracking-wider transition-colors ${
-              deckMode === 'pro' ? 'bg-white text-black' : 'text-white/60 hover:text-white'
-            }`}
-          >
-            Pro 詳細
-          </button>
-        </span>
         <button
           type="button"
           onClick={() => setChangedOnly((v) => !v)}
-          className={`rounded-full border px-3 py-1 text-[10px] tracking-wider transition-colors ${
-            changedOnly ? 'border-sky-300/60 bg-sky-300/15 text-sky-200' : 'border-white/15 text-white/60 hover:border-white/35 hover:text-white'
+          className={`rounded-md px-3 py-1.5 text-[10px] tracking-wider transition-colors ${
+            changedOnly ? 'bg-sky-300/15 text-sky-200' : 'text-[#a3a3a3] hover:bg-white/[0.08] hover:text-white'
           }`}
           title="読み込んだプリセットから変更した項目だけを表示（水色ドットが変更印）"
         >
           変更だけ表示{changedInTab > 0 ? ` (${changedInTab})` : ''}
         </button>
-        <button
-          type="button"
-          onClick={handleShare}
-          className="rounded-full border border-white/15 px-3 py-1 text-[10px] tracking-wider text-white/60 transition-colors hover:border-white/35 hover:text-white"
-          title="いまのプリセット（または調整した設定）へのリンクをコピーします"
-        >
-          共有リンクをコピー
-        </button>
         {deckMode === 'basic' && basicAppliesTo(activeTab) && basicHiddenCount > 0 ? (
           <span className="text-[10px] tracking-wider text-white/45">Basic表示中: {basicHiddenCount} 件の詳細設定を非表示（Pro 詳細で全て表示）</span>
         ) : null}
-        {shareNote ? <span className="text-[10px] tracking-wider text-emerald-300/90">{shareNote}</span> : null}
         {sharedView ? <span className="text-[10px] tracking-wider text-amber-200/80">共有リンクで表示中（AIオフ）</span> : null}
       </div>
-      <div className="mx-auto w-full max-w-4xl space-y-8">
+      <div className="mg-flow w-full" data-tab={activeTab}>
         {activeTab === 'play' && <PlayTabContent {...props} />}
         {activeTab === 'global' && <GlobalTabContent {...props} />}
         {activeTab === 'layer1' && <Layer1TabContent {...props} />}

@@ -23,6 +23,7 @@ export type Layer2Type =
   | 'rabinovich'
   | 'dejong'
   | 'ikeda'
+  | 'chua'
   | 'quasicrystal'
   | 'hopf'
   | 'physarum'

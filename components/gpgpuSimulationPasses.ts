@@ -208,7 +208,7 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uBoidsCohesion.value = config.gpgpuBoidsCohesion;
   velSimMat.uniforms.uBoidsRadius.value = config.gpgpuBoidsRadius;
   velSimMat.uniforms.uAttractorEnabled.value = config.gpgpuAttractorEnabled;
-  velSimMat.uniforms.uAttractorType.value = { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10 }[config.gpgpuAttractorType] ?? 0;
+  velSimMat.uniforms.uAttractorType.value = { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractorType] ?? 0;
   velSimMat.uniforms.uLevyEnabled.value = config.gpgpuLevyEnabled;
   velSimMat.uniforms.uLevyStrength.value = config.gpgpuLevyStrength;
   velSimMat.uniforms.uLevyRate.value = config.gpgpuLevyRate;

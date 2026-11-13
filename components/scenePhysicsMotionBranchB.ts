@@ -1,5 +1,9 @@
 export const PHYSICS_MOTION_BRANCH_B = `
-    } else if (motionType < 41.5) {
+// Split from applyMotion (ANGLE Metal expression-complexity fix,
+// 2026-11-13): conditions and bodies below are byte-for-byte the
+// original chain text; applyMotion dispatches here by range.
+vec3 applyMotionBranchB(vec3 result, vec3 p, float motionType, float time, float amp, float freq, float phase, float rnd, vec3 wind, float fluidForce, float viscosity, vec3 noiseField, vec3 curlField, float attractorScale, vec3 fieldPos, float octaves, float lacunarity) {
+    if (motionType < 41.5) {
       float sectorCount = 6.0;
       float sectorAngle = 6.28318530718 / sectorCount;
       float angle = atan(p.z, p.x) + time * 0.45;
@@ -198,4 +202,7 @@ export const PHYSICS_MOTION_BRANCH_B = `
       result.x += sin(p.z * 0.08 + time * 1.9) * amp * 0.16;
       result.z += cos(p.x * 0.08 - time * 1.9) * amp * 0.16;
       result.y += sin((p.x + p.z) * 0.05 + time * 1.4 + phase) * amp * 0.12;
+}
+    return result;
+  }
 `;

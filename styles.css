@@ -1,9 +1,60 @@
 @import "tailwindcss";
 
-/* Section folding (organize): headers marked .mg-h toggle .mg-fold on their section container */
-.mg-h { cursor: pointer; }
+/* Phase 2 renewal (2026-11-13): Noise/Lien design tokens for the deck.
+   Variant B — Noise-standard components on a restrained-gloss surface
+   (see RENEWAL_PHASE0_DESIGN_TOKENS_20261113.md). */
+.mg-deck {
+  --mg-panel-border: rgba(255, 255, 255, 0.12);
+  --mg-control-bg: #171717;
+  --mg-control-bg-hover: #262626;
+  --mg-muted: #a3a3a3;
+  --mg-muted-2: #737373;
+  --mg-active-bg: #f5f5f5;
+  --mg-active-fg: #000000;
+  --mg-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
+}
+
+/* Section titles: Noise type — 12px / 600 / uppercase / .12em / fg 72%.
+   (12px sits above the Phase 4 11px readability floor, so no conflict.) */
+.mg-deck h3 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* Section folding (organize): headers marked .mg-h toggle .mg-fold on their section container.
+   Phase 2: the header becomes a Noise-style bar (subtle dark surface) and
+   the fold affordance becomes the Noise 28px circular button — the ::after
+   glyph centred in a 28px circle at the header's right edge. */
+.mg-h {
+  cursor: pointer;
+  position: relative;
+  padding: 9px 40px 9px 12px;
+  border-radius: 8px;
+  background: rgba(10, 10, 10, 0.35);
+}
 .mg-h:hover { color: rgba(255, 255, 255, 0.85) !important; }
-.mg-h::after { content: '\2212'; float: right; opacity: 0.45; font-weight: 400; letter-spacing: 0; }
+.mg-h::after {
+  content: '\2212';
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  color: #a3a3a3;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.mg-h:hover::after { background: rgba(255, 255, 255, 0.10); color: #ffffff; }
 .mg-fold .mg-h::after { content: '+'; }
 .mg-fold > *:not(.mg-keep) { display: none !important; }
 
@@ -61,16 +112,258 @@
   white-space: normal;
 }
 
-/* Mobile bottom sheet (item 9, 2026-11-11): the sheet handle bar exists in
-   the DOM at every size but is only shown on small screens; the media
-   block at the end of this file carries all small-screen behaviour. */
-.mg-sheet-bar { display: none; }
-
-/* Level-2 folding (sub-blocks inside a section) */
+/* Level-2 folding (sub-blocks inside a section). Phase 2: the level-2
+   glyph keeps its inline form (titles sit inside small boxes where a 28px
+   circle would crowd), aligned to the muted token colour. */
 .mg-fold2 > *:not(.mg-keep2) { display: none !important; }
 .mg-h2 { cursor: pointer; }
-.mg-h2::after { content: '−'; float: right; opacity: 0.55; font-weight: 700; margin-left: 8px; }
+.mg-h2::after { content: '−'; float: right; color: #a3a3a3; opacity: 0.85; font-weight: 700; margin-left: 8px; }
+
+/* Phase 2: text inputs / selects / textareas adopt the Noise control
+   surface — #171717, hover/focus #262626, radius 8px, frameless. Colour
+   inputs, checkboxes, radios and file inputs keep their native chrome. */
+.mg-deck input[type="text"],
+.mg-deck input[type="password"],
+.mg-deck input[type="search"],
+.mg-deck input[type="number"],
+.mg-deck input[type="url"],
+.mg-deck input[type="email"],
+.mg-deck textarea,
+.mg-deck select {
+  background-color: #171717;
+  border-color: transparent;
+  border-radius: 8px;
+}
+.mg-deck input[type="text"]:hover,
+.mg-deck input[type="password"]:hover,
+.mg-deck input[type="search"]:hover,
+.mg-deck input[type="number"]:hover,
+.mg-deck input[type="url"]:hover,
+.mg-deck input[type="email"]:hover,
+.mg-deck textarea:hover,
+.mg-deck select:hover,
+.mg-deck input[type="text"]:focus,
+.mg-deck input[type="password"]:focus,
+.mg-deck input[type="search"]:focus,
+.mg-deck input[type="number"]:focus,
+.mg-deck input[type="url"]:focus,
+.mg-deck input[type="email"]:focus,
+.mg-deck textarea:focus,
+.mg-deck select:focus {
+  background-color: #262626;
+}
+
+/* Phase 2: desktop sliders — the Noise/Lien anatomy everywhere in the deck
+   (Play/Design/Lab tabs, AI tab, DAG editor): 4px pill track (#171717,
+   hover #262626) + 14px white round thumb, border 0. The mobile block at
+   the end of this file owns small screens (28px touch thumb), so this
+   block is min-width:641px only. WebKit + Mozilla selectors cover Chrome
+   and Safari (WebKit) and Firefox. */
+@media (min-width: 641px) {
+  .mg-deck input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 18px;
+    background: transparent;
+    opacity: 1;
+    cursor: pointer;
+  }
+  .mg-deck input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 9999px;
+    background: #171717;
+  }
+  .mg-deck input[type="range"]:hover::-webkit-slider-runnable-track,
+  .mg-deck input[type="range"]:focus-visible::-webkit-slider-runnable-track {
+    background: #262626;
+  }
+  .mg-deck input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    border-radius: 9999px;
+    background: #ffffff;
+    border: 0;
+  }
+  .mg-deck input[type="range"]::-moz-range-track {
+    height: 4px;
+    border-radius: 9999px;
+    background: #171717;
+  }
+  .mg-deck input[type="range"]:hover::-moz-range-track,
+  .mg-deck input[type="range"]:focus-visible::-moz-range-track {
+    background: #262626;
+  }
+  .mg-deck input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: #ffffff;
+    border: 0;
+  }
+}
+
+/* Phase 2: View Transitions, deck-scoped. The sheet is the only named
+   element, so only the deck cross-fades/morphs; the root — including the
+   WebGL canvas — swaps with no animation, so the canvas is never
+   cross-faded as part of a transition. JS-side gating (feature detect +
+   prefers-reduced-motion) lives in ControlPanel.tsx runDeckTransition. */
+.mg-sheet { view-transition-name: mg-deck; }
+.mg-shelf-panel { view-transition-name: mg-shelf; }
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; }
+::view-transition-group(mg-deck) { animation-duration: 0.25s; }
+::view-transition-group(mg-shelf) { animation-duration: 0.25s; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important; }
+}
 .mg-fold2 > .mg-h2::after { content: '+'; }
+
+/* ==========================================================================
+   Four-edge layout (2026-11-13)
+   The deck chrome is split across the four screen edges and the centre is
+   canvas-only: TOP slim header (title / tier / mode / share), LEFT rail
+   (tabs + platform utilities), RIGHT collapsible preset shelf (search,
+   chips, cards, export cluster), BOTTOM transport bar (play / shuffle /
+   reset / macro mini-sliders / sheet handle). The detail sheet still
+   opens upward from the bottom (default 30dvh desktop / 45dvh mobile —
+   see --mg-sheet-h below; the user can drag the sheet's top edge between
+   18dvh and 50dvh and the choice persists) with
+   the remaining tab content; fold-sections reflow into a wrapping
+   multi-column flow so the width is used: each section is a ~330px
+   block; canvas-bearing sections (XY pad) and the DAG-editor sections
+   span the full width. Dense single-form tabs (layers / ambient /
+   audio / AI) keep one centred readable column. Every edge panel is a
+   .mg-edge gloss surface overlaying the canvas edge — the canvas itself
+   never resizes.
+   ========================================================================== */
+.mg-content-scroll { min-height: 0; }
+
+/* Edge geometry shared with the shelf anchor: the header is 40px tall
+   (28px collapsed), the transport bar 48px (52px on small screens), the
+   root padding 12px (8px on small screens) and the inter-edge gap 8px.
+   ControlPanel toggles .mg-header-open on the root with the state. */
+.mg-deck {
+  --mg-top-h: 28px;
+  --mg-bottom-h: 52px;
+  --mg-root-pad: 8px;
+  /* Detail-sheet height: CSS default per breakpoint; ControlPanel sets
+     this var inline on the root when the user has dragged the sheet to a
+     custom height (persisted in kalokagathia.sheetHeight.v1). */
+  --mg-sheet-h: 30dvh;
+}
+.mg-deck.mg-header-open { --mg-top-h: 40px; }
+@media (min-width: 641px) {
+  .mg-deck { --mg-bottom-h: 48px; --mg-root-pad: 12px; }
+}
+
+/* Sheet top-edge grab handle (2026-11-13 addendum): drag to resize the
+   detail sheet between 18dvh and 50dvh, double-click resets to the
+   --mg-sheet-h default. Pointer events (mouse + touch) are wired in
+   ControlPanel.tsx; touch-action:none keeps a touch drag from scrolling
+   the sheet content instead. */
+.mg-sheet-resize {
+  flex: 0 0 auto;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.mg-sheet-resize-grip {
+  width: 48px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.35);
+  transition: background 0.15s ease;
+  pointer-events: none;
+}
+.mg-sheet-resize:hover .mg-sheet-resize-grip,
+.mg-sheet-resize:active .mg-sheet-resize-grip { background: rgba(255, 255, 255, 0.75); }
+
+/* The shelf lives on the right edge at full height between the header
+   and the transport bar (the approved mock's geometry): absolutely
+   anchored inside the deck root, overlaying the canvas edge — and the
+   detail sheet's right end while both are open (collapse the shelf to
+   see the sheet's right column). The panel/handle fills the anchor. */
+.mg-shelf-anchor {
+  position: absolute;
+  right: var(--mg-root-pad);
+  top: calc(var(--mg-root-pad) + var(--mg-top-h) + 8px);
+  bottom: calc(var(--mg-root-pad) + var(--mg-bottom-h) + 8px);
+  z-index: 55;
+  display: flex;
+}
+.mg-shelf-anchor-open { width: 320px; }
+.mg-shelf-anchor-closed { width: 30px; }
+
+/* The deck footer was designed for a full-width sheet; inside the 320px
+   shelf it compacts the same way the small-screen rules compact it:
+   tighter padding and the Transparent BG / Resolution row as two
+   half-width cells that may wrap internally. */
+.mg-shelf-panel .mg-footer { padding: 12px 16px; }
+.mg-shelf-panel .mg-footer-secondary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mg-shelf-panel .mg-footer-secondary > div {
+  letter-spacing: 0.1em;
+  padding: 8px 10px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.mg-flow, .mg-flow-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.mg-flow > *, .mg-flow-sub > * { min-width: 0; }
+@media (min-width: 641px) {
+  .mg-deck .mg-sheet-panel.mg-panel-open { height: min(var(--mg-sheet-h, 30dvh), 880px); }
+  .mg-flow, .mg-flow-sub {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 26px 22px;
+    align-items: flex-start;
+  }
+  .mg-flow > *, .mg-flow-sub > * { flex: 1 1 330px; }
+  /* The Play tab's root is a container, not a section: full row, its
+     sections tile inside it via .mg-flow-sub. */
+  .mg-flow > .mg-flow-sub { flex: 1 1 100%; }
+  /* Single-form tabs: one centred column at a readable measure instead
+     of full-width slider rows. */
+  .mg-flow[data-tab="layer1"] > *,
+  .mg-flow[data-tab="layer2"] > *,
+  .mg-flow[data-tab="layer3"] > *,
+  .mg-flow[data-tab="ambient"] > *,
+  .mg-flow[data-tab="audio"] > *,
+  .mg-flow[data-tab="ai"] > * {
+    flex: 0 1 880px;
+    margin-inline: auto;
+    width: 100%;
+  }
+  /* Wide sections: sections holding a canvas (XY pad) and sections
+     holding the DAG editor (its inner surface scrolls horizontally at
+     1400px design width). (The preset shelf lived here in the
+     bottom-panel layout; it is the right-edge panel now.) */
+  .mg-flow-sub > section:has(canvas),
+  .mg-flow-sub > section:has([class*="h-[430px]"]) { flex-basis: 100%; }
+  /* Canvas-adjacent overlays clear the bottom transport bar: the stream
+     widget and the diagnostics dock sit above it; the expanded sheet and
+     shelf (z-50, later in paint order at equal z via DOM order is
+     unreliable — the widget drops to z-40) slide over them while open. */
+  .mg-stream-widget { bottom: 88px; z-index: 40; }
+  .mg-diagnostics { bottom: 88px; }
+}
 
 /* ==========================================================================
    Mobile / touch optimisation (item 9, 2026-11-11)
@@ -80,102 +373,67 @@
    strings need no small-screen variants.
    ========================================================================== */
 @media (max-width: 640px) {
-  /* --- 1. Bottom-sheet deck ---------------------------------------------
-     The deck root stops being a full-height right-side column and becomes
-     a bottom-anchored container; the sheet caps at 68dvh so the canvas
-     stays visible and interactive above it. Glass styling is inherited
-     from the panel's own classes. */
+  /* --- 1. Four-edge deck --------------------------------------------------
+     Four-edge layout (2026-11-13): the edges anchor at every size (the
+     root's own classes do the anchoring); on small screens the expanded
+     detail sheet defaults to 45dvh so the canvas stays visible and
+     interactive above it, the header and transport bars compact, the
+     rail is an icon strip, and the shelf leaves the flow to become a
+     near-full-width overlay drawer from the right. Glass styling is
+     inherited from the panels' own classes. */
   .mg-deck {
-    top: auto;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: auto;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: stretch;
-    padding: 0 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    --mg-sheet-h: 45dvh;
   }
+  /* Taller grab strip on touch screens so the sheet resize drag is easy
+     to start with a finger. */
+  .mg-deck .mg-sheet-resize { height: 22px; }
+  .mg-deck .mg-edge,
   .mg-deck .mg-sheet {
-    width: 100%;
-    max-width: 100%;
-    height: 68dvh;
-    max-height: 68dvh;
-    align-items: stretch;
-    /* --- 4. Auto-fade is hover-driven and hostile on touch: a tap has no
-       reliable pointer-leave pair, and a 0.22-opacity deck reads as broken.
-       On small screens the sheet is always fully opaque (pointerdown in
-       ControlPanel.tsx also restores deckHover for good measure). */
+    /* Auto-fade is hover-driven and hostile on touch: a tap has no
+       reliable pointer-leave pair, and a 0.22-opacity deck reads as
+       broken. On small screens the edges are always fully opaque
+       (pointerdown in ControlPanel.tsx also restores deckHover). */
     opacity: 1;
   }
   .mg-deck .mg-sheet-panel {
     width: 100%;
-    border-radius: 24px;
+    border-radius: 18px;
   }
-  /* Collapsed: only the handle bar remains — a slim bar at the bottom. */
-  .mg-deck .mg-sheet-collapsed { height: auto; max-height: none; }
-  .mg-deck .mg-sheet-collapsed .mg-sheet-panel { height: auto; }
-  .mg-deck .mg-sheet-collapsed .mg-sheet-panel > *:not(.mg-sheet-bar) { display: none !important; }
+  .mg-deck .mg-sheet-panel.mg-panel-open { height: var(--mg-sheet-h, 45dvh); max-height: var(--mg-sheet-h, 45dvh); }
+  .mg-transportbar {
+    min-height: 52px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  /* The shelf drawer overlays the whole root on small screens: the
+     anchor leaves the flow offsets and spans nearly the full width
+     between the root's own padding, above the other edges. Closed, the
+     anchor is just the handle strip on the right edge. */
+  .mg-deck .mg-shelf-anchor {
+    top: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    z-index: 60;
+  }
+  .mg-deck .mg-shelf-anchor-open { left: 8px; width: auto; max-width: 400px; }
 
-  /* Sheet handle bar (expand / collapse + cinema) */
-  .mg-sheet-bar {
-    display: flex;
-    align-items: stretch;
-    gap: 8px;
-    padding: 6px 10px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-    background: rgba(255, 255, 255, 0.03);
-  }
-  .mg-sheet-toggle {
-    position: relative;
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 44px;
-    border-radius: 12px;
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 12px;
-    letter-spacing: 0.08em;
-  }
-  .mg-sheet-grip {
-    position: absolute;
-    top: 4px;
-    left: 50%;
-    width: 44px;
-    height: 4px;
-    border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.35);
-    transform: translateX(-50%);
-  }
-  .mg-cinema-toggle {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 44px;
-    padding: 0 14px;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.75);
-    font-size: 12px;
-    letter-spacing: 0.08em;
-  }
-
-  /* Compact chrome so the scrollable content keeps usable height. The
-     header description paragraph is desktop-context text; the tab label
-     itself remains as the heading on small screens. */
-  .mg-deck .mg-header { padding: 10px 16px; }
-  .mg-deck .mg-header p { display: none; }
-  .mg-deck .mg-header-eyebrow { display: none; }
-  .mg-deck .mg-actions { padding: 8px 16px; }
+  /* Compact footer so the scrollable content keeps usable height. */
   .mg-deck .mg-footer { padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
-  /* The footer's secondary row (Transparent BG / export Resolution) is
-     hidden on small screens: pinned above the sheet's scroll area it would
-     leave almost no visible content height at 68dvh. The primary Save
-     button stays pinned; those two settings remain available on desktop
-     (and Transparent BG defaults carry over). Documented compromise. */
-  .mg-deck .mg-footer-secondary { display: none; }
+  /* The footer's secondary row (Transparent BG / export Resolution)
+     stays reachable on small screens — every deck control must remain
+     available in the bottom layout — but compacts into a single
+     two-column row with tighter tracking so it costs ~44px of the
+     sheet instead of a stacked pair. */
+  .mg-deck .mg-footer-secondary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .mg-deck .mg-footer-secondary > div {
+    letter-spacing: 0.1em;
+    padding: 8px 10px;
+  }
 
   /* --- 2. Touch targets ≥44px --------------------------------------------
      Primary buttons across the deck get a 44px floor. Small toggle pills
@@ -185,9 +443,7 @@
      and their labelled rows remain the tap context. See the report. */
   .mg-deck button { min-height: 44px; }
   .mg-deck button[class*="h-5"], .mg-deck button[class*="h-6"] { min-height: 0; }
-  .mg-deck .mg-tabbar-row button { flex: 0 0 auto; min-width: 64px; padding-top: 10px; white-space: nowrap; }
-  .mg-deck .mg-tier-switch { margin-bottom: 6px; }
-  .mg-deck .mg-tier-switch button { min-height: 44px; }
+  .mg-deck .mg-macro-scroll button, .mg-deck .mg-topbar-scroll button { flex: 0 0 auto; white-space: nowrap; }
   /* Section fold headers (level 1 + level 2) become full tap rows. */
   .mg-deck .mg-h {
     min-height: 44px;

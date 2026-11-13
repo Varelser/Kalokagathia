@@ -13,6 +13,7 @@ type UseSequenceControllerArgs = {
     easing?: SequenceTransitionEasing,
   ) => boolean;
   config: ParticleConfig;
+  hadPersistedSequence?: boolean;
   initialPresetSequence: PresetSequenceItem[];
   initialSequenceLoopEnabled: boolean;
   isPresetTransitioning: boolean;
@@ -28,6 +29,7 @@ export function useSequenceController({
   applyConfigInstant,
   applyConfigMorph,
   config,
+  hadPersistedSequence = false,
   initialPresetSequence,
   initialSequenceLoopEnabled,
   isPresetTransitioning,
@@ -55,6 +57,7 @@ export function useSequenceController({
   } = useSequencePlayback({
     applyConfigInstant,
     applyConfigMorph,
+    hadPersistedSequence,
     initialSequenceLoopEnabled,
     isPresetTransitioning,
     isPublicLibraryMode,

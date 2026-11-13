@@ -24,8 +24,3 @@ dist-ssr
 *.sw?
 .claude/worktrees/
 .vercel
-
-# Env / secrets
-.env
-.env.*
-!.env.example

@@ -1,4 +1,8 @@
 export const PHYSICS_MOTION_BRANCH_A = `
+// Split from applyMotion (ANGLE Metal expression-complexity fix,
+// 2026-11-13): conditions and bodies below are byte-for-byte the
+// original chain text; applyMotion dispatches here by range.
+vec3 applyMotionBranchA(vec3 result, vec3 p, float motionType, float time, float amp, float freq, float phase, float rnd, vec3 wind, float fluidForce, float viscosity, vec3 noiseField, vec3 curlField, float attractorScale, vec3 fieldPos, float octaves, float lacunarity) {
     if (motionType < 0.5) {
       result += noiseField * amp * 0.35;
     } else if (motionType < 1.5) {
@@ -125,4 +129,7 @@ export const PHYSICS_MOTION_BRANCH_A = `
         abs(sin(p.z * 0.025 + time * 0.8 + phase))
       ) * amp * 0.55;
       result = mix(p, (folded - amp * 0.275) * sign(noiseField + vec3(0.0001)), 0.32);
+}
+    return result;
+  }
 `;

@@ -298,6 +298,9 @@ export const SIM_VEL_FRAG = /* glsl */ `
         float ct = cos(tt); float st = sin(tt);
         vec2 mp = vec2(1.0, 0.0) + 0.918 * vec2(ap.x*ct - ap.y*st, ap.x*st + ap.y*ct);
         dv = vec3(mp - ap.xy, -0.5*ap.z);
+      } else if (uAttractorType == 11) { // Chua (double scroll)
+        float fx = -0.714*ap.x - 0.2145*(abs(ap.x + 1.0) - abs(ap.x - 1.0));
+        dv = vec3(15.6*(ap.y - ap.x - fx), ap.x - ap.y + ap.z, -28.0*ap.y);
       } else { // Thomas (2)
         dv = vec3(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
       }

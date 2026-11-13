@@ -1,16 +1,20 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { AppBodyScene } from './components/AppBodyScene';
 import { AppModeGate } from './components/AppModeGate';
 import type { ParticleConfig, PresetRecord, PresetSequenceItem } from './types';
 import {
   getInterLayerContactAmount,
+  hasPersistedPresetRecords,
+  hasPersistedPresetSequence,
   LIBRARY_SCOPE,
   loadInitialPrivateConfig,
   loadPresetSequence,
   normalizeConfig,
   PUBLIC_PRESET_LIBRARY,
 } from './lib/appState';
+import { useStarterPresetLibrary } from './lib/lazyStarterLibrary';
+import { useStorageHydrated } from './lib/storageDb';
 import { useAppControlPanelBridge } from './lib/useAppControlPanelBridge';
 import { useAppLayerPreview } from './lib/useAppLayerPreview';
 import { useAppPresetActions } from './lib/useAppPresetActions';
@@ -25,8 +29,10 @@ import { usePresetLibrary } from './lib/usePresetLibrary';
 import { usePresetTransition } from './lib/usePresetTransition';
 import { useProjectTransfer } from './lib/useProjectTransfer';
 import { useSequenceController } from './lib/useSequenceController';
-import { decodeConfigPayload, enterSharedView, parseShareHash } from './lib/shareLink';
+import { decodeConfigPayload, enterSharedView, fetchCatalogPreset, parseShareHash } from './lib/shareLink';
+import { maybeWarnHeavyPreset } from './lib/gpuTierWarnings';
 import { initGpuTier } from './lib/gpuTier';
+import { requestPersistentStorageOnce } from './lib/platformFeatures';
 import { useGpuTierFeatureWarnings } from './lib/useGpuTierFeatureWarnings';
 import { GpuTierWarningHost } from './components/GpuTierWarningHost';
 import { AUDIO_BRIDGE_MODE_PARAM, AUDIO_BRIDGE_MODE_VALUE } from './lib/audioBridge';
@@ -36,8 +42,36 @@ const AppBody: React.FC = () => {
   const [config, setConfig] = useState<ParticleConfig>(() => (
     isPublicLibraryMode ? normalizeConfig(PUBLIC_PRESET_LIBRARY.currentConfig) : loadInitialPrivateConfig()
   ));
+  // The starter library (largest data chunk) loads lazily in private mode
+  // only; public mode renders from PUBLIC_PRESET_LIBRARY immediately and
+  // never downloads it. In private mode the initial config/sequence start
+  // from persisted state or a placeholder and are filled in on arrival by
+  // the effect further below (presets/active fill lives in usePresetLibrary).
+  const starterLibrary = useStarterPresetLibrary(!isPublicLibraryMode);
+  const initialConfigRef = useRef<ParticleConfig | null>(null);
+  if (initialConfigRef.current === null) {
+    initialConfigRef.current = config;
+  }
+  const hadPersistedPresetsRef = useRef<boolean | null>(null);
+  if (hadPersistedPresetsRef.current === null) {
+    hadPersistedPresetsRef.current = !isPublicLibraryMode && hasPersistedPresetRecords();
+  }
+  const hadPersistedSequenceRef = useRef<boolean | null>(null);
+  if (hadPersistedSequenceRef.current === null) {
+    hadPersistedSequenceRef.current = !isPublicLibraryMode && hasPersistedPresetSequence();
+  }
   const ui = useAppUiState();
+  // IndexedDB hydration (Phase 1 renewal): kicked off at the root so the
+  // one-time localStorage → IndexedDB migration runs once, without
+  // blocking first paint. Storage consumers gate their writes on the
+  // settled flag (see usePresetLibrary / useSequencePlayback), and the
+  // storageDb write queue itself waits for hydration before touching
+  // IndexedDB, so nothing here can race the migration copy.
+  useStorageHydrated(true);
   useEffect(() => { initGpuTier(); }, []);
+  // Ask the browser to keep this origin's storage persistent so the
+  // IndexedDB payloads survive storage-pressure eviction (console-only).
+  useEffect(() => { requestPersistentStorageOnce(); }, []);
   useGpuTierFeatureWarnings(config);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const pointCloudCaptureRef = useRef<PointCloudCaptureState>(createPointCloudCaptureState());
@@ -104,10 +138,9 @@ const AppBody: React.FC = () => {
       applyConfigMorph(local.config, presetBlendDuration, local.id);
       return;
     }
-    fetch(`/presets/${encodeURIComponent(parsed.id)}.json`)
-      .then((r) => ((r.headers.get('content-type') || '').includes('json') ? r.json() : null))
-      .then((rec: PresetRecord | null) => {
-        if (rec && rec.id === parsed.id && rec.config && typeof rec.config === 'object') {
+    fetchCatalogPreset(parsed.id)
+      .then((rec) => {
+        if (rec) {
           setPresets((prev) => (prev.some((preset) => preset.id === rec.id) ? prev : [...prev, rec]));
           applyConfigMorph(rec.config, presetBlendDuration, rec.id);
         }
@@ -173,6 +206,7 @@ const AppBody: React.FC = () => {
     applyConfigInstant,
     applyConfigMorph,
     config,
+    hadPersistedSequence: hadPersistedSequenceRef.current ?? false,
     initialPresetSequence: initialPresetSequenceRef.current,
     initialSequenceLoopEnabled: isPublicLibraryMode ? PUBLIC_PRESET_LIBRARY.sequenceLoopEnabled : true,
     isPresetTransitioning: ui.isPresetTransitioning,
@@ -183,6 +217,37 @@ const AppBody: React.FC = () => {
     setLibraryNotice,
     validPresetIds,
   });
+
+  // Starter fill-in (private mode): reproduce the old synchronous initial
+  // state once the lazy starter library arrives. The config is only replaced
+  // while it is still the untouched initial placeholder, and the sequence
+  // only while it still equals its initial value, so anything the visitor
+  // (or a share link) changed in the meantime is kept.
+  useEffect(() => {
+    if (isPublicLibraryMode || !starterLibrary) {
+      return;
+    }
+    setConfig((prev) => (
+      prev === initialConfigRef.current
+        ? loadInitialPrivateConfig(starterLibrary)
+        : prev
+    ));
+    if (!hadPersistedSequenceRef.current) {
+      // Old fallback semantics: the starter sequence filtered by the valid
+      // preset ids — the starter ids themselves when presets also came from
+      // the starter fallback, otherwise the persisted library's ids.
+      const filterIds = hadPersistedPresetsRef.current
+        ? validPresetIds
+        : new Set(starterLibrary.presets.map((preset) => preset.id));
+      const starterSequence = loadPresetSequence(filterIds, starterLibrary);
+      setPresetSequence((prev) => {
+        const initial = initialPresetSequenceRef.current ?? [];
+        const untouched = prev.length === initial.length
+          && prev.every((item, index) => item.id === initial[index]?.id);
+        return untouched ? starterSequence : prev;
+      });
+    }
+  }, [isPublicLibraryMode, starterLibrary, setConfig, setPresetSequence, validPresetIds]);
 
   const {
     dismissFrameNotice,
@@ -309,6 +374,35 @@ const AppBody: React.FC = () => {
     stopSequencePlayback,
   });
 
+  // Generated-collection shelf loads: the same RESOLUTION path share
+  // links use — a record already in the library loads normally; otherwise
+  // it is fetched from /presets/<id>.json (fetchCatalogPreset, the exact
+  // helper the share effect uses) and appended to the library. The apply
+  // itself is the shelf's standard instant load (the same verb as
+  // handleLoadPreset), NOT the share flow's morph: hot-morphing into a
+  // heavy post-processing configuration can crash the postprocessing
+  // composer under SwiftShader (Pass.setRenderer reading .alpha of
+  // null), while the instant load of the same record is clean — and
+  // instant is what every other shelf card does. The share-link flow
+  // itself is unchanged (cold morph at load). Resolves false when the
+  // record cannot be fetched (the shelf shows a quiet note).
+  const handleLoadGeneratedPreset = useCallback(
+    async (presetId: string): Promise<boolean> => {
+      if (presets.some((preset) => preset.id === presetId)) {
+        handleLoadPreset(presetId);
+        return true;
+      }
+      const rec = await fetchCatalogPreset(presetId);
+      if (!rec) return false;
+      stopSequencePlayback();
+      maybeWarnHeavyPreset(rec);
+      setPresets((prev) => (prev.some((preset) => preset.id === rec.id) ? prev : [...prev, rec]));
+      applyConfigInstant(rec.config, rec.id);
+      return true;
+    },
+    [applyConfigInstant, handleLoadPreset, presets, setPresets, stopSequencePlayback],
+  );
+
   const controlPanelProps = useAppControlPanelBridge({
     activePresetId,
     activeSequenceItemId,
@@ -361,6 +455,7 @@ const AppBody: React.FC = () => {
     onExportProject: handleExportProject,
     onImportLibrary: handleImportLibrary,
     onLoadPreset: handleLoadPreset,
+    onLoadGeneratedPreset: handleLoadGeneratedPreset,
     onLoadSequenceItem: handleLoadSequenceItem,
     onLoadSnapshot: handleLoadSnapshot,
     onMorphSnapshot: handleMorphSnapshot,

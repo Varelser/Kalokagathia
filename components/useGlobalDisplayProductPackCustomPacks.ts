@@ -11,6 +11,7 @@ import {
   type CustomProductPackRecord,
 } from '../lib/productPackCustomLibrary';
 import type { ProductPackBundle } from '../lib/productPackLibrary';
+import { useStorageHydrated } from '../lib/storageDb';
 
 interface UseGlobalDisplayProductPackCustomPacksArgs {
   config: ParticleConfig;
@@ -42,9 +43,39 @@ export function useGlobalDisplayProductPackCustomPacks({
 }: UseGlobalDisplayProductPackCustomPacksArgs): GlobalDisplayProductPackCustomPacksState {
   const [customProductPacks, setCustomProductPacks] = React.useState<CustomProductPackRecord[]>(() => loadCustomProductPackRecords());
 
+  // IndexedDB hydration (Phase 1 renewal): the initial state above comes
+  // from the localStorage path. Once hydration settles, reload through
+  // the (now IndexedDB-aware) loader and adopt the result only while the
+  // state is still exactly that initial value — anything the visitor
+  // changed in the meantime is kept. The save effect stays gated until
+  // the fill-in has run, so a pre-hydration placeholder can never be
+  // written over the authoritative IndexedDB payload. Declared before
+  // the save effect: in the commit where hydration settles, the save
+  // effect still sees packsStorageReady === false.
+  const storageHydrated = useStorageHydrated(true);
+  const [packsStorageReady, setPacksStorageReady] = React.useState(false);
+  const initialPacksJsonRef = React.useRef<string | null>(null);
+  if (initialPacksJsonRef.current === null) {
+    initialPacksJsonRef.current = JSON.stringify(customProductPacks);
+  }
+
   React.useEffect(() => {
+    if (!storageHydrated || packsStorageReady) {
+      return;
+    }
+    const loaded = loadCustomProductPackRecords();
+    setCustomProductPacks((prev) => (
+      JSON.stringify(prev) === initialPacksJsonRef.current ? loaded : prev
+    ));
+    setPacksStorageReady(true);
+  }, [packsStorageReady, storageHydrated]);
+
+  React.useEffect(() => {
+    if (!packsStorageReady) {
+      return;
+    }
     saveCustomProductPackRecords(customProductPacks);
-  }, [customProductPacks]);
+  }, [customProductPacks, packsStorageReady]);
 
   const activeCustomProductPackId = React.useMemo(
     () => inferActiveCustomProductPackRecordId(config, customProductPacks),

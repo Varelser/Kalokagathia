@@ -6,7 +6,7 @@
     "debounce": "2.0.0",
     "its-fine": "1.2.5",
     "jszip": "^3.10.1",
-    "lucide-react": "^1.70.0",
+    "lucide-react": "^1.72.0",
     "maath": "^0.10.8",
     "mp4-muxer": "^5.2.2",
     "postprocessing": "^6.39.0",
@@ -23,7 +23,7 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.2.1",
+    "@vitejs/plugin-react": "^6.3.0",
     "@webgpu/types": "^0.1.74",
     "esbuild": "^0.25.0",
     "eslint": "^10.14.0",
@@ -35,22 +35,24 @@
     "skia-canvas": "^3.0.8",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.72.1",
-    "vite": "^8.3.6"
+    "typescript-eslint": "^8.72.2",
+    "vite": "^8.3.8"
   },
   "engines": {
     "node": ">=20"
   },
   "name": "kalokagathia",
   "optionalDependencies": {
-    "@rollup/rollup-darwin-arm64": "^4.60.1",
-    "@rollup/rollup-darwin-x64": "^4.60.1",
-    "@rollup/rollup-linux-x64-gnu": "^4.60.1",
-    "@rollup/rollup-win32-x64-msvc": "^4.60.1"
+    "@rollup/rollup-darwin-arm64": "^4.68.2",
+    "@rollup/rollup-darwin-x64": "^4.68.2",
+    "@rollup/rollup-linux-x64-gnu": "^4.68.2",
+    "@rollup/rollup-win32-x64-msvc": "^4.68.2"
   },
   "private": true,
   "scripts": {
+    "prebuild": "node scripts/build-generated-index.mjs && node scripts/build-sitemap.mjs",
     "build": "npm run typecheck && vite build",
+    "generate:generated-index": "node scripts/build-generated-index.mjs",
     "build:github-pages": "npm run typecheck && vite build --base / && node scripts/prepare-github-pages.mjs",
     "build:github-pages-public": "npm run typecheck && vite build --mode public --base / && node scripts/prepare-github-pages.mjs",
     "dev": "vite",
@@ -90,7 +92,8 @@
     "verify:shared-audio": "node scripts/verify-shared-audio.mjs",
     "verify:standalone-synth": "node scripts/verify-standalone-synth.mjs",
     "verify:video": "node scripts/verify-video.mjs",
-    "verify:video-audio": "node scripts/verify-video-audio.mjs"
+    "verify:video-audio": "node scripts/verify-video-audio.mjs",
+    "generate:sitemap": "node scripts/build-sitemap.mjs"
   },
   "type": "module",
   "version": "1.0.0"

@@ -1,5 +1,9 @@
 export const PHYSICS_MOTION_BRANCH_C = `
-    } else if (motionType < 81.5) {
+// Split from applyMotion (ANGLE Metal expression-complexity fix,
+// 2026-11-13): conditions and bodies below are byte-for-byte the
+// original chain text; applyMotion dispatches here by range.
+vec3 applyMotionBranchC(vec3 result, vec3 p, float motionType, float time, float amp, float freq, float phase, float rnd, vec3 wind, float fluidForce, float viscosity, vec3 noiseField, vec3 curlField, float attractorScale, vec3 fieldPos, float octaves, float lacunarity) {
+    if (motionType < 81.5) {
       float pinwheelAngle = atan(p.z, p.x) + time * 1.1;
       float pinwheelRadius = length(p.xz) + sin(pinwheelAngle * 4.0 + phase) * amp * 0.15;
       result.x = cos(pinwheelAngle) * pinwheelRadius;
@@ -218,8 +222,22 @@ export const PHYSICS_MOTION_BRANCH_C = `
       vec2 z2 = hv * vec2(cos(hs + hb), sin(hs + hb));
       vec3 proj = vec3(z1.x, z2.x, z1.y) / max(0.3, 1.0 + z2.y);
       result = mix(p, proj * length(p), clamp(amp * 0.12, 0.0, 0.8));
+    } else if (motionType > 162.5 && motionType < 163.5) {
+      // Chua (double scroll): q = p * 0.01 matches the estimator / Rabinovich
+      // normalisation in this file; step amp * 0.2 = the halvorsen/chen
+      // amp * 0.002 on raw p, rescaled by the 100x q conversion.
+      vec3 q = p * 0.01;
+      float fx = -0.714 * q.x - 0.2145 * (abs(q.x + 1.0) - abs(q.x - 1.0));
+      result += vec3(
+        15.6 * (q.y - q.x - fx),
+        q.x - q.y + q.z,
+        -28.0 * q.y
+      ) * amp * 0.2;
     } else {
       vec3 fallback = normalize(curlField + noiseField + vec3(0.0001));
       result += fallback * amp * 0.16;
     }
+
+    return result;
+  }
 `;
