@@ -4,6 +4,14 @@
 React 19 + Three.js (WebGL) + GPGPU で、反応拡散・群れ・自己組織化などの数理モデルを
 数百のプリセットとリアルタイムのパラメータ操作で探索できます。
 
+[![Kalokagathia — Coverage 370: Cube × Fronds](https://monosphere.pages.dev/catalog/thumbs/coverage-370-cube-fronds-20261109.jpg)](https://monosphere.pages.dev/)
+
+| [![Coverage 001 — Cube × Aero](https://monosphere.pages.dev/catalog/thumbs/coverage-001-cube-aero-20261109.jpg)](https://monosphere.pages.dev/share/coverage-001-cube-aero-20261109) | [![Ignition 05 — Volumetric Braidshell](https://monosphere.pages.dev/catalog/thumbs/ignition-05-volumetric-braidshell-20261109.jpg)](https://monosphere.pages.dev/share/ignition-05-volumetric-braidshell-20261109) | [![Theory: Domain Warp (Strong)](https://monosphere.pages.dev/catalog/thumbs/theory-warp-strong.jpg)](https://monosphere.pages.dev/share/theory-warp-strong) |
+|---|---|---|
+| Coverage 001 — Cube × Aero | Ignition 05 — Volumetric Braidshell | Theory: Domain Warp (Strong) |
+
+プリセットは全 **746** 件。生成コレクションの一覧は[カタログ](https://monosphere.pages.dev/catalog/)で見られます（画像クリックで各プリセットの共有ページへ）。
+
 - **公開デモ**: https://monosphere.pages.dev/
 - **ライセンス**: MIT（`LICENSE` を参照）
 - プリセットカタログ: 746 件（類似プリセット検索つき）
