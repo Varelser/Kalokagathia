@@ -290,9 +290,11 @@
 
 /* The shelf lives on the right edge at full height between the header
    and the transport bar (the approved mock's geometry): absolutely
-   anchored inside the deck root, overlaying the canvas edge — and the
-   detail sheet's right end while both are open (collapse the shelf to
-   see the sheet's right column). The panel/handle fills the anchor. */
+   anchored inside the deck root, overlaying the canvas edge. While it
+   is open, the detail sheet's right edge pulls in clear of it (see the
+   sheet-vs-shelf rule in the min-width:641px block below), so no sheet
+   content is ever hidden under the shelf. The panel/handle fills the
+   anchor. */
 .mg-shelf-anchor {
   position: absolute;
   right: var(--mg-root-pad);
@@ -329,6 +331,18 @@
 .mg-flow > *, .mg-flow-sub > * { min-width: 0; }
 @media (min-width: 641px) {
   .mg-deck .mg-sheet-panel.mg-panel-open { height: min(var(--mg-sheet-h, 30dvh), 880px); }
+  /* Sheet vs shelf (audit fix 2026-11-14): the shelf anchor overlays the
+     sheet's right end while open, which hid the rightmost flow column —
+     at ~800px effective width only "CLEA" of the "CLEAN OUTPUT ·
+     クリーン出力" heading survived from under the shelf. While the shelf
+     is open, pull the sheet's right edge in by the shelf width plus the
+     inter-edge gap so no sheet content sits under the shelf. The sheet
+     covers LESS canvas than before; its height and the other edges are
+     untouched, and the closed (handle) state keeps the full width. */
+  .mg-deck:has(.mg-shelf-anchor-open) .mg-sheet {
+    width: auto;
+    margin-right: calc(320px + 8px);
+  }
   .mg-flow, .mg-flow-sub {
     flex-direction: row;
     flex-wrap: wrap;
