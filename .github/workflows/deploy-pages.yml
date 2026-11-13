@@ -1,0 +1,50 @@
+# Deploy Kalokagathia to Cloudflare Pages (project: monosphere).
+#
+# STATUS: prepared 2026-11-14, not yet active. Two prerequisites remain:
+#   1. The static asset tree (catalog/, share/, presets/ — 750 thumbs,
+#      share pages, preset JSONs, catalog page, fps.json) must be committed
+#      under deploy-assets/ in this repo. Those are binary/generated files
+#      that the Muse connector cannot push; they need one authenticated
+#      `git push` (e.g. from the owner's iMac).
+#   2. Repo secrets CLOUDFLARE_API_TOKEN (Pages: Edit) and
+#      CLOUDFLARE_ACCOUNT_ID must be set.
+# Until both are done this workflow is manual-only (workflow_dispatch) and
+# its "guard" step fails the run before anything is deployed, so the live
+# site can never be overwritten by an incomplete tree.
+name: Deploy to Cloudflare Pages
+
+on:
+  workflow_dispatch:
+  # Enable after the prerequisites above are met:
+  # push:
+  #   branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard — static tree must be present and complete
+        run: |
+          test -d deploy-assets/presets || { echo "deploy-assets/ missing — see header"; exit 1; }
+          n=$(ls deploy-assets/presets/*.json | wc -l)
+          echo "presets: $n"
+          test "$n" -ge 750 || { echo "static tree incomplete"; exit 1; }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - name: Assemble deploy tree (dist + static assets, never --delete)
+        run: |
+          mkdir -p deploy-tree
+          cp -a dist/. deploy-tree/
+          cp -a deploy-assets/catalog deploy-tree/catalog
+          cp -a deploy-assets/share deploy-tree/share
+          cp -a deploy-assets/presets deploy-tree/presets
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy deploy-tree --project-name=monosphere
