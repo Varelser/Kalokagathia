@@ -172,86 +172,90 @@ export const CONTROL_DESCRIPTIONS: Record<string, string> = {
 // extraction as lib/noteBacklinks.ts; only where a heading genuinely covers
 // the control — everything else intentionally has no link).
 export const CONTROL_NOTE_LINKS: Record<string, string> = {
-  'Layer 2 Enabled': '36276ed9-b39e-45f1-9b31-67feb34c88b8', // 3レイヤー構成
-  'Profile': '6ef2ffa7-cf50-44c6-8e4a-69ed6eeace59', // 時間変化プロファイル
-  'Model': '9e3699af-874a-49aa-ba5d-ddaa72da3f6e', // 反応モデル
-  'Lenia Kernel（カーネル）': '2ed3be4a-5b72-46c5-afc6-6b52d6edf2e1', // Lenia
-  'Display': 'c9528d8c-98ae-4e19-817c-5c835afd976f', // Physarum（粘菌）
-  'Material Style': 'f2d86567-0ba6-48c8-bdd2-a06bba9c6e6f', // マテリアル（素材感）
-  'Bloom': 'fdbb8479-47c9-4c66-b787-9c9900d8361c', // ポストエフェクトと画面効果
-  'Chromatic Aberration': 'fdbb8479-47c9-4c66-b787-9c9900d8361c',
-  'Depth of Field': 'fdbb8479-47c9-4c66-b787-9c9900d8361c',
-  'Kaleidoscope / Mirror': 'fdbb8479-47c9-4c66-b787-9c9900d8361c',
-  'Feedback (GPU)': 'fdbb8479-47c9-4c66-b787-9c9900d8361c',
-  'Slit Scan (temporal bands)': 'fdbb8479-47c9-4c66-b787-9c9900d8361c',
-  'Vignette': 'fdbb8479-47c9-4c66-b787-9c9900d8361c',
-  'Noise': 'fdbb8479-47c9-4c66-b787-9c9900d8361c',
-  'Depth Fog': 'fdbb8479-47c9-4c66-b787-9c9900d8361c',
-  'Brightness / Contrast': 'fdbb8479-47c9-4c66-b787-9c9900d8361c',
-  'Impact FX': 'fdbb8479-47c9-4c66-b787-9c9900d8361c',
-  'GPGPU Enabled': '96b08f5b-e16f-4e82-b0bc-162724f71934', // GPGPU
-  'N-Body Gravity': 'ac3e6867-193e-4995-a5ee-34284ae40be2', // GPGPUの力と振る舞い
-  'Velocity Color': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Life System': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Curl Noise': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Boids Flocking': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Strange Attractor': '396cdbcb-dc96-48a5-adde-9eed9f24875b', // GPGPUアトラクタ12種
-  'Type': '396cdbcb-dc96-48a5-adde-9eed9f24875b',
-  'Lévy Flight': 'ecb18ae2-f080-47a8-881e-b6cbd907480e', // Lévyフライト
-  'Kuramoto Sync': '611cf558-8f4b-4245-82ef-ec453118a05b', // 蔵本モデル
-  'Particle Life': '1a71acb1-8ccc-45df-92d4-0f6f09c07f78', // Particle Life
-  'Vortex Field': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Wind Force': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Gravity Well': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Elastic Spring': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Magnetic Field': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'SPH Fluid': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Vector Field': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Field Type': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Spring (to Spawn)': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Verlet Integration': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'SDF Collider': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Collider Mode': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Color over Lifetime': '799538ae-203b-4e28-84b6-96a172b96486', // 描画様式
-  'Size over Lifetime': '799538ae-203b-4e28-84b6-96a172b96486',
-  'Mouse Force': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Mode': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Depth Sort (Alpha)': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Fluid Advection': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Ext. Force (Vortex)': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Custom Force (GLSL)': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Motion Trail': '799538ae-203b-4e28-84b6-96a172b96486',
-  'Ribbon Trail': '799538ae-203b-4e28-84b6-96a172b96486',
-  'Tube Trail (Circular)': '799538ae-203b-4e28-84b6-96a172b96486',
-  'Smooth Tube Trail': '799538ae-203b-4e28-84b6-96a172b96486',
-  'Streak Rendering': '799538ae-203b-4e28-84b6-96a172b96486',
-  'Metaballs (MC Surface)': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Volumetric (Ray March)': '5b8a1912-5cec-4ef3-ac06-6e7f4fdd76d8', // レイマーチングSDF
-  'Audio Source': 'b9e47ff6-33b0-413b-a823-0b49bb0135f3', // FFT・音声反応
-  'Audio Link': 'b9e47ff6-33b0-413b-a823-0b49bb0135f3',
-  'Audio Reactive': 'b9e47ff6-33b0-413b-a823-0b49bb0135f3',
-  'Synth Scale': 'b9e47ff6-33b0-413b-a823-0b49bb0135f3',
-  'Synth Wave': 'b9e47ff6-33b0-413b-a823-0b49bb0135f3',
-  'Ambient Dust': '36276ed9-b39e-45f1-9b31-67feb34c88b8', // 3レイヤー構成
-  'GPGPU Layer': '96b08f5b-e16f-4e82-b0bc-162724f71934', // GPGPU
-  'GPU Sorting': 'ac3e6867-193e-4995-a5ee-34284ae40be2', // GPGPUの力と振る舞い
-  'GPU Sort': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Fluid Solver': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Frame Carry Simulation': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Mouse Mode': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'Elastic Constraint': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'GPU Volume': 'ac3e6867-193e-4995-a5ee-34284ae40be2',
-  'WebGPU Backend': 'e3ffe096-c96e-4dad-a5e0-29a94d61f1a5', // WebGPUを見送った理由
-  'WebGPU': 'e3ffe096-c96e-4dad-a5e0-29a94d61f1a5',
-  'Post Noise': 'fdbb8479-47c9-4c66-b787-9c9900d8361c', // ポストエフェクトと画面効果
-  'Contact FX': '36276ed9-b39e-45f1-9b31-67feb34c88b8', // 3レイヤー構成（レイヤー間相互作用）
-  'Recording Mode': '74ebd5ed-3b64-4d5f-88c9-119fa6c19d2b', // 画像と動画の書き出し
-  'Drive Mode': '7a91dd60-8406-4fbb-8423-a1fd947e487c', // プリセットシーケンス
-  'Drive Strength': '7a91dd60-8406-4fbb-8423-a1fd947e487c',
-  'Sequence Drive': '7a91dd60-8406-4fbb-8423-a1fd947e487c',
-  'Breed · 交配する': 'cefb7674-abda-4169-a8e9-b80e8dd7d841', // 進化ラボ
-  'Parent A': 'cefb7674-abda-4169-a8e9-b80e8dd7d841',
-  'Parent B': 'cefb7674-abda-4169-a8e9-b80e8dd7d841',
+  'Layer 2 Enabled': '00b63368-dc5d-4a1a-880e-d457a53f51f6', // 3レイヤー構成
+  'Profile': '86dc9d64-a0dd-417c-b78f-42d26fc962dc', // 時間変化プロファイル
+  'Model': '6aa1b6f0-874f-4401-ae1a-7eab93c208c9', // 反応モデル
+  'Lenia Kernel（カーネル）': '722b09e1-cdf2-4feb-a739-8fb317f68916', // Lenia
+  'Display': '23b69da7-aa8e-4da4-bd09-e68f0e406d36', // Physarum（粘菌）
+  'Material Style': 'c60e5ec7-9c84-43c4-b5f4-6eea118ea3fd', // マテリアル（素材感）
+  'Bloom': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4', // ポストエフェクトと画面効果
+  'Chromatic Aberration': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4',
+  'Depth of Field': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4',
+  'Kaleidoscope / Mirror': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4',
+  'Feedback (GPU)': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4',
+  'Slit Scan (temporal bands)': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4',
+  'Vignette': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4',
+  'Noise': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4',
+  'Depth Fog': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4',
+  'Brightness / Contrast': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4',
+  'Impact FX': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4',
+  'GPGPU Enabled': 'a609f9d3-3443-4d4e-8a09-f84014f01f30', // GPGPU
+  'N-Body Gravity': '834426fb-9b34-47d1-a93f-68d5848a635a', // GPGPUの力と振る舞い
+  'Velocity Color': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Life System': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Curl Noise': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Boids Flocking': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Strange Attractor': 'e7b13888-c1cd-4705-bb74-c5ad493d72f7', // GPGPUアトラクタ12種
+  'Type': 'e7b13888-c1cd-4705-bb74-c5ad493d72f7',
+  'Lévy Flight': '86183fd8-6860-409b-b9f4-da6595da3972', // Lévyフライト
+  'Kuramoto Sync': '9259dedc-532a-4d22-bf07-58ce1f7dc4fb', // 蔵本モデル
+  'Particle Life': '23dc72f4-916c-47bc-8b7c-ecbb5ea89ff0', // Particle Life
+  'Vortex Field': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Wind Force': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Gravity Well': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Elastic Spring': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Magnetic Field': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'SPH Fluid': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Vector Field': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Field Type': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Spring (to Spawn)': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Verlet Integration': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'SDF Collider': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Collider Mode': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Color over Lifetime': 'cc1b3b56-b10c-410c-a906-a2c392ab7c46', // 描画様式
+  'Size over Lifetime': 'cc1b3b56-b10c-410c-a906-a2c392ab7c46',
+  'Mouse Force': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Mode': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Depth Sort (Alpha)': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Fluid Advection': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Ext. Force (Vortex)': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Custom Force (GLSL)': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Motion Trail': 'cc1b3b56-b10c-410c-a906-a2c392ab7c46',
+  'Ribbon Trail': 'cc1b3b56-b10c-410c-a906-a2c392ab7c46',
+  'Tube Trail (Circular)': 'cc1b3b56-b10c-410c-a906-a2c392ab7c46',
+  'Smooth Tube Trail': 'f91047a7-0ba0-4eb7-a6cf-f8c4cbd57393',
+  'Streak Rendering': 'cc1b3b56-b10c-410c-a906-a2c392ab7c46',
+  'Metaballs (MC Surface)': '51ca8320-c9cc-49e3-a916-e1ac7b40816c',
+  'Volumetric (Ray March)': '653f4358-ed81-494b-bc56-17a06ff44cfd', // レイマーチングSDF
+  'Audio Source': '7e950cee-5012-4218-b573-b3f2f3e64acb', // FFT・音声反応
+  'Audio Link': '7e950cee-5012-4218-b573-b3f2f3e64acb',
+  'Audio Reactive': '7e950cee-5012-4218-b573-b3f2f3e64acb',
+  'Synth Scale': '7e950cee-5012-4218-b573-b3f2f3e64acb',
+  'Synth Wave': '7e950cee-5012-4218-b573-b3f2f3e64acb',
+  'Ambient Dust': '00b63368-dc5d-4a1a-880e-d457a53f51f6', // 3レイヤー構成
+  'GPGPU Layer': 'a609f9d3-3443-4d4e-8a09-f84014f01f30', // GPGPU
+  'GPU Sorting': '834426fb-9b34-47d1-a93f-68d5848a635a', // GPGPUの力と振る舞い
+  'GPU Sort': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Fluid Solver': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Frame Carry Simulation': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Mouse Mode': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'Elastic Constraint': '834426fb-9b34-47d1-a93f-68d5848a635a',
+  'GPU Volume': '653f4358-ed81-494b-bc56-17a06ff44cfd',
+  'WebGPU Backend': '38898a50-45fb-42aa-beb5-49297632780c', // WebGPUを見送った理由
+  'WebGPU': '38898a50-45fb-42aa-beb5-49297632780c',
+  'Post Noise': 'd01275cb-1ff1-4ca2-a434-6dafe2a734d4', // ポストエフェクトと画面効果
+  'Contact FX': '00b63368-dc5d-4a1a-880e-d457a53f51f6', // 3レイヤー構成（レイヤー間相互作用）
+  'Recording Mode': 'ba7a5dd0-ef91-405e-afb4-6acebbfeb3f3', // 画像と動画の書き出し
+  'Drive Mode': 'acbf5eb0-d4dd-48c6-afe5-c31e2a9a7105', // プリセットシーケンス
+  'Drive Strength': 'acbf5eb0-d4dd-48c6-afe5-c31e2a9a7105',
+  'Sequence Drive': 'acbf5eb0-d4dd-48c6-afe5-c31e2a9a7105',
+  'Hybrid Fiber Field': '15ca2a5c-74ac-4bb8-b546-21ec74841c7c', // 繊維場（Fiber Field）
+  'Hybrid Membrane Surface': '609106b7-c2f6-4766-afa3-b4a02293e547', // 膜（Membrane）
+  'Hybrid Patch Surface': 'e679a2c6-d091-4487-899f-98ef119199b0', // 表面パッチ（Surface Patch）
+  'Voxel Wireframe': '70d7456e-8367-4ae2-88e4-3661ab738830', // ボクセル格子（Voxel Lattice）
+  'Breed · 交配する': '42805bf9-a1da-4f2d-aeb3-5b44e9b3b4ec', // 進化ラボ
+  'Parent A': '42805bf9-a1da-4f2d-aeb3-5b44e9b3b4ec',
+  'Parent B': '42805bf9-a1da-4f2d-aeb3-5b44e9b3b4ec',
 };
 
 // Descriptions + note links for config-key selects (generic enum editors
@@ -269,15 +273,15 @@ export const CONTROL_KEY_DESCRIPTIONS: Record<string, string> = {
 };
 
 export const CONTROL_KEY_NOTE_LINKS: Record<string, string> = {
-  layer2Source: '28a21e94-8695-44d1-a979-b6c6cdf57750', // 発生形状（ソース）
-  layer2Type: 'b3ccf14f-09bf-437d-a552-a14634aa03d0', // モーション（動きの仕組み）
-  layer2SpriteMode: 'f2d86567-0ba6-48c8-bdd2-a06bba9c6e6f', // マテリアル（素材感）
-  layer2ConnectionStyle: '7b9bf845-5cef-4095-876d-4f5592f5b594', // 物理と流れ
-  layer3Source: '28a21e94-8695-44d1-a979-b6c6cdf57750',
-  layer3Type: 'b3ccf14f-09bf-437d-a552-a14634aa03d0',
-  layer3SpriteMode: 'f2d86567-0ba6-48c8-bdd2-a06bba9c6e6f',
-  layer3ConnectionStyle: '7b9bf845-5cef-4095-876d-4f5592f5b594',
-  gpgpuEmitShape: 'ac3e6867-193e-4995-a5ee-34284ae40be2', // GPGPUの力と振る舞い
+  layer2Source: '8a8b5795-fc25-4629-bf6f-08a4bff3e676', // 発生形状（ソース）
+  layer2Type: 'bce302a7-ba7b-42f9-b20f-792378b3a1b8', // 描画システム（レイヤー2／3で選べる種類）
+  layer2SpriteMode: 'c60e5ec7-9c84-43c4-b5f4-6eea118ea3fd', // マテリアル（素材感）
+  layer2ConnectionStyle: '8d4a80fa-7a14-41aa-96c3-28eed78eae84', // 物理と流れ
+  layer3Source: '8a8b5795-fc25-4629-bf6f-08a4bff3e676',
+  layer3Type: 'bce302a7-ba7b-42f9-b20f-792378b3a1b8',
+  layer3SpriteMode: 'c60e5ec7-9c84-43c4-b5f4-6eea118ea3fd',
+  layer3ConnectionStyle: '8d4a80fa-7a14-41aa-96c3-28eed78eae84',
+  gpgpuEmitShape: '834426fb-9b34-47d1-a93f-68d5848a635a', // GPGPUの力と振る舞い
 };
 
 const mirrorLabel = (label: string): string => label.replace(/^Layer 3/, 'Layer 2');
