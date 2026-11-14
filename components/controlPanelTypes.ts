@@ -67,6 +67,11 @@ export interface ControlPanelPresetProps {
   /** Automatic config history entries (roadmap 7D), oldest first. */
   configHistoryEntries?: ConfigHistoryEntry[];
   onClearConfigHistory?: () => void;
+  /** Global config undo/redo (ultimate Wave 2), driven from App. */
+  canUndoConfig?: boolean;
+  canRedoConfig?: boolean;
+  onUndoConfig?: () => void;
+  onRedoConfig?: () => void;
   /** One-shot GPGPU position capture channel for the PLY export (roadmap Phase 9). */
   pointCloudCaptureRef?: React.RefObject<PointCloudCaptureState>;
 }

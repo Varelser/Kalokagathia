@@ -100,6 +100,12 @@ import {
   countExportablePoints,
   type PointCloudCaptureState,
 } from '../lib/pointCloudExport';
+import {
+  buildObjFromGrid,
+  buildStlFromGrid,
+  countMeshExport,
+  extractGridPositions,
+} from '../lib/meshExport';
 import { TEXTURE_DEFINITIONS, TEXTURE_MAP_SIZE, getTextureDefinition } from '../lib/texturePack';
 import { buildSvgPointCloud, type SvgPlane } from '../lib/svgExport';
 import {
@@ -3535,7 +3541,7 @@ const ExportSection: React.FC<{
     [],
   );
 
-  const requestExport = (format: 'ply' | 'svg') => {
+  const requestExport = (format: 'ply' | 'svg' | 'obj' | 'stl') => {
     const state = captureRef?.current;
     if (!state) {
       setStatus('書き出しチャネルが接続されていません。');
@@ -3562,15 +3568,41 @@ const ExportSection: React.FC<{
         let contents: string;
         let filename: string;
         let mime: string;
+        let statusMessage: string;
         if (format === 'ply') {
           contents = buildPlyPointCloud(data);
           filename = 'monosphere-particles.ply';
           mime = 'application/octet-stream';
-        } else {
+          statusMessage = `${count.toLocaleString()} 点を PLY に書き出しました（位置 + 年齢）。`;
+        } else if (format === 'svg') {
           const built = buildSvgPointCloud(data, { plane: svgPlane });
           contents = built.svg;
           filename = svgPlane === 'xy' ? 'monosphere-particles-front.svg' : 'monosphere-particles-top.svg';
           mime = 'image/svg+xml';
+          statusMessage = `${count.toLocaleString()} 点を SVG に書き出しました（${svgPlane === 'xy' ? '前面 XY' : '上面 XZ'}投影、年齢で濃淡）。`;
+        } else {
+          // Mesh formats reuse this same captured buffer: the particle
+          // field is a texSize × texSize grid, so neighbouring texels
+          // triangulate directly (see lib/meshExport.ts).
+          const grid = extractGridPositions(data, state.texSize);
+          if (!grid) {
+            setStatus('粒子グリッドの寸法が分からないため、メッシュ化できませんでした。');
+            return;
+          }
+          const stats = countMeshExport(grid.positions, grid.width, grid.height);
+          if (stats.faces === 0) {
+            setStatus('メッシュ化できる面がありませんでした（有効な粒子がグリッド上で隣接していない可能性があります）。');
+            return;
+          }
+          if (format === 'obj') {
+            contents = buildObjFromGrid(grid.positions, grid.width, grid.height);
+            filename = 'monosphere-mesh.obj';
+          } else {
+            contents = buildStlFromGrid(grid.positions, grid.width, grid.height);
+            filename = 'monosphere-mesh.stl';
+          }
+          mime = 'application/octet-stream';
+          statusMessage = `${stats.faces.toLocaleString()} 面 / ${stats.vertices.toLocaleString()} 頂点を ${format.toUpperCase()} メッシュに書き出しました（グリッド ${grid.width}×${grid.height}、無効な頂点を含む面は除外）。`;
         }
         const blob = new Blob([contents], { type: mime });
         const url = URL.createObjectURL(blob);
@@ -3579,11 +3611,7 @@ const ExportSection: React.FC<{
         anchor.download = filename;
         anchor.click();
         window.setTimeout(() => URL.revokeObjectURL(url), 4000);
-        setStatus(
-          format === 'ply'
-            ? `${count.toLocaleString()} 点を PLY に書き出しました（位置 + 年齢）。`
-            : `${count.toLocaleString()} 点を SVG に書き出しました（${svgPlane === 'xy' ? '前面 XY' : '上面 XZ'}投影、年齢で濃淡）。`,
-        );
+        setStatus(statusMessage);
         return;
       }
       if (tries >= 20) {
@@ -3599,7 +3627,7 @@ const ExportSection: React.FC<{
     <section>
       <SectionTitle icon={<FileDown size={12} />}>Export · 書き出し</SectionTitle>
       <p className="text-[11px] leading-relaxed text-white/45 mb-4">
-        いま表示している GPGPU 粒子の位置を書き出します。PLY は点群（位置＋年齢）で Blender や MeshLab、TouchDesigner などに持ち込めます。SVG は粒子を点として投影したベクター画像で、前面（XY）／上面（XZ）が選べ、年齢が濃淡になります。
+        いま表示している GPGPU 粒子の位置を書き出します。PLY は点群（位置＋年齢）で Blender や MeshLab、TouchDesigner などに持ち込めます。SVG は粒子を点として投影したベクター画像で、前面（XY）／上面（XZ）が選べ、年齢が濃淡になります。OBJ／STL は粒子グリッドの隣接関係をそのまま三角形メッシュにしたもので、Blender での加工や 3D プリントに持ち込めます（無効な頂点を含む面と面積ゼロの面は除外されます）。
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -3624,6 +3652,20 @@ const ExportSection: React.FC<{
           <option value="xy" className="bg-neutral-900">前面（XY）</option>
           <option value="xz" className="bg-neutral-900">上面（XZ）</option>
         </select>
+        <button
+          onClick={() => requestExport('obj')}
+          disabled={busy}
+          className="px-4 py-2 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+        >
+          {busy ? '取得中…' : 'OBJ書き出し（メッシュ）'}
+        </button>
+        <button
+          onClick={() => requestExport('stl')}
+          disabled={busy}
+          className="px-4 py-2 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+        >
+          {busy ? '取得中…' : 'STL書き出し（メッシュ）'}
+        </button>
       </div>
       {status && <p className="text-[11px] text-white/55 mt-3">{status}</p>}
       <DeterministicRenderControls />

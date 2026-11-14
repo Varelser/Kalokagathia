@@ -19,6 +19,7 @@ import { ControlPanelProps } from './controlPanelTypes';
 import { useControlPanelState } from './useControlPanelState';
 import { toggleFullscreen } from '../lib/platformFeatures';
 import { encodeConfigPayload } from '../lib/shareLink';
+import { buildEmbedSnippet } from '../lib/embedMode';
 import { normalizeConfig } from '../lib/appStateConfig';
 
 /**
@@ -309,10 +310,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
   // otherwise — then prefers the OS share sheet, falls back to the
   // clipboard, then to a prompt.
   const [shareNote, setShareNote] = React.useState('');
-  const handleShare = async () => {
+  // Shared resolution for the share link and the embed snippet: the
+  // share hash for the current scene ('#p=<id>' for a clean preset,
+  // '#c=<payload>' for an adjusted scene) plus whether the scene is an
+  // untouched catalog preset (whose share URL is the /share/<id> page).
+  const resolveSceneLink = async (): Promise<{ hash: string; catalogClean: boolean } | null> => {
     const { activePresetId, isPresetDirty } = props;
-    const origin = window.location.origin;
-    let url: string | null = null;
     // For catalog presets, decide clean/dirty against the normalized record:
     // the library's isPresetDirty stringifies the raw record, which never
     // matches the normalized live config for fetched/imported records.
@@ -333,17 +336,26 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
       }
     }
     if (activePresetId && catalogClean === true) {
-      url = `${origin}/share/${activePresetId}`;
-    } else if (activePresetId && catalogClean === null && !isPresetDirty) {
-      url = `${origin}/#p=${activePresetId}`;
-    } else {
-      const payload = await encodeConfigPayload('Monosphere scene', config);
-      if (payload) url = `${origin}/#c=${payload}`;
+      return { hash: `#p=${activePresetId}`, catalogClean: true };
     }
-    if (!url) {
+    if (activePresetId && catalogClean === null && !isPresetDirty) {
+      return { hash: `#p=${activePresetId}`, catalogClean: false };
+    }
+    const payload = await encodeConfigPayload('Monosphere scene', config);
+    if (payload) return { hash: `#c=${payload}`, catalogClean: false };
+    return null;
+  };
+  const handleShare = async () => {
+    const { activePresetId } = props;
+    const origin = window.location.origin;
+    const resolved = await resolveSceneLink();
+    if (!resolved) {
       setShareNote('共有リンクを作れませんでした');
       return;
     }
+    const url = resolved.catalogClean && activePresetId
+      ? `${origin}/share/${activePresetId}`
+      : `${origin}/${resolved.hash}`;
     // Web Share (tech batch): prefer the OS share sheet where the browser
     // offers one; a user dismissal (AbortError) ends the flow quietly, any
     // other failure falls back to the clipboard copy below.
@@ -366,6 +378,30 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
       setShareNote('共有リンクをコピーしました');
     } catch {
       window.prompt('共有リンク', url);
+      setShareNote('');
+      return;
+    }
+    window.setTimeout(() => setShareNote(''), 3000);
+  };
+
+  // Embed code (ultimate Wave 3): copy an <iframe> snippet for the
+  // current scene, built from the same resolution as the share link —
+  // the embed player URL (/?embed=1 + the share hash), never the
+  // /share/<id> OGP page. Clipboard first, prompt fallback, mirroring
+  // handleShare's notice pattern.
+  const handleCopyEmbed = async () => {
+    const resolved = await resolveSceneLink();
+    if (!resolved) {
+      setShareNote('埋め込みコードを作れませんでした');
+      window.setTimeout(() => setShareNote(''), 3000);
+      return;
+    }
+    const snippet = buildEmbedSnippet(window.location.origin, resolved.hash);
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setShareNote('埋め込みコードをコピーしました');
+    } catch {
+      window.prompt('埋め込みコード', snippet);
       setShareNote('');
       return;
     }
@@ -468,9 +504,14 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
         onDeckModeChange={chooseDeckMode}
         onSelectTier={handleSelectTier}
         onShare={() => { void handleShare(); }}
+        onCopyEmbed={() => { void handleCopyEmbed(); }}
         onToggleCollapsed={() => toggleEdge('header')}
         shareNote={shareNote}
         tier={panelTier}
+        canRedo={props.canRedoConfig ?? false}
+        canUndo={props.canUndoConfig ?? false}
+        onRedo={props.onRedoConfig}
+        onUndo={props.onUndoConfig}
       />
       <div className="pointer-events-none flex min-h-0 flex-1 items-stretch gap-2">
         <ControlPanelRail

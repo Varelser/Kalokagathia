@@ -4,6 +4,25 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.2.0] — 2026-11-14
+
+Phase 6 ("ultimate") — five additions on top of the 1.1.0 feature set:
+
+### Added
+- **OpenRouter BYOK** — the AI tab now accepts a visitor's own OpenRouter
+  API key (called directly from the browser, never via the site relay),
+  alongside Groq and Gemini.
+- **Global Undo / Redo** — header buttons and Ctrl/Cmd+Z /
+  Shift+Ctrl/Cmd+Z step through parameter-config history.
+- **Mesh export (OBJ / STL)** — surface layers (membrane, tubes) can be
+  exported as mesh files for Blender / 3D printing, in addition to the
+  existing point-cloud PLY, SVG, PNG and video exports.
+- **Embed player** — `/?embed=1#p=<presetId>` plays a single preset in a
+  chrome-free player with play / fullscreen controls, ready to iframe
+  into notes and other sites.
+- **Kiosk mode** — `/?kiosk=1` runs a canvas-only attract loop with
+  auto-rotating presets for unattended exhibition use.
+
 ## [1.1.0] — 2026-11-14
 
 ### Added

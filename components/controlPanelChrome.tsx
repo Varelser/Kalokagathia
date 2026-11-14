@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Clapperboard,
   ClipboardCopy,
+  Code,
   Download,
   ExternalLink,
   Globe,
@@ -21,11 +22,13 @@ import {
   Pause,
   PictureInPicture2,
   Play,
+  Redo2,
   RefreshCw,
   Share2,
   Shuffle,
   SlidersHorizontal,
   Sparkles,
+  Undo2,
   Zap,
 } from 'lucide-react';
 import type { ParticleConfig, PresetRecord } from '../types';
@@ -135,9 +138,18 @@ export const ControlPanelTopBar: React.FC<{
   onDeckModeChange: (mode: 'basic' | 'pro') => void;
   onSelectTier: (tier: PanelTier) => void;
   onShare: () => void;
+  /** Embed snippet copy (ultimate Wave 3). Optional: when the handler
+   *  is absent the button is not rendered at all. */
+  onCopyEmbed?: () => void;
   onToggleCollapsed: () => void;
   shareNote: string;
   tier: PanelTier;
+  /** Global config undo/redo (ultimate Wave 2). Optional: when the
+   *  handlers are absent the buttons are not rendered at all. */
+  canRedo?: boolean;
+  canUndo?: boolean;
+  onRedo?: () => void;
+  onUndo?: () => void;
 }> = ({
   activePresetName,
   collapsed,
@@ -149,9 +161,14 @@ export const ControlPanelTopBar: React.FC<{
   onDeckModeChange,
   onSelectTier,
   onShare,
+  onCopyEmbed,
   onToggleCollapsed,
   shareNote,
   tier,
+  canRedo = false,
+  canUndo = false,
+  onRedo,
+  onUndo,
 }) => {
   if (collapsed) {
     return (
@@ -228,6 +245,30 @@ export const ControlPanelTopBar: React.FC<{
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {shareNote && <span className="hidden text-[10px] tracking-wider text-emerald-300/90 lg:inline">{shareNote}</span>}
+        {onUndo && (
+          <button
+            type="button"
+            data-testid="top-undo"
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="flex items-center justify-center rounded-md p-1.5 text-white/75 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-white/75"
+            title="元に戻す (Ctrl/Cmd+Z)"
+          >
+            <Undo2 size={14} />
+          </button>
+        )}
+        {onRedo && (
+          <button
+            type="button"
+            data-testid="top-redo"
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="flex items-center justify-center rounded-md p-1.5 text-white/75 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-white/75"
+            title="やり直す (Ctrl/Cmd+Shift+Z)"
+          >
+            <Redo2 size={14} />
+          </button>
+        )}
         <button
           type="button"
           data-testid="top-share"
@@ -238,6 +279,18 @@ export const ControlPanelTopBar: React.FC<{
           <Share2 size={13} />
           <span className="hidden sm:inline">共有</span>
         </button>
+        {onCopyEmbed && (
+          <button
+            type="button"
+            data-testid="top-embed"
+            onClick={onCopyEmbed}
+            className="flex items-center justify-center gap-1.5 rounded-md bg-[#171717] px-2.5 py-1.5 text-[10px] tracking-wider text-white/75 transition-colors hover:bg-[#f5f5f5] hover:text-black"
+            title="いまのシーンを外部サイト（note・ブログ等）に貼るための埋め込みコード（iframe）をコピーします"
+          >
+            <Code size={13} />
+            <span className="hidden sm:inline">埋め込み</span>
+          </button>
+        )}
         <button
           type="button"
           data-testid="top-collapse"

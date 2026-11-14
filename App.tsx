@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { AppBodyScene } from './components/AppBodyScene';
+import { AppEmbedPlayer } from './components/AppEmbedPlayer';
+import { AppKioskPlayer } from './components/AppKioskPlayer';
 import { AppModeGate } from './components/AppModeGate';
+import { isEmbedMode } from './lib/embedMode';
+import { isKioskMode } from './lib/kioskMode';
+import { useKioskMode } from './lib/useKioskMode';
 import type { ParticleConfig, PresetRecord, PresetSequenceItem } from './types';
 import {
   getInterLayerContactAmount,
@@ -24,6 +29,7 @@ import { useExportController } from './lib/useExportController';
 import { useAppUiState } from './lib/useAppUiState';
 import { useLibraryTransfer } from './lib/useLibraryTransfer';
 import { useConfigHistory } from './lib/useConfigHistory';
+import { useConfigUndoRedo } from './lib/useConfigUndoRedo';
 import { createPointCloudCaptureState, type PointCloudCaptureState } from './lib/pointCloudExport';
 import { usePresetLibrary } from './lib/usePresetLibrary';
 import { usePresetTransition } from './lib/usePresetTransition';
@@ -39,6 +45,19 @@ import { AUDIO_BRIDGE_MODE_PARAM, AUDIO_BRIDGE_MODE_VALUE } from './lib/audioBri
 
 const AppBody: React.FC = () => {
   const isPublicLibraryMode = LIBRARY_SCOPE === 'public';
+  // Embed mode (ultimate Wave 3, lib/embedMode): ?embed=1 boots the
+  // chrome-free player for iframes on external sites. Every hook below
+  // still runs unchanged — config, the share-link effect (including the
+  // starter-library #p= safeguard) and playback are identical — only
+  // the final render swaps the four-edge deck for the embed player, so
+  // ControlPanel and its lazy panel chunks never mount.
+  const embedMode = isEmbedMode();
+  // Kiosk mode (ultimate Wave 5, lib/kioskMode): ?kiosk=1 boots the
+  // canvas-only exhibition mode with an auto-rotating attract loop.
+  // When both params are present KIOSK TAKES PRECEDENCE over embed
+  // (the render branch below checks kiosk first): an exhibition
+  // terminal must never show the embed control cluster.
+  const kioskMode = isKioskMode();
   const [config, setConfig] = useState<ParticleConfig>(() => (
     isPublicLibraryMode ? normalizeConfig(PUBLIC_PRESET_LIBRARY.currentConfig) : loadInitialPrivateConfig()
   ));
@@ -242,6 +261,39 @@ const AppBody: React.FC = () => {
     presets,
     setLibraryNotice,
     validPresetIds,
+  });
+
+  // Global undo/redo (ultimate Wave 2): watches the live config and
+  // commits settled states; sequence playback suspends recording (its
+  // steps are a performance, not edits). Restores stop playback and any
+  // in-flight morph, then apply instantly.
+  const {
+    canRedo: canRedoConfig,
+    canUndo: canUndoConfig,
+    redo: redoConfig,
+    undo: undoConfig,
+  } = useConfigUndoRedo({
+    applyConfig: (nextConfig: ParticleConfig) => {
+      stopSequencePlayback();
+      applyConfigInstant(nextConfig, null);
+    },
+    config,
+    suspended: isSequencePlaying,
+  });
+
+  // Kiosk attract loop (ultimate Wave 5): a no-op unless ?kiosk=1.
+  // It rotates presets — the visitor's own sequence when one exists,
+  // else a default spread of the starter sequence — through the same
+  // applyConfigMorph engine sequence playback uses, without touching
+  // the shared (persisted) sequence state. See lib/useKioskMode.
+  const kiosk = useKioskMode({
+    active: kioskMode,
+    activePresetId,
+    applyConfigMorph,
+    isPublicLibraryMode,
+    presetSequence,
+    presets,
+    starterLibrary,
   });
 
   // Starter fill-in (private mode): reproduce the old synchronous initial
@@ -463,6 +515,10 @@ const AppBody: React.FC = () => {
     },
     configHistoryEntries,
     onClearConfigHistory: clearConfigHistory,
+    canRedoConfig,
+    canUndoConfig,
+    onRedoConfig: redoConfig,
+    onUndoConfig: undoConfig,
     pointCloudCaptureRef,
     onAudioSourceModeChange: handleAudioSourceModeChange,
     onCaptureSequenceKeyframe: handleCaptureSequenceKeyframe,
@@ -554,6 +610,41 @@ const AppBody: React.FC = () => {
     videoFps: ui.videoFps,
     videoNotice,
   });
+
+  if (kioskMode) {
+    return (
+      <AppKioskPlayer
+        audioRef={audioRef}
+        config={config}
+        displayConfig={displayConfig}
+        hintVisible={kiosk.hintVisible}
+        onExitKiosk={kiosk.exitKiosk}
+        paused={kiosk.paused}
+        rendererRef={rendererRef}
+        rotationReady={kiosk.rotationReady}
+        saveTrigger={ui.saveTrigger}
+        sequenceStepProgress={kiosk.stepProgress}
+        pointCloudCaptureRef={pointCloudCaptureRef}
+      />
+    );
+  }
+
+  if (embedMode) {
+    return (
+      <AppEmbedPlayer
+        audioRef={audioRef}
+        config={config}
+        displayConfig={displayConfig}
+        isPlaying={ui.isPlaying}
+        isSequencePlaying={isSequencePlaying}
+        onTogglePlay={() => ui.setIsPlaying(!ui.isPlaying)}
+        rendererRef={rendererRef}
+        saveTrigger={ui.saveTrigger}
+        sequenceStepProgress={sequenceStepProgress}
+        pointCloudCaptureRef={pointCloudCaptureRef}
+      />
+    );
+  }
 
   return (
     <>

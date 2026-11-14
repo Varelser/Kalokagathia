@@ -24,7 +24,7 @@ React 19 + Three.js (WebGL) + GPGPU で、反応拡散・群れ・自己組織�
 - **Preset catalog:** https://monosphere.pages.dev/catalog/
 - Four-edge UI (header / rail / preset shelf / bottom deck) that never covers the canvas centre; Basic and Pro modes
 - Evolution Lab (crossover & mutation breeding), parameter timelines and morphing playback
-- AI tab: generate presets and adjust parameters from natural language (bring your own Groq / Gemini key, or use the built-in relay)
+- AI tab: generate presets and adjust parameters from natural language (bring your own Groq / Gemini / OpenRouter key, or use the built-in relay)
 - Optional cloud sync of your own presets (Neon Postgres)
 - Platform features: Wake Lock, Document Picture-in-Picture, Web Share, PNG copy, fullscreen, PWA
 - Tech: React 19 · TypeScript · Vite · Three.js (WebGL / GPGPU) · Cloudflare Pages
@@ -103,7 +103,7 @@ React 19 + Three.js (WebGL) + GPGPU で、反応拡散・群れ・自己組織�
 
 AI タブは利用者自身の API キーで動きます（キーはブラウザ内にのみ保存され、サーバには保存されません）。
 
-1. [Groq](https://console.groq.com/) または [Google AI Studio](https://aistudio.google.com/) で無料の API キーを取得
+1. [Groq](https://console.groq.com/)、[Google AI Studio](https://aistudio.google.com/) または [OpenRouter](https://openrouter.ai/keys) で無料の API キーを取得
 2. アプリの AI タブでキーを入力
 3. 自然言語で指示（例:「もっと暗く、渦を強く」）するとプリセット生成・調整が行われます
 

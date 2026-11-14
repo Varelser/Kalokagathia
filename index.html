@@ -160,6 +160,10 @@
         var show = false;
         try { show = !localStorage.getItem('kalokagathia.visited.v1'); } catch (e) { show = false; }
         if (show && /(^|[#&])(p|c)=/.test(location.hash)) show = false;
+        // Embed mode (?embed=1, ultimate Wave 3): the poster is a
+        // first-visit welcome for the full app; inside an iframe it
+        // would only cover the host page's player, so never show it.
+        if (show && /[?&]embed=1(?:&|$)/.test(location.search)) show = false;
         if (!show) return;
         img.fetchPriority = 'high';
         img.src = window.matchMedia('(max-width: 899px)').matches

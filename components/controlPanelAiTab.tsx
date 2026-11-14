@@ -19,6 +19,7 @@ import { exitSharedView, isSharedView, subscribeSharedView } from '../lib/shareL
 import {
   callGeminiDirect,
   callGroqDirect,
+  callOpenRouterDirect,
   cleanByokKey,
   loadByokKeys,
   saveByokKeys,
@@ -27,8 +28,10 @@ import {
   type ByokProvider,
 } from '../lib/byok';
 
-type AiProvider = 'groq' | 'gemini';
+type AiProvider = 'groq' | 'gemini' | 'openrouter';
 type AiMode = 'adjust' | 'generate';
+
+const PROVIDER_LABELS: Record<AiProvider, string> = { groq: 'Groq', gemini: 'Gemini', openrouter: 'OpenRouter' };
 
 const GENERATE_EXAMPLES = ['夕焼けみたいな渦を作って', '静かな霧のプリセットを作って', '激しく砕ける結晶を作って', '深海に沈む光を作って'];
 
@@ -86,7 +89,7 @@ function loadStored(): { messages: ChatMessage[]; provider: AiProvider; mode: Ai
       const j = JSON.parse(raw) as { messages?: ChatMessage[]; provider?: AiProvider; mode?: AiMode };
       const messages = Array.isArray(j.messages) ? j.messages.slice(-50) : [];
       for (const m of messages) nextId = Math.max(nextId, (m.id ?? 0) + 1);
-      return { messages, provider: j.provider === 'gemini' ? 'gemini' : 'groq', mode: j.mode === 'generate' ? 'generate' : 'adjust' };
+      return { messages, provider: j.provider === 'gemini' || j.provider === 'openrouter' ? j.provider : 'groq', mode: j.mode === 'generate' ? 'generate' : 'adjust' };
     }
   } catch { /* storage unavailable */ }
   return { messages: [], provider: 'groq', mode: 'adjust' };
@@ -95,11 +98,12 @@ function loadStored(): { messages: ChatMessage[]; provider: AiProvider; mode: Ai
 const BYOK_PROVIDERS: { id: ByokProvider; label: string; placeholder: string; issueUrl: string; issueLabel: string }[] = [
   { id: 'groq', label: 'Groq', placeholder: 'gsk_…', issueUrl: 'https://console.groq.com/keys', issueLabel: 'console.groq.com で無料発行' },
   { id: 'gemini', label: 'Gemini', placeholder: 'AIza…', issueUrl: 'https://aistudio.google.com/apikey', issueLabel: 'Google AI Studio で無料発行' },
+  { id: 'openrouter', label: 'OpenRouter', placeholder: 'sk-or-…', issueUrl: 'https://openrouter.ai/keys', issueLabel: 'openrouter.ai で無料発行' },
 ];
 
 const ByokSettings: React.FC<{ keys: ByokKeys; onChange: (next: ByokKeys) => void; defaultOpen?: boolean }> = ({ keys, onChange, defaultOpen }) => {
   const [open, setOpen] = React.useState(Boolean(defaultOpen));
-  const [draft, setDraft] = React.useState<ByokKeys>({ groq: '', gemini: '' });
+  const [draft, setDraft] = React.useState<ByokKeys>({ groq: '', gemini: '', openrouter: '' });
   const [testNote, setTestNote] = React.useState<Partial<Record<ByokProvider, string>>>({});
   const [testing, setTesting] = React.useState<Partial<Record<ByokProvider, boolean>>>({});
 
@@ -124,7 +128,7 @@ const ByokSettings: React.FC<{ keys: ByokKeys; onChange: (next: ByokKeys) => voi
       >
         <span>APIキー設定（自分のキーを使う）</span>
         <span className="flex items-center gap-2 text-[10px] font-normal text-white/45">
-          <span>{keys.groq ? 'Groq ●' : 'Groq ○'} {keys.gemini ? 'Gemini ●' : 'Gemini ○'}</span>
+          <span>{keys.groq ? 'Groq ●' : 'Groq ○'} {keys.gemini ? 'Gemini ●' : 'Gemini ○'} {keys.openrouter ? 'OpenRouter ●' : 'OpenRouter ○'}</span>
           <span>{open ? '−' : '+'}</span>
         </span>
       </button>
@@ -190,7 +194,7 @@ const ByokSettings: React.FC<{ keys: ByokKeys; onChange: (next: ByokKeys) => voi
             </div>
           ))}
           <p className="text-[10px] leading-relaxed text-white/40">
-            キーはこのブラウザの localStorage にだけ保存され、Groq / Gemini へ直接送られます。このサイトのサーバー（中継）には送られません。自分のキーを設定したプロバイダは、サイト側のキーではなくあなたの枠で動きます。共有端末では設定しないでください。
+            キーはこのブラウザの localStorage にだけ保存され、Groq / Gemini / OpenRouter へ直接送られます。このサイトのサーバー（中継）には送られません。自分のキーを設定したプロバイダは、サイト側のキーではなくあなたの枠で動きます。OpenRouter は自分のキー専用で、サイト側の中継には含まれません。共有端末では設定しないでください。
           </p>
         </div>
       ) : null}
@@ -227,7 +231,7 @@ export const AiTabContent: React.FC<Pick<ControlPanelContentProps, 'config' | 'u
     saveByokKeys(next);
     setByokKeys(next);
   }, []);
-  const hasOwnKey = Boolean(byokKeys.groq || byokKeys.gemini);
+  const hasOwnKey = Boolean(byokKeys.groq || byokKeys.gemini || byokKeys.openrouter);
 
   const applyValue = React.useCallback((key: keyof ParticleConfig, value: number | boolean | string) => {
     (updateConfig as (k: keyof ParticleConfig, v: never) => void)(key, value as never);
@@ -244,7 +248,7 @@ export const AiTabContent: React.FC<Pick<ControlPanelContentProps, 'config' | 'u
 
   const callAi = React.useCallback(async (useProvider: AiProvider, payload: unknown): Promise<{ text: string; provider: string } | null> => {
     const messages = (payload as { messages: { role: string; content: string }[] }).messages;
-    const ownKey = useProvider === 'groq' ? byokKeys.groq : byokKeys.gemini;
+    const ownKey = byokKeys[useProvider];
     if (ownKey) {
       // BYOK: call the provider directly with the visitor's own key. If it
       // fails we do not silently fall back to the site relay for this provider
@@ -253,12 +257,17 @@ export const AiTabContent: React.FC<Pick<ControlPanelContentProps, 'config' | 'u
       // owner's quota do not apply to them.
       const direct = useProvider === 'groq'
         ? await callGroqDirect(ownKey, messages).catch(() => null)
-        : await callGeminiDirect(ownKey, messages).catch(() => null);
+        : useProvider === 'openrouter'
+          ? await callOpenRouterDirect(ownKey, messages).catch(() => null)
+          : await callGeminiDirect(ownKey, messages).catch(() => null);
       if (direct) recordUsage({ lastVia: 'byok', lastModel: direct.model, lastAt: Date.now() });
       return direct
-        ? { text: direct.text, provider: `${useProvider === 'groq' ? 'Groq' : 'Gemini'} (${direct.model}) · 自分のキー` }
+        ? { text: direct.text, provider: `${PROVIDER_LABELS[useProvider]} (${direct.model}) · 自分のキー` }
         : null;
     }
+    // OpenRouter is BYOK-only: the site relay does not offer it, so without
+    // the visitor's own key there is nothing to call (never via the relay).
+    if (useProvider === 'openrouter') return null;
     if (sharedView) return null; // shared view: the site relay stays off
     const r = await fetch('/api/ai', {
       method: 'POST',
@@ -299,6 +308,7 @@ export const AiTabContent: React.FC<Pick<ControlPanelContentProps, 'config' | 'u
   // an "AI:" prefix and applied so the result is visible immediately.
   const runGenerate = React.useCallback(async (text: string) => {
     recordUsage({ requests: usage.requests + 1 });
+    // Fallback partner: groq <-> gemini as before; openrouter falls back to groq.
     const other: AiProvider = provider === 'groq' ? 'gemini' : 'groq';
     const system = buildAiGenerateSystemPrompt(configRef.current, presets ?? []);
     let feedback = '';
@@ -359,6 +369,7 @@ export const AiTabContent: React.FC<Pick<ControlPanelContentProps, 'config' | 'u
       ...history.slice(-7, -1).map((m) => ({ role: m.role, content: m.text })),
       { role: 'user', content: text },
     ];
+    // Fallback partner: groq <-> gemini as before; openrouter falls back to groq.
     const other: AiProvider = provider === 'groq' ? 'gemini' : 'groq';
     recordUsage({ requests: usage.requests + 1 });
     let rateLimitedSeconds = 0;
@@ -371,7 +382,7 @@ export const AiTabContent: React.FC<Pick<ControlPanelContentProps, 'config' | 'u
     let fallbackNote = '';
     if (!result && !rateLimitedSeconds) {
       result = await attempt(other);
-      if (result) fallbackNote = `（${provider === 'groq' ? 'Groq' : 'Gemini'}が応答しなかったため、もう一方で実行しました）`;
+      if (result) fallbackNote = `（${PROVIDER_LABELS[provider]}が応答しなかったため、もう一方で実行しました）`;
     }
     if (rateLimitedSeconds && !result) {
       recordUsage({ failed: usage.failed + 1 });
@@ -383,8 +394,7 @@ export const AiTabContent: React.FC<Pick<ControlPanelContentProps, 'config' | 'u
       return;
     }
     if (!result) {
-      const ownKeyUsed = Boolean(provider === 'groq' ? byokKeys.groq : byokKeys.gemini)
-        || Boolean(other === 'groq' ? byokKeys.groq : byokKeys.gemini);
+      const ownKeyUsed = Boolean(byokKeys[provider]) || Boolean(byokKeys[other]);
       const hint = ownKeyUsed
         ? '\n自分のAPIキーを設定している場合は、キーが無効か上限に達している可能性があります。「APIキー設定」のテストで確認できます。'
         : '';
@@ -475,6 +485,12 @@ export const AiTabContent: React.FC<Pick<ControlPanelContentProps, 'config' | 'u
                 onClick={() => setProvider('gemini')}
                 className={`px-2.5 py-1 ${provider === 'gemini' ? 'bg-white/85 text-black' : 'bg-white/5 text-white/70'}`}
               >Gemini</button>
+              <button
+                type="button"
+                data-testid="ai-provider-openrouter"
+                onClick={() => setProvider('openrouter')}
+                className={`px-2.5 py-1 ${provider === 'openrouter' ? 'bg-white/85 text-black' : 'bg-white/5 text-white/70'}`}
+              >OpenRouter</button>
             </div>
             <button type="button" onClick={clearHistory} title="会話を消す" className="rounded-lg border border-white/15 bg-white/5 p-1.5 text-white/60 hover:text-white">
               <Trash2 className="h-3.5 w-3.5" />
