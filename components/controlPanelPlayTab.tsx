@@ -10,7 +10,7 @@ import {
   TARGET_SOURCE_FAMILIES,
   getCoverageProfile,
 } from '../lib/depictionCoverage';
-import { MACRO_DEFINITIONS, getMacroUpdates } from '../lib/macroControls';
+import { MACRO_DEFINITIONS, getMacroUpdates, getMacroValue } from '../lib/macroControls';
 import { MOTION_GROUPS } from '../lib/motionGrouping';
 import { isDedicatedSystemMotionType, isPlacementMotionType } from '../lib/motionChain';
 import { generateOffspring, type BredChild } from '../lib/presetBreeding';
@@ -58,6 +58,17 @@ import {
   type LinkBridgeState,
 } from '../lib/linkSync';
 import {
+  MidiOutputEngine,
+  loadMidiOutputSettings,
+  saveMidiOutputSettings,
+  type MidiOutputPortLike,
+  type MidiOutputSettings,
+} from '../lib/midiOutput';
+import {
+  getNoiseLinkStatus,
+  type NoiseLinkStatus,
+} from '../lib/noiseLink';
+import {
   DEFAULT_OSC_BRIDGE_URL,
   describeOscTarget,
   isValidOscAddress,
@@ -85,6 +96,7 @@ import {
 import {
   AUDIO_BAND_OPTIONS,
   LFO_WAVEFORM_OPTIONS,
+  NOISE_SOURCE_OPTIONS,
   createStarterModulationRoutes,
   describeModulationSource,
   evaluateLfo,
@@ -94,6 +106,7 @@ import {
   type ModulationRoute,
   type ModulationSetup,
   type ModulationSource,
+  type NoiseSourceId,
 } from '../lib/modulation';
 import { buildPresetVector, cosineSimilarity, projectPresetsTo2D } from '../lib/presetSimilarity';
 import { MAX_DETERMINISTIC_FRAMES, renderDeterministicSequence, renderDeterministicVideo } from '../lib/deterministicRender';
@@ -1837,12 +1850,19 @@ interface MidiInputLike {
   name?: string | null;
   onmidimessage: ((event: MidiMessageEventLike) => void) | null;
 }
+interface MidiOutputLike {
+  id: string;
+  name?: string | null;
+  send: (data: number[]) => void;
+}
 interface MidiAccessLike {
   inputs: Map<string, MidiInputLike>;
+  outputs: Map<string, MidiOutputLike>;
   onstatechange: (() => void) | null;
 }
 
 const MidiSection: React.FC<{
+  config: ControlPanelContentProps['config'];
   updateConfig: ControlPanelContentProps['updateConfig'];
   isPublicLibrary: boolean;
   presets: ControlPanelContentProps['presets'];
@@ -1857,6 +1877,7 @@ const MidiSection: React.FC<{
   onStartSequencePlayback: ControlPanelContentProps['onStartSequencePlayback'];
   onStopSequencePlayback: ControlPanelContentProps['onStopSequencePlayback'];
 }> = ({
+  config,
   updateConfig,
   isPublicLibrary,
   presets,
@@ -2110,6 +2131,91 @@ const MidiSection: React.FC<{
     return () => window.clearInterval(timer);
   }, [clockPrefs.source]);
 
+  // --- MIDI output (Phase 6.7) ---------------------------------------
+  // The engine mirrors the show back to a selected output device:
+  // macro CC echo, a step-note pulse per sequence item, and a
+  // Program Change per preset load. It reuses the SAME MIDIAccess
+  // object the input side requested (accessRef) — no second
+  // requestMIDIAccess call — and attach() keeps its port resolved.
+  const [outputs, setOutputs] = React.useState<{ id: string; name: string }[]>([]);
+  const [outputSettings, setOutputSettings] = React.useState<MidiOutputSettings>(() =>
+    loadMidiOutputSettings(typeof window !== 'undefined' ? window.localStorage : undefined),
+  );
+  const outputEngineRef = React.useRef<MidiOutputEngine | null>(null);
+  if (outputEngineRef.current === null) {
+    outputEngineRef.current = new MidiOutputEngine();
+  }
+  const outputPortsRef = React.useRef<Map<string, MidiOutputPortLike>>(new Map());
+  const outputSettingsRef = React.useRef(outputSettings);
+  outputSettingsRef.current = outputSettings;
+  const configRef = React.useRef(config);
+  configRef.current = config;
+
+  const applyOutputSettings = React.useCallback((next: MidiOutputSettings) => {
+    setOutputSettings(next);
+    saveMidiOutputSettings(typeof window !== 'undefined' ? window.localStorage : undefined, next);
+  }, []);
+
+  React.useEffect(() => {
+    const engine = outputEngineRef.current;
+    if (!engine) return;
+    engine.setSettings(outputSettings);
+    const port = outputSettings.outputId
+      ? (outputPortsRef.current.get(outputSettings.outputId) ?? null)
+      : null;
+    engine.setPort(port);
+  }, [outputSettings, outputs]);
+
+  // Macro CC echo: macros are derived from the config, so poll the
+  // config a few dozen times a second while output is live and let
+  // the engine coalesce (it only sends on change, ~30 ms per macro).
+  React.useEffect(() => {
+    if (!connected || !outputSettings.enabled || !outputSettings.outputId) return;
+    const timer = window.setInterval(() => {
+      const engine = outputEngineRef.current;
+      if (!engine || !engine.active) return;
+      const now = performance.now();
+      const current = configRef.current;
+      MACRO_DEFINITIONS.forEach((definition, index) => {
+        engine.echoMacro(index, getMacroValue(current, definition), now);
+      });
+      engine.flushPending(now);
+    }, 40);
+    return () => window.clearInterval(timer);
+  }, [connected, outputSettings.enabled, outputSettings.outputId]);
+
+  // Step pulse: EVERY sequence advance lands on the item-load path
+  // and changes the active item id — internal playback, MIDI clock,
+  // Link, note actions and manual clicks alike — so watching the id
+  // fires exactly one pulse per landed step and none for no-op
+  // advances (e.g. last item with loop off never changes the id).
+  const prevSequenceItemRef = React.useRef<string | null | undefined>(undefined);
+  React.useEffect(() => {
+    const prev = prevSequenceItemRef.current;
+    prevSequenceItemRef.current = activeSequenceItemId;
+    if (prev === undefined || prev === activeSequenceItemId) return;
+    outputEngineRef.current?.triggerStepNote();
+  }, [activeSequenceItemId]);
+
+  // Program Change: a preset load (shelf click, [ / ] keys, note
+  // actions — all end in onLoadPreset) changes the active preset id;
+  // the PC number is its index in the current shelf order.
+  const prevPresetIdRef = React.useRef<string | null | undefined>(undefined);
+  React.useEffect(() => {
+    const prev = prevPresetIdRef.current;
+    prevPresetIdRef.current = activePresetId;
+    if (prev === undefined || prev === activePresetId || activePresetId === null) return;
+    const index = actionsRef.current.presets.findIndex((preset) => preset.id === activePresetId);
+    if (index >= 0) outputEngineRef.current?.sendProgramChange(index);
+  }, [activePresetId]);
+
+  React.useEffect(
+    () => () => {
+      outputEngineRef.current?.dispose();
+    },
+    [],
+  );
+
   const applyTarget = React.useCallback(
     (target: MidiTarget, value: number) => {
       if (target.kind === 'macro') {
@@ -2247,6 +2353,19 @@ const MidiSection: React.FC<{
           list.push({ id: input.id, name: input.name ?? input.id });
         });
         setInputs(list);
+        // Outputs ride along on the same access object (Phase 6.7):
+        // enumerate them for the selector and keep the engine's port
+        // resolved against the persisted selection.
+        const outList: { id: string; name: string }[] = [];
+        const ports = new Map<string, MidiOutputPortLike>();
+        access.outputs.forEach((output: MidiOutputLike) => {
+          outList.push({ id: output.id, name: output.name ?? output.id });
+          ports.set(output.id, output);
+        });
+        outputPortsRef.current = ports;
+        setOutputs(outList);
+        const selectedId = outputSettingsRef.current.outputId;
+        outputEngineRef.current?.setPort(selectedId ? (ports.get(selectedId) ?? null) : null);
       };
       attach();
       access.onstatechange = attach;
@@ -2304,9 +2423,9 @@ const MidiSection: React.FC<{
 
   return (
     <section>
-      <SectionTitle icon={<Piano size={12} />}>MIDI Control · MIDI入力</SectionTitle>
+      <SectionTitle icon={<Piano size={12} />}>MIDI Control · MIDI入出力</SectionTitle>
       <p className="text-[11px] leading-relaxed text-white/45 mb-4">
-        MIDIコントローラのノブやフェーダを、マクロやパラメータに割り当てて演奏できます。ノートへの操作割り当てと、外部クロック／Ableton Link とのシーケンス同期にも対応します。割り当てはこのブラウザに保存されます（プリセットには含まれません）。Playタブを開いている間だけ有効です。
+        MIDIコントローラのノブやフェーダを、マクロやパラメータに割り当てて演奏できます。ノートへの操作割り当てと、外部クロック／Ableton Link とのシーケンス同期にも対応します。割り当てはこのブラウザに保存されます（プリセットには含まれません）。Playタブを開いている間だけ有効です。マクロの動き・シーケンスのステップ・プリセット切替をMIDI出力としてDAWなどへ送り返すこともできます（下部の MIDI Output）。
       </p>
       {!supported && (
         <p className="text-[11px] text-white/40">
@@ -2501,6 +2620,117 @@ const MidiSection: React.FC<{
                 外部同期はオフです。MIDI Clock（DAWやシーケンサーのクロック）か Ableton Link（ローカルブリッジ経由）を選ぶと、シーケンスを外部テンポに同期できます。
               </p>
             )}
+          </div>
+          <div className="border-t border-white/10 pt-3 space-y-3">
+            <p className="text-[11px] font-semibold tracking-wide">
+              MIDI Output · MIDI出力
+            </p>
+            <p className="text-[11px] leading-relaxed text-white/45">
+              演奏の動きをMIDIで送り返します。マクロの位置は CC（基準CC＋マクロ番号、約30msに間引き）で、シーケンスが次の項目へ進むたびステップノートのパルスを、プリセットを読み込むたび棚順のプログラムチェンジを送ります。モーターフェーダーの追従や、DAW側の音色切替との連動に使えます。設定はこのブラウザに保存されます。
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() =>
+                  applyOutputSettings({ ...outputSettings, enabled: !outputSettings.enabled })
+                }
+                aria-pressed={outputSettings.enabled}
+                className={`px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                  outputSettings.enabled
+                    ? 'bg-white text-black hover:bg-gray-200'
+                    : 'bg-white/10 text-white/60 hover:bg-white/20'
+                }`}
+              >
+                {outputSettings.enabled ? '出力 ON' : '出力 OFF'}
+              </button>
+              <select
+                value={outputSettings.outputId ?? ''}
+                onChange={(event) =>
+                  applyOutputSettings({
+                    ...outputSettings,
+                    outputId: event.target.value === '' ? null : event.target.value,
+                  })
+                }
+                className="bg-white/5 border border-white/10 rounded px-2 py-2 text-xs outline-none focus:border-white/40"
+                aria-label="MIDI出力デバイス"
+              >
+                <option value="" className="bg-neutral-900">
+                  出力先を選択…
+                </option>
+                {outputs.map((output) => (
+                  <option key={output.id} value={output.id} className="bg-neutral-900">
+                    {output.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {outputs.length === 0 && (
+              <p className="text-[11px] text-white/40">
+                出力機器が見つかりません（仮想MIDIポートやDAWを起動すると表示されます）。
+              </p>
+            )}
+            {outputSettings.outputId !== null &&
+              !outputs.some((output) => output.id === outputSettings.outputId) && (
+                <p className="text-[11px] text-white/40">
+                  選択中の出力機器が接続されていません（接続すると自動で再開します）。
+                </p>
+              )}
+            <div className="grid grid-cols-3 gap-2">
+              <label className="block">
+                <span className="block text-[10px] uppercase tracking-widest text-white/40 mb-1">Channel</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={16}
+                  value={outputSettings.channel + 1}
+                  onChange={(event) =>
+                    applyOutputSettings({
+                      ...outputSettings,
+                      channel: Math.min(15, Math.max(0, (Number(event.target.value) || 1) - 1)),
+                    })
+                  }
+                  className="w-full bg-white/5 border border-white/10 rounded px-2 py-2 text-xs outline-none focus:border-white/40"
+                />
+              </label>
+              <label className="block">
+                <span className="block text-[10px] uppercase tracking-widest text-white/40 mb-1">基準CC (＋0〜7)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={outputSettings.baseCc}
+                  onChange={(event) =>
+                    applyOutputSettings({
+                      ...outputSettings,
+                      baseCc: Math.min(120, Math.max(0, Number(event.target.value) || 0)),
+                    })
+                  }
+                  className="w-full bg-white/5 border border-white/10 rounded px-2 py-2 text-xs outline-none focus:border-white/40"
+                />
+              </label>
+              <label className="block">
+                <span className="block text-[10px] uppercase tracking-widest text-white/40 mb-1">ステップノート</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={127}
+                  value={outputSettings.stepNote}
+                  onChange={(event) =>
+                    applyOutputSettings({
+                      ...outputSettings,
+                      stepNote: Math.min(127, Math.max(0, Number(event.target.value) || 0)),
+                    })
+                  }
+                  className="w-full bg-white/5 border border-white/10 rounded px-2 py-2 text-xs outline-none focus:border-white/40"
+                />
+              </label>
+            </div>
+            <p className="font-mono text-[10px] text-white/50">
+              {outputSettings.enabled
+                ? outputSettings.outputId === null
+                  ? 'output: 出力先が未選択です'
+                  : `output: CH${outputSettings.channel + 1} · CC ${outputSettings.baseCc}–${outputSettings.baseCc + 7} (macros) · Note ${outputSettings.stepNote} (${describeMidiNote(outputSettings.stepNote)}) step · Program Change = プリセット棚順`
+                : 'output: OFF'}
+            </p>
           </div>
           {lastEvent && <p className="font-mono text-[10px] text-white/35">last: {lastEvent}</p>}
           {isPublicLibrary && <p className="text-[11px] text-white/35">公開ビルドでは割り当てを適用できません。</p>}
@@ -3126,6 +3356,29 @@ const ModulationSection: React.FC<{
     return () => window.clearInterval(id);
   }, [setup.enabled]);
 
+  // Noise link status (Phase 6.7): polled a couple of times a second
+  // so the user can see whether the Noise tab is actually feeding the
+  // Noise modulation sources offered below. Reading the status also
+  // opens the BroadcastChannel receiver (lazily, in lib/noiseLink).
+  const [noiseStatus, setNoiseStatus] = React.useState<NoiseLinkStatus>({
+    receiving: false,
+    playing: false,
+    master: 0,
+  });
+  React.useEffect(() => {
+    const poll = () => {
+      const next = getNoiseLinkStatus();
+      setNoiseStatus((prev) =>
+        prev.receiving === next.receiving && prev.playing === next.playing && prev.master === next.master
+          ? prev
+          : next,
+      );
+    };
+    poll();
+    const id = window.setInterval(poll, 500);
+    return () => window.clearInterval(id);
+  }, []);
+
   const update = (next: ModulationSetup) => setModulationSetup(next);
 
   const setLfo = (index: number, patch: Partial<{ waveform: LfoWaveform; rate: number }>) => {
@@ -3134,13 +3387,21 @@ const ModulationSection: React.FC<{
 
   const parseSource = (value: string): ModulationSource => {
     const [kind, rest] = value.split(/:(.*)/).filter(Boolean);
-    return kind === 'audio'
-      ? { kind: 'audio', band: rest as 'bass' | 'treble' | 'pulse' | 'bandA' | 'bandB' }
-      : { kind: 'lfo', index: Number(rest) || 0 };
+    if (kind === 'audio') {
+      return { kind: 'audio', band: rest as 'bass' | 'treble' | 'pulse' | 'bandA' | 'bandB' };
+    }
+    if (kind === 'noise') {
+      return { kind: 'noise', source: rest as NoiseSourceId };
+    }
+    return { kind: 'lfo', index: Number(rest) || 0 };
   };
 
   const sourceValue = (source: ModulationSource) =>
-    source.kind === 'lfo' ? `lfo:${source.index}` : `audio:${source.band}`;
+    source.kind === 'lfo'
+      ? `lfo:${source.index}`
+      : source.kind === 'noise'
+        ? `noise:${source.source}`
+        : `audio:${source.band}`;
 
   const addRoute = () => {
     const route: ModulationRoute = {
@@ -3176,7 +3437,12 @@ const ModulationSection: React.FC<{
     <section>
       <SectionTitle icon={<Activity size={12} />}>Modulation · モジュレーション</SectionTitle>
       <p className="text-[11px] leading-relaxed text-white/45 mb-4">
-        LFO（周期的な信号）や音声の帯域をパラメータに配線し、触っていない間もシーンを揺らし続ける仕組みです。変調は描画直前の実効値だけに重なり、プリセットや保存データは書き換えません。設定はこのブラウザに保存されます。一時停止中は変調も止まります。
+        LFO（周期的な信号）や音声の帯域をパラメータに配線し、触っていない間もシーンを揺らし続ける仕組みです。変調は描画直前の実効値だけに重なり、プリセットや保存データは書き換えません。設定はこのブラウザに保存されます。一時停止中は変調も止まります。別タブで開いた Noise アプリの音量も変調元にできます（Noise連携）。
+      </p>
+      <p className="font-mono text-[10px] text-white/50 mb-4">
+        {noiseStatus.receiving
+          ? `Noise Link: 受信中 · ${noiseStatus.playing ? '再生中' : '停止中'} · master ${noiseStatus.master.toFixed(2)}`
+          : 'Noise Link: 未接続（Noise側で連携を有効にし、再生すると受信します）'}
       </p>
       <div className={isPublicLibrary ? 'pointer-events-none opacity-60' : ''}>
         <div className="flex items-center gap-2 mb-4">
@@ -3261,6 +3527,13 @@ const ModulationSection: React.FC<{
                   <optgroup label="音声">
                     {AUDIO_BAND_OPTIONS.map((option) => (
                       <option key={option.value} value={`audio:${option.value}`} className="bg-neutral-900">
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Noise連携">
+                    {NOISE_SOURCE_OPTIONS.map((option) => (
+                      <option key={option.value} value={`noise:${option.value}`} className="bg-neutral-900">
                         {option.label}
                       </option>
                     ))}
@@ -4921,6 +5194,7 @@ export const PlayTabContent: React.FC<ControlPanelContentProps> = (props) => (
     <DataSourceSection config={props.config} updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
     <TexturePackSection config={props.config} updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
     <MidiSection
+      config={props.config}
       updateConfig={props.updateConfig}
       isPublicLibrary={props.isPublicLibrary}
       presets={props.presets}

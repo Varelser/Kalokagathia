@@ -4,6 +4,40 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.4.0] — 2026-11-14
+
+Phase 7 — the app talks back: MIDI output for live rigs, and a receive
+link from the companion Noise app.
+
+### Added
+- **MIDI output** — the Play tab's MIDI section gains an output
+  subsection (device selector, channel, base CC, step note; settings
+  persist in the browser). Three things are sent back to the selected
+  port: macro positions as CC (base CC + macro index, coalesced to
+  roughly one send per 30 ms), a step-note pulse every time the
+  sequence lands on a new item (internal playback, MIDI clock, Ableton
+  Link, note actions and manual clicks all share the item-load path,
+  so each landed step fires exactly one pulse), and a Program Change
+  whose number is the loaded preset's index in the current shelf
+  order — enough to keep motorised faders and DAW-side program
+  changes in step with the visuals.
+- **Noise link receiver** — with the "Varelser Link" toggle enabled in
+  the Noise app (another tab of the same browser), its playback state
+  and levels (master, layers 1–3, binaural) arrive over
+  BroadcastChannel and become modulation sources: the Modulation
+  section shows a "Noise Link:" status line and its source selector
+  gains a "Noise連携" group, so the noise bed can breathe through the
+  particle scene. Nothing is received while Noise is not broadcasting.
+
+### Integration notes
+- MIDI output pairs with the input side shipped in 1.3.0 (note
+  actions, clock sync) for two-way live setups — the same wiring the
+  Meikyoshisui guide uses for DAW live performance — and tempo sync
+  remains available via MIDI clock or the Ableton Link bridge
+  (`tools/link-bridge/`). As in 1.3.0, endpoint behaviour is verified
+  against virtual ports in the real-GPU smoke; a physical-controller
+  pass remains a user-side check.
+
 ## [1.3.0] — 2026-11-14
 
 Phase 6.5 / 6.6 — external-control synchronisation for live performance:

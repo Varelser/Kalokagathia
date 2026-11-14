@@ -2,6 +2,15 @@ import React from 'react';
 import type { ParticleConfig } from '../types';
 import type { AudioLevels } from './audioControllerTypes';
 import { PARAMETER_CATALOG } from './parameterCatalog';
+import {
+  NOISE_SOURCE_IDS,
+  NOISE_SOURCE_OPTIONS,
+  getNoiseLinkValues,
+  type NoiseSourceId,
+} from './noiseLink';
+
+export { NOISE_SOURCE_OPTIONS };
+export type { NoiseSourceId };
 
 /**
  * Modulation engine.
@@ -11,8 +20,8 @@ import { PARAMETER_CATALOG } from './parameterCatalog';
  * components/useAppSceneTemporalConfig.ts, which already applies
  * the built-in temporal profiles the same way). Modulation is a
  * second overlay on that effective config: signals (LFOs, audio
- * bands) are routed to catalogued parameters with a depth, and
- * the routed parameters breathe on their own.
+ * bands, the Noise app link) are routed to catalogued parameters
+ * with a depth, and the routed parameters breathe on their own.
  *
  * The base config is never written — presets, project files and
  * serialization are untouched, exactly like temporal profiles.
@@ -32,7 +41,8 @@ export interface LfoSettings {
 
 export type ModulationSource =
   | { kind: 'lfo'; index: number }
-  | { kind: 'audio'; band: keyof AudioLevels };
+  | { kind: 'audio'; band: keyof AudioLevels }
+  | { kind: 'noise'; source: NoiseSourceId };
 
 export interface ModulationRoute {
   id: string;
@@ -134,12 +144,22 @@ export function evaluateSource(
     if (!settings) return { value01: 0.5, center: 0.5 };
     return { value01: evaluateLfo(settings, time), center: 0.5 };
   }
+  if (source.kind === 'noise') {
+    // Noise link values rest at 0 like audio bands (silence = no
+    // sender, stale state, or the sender is stopped).
+    const value = getNoiseLinkValues()[source.source];
+    return { value01: Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0)), center: 0 };
+  }
   const level = audio ? audio[source.band] : 0;
   return { value01: Math.min(1, Math.max(0, Number.isFinite(level) ? level : 0)), center: 0 };
 }
 
 export function describeModulationSource(source: ModulationSource): string {
   if (source.kind === 'lfo') return `LFO ${source.index + 1}`;
+  if (source.kind === 'noise') {
+    const option = NOISE_SOURCE_OPTIONS.find((candidate) => candidate.value === source.source);
+    return option ? option.label : `Noise · ${source.source}`;
+  }
   const band = AUDIO_BAND_OPTIONS.find((option) => option.value === source.band);
   return band ? band.label : `Audio · ${source.band}`;
 }
@@ -211,7 +231,8 @@ function sanitizeSetup(value: unknown): ModulationSetup {
       const source = route.source as ModulationSource;
       const sourceOk =
         (source.kind === 'lfo' && typeof source.index === 'number' && source.index >= 0 && source.index < MODULATION_LFO_COUNT) ||
-        (source.kind === 'audio' && AUDIO_BANDS.includes(source.band));
+        (source.kind === 'audio' && AUDIO_BANDS.includes(source.band)) ||
+        (source.kind === 'noise' && NOISE_SOURCE_IDS.includes(source.source));
       if (!sourceOk) return;
       routes.push({
         id: typeof route.id === 'string' ? route.id : `route-${i}`,
