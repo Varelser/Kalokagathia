@@ -25,14 +25,38 @@ import {
   type ParsedData,
 } from '../lib/dataSource';
 import {
+  MIDI_NOTE_ACTIONS,
+  describeMidiNote,
+  describeMidiNoteAction,
   describeMidiTarget,
   loadMidiAssignments,
+  loadMidiNoteAssignments,
   resolveAssignment,
+  resolveNoteAssignment,
   saveMidiAssignments,
+  saveMidiNoteAssignments,
   scaleCcValue,
   type MidiAssignment,
+  type MidiNoteAction,
+  type MidiNoteAssignment,
   type MidiTarget,
 } from '../lib/midiControl';
+import {
+  MIDI_CLOCK_DIVISIONS,
+  MidiClockTracker,
+  SEQUENCE_SYNC_SOURCES,
+  loadMidiClockSyncPrefs,
+  saveMidiClockSyncPrefs,
+  type MidiClockDivision,
+  type MidiClockSnapshot,
+  type MidiClockSyncPrefs,
+  type SequenceSyncSource,
+} from '../lib/midiClock';
+import {
+  INITIAL_LINK_STATE,
+  LinkSyncClient,
+  type LinkBridgeState,
+} from '../lib/linkSync';
 import {
   DEFAULT_OSC_BRIDGE_URL,
   describeOscTarget,
@@ -1821,7 +1845,32 @@ interface MidiAccessLike {
 const MidiSection: React.FC<{
   updateConfig: ControlPanelContentProps['updateConfig'];
   isPublicLibrary: boolean;
-}> = ({ updateConfig, isPublicLibrary }) => {
+  presets: ControlPanelContentProps['presets'];
+  activePresetId: ControlPanelContentProps['activePresetId'];
+  onLoadPreset: ControlPanelContentProps['onLoadPreset'];
+  onRandomize?: ControlPanelContentProps['onRandomize'];
+  presetSequence: ControlPanelContentProps['presetSequence'];
+  activeSequenceItemId: ControlPanelContentProps['activeSequenceItemId'];
+  isSequencePlaying: ControlPanelContentProps['isSequencePlaying'];
+  sequenceLoopEnabled: ControlPanelContentProps['sequenceLoopEnabled'];
+  onLoadSequenceItem: ControlPanelContentProps['onLoadSequenceItem'];
+  onStartSequencePlayback: ControlPanelContentProps['onStartSequencePlayback'];
+  onStopSequencePlayback: ControlPanelContentProps['onStopSequencePlayback'];
+}> = ({
+  updateConfig,
+  isPublicLibrary,
+  presets,
+  activePresetId,
+  onLoadPreset,
+  onRandomize,
+  presetSequence,
+  activeSequenceItemId,
+  isSequencePlaying,
+  sequenceLoopEnabled,
+  onLoadSequenceItem,
+  onStartSequencePlayback,
+  onStopSequencePlayback,
+}) => {
   const write = updateConfig as (key: keyof ParticleConfig, value: ParticleConfig[keyof ParticleConfig]) => void;
   const supported =
     typeof navigator !== 'undefined' &&
@@ -1840,6 +1889,226 @@ const MidiSection: React.FC<{
   assignmentsRef.current = assignments;
   const learnTargetRef = React.useRef<MidiTarget | null>(null);
   const accessRef = React.useRef<MidiAccessLike | null>(null);
+
+  // --- Note assignments & MIDI Clock (Phase 6.5) ---------------------
+  const [noteAssignments, setNoteAssignments] = React.useState<MidiNoteAssignment[]>(() =>
+    loadMidiNoteAssignments(typeof window !== 'undefined' ? window.localStorage : undefined),
+  );
+  const [noteActionValue, setNoteActionValue] = React.useState<MidiNoteAction>('preset-next');
+  const [learningNote, setLearningNote] = React.useState(false);
+  const noteAssignmentsRef = React.useRef(noteAssignments);
+  noteAssignmentsRef.current = noteAssignments;
+  const learnNoteActionRef = React.useRef<MidiNoteAction | null>(null);
+
+  const [clockPrefs, setClockPrefs] = React.useState(() =>
+    loadMidiClockSyncPrefs(typeof window !== 'undefined' ? window.localStorage : undefined),
+  );
+  const clockTrackerRef = React.useRef<MidiClockTracker | null>(null);
+  if (clockTrackerRef.current === null) {
+    clockTrackerRef.current = new MidiClockTracker(clockPrefs.division);
+  }
+  const [clockSnapshot, setClockSnapshot] = React.useState<MidiClockSnapshot>({
+    running: false,
+    hasClock: false,
+    bpm: null,
+    tickCount: 0,
+  });
+
+  // Everything the message handler needs, refreshed every render so
+  // the single onmidimessage subscription never goes stale.
+  const actionsRef = React.useRef({
+    presets,
+    activePresetId,
+    onLoadPreset,
+    onRandomize,
+    presetSequence,
+    activeSequenceItemId,
+    isSequencePlaying,
+    sequenceLoopEnabled,
+    onLoadSequenceItem,
+    onStartSequencePlayback,
+    onStopSequencePlayback,
+    clockSyncEnabled: clockPrefs.source === 'midi-clock',
+  });
+  actionsRef.current = {
+    presets,
+    activePresetId,
+    onLoadPreset,
+    onRandomize,
+    presetSequence,
+    activeSequenceItemId,
+    isSequencePlaying,
+    sequenceLoopEnabled,
+    onLoadSequenceItem,
+    onStartSequencePlayback,
+    onStopSequencePlayback,
+    clockSyncEnabled: clockPrefs.source === 'midi-clock',
+  };
+
+  /** One sequence step forward — the exact path a sequence-item click
+   *  takes (onLoadSequenceItem). That helper stops the internal
+   *  hold-timer playback, so a clock boundary can never double-advance
+   *  alongside it: after the first boundary the clock is the driver. */
+  const advanceSequenceStep = React.useCallback(() => {
+    const state = actionsRef.current;
+    const sequence = state.presetSequence;
+    if (sequence.length === 0) return;
+    const index = sequence.findIndex((item) => item.id === state.activeSequenceItemId);
+    if (index < 0) {
+      state.onLoadSequenceItem(sequence[0].id);
+      return;
+    }
+    if (index >= sequence.length - 1 && !state.sequenceLoopEnabled) return;
+    const next = sequence[(index + 1) % sequence.length];
+    if (next) state.onLoadSequenceItem(next.id);
+  }, []);
+
+  const fireNoteAction = React.useCallback(
+    (action: MidiNoteAction) => {
+      const state = actionsRef.current;
+      if (action === 'preset-next' || action === 'preset-prev') {
+        // Same arithmetic as the [ / ] keyboard shortcuts in
+        // ControlPanel (shelf order, wrap-around).
+        const list = state.presets;
+        if (list.length === 0) return;
+        const index = list.findIndex((preset) => preset.id === state.activePresetId);
+        const nextIndex =
+          action === 'preset-next'
+            ? index < 0
+              ? 0
+              : (index + 1) % list.length
+            : index < 0
+              ? list.length - 1
+              : (index - 1 + list.length) % list.length;
+        const next = list[nextIndex];
+        if (next && next.id !== state.activePresetId) state.onLoadPreset(next.id);
+        return;
+      }
+      if (action === 'sequence-next') {
+        advanceSequenceStep();
+        return;
+      }
+      if (action === 'sequence-play-stop') {
+        if (state.isSequencePlaying) state.onStopSequencePlayback();
+        else state.onStartSequencePlayback();
+        return;
+      }
+      // action === 'randomize'
+      state.onRandomize?.();
+    },
+    [advanceSequenceStep],
+  );
+
+  const setSyncPref = React.useCallback(
+    (next: Partial<{ source: SequenceSyncSource; division: MidiClockDivision }>) => {
+      setClockPrefs((prev) => {
+        const source = next.source ?? prev.source;
+        const merged: MidiClockSyncPrefs = {
+          ...prev,
+          ...next,
+          source,
+          // Keep the legacy Phase 6.5 field truthful for older builds.
+          enabled: source === 'midi-clock',
+        };
+        saveMidiClockSyncPrefs(typeof window !== 'undefined' ? window.localStorage : undefined, merged);
+        if (next.division) clockTrackerRef.current?.setDivision(next.division);
+        return merged;
+      });
+    },
+    [],
+  );
+
+  // Clock ticks arrive at 24 PPQN (every ~21ms at 120 BPM): never set
+  // React state per tick. Poll the tracker a few times a second for
+  // the status line instead.
+  React.useEffect(() => {
+    if (!connected) return;
+    const timer = window.setInterval(() => {
+      const snap = clockTrackerRef.current?.snapshot;
+      if (!snap) return;
+      setClockSnapshot((prev) =>
+        prev.running === snap.running &&
+        prev.hasClock === snap.hasClock &&
+        prev.tickCount === snap.tickCount &&
+        (prev.bpm === null || snap.bpm === null
+          ? prev.bpm === snap.bpm
+          : Math.abs(prev.bpm - snap.bpm) < 0.05)
+          ? prev
+          : snap,
+      );
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, [connected]);
+
+  // --- Ableton Link sync (Phase 6.6) ----------------------------------
+  // The Link client lives only while 'link' is the selected sync
+  // source. Its step events take the exact same advanceSequenceStep()
+  // path as the MIDI clock (sequence-item load), so the two sources
+  // can never drive at once — the selector picks a single source, and
+  // MIDI clock events additionally check source === 'midi-clock'.
+  const linkClientRef = React.useRef<LinkSyncClient | null>(null);
+  if (linkClientRef.current === null) {
+    linkClientRef.current = new LinkSyncClient();
+  }
+  const [linkSnapshot, setLinkSnapshot] = React.useState<LinkBridgeState>(INITIAL_LINK_STATE);
+
+  React.useEffect(() => {
+    const client = linkClientRef.current;
+    if (!client || clockPrefs.source !== 'link') return;
+    client.callbacks = {
+      onStep: () => advanceSequenceStep(),
+      onPlayingChange: (playing) => {
+        const state = actionsRef.current;
+        if (playing) {
+          // Mirror MIDI Start/Continue: if nothing in the sequence is
+          // active yet, load its first item; an item already showing
+          // is left alone (Link's timeline is shared, not a restart).
+          if (
+            state.presetSequence.length > 0 &&
+            !state.presetSequence.some((item) => item.id === state.activeSequenceItemId)
+          ) {
+            state.onLoadSequenceItem(state.presetSequence[0].id);
+          }
+        } else if (state.isSequencePlaying) {
+          state.onStopSequencePlayback();
+        }
+      },
+    };
+    client.start();
+    return () => {
+      client.callbacks = {};
+      client.stop();
+      setLinkSnapshot(INITIAL_LINK_STATE);
+    };
+  }, [clockPrefs.source, advanceSequenceStep]);
+
+  React.useEffect(() => {
+    linkClientRef.current?.setDivision(clockPrefs.division);
+  }, [clockPrefs.division]);
+
+  // Status line polling, same pattern as the MIDI clock snapshot:
+  // the bridge broadcasts ~30 ms state, React renders a few times a
+  // second at most.
+  React.useEffect(() => {
+    if (clockPrefs.source !== 'link') return;
+    const timer = window.setInterval(() => {
+      const snap = linkClientRef.current?.snapshot;
+      if (!snap) return;
+      setLinkSnapshot((prev) =>
+        prev.connected === snap.connected &&
+        prev.available === snap.available &&
+        prev.reason === snap.reason &&
+        prev.isPlaying === snap.isPlaying &&
+        prev.numPeers === snap.numPeers &&
+        (prev.bpm === null || snap.bpm === null
+          ? prev.bpm === snap.bpm
+          : Math.abs(prev.bpm - snap.bpm) < 0.05)
+          ? prev
+          : snap,
+      );
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, [clockPrefs.source]);
 
   const applyTarget = React.useCallback(
     (target: MidiTarget, value: number) => {
@@ -1862,10 +2131,84 @@ const MidiSection: React.FC<{
   const handleMessage = React.useCallback(
     (event: MidiMessageEventLike) => {
       const data = event.data;
-      if (!data || data.length < 3) return;
+      if (!data || data.length === 0) return;
       const status = data[0];
-      if ((status & 0xf0) !== 0xb0) return; // Control Change only
+
+      // Real-time messages (MIDI Clock / Start / Continue / Stop) are
+      // single-byte and can arrive at any time — handle them BEFORE
+      // the channel-message length/status filters below.
+      if (status >= 0xf8) {
+        const tracker = clockTrackerRef.current;
+        if (!tracker) return;
+        const clockEvent = tracker.feed(status, performance.now());
+        if (!clockEvent) return;
+        const state = actionsRef.current;
+        if (clockEvent.type === 'start') {
+          setLastEvent('MIDI Clock: Start');
+          // Sync ON: Start restarts the sequence from its first item
+          // through the item-load path (never the internal timer, so
+          // the clock stays the only step driver).
+          if (state.clockSyncEnabled && state.presetSequence.length > 0) {
+            state.onLoadSequenceItem(state.presetSequence[0].id);
+          }
+          return;
+        }
+        if (clockEvent.type === 'continue') {
+          setLastEvent('MIDI Clock: Continue');
+          if (
+            state.clockSyncEnabled &&
+            state.presetSequence.length > 0 &&
+            !state.presetSequence.some((item) => item.id === state.activeSequenceItemId)
+          ) {
+            state.onLoadSequenceItem(state.presetSequence[0].id);
+          }
+          return;
+        }
+        if (clockEvent.type === 'stop') {
+          setLastEvent('MIDI Clock: Stop');
+          if (state.clockSyncEnabled && state.isSequencePlaying) {
+            state.onStopSequencePlayback();
+          }
+          return;
+        }
+        // tick: step the sequence on each division boundary.
+        if (clockEvent.boundary && state.clockSyncEnabled) {
+          advanceSequenceStep();
+        }
+        return;
+      }
+
+      if (data.length < 3) return;
+      const messageType = status & 0xf0;
       const channel = status & 0x0f;
+
+      if (messageType === 0x90) {
+        // Note On. Velocity 0 is a Note Off in running-status form and
+        // must never bind or trigger; Note Off (0x80) is ignored too.
+        const note = data[1];
+        const velocity = data[2];
+        if (velocity === 0) return;
+        setLastEvent(`CH${channel + 1} Note ${note} (${describeMidiNote(note)}) vel ${velocity}`);
+        const learnAction = learnNoteActionRef.current;
+        if (learnAction) {
+          learnNoteActionRef.current = null;
+          setLearningNote(false);
+          setNoteAssignments((prev) => {
+            const next = [
+              ...prev.filter((entry) => !(entry.note === note && entry.channel === channel)),
+              { channel, note, action: learnAction },
+            ];
+            saveMidiNoteAssignments(window.localStorage, next);
+            return next;
+          });
+          return;
+        }
+        const noteAssignment = resolveNoteAssignment(noteAssignmentsRef.current, channel, note);
+        if (noteAssignment) fireNoteAction(noteAssignment.action);
+        return;
+      }
+
+      if (messageType !== 0xb0) return; // below: Control Change only
       const cc = data[1];
       const value = data[2];
       setLastEvent(`CH${channel + 1} CC${cc} = ${value}`);
@@ -1886,7 +2229,7 @@ const MidiSection: React.FC<{
       const assignment = resolveAssignment(assignmentsRef.current, channel, cc);
       if (assignment) applyTarget(assignment.target, value);
     },
-    [applyTarget],
+    [applyTarget, advanceSequenceStep, fireNoteAction],
   );
 
   const connect = async () => {
@@ -1943,6 +2286,19 @@ const MidiSection: React.FC<{
     });
   };
 
+  const startNoteLearning = () => {
+    learnNoteActionRef.current = noteActionValue;
+    setLearningNote(true);
+  };
+
+  const removeNoteAssignment = (index: number) => {
+    setNoteAssignments((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      saveMidiNoteAssignments(window.localStorage, next);
+      return next;
+    });
+  };
+
   const selectClass =
     'w-full bg-white/5 border border-white/10 rounded px-2 py-2 text-xs outline-none focus:border-white/40';
 
@@ -1950,7 +2306,7 @@ const MidiSection: React.FC<{
     <section>
       <SectionTitle icon={<Piano size={12} />}>MIDI Control · MIDI入力</SectionTitle>
       <p className="text-[11px] leading-relaxed text-white/45 mb-4">
-        MIDIコントローラのノブやフェーダを、マクロやパラメータに割り当てて演奏できます。割り当てはこのブラウザに保存されます（プリセットには含まれません）。Playタブを開いている間だけ有効です。
+        MIDIコントローラのノブやフェーダを、マクロやパラメータに割り当てて演奏できます。ノートへの操作割り当てと、外部クロック／Ableton Link とのシーケンス同期にも対応します。割り当てはこのブラウザに保存されます（プリセットには含まれません）。Playタブを開いている間だけ有効です。
       </p>
       {!supported && (
         <p className="text-[11px] text-white/40">
@@ -2021,6 +2377,131 @@ const MidiSection: React.FC<{
               ))}
             </ul>
           )}
+          <div className="border-t border-white/10 pt-3 space-y-3">
+            <p className="text-[11px] font-semibold tracking-wide">
+              Note Actions · ノート割り当て
+            </p>
+            <p className="text-[11px] leading-relaxed text-white/45">
+              鍵盤やパッドのノートに、プリセット送りやシーケンス操作を割り当てます（Note On のみ反応し、離鍵では発火しません）。
+            </p>
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <select
+                value={noteActionValue}
+                onChange={(event) => setNoteActionValue(event.target.value as MidiNoteAction)}
+                className={selectClass}
+              >
+                {MIDI_NOTE_ACTIONS.map((entry) => (
+                  <option key={entry.id} value={entry.id} className="bg-neutral-900">
+                    {entry.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={startNoteLearning}
+                disabled={learningNote || isPublicLibrary}
+                className={`px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors disabled:opacity-40 ${
+                  learningNote ? 'bg-amber-200 text-black' : 'bg-white text-black hover:bg-gray-200'
+                }`}
+              >
+                {learningNote ? 'キーを押してください…' : 'Learn · 学習'}
+              </button>
+            </div>
+            {noteAssignments.length > 0 && (
+              <ul className="space-y-1.5">
+                {noteAssignments.map((entry, index) => (
+                  <li
+                    key={`${entry.channel}:${entry.note}:${index}`}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[11px]"
+                  >
+                    <span>
+                      <span className="font-mono text-white/60">
+                        CH{entry.channel === null ? '*' : entry.channel + 1} Note {entry.note} ({describeMidiNote(entry.note)})
+                      </span>{' '}
+                      → {describeMidiNoteAction(entry.action)}
+                    </span>
+                    <button
+                      onClick={() => removeNoteAssignment(index)}
+                      className="text-white/35 hover:text-white/80 text-[10px] uppercase tracking-widest"
+                    >
+                      削除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="border-t border-white/10 pt-3 space-y-3">
+            <p className="text-[11px] font-semibold tracking-wide">
+              Sequence Sync · シーケンス同期
+            </p>
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="同期ソース">
+              {SEQUENCE_SYNC_SOURCES.map((entry) => (
+                <button
+                  key={entry.id}
+                  onClick={() => setSyncPref({ source: entry.id })}
+                  aria-pressed={clockPrefs.source === entry.id}
+                  className={`px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                    clockPrefs.source === entry.id
+                      ? 'bg-white text-black'
+                      : 'bg-white/10 text-white/60 hover:bg-white/20'
+                  }`}
+                >
+                  {entry.label}
+                </button>
+              ))}
+              <select
+                value={clockPrefs.division}
+                onChange={(event) => setSyncPref({ division: event.target.value as MidiClockDivision })}
+                className="bg-white/5 border border-white/10 rounded px-2 py-2 text-xs outline-none focus:border-white/40"
+                aria-label="同期の単位"
+              >
+                {MIDI_CLOCK_DIVISIONS.map((entry) => (
+                  <option key={entry.id} value={entry.id} className="bg-neutral-900">
+                    {entry.label}ごとに進める
+                  </option>
+                ))}
+              </select>
+            </div>
+            {clockPrefs.source === 'midi-clock' && (
+              <>
+                <p className="font-mono text-[10px] text-white/50">
+                  {clockSnapshot.hasClock
+                    ? `clock: ${clockSnapshot.running ? 'running' : 'stopped'} · BPM ${
+                        clockSnapshot.bpm !== null ? clockSnapshot.bpm.toFixed(1) : '—'
+                      } · tick ${clockSnapshot.tickCount}`
+                    : 'clock: 未受信（DAWやシーケンサーからクロックを送ると表示されます）'}
+                </p>
+                <p className="text-[11px] leading-relaxed text-white/45">
+                  外部クロックの Start でシーケンスを先頭から始め、選択した単位の境界ごとに1ステップ進めます。ステップ送りはシーケンス項目のクリックと同じ経路（即時切り替え）を使うため、内蔵タイマーとの二重送りは起きません。Stop で再生を止めます。
+                </p>
+              </>
+            )}
+            {clockPrefs.source === 'link' && (
+              <>
+                <p className="font-mono text-[10px] text-white/50">
+                  {!linkSnapshot.connected
+                    ? 'Link: ブリッジ未接続（自動で再接続を試みています）'
+                    : !linkSnapshot.available
+                      ? `Link: ブリッジは応答中ですが Link を利用できません${linkSnapshot.reason ? `（${linkSnapshot.reason}）` : ''}`
+                      : `Link: ${linkSnapshot.isPlaying ? 'playing' : 'stopped'} · BPM ${
+                          linkSnapshot.bpm !== null ? linkSnapshot.bpm.toFixed(1) : '—'
+                        } · peers ${linkSnapshot.numPeers !== null ? linkSnapshot.numPeers : '—'}`}
+                </p>
+                <p className="text-[11px] leading-relaxed text-white/45">
+                  Ableton Link のセッションに同期します。ブリッジの起動が初回のみ必要です：
+                  tools/link-bridge で <span className="font-mono">npm install</span>（初回だけ）、
+                  以後は <span className="font-mono">node tools/link-bridge/link-bridge.mjs</span>。
+                  セッションの再生開始でシーケンスを始め、選択した単位の境界ごとに1ステップ進め、停止で再生も止めます（MIDI
+                  Clock と同じ送り経路）。ブリッジが切断されると送りは止まります — 内蔵タイマーが勝手に引き継ぐことはありません。
+                </p>
+              </>
+            )}
+            {clockPrefs.source === 'off' && (
+              <p className="text-[11px] leading-relaxed text-white/45">
+                外部同期はオフです。MIDI Clock（DAWやシーケンサーのクロック）か Ableton Link（ローカルブリッジ経由）を選ぶと、シーケンスを外部テンポに同期できます。
+              </p>
+            )}
+          </div>
           {lastEvent && <p className="font-mono text-[10px] text-white/35">last: {lastEvent}</p>}
           {isPublicLibrary && <p className="text-[11px] text-white/35">公開ビルドでは割り当てを適用できません。</p>}
         </div>
@@ -4439,7 +4920,21 @@ export const PlayTabContent: React.FC<ControlPanelContentProps> = (props) => (
     <SourceEditorSection config={props.config} updateConfig={props.updateConfig} />
     <DataSourceSection config={props.config} updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
     <TexturePackSection config={props.config} updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
-    <MidiSection updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
+    <MidiSection
+      updateConfig={props.updateConfig}
+      isPublicLibrary={props.isPublicLibrary}
+      presets={props.presets}
+      activePresetId={props.activePresetId}
+      onLoadPreset={props.onLoadPreset}
+      onRandomize={props.onRandomize}
+      presetSequence={props.presetSequence}
+      activeSequenceItemId={props.activeSequenceItemId}
+      isSequencePlaying={props.isSequencePlaying}
+      sequenceLoopEnabled={props.sequenceLoopEnabled}
+      onLoadSequenceItem={props.onLoadSequenceItem}
+      onStartSequencePlayback={props.onStartSequencePlayback}
+      onStopSequencePlayback={props.onStopSequencePlayback}
+    />
     <OscSection updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
     <ModulationSection isPublicLibrary={props.isPublicLibrary} />
     <PerformanceSection config={props.config} onApplyConfig={props.onApplyConfig} />

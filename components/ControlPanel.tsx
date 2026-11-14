@@ -669,6 +669,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
                 handleSubmitRename={handleSubmitRename}
                 handleStartRename={handleStartRename}
                 onLoadPreset={props.onLoadPreset}
+                onRandomize={props.onRandomize}
                 onApplyConfig={props.onApplyConfig}
                 onSaveBredPreset={props.onSaveBredPreset}
                 onSyncApplyPresets={props.onSyncApplyPresets}

@@ -130,6 +130,9 @@ export interface ControlPanelContentProps {
   handleSubmitRename: (presetId: string) => void;
   handleStartRename: (preset: PresetRecord) => void;
   onLoadPreset: (presetId: string) => void;
+  /** Randomize (transport bar action). Optional so the MIDI note
+   *  assignments in the Play tab can offer it when wired. */
+  onRandomize?: () => void;
   /** Cross-device sync (item 8): replace the library with a merged pull result. */
   onSyncApplyPresets?: (presets: PresetRecord[]) => void;
   onSyncNotice?: (notice: { tone: 'success' | 'error'; message: string }) => void;

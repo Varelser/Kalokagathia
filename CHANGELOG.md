@@ -4,6 +4,30 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.3.0] — 2026-11-14
+
+Phase 6.5 / 6.6 — external-control synchronisation for live performance:
+
+### Added
+- **MIDI note actions** — keyboard / pad notes can be learned and assigned
+  to five actions (next / previous preset, advance sequence one step,
+  sequence play / stop, randomize) alongside the existing CC mapping for
+  knobs and faders. Note On only; assignments persist in the browser.
+- **MIDI clock sync** — the sequence can follow an external MIDI clock
+  (Start / Continue / Stop, BPM detection) with a selectable step
+  division, via the new "Sequence Sync" source selector in the Play tab's
+  MIDI section. Steps advance through the same path as clicking a
+  sequence item, so the internal timer never double-advances.
+- **Ableton Link sync** — the same Sequence Sync selector can follow an
+  Ableton Link session through a small local bridge
+  (`tools/link-bridge/`, a dependency-light Node script bridging the
+  Link session to the browser over WebSocket). If the bridge is not
+  running the UI degrades gracefully and no steps are driven.
+  Interop note: the bridge and its protocol handling are verified, and
+  the browser client is verified against the bridge; a joint session
+  check against Ableton Live itself is still pending (no Live in the
+  build environment).
+
 ## [1.2.0] — 2026-11-14
 
 Phase 6 ("ultimate") — five additions on top of the 1.1.0 feature set:

@@ -1,0 +1,1 @@
+{"dependencies":{"abletonlink":"0.2.0-beta.0"},"description":"Local bridge relaying an Ableton Link session to Monosphere over WebSocket (mirrors tools/osc-bridge).","engines":{"node":">=18"},"main":"link-bridge.mjs","name":"monosphere-link-bridge","private":true,"scripts":{"start":"node link-bridge.mjs"},"type":"module","version":"1.0.0"}
