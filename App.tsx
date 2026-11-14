@@ -69,6 +69,12 @@ const AppBody: React.FC = () => {
   // IndexedDB, so nothing here can race the migration copy.
   useStorageHydrated(true);
   useEffect(() => { initGpuTier(); }, []);
+  // Perf stage 5: mark the visit so index.html's static poster (a capture
+  // of the default scene, shown only to first-time visitors) stays off for
+  // returning users, whose restored scene would not match it.
+  useEffect(() => {
+    try { localStorage.setItem('kalokagathia.visited.v1', '1'); } catch { /* storage unavailable */ }
+  }, []);
   // Ask the browser to keep this origin's storage persistent so the
   // IndexedDB payloads survive storage-pressure eviction (console-only).
   useEffect(() => { requestPersistentStorageOnce(); }, []);

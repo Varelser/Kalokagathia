@@ -76,6 +76,50 @@
         0% { transform: translateX(-110%); }
         100% { transform: translateX(280%); }
       }
+      /* Perf stage 5: first-visit poster — a real capture of the default
+         scene, shown instantly so LCP is the image paint rather than the
+         first WebGL frame. The gate script in body only reveals it for
+         first-time visitors without a share-link hash; the app crossfades
+         it out on the 'kalokagathia:first-frame' event. If the app never
+         starts (e.g. WebGL unavailable) the poster simply stays up. */
+      #app-poster {
+        /* Absolute (not fixed): on minimal test pages Chrome's LCP
+           measurement ignored images inside fixed containers but credited
+           the identical absolute one. On this page the image is ultimately
+           not credited either way (the WebGL canvas never was, in any
+           build) — the poster is kept for what it provably does: a
+           first-time visitor sees the real default scene within ~1-2s
+           instead of a black loading screen, and it stays up as a
+           fallback if WebGL never starts. Investigation:
+           PERF_ANALYSIS_20261114.md, stage 5. */
+        position: absolute;
+        inset: 0;
+        z-index: 80;
+        background: #000;
+        transition: opacity 0.6s ease;
+      }
+      #app-poster.app-poster-done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #app-poster img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .app-poster-label {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 26px;
+        text-align: center;
+        font-size: 10px;
+        letter-spacing: 0.3em;
+        text-indent: 0.3em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.55);
+      }
       /* Custom scrollbar for the control panel — Phase 2: Noise values
          (4px / thumb #333 / hover #555, radius 2px) */
       html {
@@ -105,6 +149,49 @@
         <div class="app-loading-sub">Loading</div>
       </div>
     </div>
+    <div id="app-poster" hidden>
+      <img id="app-poster-img" alt="" />
+      <div class="app-poster-label">Kalokagathia</div>
+    </div>
+    <script>
+      (function () {
+        var poster = document.getElementById('app-poster');
+        var img = document.getElementById('app-poster-img');
+        var show = false;
+        try { show = !localStorage.getItem('kalokagathia.visited.v1'); } catch (e) { show = false; }
+        if (show && /(^|[#&])(p|c)=/.test(location.hash)) show = false;
+        if (!show) return;
+        img.fetchPriority = 'high';
+        img.src = window.matchMedia('(max-width: 899px)').matches
+          ? '/poster-mobile.jpg'
+          : '/poster-desktop.jpg';
+        poster.hidden = false;
+        var done = false;
+        var startFade = function () {
+          if (done) return;
+          done = true;
+          poster.classList.add('app-poster-done');
+          // Keep the node in the DOM (invisible) after the fade: it is
+          // only removed on the next user interaction, when LCP is
+          // already final.
+          window.setTimeout(function () { poster.style.visibility = 'hidden'; }, 900);
+          var cleanup = function () { poster.remove(); };
+          window.addEventListener('pointerdown', cleanup, { once: true });
+          window.addEventListener('keydown', cleanup, { once: true });
+        };
+        window.addEventListener('kalokagathia:first-frame', function () {
+          // Hold the poster at full opacity briefly before fading: the
+          // main thread is saturated until the first frame, so the image's
+          // first presented paint would otherwise coincide with the fade,
+          // and Chrome's LCP measurement discounts an image whose first
+          // paint is already mid-fade (verified empirically 2026-11-14
+          // with blocked-main-thread test pages; a 700ms hold fixed it).
+          window.setTimeout(startFade, 700);
+        });
+        window.addEventListener('pointerdown', startFade);
+        window.addEventListener('keydown', startFade);
+      })();
+    </script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

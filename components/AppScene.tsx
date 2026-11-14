@@ -1,5 +1,5 @@
 import React from 'react';
-import { Canvas, extend } from '@react-three/fiber';
+import { Canvas, extend, useFrame } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
@@ -11,6 +11,29 @@ import { AppSceneLayerContent } from './AppSceneLayerContent';
 import { AppScenePostFx } from './AppScenePostFx';
 import { useAppSceneTemporalConfig } from './useAppSceneTemporalConfig';
 import type { AppSceneProps } from './AppSceneTypes';
+
+// Perf stage 5: startup milestones from inside the render loop. The first
+// rendered frame releases index.html's static poster (crossfade), and a
+// few frames later the parent mounts PostFx — the first paint skips the
+// EffectComposer cost entirely, and its compile hitch lands while the
+// poster is still fading out.
+const StartupFrameSignals: React.FC<{ onFxReady: () => void }> = ({ onFxReady }) => {
+  const framesRef = React.useRef(0);
+  const firstSentRef = React.useRef(false);
+  const fxSentRef = React.useRef(false);
+  useFrame(() => {
+    framesRef.current += 1;
+    if (!firstSentRef.current) {
+      firstSentRef.current = true;
+      window.dispatchEvent(new Event('kalokagathia:first-frame'));
+    }
+    if (!fxSentRef.current && framesRef.current >= 8) {
+      fxSentRef.current = true;
+      onFxReady();
+    }
+  });
+  return null;
+};
 
 extend({
   InstancedMesh: THREE.InstancedMesh,
@@ -43,6 +66,13 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
   }, [sceneGeneration]);
   const adaptiveDpr = React.useMemo(() => getAdaptiveDprRange(effectiveConfig), [effectiveConfig]);
   const antialias = React.useMemo(() => shouldUseAntialias(effectiveConfig), [effectiveConfig]);
+  // Perf stage 5: PostFx mounts only after the first frames have rendered
+  // without it (see StartupFrameSignals).
+  const [fxReady, setFxReady] = React.useState(false);
+  const handleFxReady = React.useCallback(() => {
+    setFxReady(true);
+    window.dispatchEvent(new Event('kalokagathia:fx-ready'));
+  }, []);
 
   return (
     <Canvas
@@ -87,6 +117,7 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
       />
       <ScreenshotManager config={effectiveConfig} saveTrigger={saveTrigger} />
       <DeterministicRenderManager />
+      <StartupFrameSignals onFxReady={handleFxReady} />
       <OrbitControls
         key={`controls-${effectiveConfig.cameraDistance}`}
         ref={controlsRef}
@@ -114,7 +145,7 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
         isSequencePlaying={isSequencePlaying}
         sequenceStepProgress={sequenceStepProgress}
       />
-      <AppScenePostFx config={effectiveConfig} />
+      {fxReady && <AppScenePostFx config={effectiveConfig} />}
     </Canvas>
   );
 });
