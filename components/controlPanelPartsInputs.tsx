@@ -36,7 +36,7 @@ export const Toggle = <T extends string | boolean | number>({
   options: { label: string; val: T }[];
   onChange: (val: T) => void;
 }) => (
-  <div className="mb-5">
+  <div className="mb-5" data-control-tip-label={label}>
     <div className="mb-2 text-[10px] uppercase tracking-widest font-medium text-white/65">
       {label}
     </div>

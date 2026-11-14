@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { AmbientTabContent, AudioTabContent } from './controlPanelTabsAudio';
 import { GlobalTabContent } from './controlPanelTabsGlobal';
 import { Layer1TabContent, Layer2TabContent, Layer3TabContent } from './controlPanelTabsLayers';
@@ -9,6 +10,13 @@ import { PARAMETER_CATALOG } from '../lib/parameterCatalog';
 import { BASIC_PRIMARY_KEYS, basicAppliesTo } from '../lib/basicPrimaryParameters';
 import { isSharedView, subscribeSharedView } from '../lib/shareLink';
 import { getParameterDescription } from '../lib/parameterDescriptions';
+import { NOTE_GUIDE_URL, NOTE_LINK_BY_KEY } from '../lib/noteBacklinks';
+import {
+  CONTROL_KEY_DESCRIPTIONS,
+  CONTROL_KEY_NOTE_LINKS,
+  getControlDescription,
+  getControlNoteLink,
+} from '../lib/controlDescriptions';
 
 const FOLD_STORAGE_KEY = 'kalokagathia.folds.v1';
 type FoldMap = Record<string, boolean>;
@@ -102,10 +110,88 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
       row.classList.toggle('mg-dot-on', on);
       row.classList.toggle('mg-dot-off', !on);
       const desc = getParameterDescription(entry.key);
-      if (desc) row.dataset.tip = desc;
-      else delete row.dataset.tip;
+      const note = NOTE_LINK_BY_KEY[entry.key];
+      // Phase 4 guard: a catalog tip must never land on (or inside) a
+      // segmented Toggle root — that element is a different control and gets
+      // its own description from applyControlTips. Loose fallback matches
+      // otherwise climb into the toggle (e.g. "Bloom Radius" resolving to
+      // the Bloom toggle's label while its sliders are unrendered).
+      const inToggle =
+        (hit.el as HTMLElement).closest('[data-control-tip-label]') !== null ||
+        row.hasAttribute('data-control-tip-label');
+      if (!inToggle) {
+        if (desc) row.dataset.tip = desc;
+        else delete row.dataset.tip;
+        if (desc && note) row.dataset.note = note;
+        else delete row.dataset.note;
+      }
     });
   }, [activeTab]);
+
+  // --- Control tooltips (Renewal Phase 4) ------------------------------------
+  // The catalog pass above only covers numeric slider rows. This pass gives
+  // the remaining controls — Toggle segmented controls (tagged by the shared
+  // component with data-control-tip-label), selects (aria-label config key,
+  // else the visible label next to them), and action buttons (exact text
+  // match) — a data-tip from lib/controlDescriptions.ts, plus a data-note
+  // backlink where the tech guide has a genuinely matching heading. Elements
+  // that already carry a catalog tip keep it (catalog wins).
+  const applyControlTips = React.useCallback(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    root.querySelectorAll('[data-control-tip-label]').forEach((el) => {
+      const node = el as HTMLElement;
+      if (node.dataset.tip) return;
+      const label = node.getAttribute('data-control-tip-label') || '';
+      const desc = getControlDescription(label);
+      if (!desc) return;
+      node.dataset.tip = desc;
+      const note = getControlNoteLink(label);
+      if (note) node.dataset.note = note;
+    });
+    root.querySelectorAll('select').forEach((sel) => {
+      const node = sel as HTMLSelectElement;
+      if (node.dataset.tip) return;
+      const aria = node.getAttribute('aria-label') || '';
+      if (aria && CONTROL_KEY_DESCRIPTIONS[aria]) {
+        node.dataset.tip = CONTROL_KEY_DESCRIPTIONS[aria];
+        const note = CONTROL_KEY_NOTE_LINKS[aria];
+        if (note) node.dataset.note = note;
+        return;
+      }
+      let label = '';
+      let el: HTMLElement | null = node.parentElement;
+      for (let i = 0; i < 4 && el && !label; i += 1) {
+        const cand = Array.from(el.querySelectorAll('span, div')).filter(
+          (c) =>
+            (c.className || '').toString().includes('tracking-widest') &&
+            (c.textContent || '').trim().length > 0 &&
+            (c.textContent || '').trim().length <= 60 &&
+            !c.contains(node),
+        );
+        if (cand.length) label = (cand[0].textContent || '').trim();
+        el = el.parentElement;
+      }
+      if (!label) return;
+      const desc = getControlDescription(label);
+      if (!desc) return;
+      node.dataset.tip = desc;
+      const note = getControlNoteLink(label);
+      if (note) node.dataset.note = note;
+    });
+    root.querySelectorAll('button').forEach((btn) => {
+      const node = btn as HTMLElement;
+      if (node.dataset.tip) return;
+      if (node.closest('[data-tip]') || node.closest('[data-control-tip-label]')) return;
+      const text = (node.textContent || '').trim();
+      if (!text || text.length > 40) return;
+      const desc = getControlDescription(text);
+      if (!desc) return;
+      node.dataset.tip = desc;
+      const note = getControlNoteLink(text);
+      if (note) node.dataset.note = note;
+    });
+  }, []);
 
   // --- Basic (simple) mode ---------------------------------------------------
   // DOM post-processing pass in the same spirit as folds/change-dots: rows
@@ -442,6 +528,7 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
     markChanges();
     applyDeckMode();
     applyDualLabels();
+    applyControlTips();
     const root = rootRef.current;
     if (!root) return;
     let raf = 0;
@@ -458,6 +545,7 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
         markChanges();
         applyDeckMode();
         applyDualLabels();
+        applyControlTips();
       });
     });
     obs.observe(root, { childList: true, subtree: true });
@@ -465,7 +553,7 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
       obs.disconnect();
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [applyFolds, tryReveal, markChanges, applyDeckMode, applyDualLabels]);
+  }, [applyFolds, tryReveal, markChanges, applyDeckMode, applyDualLabels, applyControlTips]);
 
   // Re-apply Basic filtering immediately when the mode flips.
   React.useEffect(() => {
@@ -487,34 +575,59 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
     };
   }, [markChanges, changedKeys, changedOnly]);
 
-  // --- Glass tooltip (hover descriptions) ------------------------------------
-  const [tip, setTip] = React.useState<{ text: string; x: number; y: number; below: boolean } | null>(null);
+  // --- Tooltip (hover descriptions + note backlink, Renewal Phase 4) ---------
+  // Flat surface (Noise-token language: #171717 face, radius 12). When the
+  // row carries a data-note backlink, the bubble becomes pointer-events:auto
+  // and leaving the row starts a ~350ms grace timer instead of hiding at
+  // once, so the pointer can travel the gap and click the link; entering the
+  // bubble cancels the timer, leaving it hides. Without a link the bubble
+  // stays pointer-events:none and behaves exactly as before.
+  const [tip, setTip] = React.useState<{ text: string; note?: string; x: number; y: number; below: boolean } | null>(null);
   const tipTimer = React.useRef<number | null>(null);
+  const tipHideTimer = React.useRef<number | null>(null);
   const tipRow = React.useRef<HTMLElement | null>(null);
+  const tipNoteRef = React.useRef<string | undefined>(undefined);
   const clearTipTimer = () => {
     if (tipTimer.current) {
       window.clearTimeout(tipTimer.current);
       tipTimer.current = null;
     }
   };
+  const clearTipHideTimer = () => {
+    if (tipHideTimer.current) {
+      window.clearTimeout(tipHideTimer.current);
+      tipHideTimer.current = null;
+    }
+  };
   const hideTip = React.useCallback(() => {
     clearTipTimer();
+    clearTipHideTimer();
     tipRow.current = null;
+    tipNoteRef.current = undefined;
     setTip(null);
   }, []);
   const handleTipOver = (e: React.MouseEvent) => {
     const row = (e.target as HTMLElement).closest('[data-tip]') as HTMLElement | null;
     if (!row || row === tipRow.current) return;
     clearTipTimer();
+    clearTipHideTimer();
     tipRow.current = row;
     const text = row.dataset.tip || '';
     if (!text) return;
+    const note = row.dataset.note || undefined;
     tipTimer.current = window.setTimeout(() => {
       if (tipRow.current !== row) return;
       const rect = row.getBoundingClientRect();
       const x = Math.min(Math.max(rect.left + rect.width / 2, 150), window.innerWidth - 150);
-      const below = rect.top < 110;
-      setTip({ text, x, y: below ? rect.bottom + 8 : rect.top - 8, below });
+      // Keep the bubble inside the viewport: prefer below when there is
+      // room, flip above when there is not, and clamp the anchor either way.
+      const estH = note ? 88 : 64;
+      const fitsBelow = rect.bottom + 8 + estH <= window.innerHeight;
+      const fitsAbove = rect.top - 8 - estH >= 0;
+      const below = fitsBelow ? true : fitsAbove ? false : rect.top < 110;
+      const y = below ? Math.min(rect.bottom + 8, Math.max(8, window.innerHeight - estH - 8)) : rect.top - 8;
+      tipNoteRef.current = note;
+      setTip({ text, note, x, y, below });
     }, 400);
   };
   const handleTipOut = (e: React.MouseEvent) => {
@@ -522,7 +635,13 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
     if (!row) return;
     const related = e.relatedTarget as Node | null;
     if (related && row.contains(related)) return;
-    if ((e.target as HTMLElement).closest('[data-tip]') === row) hideTip();
+    if ((e.target as HTMLElement).closest('[data-tip]') !== row) return;
+    if (tipNoteRef.current) {
+      clearTipHideTimer();
+      tipHideTimer.current = window.setTimeout(() => hideTip(), 350);
+    } else {
+      hideTip();
+    }
   };
 
   const handleFoldClick = (e: React.MouseEvent) => {
@@ -558,19 +677,31 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
 
   return (
     <div ref={rootRef} onClick={handleFoldClick} onMouseOver={handleTipOver} onMouseOut={handleTipOut} onScroll={hideTip} className="mg-content-scroll flex-1 overflow-y-auto px-5 py-5 sm:px-6">
-      {tip && (
+      {tip && createPortal(
         <div
-          className="pointer-events-none fixed z-[120] w-64 max-w-[80vw] rounded-xl border border-white/25 px-3 py-2 text-[11px] leading-relaxed text-white/90 shadow-[0_10px_30px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md backdrop-saturate-200"
+          onMouseEnter={clearTipHideTimer}
+          onMouseLeave={hideTip}
+          className={`fixed z-[120] w-64 max-w-[80vw] rounded-xl border border-white/15 bg-[#171717] px-3 py-2 text-[11px] leading-relaxed text-white/90 shadow-[0_10px_30px_rgba(0,0,0,0.55)] ${
+            tip.note ? 'pointer-events-auto' : 'pointer-events-none'
+          }`}
           style={{
             left: tip.x,
             top: tip.y,
             transform: tip.below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
-            backgroundImage: 'linear-gradient(118deg, rgba(255,255,255,0.16), rgba(255,255,255,0.04) 40%, rgba(0,0,0,0.25) 75%, rgba(0,0,0,0.35))',
           }}
         >
           {tip.text}
-        </div>
-      )}
+          {tip.note && (
+            <a
+              href={`${NOTE_GUIDE_URL}#${tip.note}`}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1.5 block text-white underline decoration-white/40 underline-offset-2 transition-colors hover:decoration-white"
+            >
+              noteで詳しく読む →
+            </a>
+          )}
+        </div>, document.body)}
       {isPublicLibrary && (
         <div className="mb-5 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] uppercase tracking-[0.24em] text-white/60">
           Public exhibition mode: scene parameters and sequence editing are locked. You can still load, morph, play, and export.

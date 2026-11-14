@@ -40,6 +40,7 @@ import {
 } from '../lib/platformFeatures';
 import { useWakeLock } from '../lib/useWakeLock';
 import { MACRO_DEFINITIONS, getMacroUpdates, getMacroValue } from '../lib/macroControls';
+import { NOTE_GUIDE_URL } from '../lib/noteBacklinks';
 import { PresetShelf } from './controlPanelPlayTab';
 
 export const CONTROL_PANEL_TABS: { id: ControlPanelTab; icon: LucideIcon; label: string; shortLabel: string; description: string }[] = [
@@ -578,7 +579,7 @@ export const ControlPanelShelf: React.FC<{
     <div {...fx} style={mgGlassStyle(glossBoost)} className={`mg-edge mg-shelf-panel ${MG_EDGE_PANEL_CLASS} ${mgFadeClass(faded)} flex h-full w-full flex-col`}>
       <div className="flex shrink-0 items-center gap-2 border-b border-white/10 bg-white/[0.02] px-4 py-2.5">
         <Library size={13} className="shrink-0 text-white/50" />
-        <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-white/75">Preset Shelf · プリセット棚</span>
+        <span className="min-w-0 text-[11px] font-semibold uppercase leading-[1.3] tracking-[0.14em] text-white/75">Preset Shelf · プリセット棚</span>
         <span className="flex-1" />
         <a
           href="/catalog/"
@@ -676,6 +677,16 @@ export const ControlPanelFooter: React.FC<{
           <button disabled={isPublicLibrary} onClick={() => updateConfig('exportScale', 8)} className={`${config.exportScale === 8 ? 'text-white underline' : ''} disabled:no-underline disabled:opacity-30`}>8x</button>
         </div>
       </div>
+    </div>
+    <div className="mt-4 text-center">
+      <a
+        href={NOTE_GUIDE_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="text-[10px] tracking-wider text-white/45 underline decoration-white/25 underline-offset-4 transition-colors hover:text-white"
+      >
+        技術・機能の網羅解説（note）→
+      </a>
     </div>
   </div>
   );
