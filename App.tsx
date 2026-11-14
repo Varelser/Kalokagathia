@@ -3,9 +3,11 @@ import * as THREE from 'three';
 import { AppBodyScene } from './components/AppBodyScene';
 import { AppEmbedPlayer } from './components/AppEmbedPlayer';
 import { AppKioskPlayer } from './components/AppKioskPlayer';
+import { AppStreamPlayer } from './components/AppStreamPlayer';
 import { AppModeGate } from './components/AppModeGate';
 import { isEmbedMode } from './lib/embedMode';
 import { isKioskMode } from './lib/kioskMode';
+import { getStreamBackground, isStreamMode } from './lib/streamMode';
 import { useKioskMode } from './lib/useKioskMode';
 import type { ParticleConfig, PresetRecord, PresetSequenceItem } from './types';
 import {
@@ -58,6 +60,15 @@ const AppBody: React.FC = () => {
   // (the render branch below checks kiosk first): an exhibition
   // terminal must never show the embed control cluster.
   const kioskMode = isKioskMode();
+  // Stream mode (Phase 8, lib/streamMode): ?stream=1 boots the
+  // pure-picture player for OBS Browser Sources — canvas only, no
+  // controls at all, transparent by default (bg=key/bg=black for the
+  // solid variants). Precedence: KIOSK > STREAM > EMBED — the render
+  // branch below checks kiosk, then stream, then embed, because a
+  // stream surface must never grow the embed player's control cluster
+  // either. Hooks and share-link handling run exactly as in embed.
+  const streamMode = isStreamMode();
+  const streamBackground = getStreamBackground();
   const [config, setConfig] = useState<ParticleConfig>(() => (
     isPublicLibraryMode ? normalizeConfig(PUBLIC_PRESET_LIBRARY.currentConfig) : loadInitialPrivateConfig()
   ));
@@ -624,6 +635,22 @@ const AppBody: React.FC = () => {
         rotationReady={kiosk.rotationReady}
         saveTrigger={ui.saveTrigger}
         sequenceStepProgress={kiosk.stepProgress}
+        pointCloudCaptureRef={pointCloudCaptureRef}
+      />
+    );
+  }
+
+  if (streamMode) {
+    return (
+      <AppStreamPlayer
+        audioRef={audioRef}
+        background={streamBackground}
+        config={config}
+        displayConfig={displayConfig}
+        isSequencePlaying={isSequencePlaying}
+        rendererRef={rendererRef}
+        saveTrigger={ui.saveTrigger}
+        sequenceStepProgress={sequenceStepProgress}
         pointCloudCaptureRef={pointCloudCaptureRef}
       />
     );

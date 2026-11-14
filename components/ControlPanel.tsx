@@ -20,6 +20,7 @@ import { useControlPanelState } from './useControlPanelState';
 import { toggleFullscreen } from '../lib/platformFeatures';
 import { encodeConfigPayload } from '../lib/shareLink';
 import { buildEmbedSnippet } from '../lib/embedMode';
+import { buildStreamUrl } from '../lib/streamMode';
 import { normalizeConfig } from '../lib/appStateConfig';
 
 /**
@@ -408,6 +409,30 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
     window.setTimeout(() => setShareNote(''), 3000);
   };
 
+  // Stream URL (Phase 8): copy the OBS Browser Source URL for the
+  // current scene (/?stream=1 + the share hash), resolved exactly like
+  // the embed code. The copied URL is the transparent variant; the
+  // chroma-key variant is the same URL with &bg=key (noted in the
+  // button's title text and the README's stream note).
+  const handleCopyStream = async () => {
+    const resolved = await resolveSceneLink();
+    if (!resolved) {
+      setShareNote('配信URLを作れませんでした');
+      window.setTimeout(() => setShareNote(''), 3000);
+      return;
+    }
+    const url = buildStreamUrl(window.location.origin, resolved.hash);
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareNote('配信URLをコピーしました');
+    } catch {
+      window.prompt('配信URL', url);
+      setShareNote('');
+      return;
+    }
+    window.setTimeout(() => setShareNote(''), 3000);
+  };
+
   // Deck-wide hover/focus tracking for the idle auto-fade: every edge
   // panel spreads these handlers and shares the faded state.
   const edgeFx: EdgeFxProps = {
@@ -505,6 +530,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
         onSelectTier={handleSelectTier}
         onShare={() => { void handleShare(); }}
         onCopyEmbed={() => { void handleCopyEmbed(); }}
+        onCopyStream={() => { void handleCopyStream(); }}
         onToggleCollapsed={() => toggleEdge('header')}
         shareNote={shareNote}
         tier={panelTier}

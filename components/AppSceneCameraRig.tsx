@@ -33,14 +33,28 @@ function getDefaultCameraPosition(config: ParticleConfig) {
   return new THREE.Vector3(0, 0, config.cameraDistance + 200);
 }
 
-export const SceneBackgroundSync: React.FC<{ backgroundColor: ParticleConfig['backgroundColor'] }> = ({ backgroundColor }) => {
+export const SceneBackgroundSync: React.FC<{
+  backgroundColor: ParticleConfig['backgroundColor'];
+  /** Stream mode (Phase 8): keep the framebuffer transparent — no
+   *  scene background, clear alpha 0 — so a compositor (OBS) can lay
+   *  the canvas over other sources. */
+  transparentBackground?: boolean;
+  /** Stream chroma variants: solid background colour in place of the
+   *  config tone. */
+  backgroundOverrideColor?: string;
+}> = ({ backgroundColor, transparentBackground = false, backgroundOverrideColor }) => {
   const { gl, scene } = useThree();
 
   React.useEffect(() => {
-    const color = new THREE.Color(backgroundColor);
+    if (transparentBackground) {
+      gl.setClearColor(0x000000, 0);
+      scene.background = null;
+      return;
+    }
+    const color = new THREE.Color(backgroundOverrideColor ?? backgroundColor);
     gl.setClearColor(color, 1);
     scene.background = color;
-  }, [backgroundColor, gl, scene]);
+  }, [backgroundColor, backgroundOverrideColor, gl, scene, transparentBackground]);
 
   return null;
 };

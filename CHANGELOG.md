@@ -4,6 +4,34 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.5.0] — 2026-11-14
+
+Phase 8 — OBS stream mode: a pure-picture player for live compositors.
+
+### Added
+- **Stream mode** (`?stream=1`) — boots straight into a chrome-free
+  player (no panels, no controls, no first-visit poster) built to be
+  loaded as an OBS Browser Source; playback is forced on. The top
+  share bar gained a 配信 button that copies the stream URL for the
+  current scene.
+- **Transparent variant** (default `?stream=1`) — the scene renders
+  onto an alpha matte for direct overlay compositing. Honest
+  limitation: full-PostFx transparency is impossible by design — the
+  app's custom post passes (feedback / kaleidoscope / slit-scan)
+  hard-code opaque alpha (`vec4(rgb, 1.0)`) and the composer buffer
+  clears at alpha 1 — so the transparent variant bypasses PostFx and
+  renders the scene directly (renderer alpha, clear alpha 0, no scene
+  background). Effects that live inside the scene still render.
+- **Chroma / black variants** (`?stream=1&bg=key` / `&bg=black`) —
+  solid pure green (0, 255, 0) or black background with the **full
+  PostFx chain** intact, for OBS's Chroma Key filter or a plain
+  backdrop.
+
+Verified on a real GPU (ANGLE Metal, stage9 smoke): transparent
+corners read back alpha 0 across the whole empty matte; chroma
+corners read back exactly (0, 255, 0, 255); embed and kiosk modes
+unaffected.
+
 ## [1.4.0] — 2026-11-14
 
 Phase 7 — the app talks back: MIDI output for live rigs, and a receive

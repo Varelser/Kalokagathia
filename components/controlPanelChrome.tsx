@@ -141,6 +141,9 @@ export const ControlPanelTopBar: React.FC<{
   /** Embed snippet copy (ultimate Wave 3). Optional: when the handler
    *  is absent the button is not rendered at all. */
   onCopyEmbed?: () => void;
+  /** Stream URL copy (Phase 8): the OBS Browser Source URL for the
+   *  current scene. Optional, same pattern as onCopyEmbed. */
+  onCopyStream?: () => void;
   onToggleCollapsed: () => void;
   shareNote: string;
   tier: PanelTier;
@@ -162,6 +165,7 @@ export const ControlPanelTopBar: React.FC<{
   onSelectTier,
   onShare,
   onCopyEmbed,
+  onCopyStream,
   onToggleCollapsed,
   shareNote,
   tier,
@@ -289,6 +293,18 @@ export const ControlPanelTopBar: React.FC<{
           >
             <Code size={13} />
             <span className="hidden sm:inline">埋め込み</span>
+          </button>
+        )}
+        {onCopyStream && (
+          <button
+            type="button"
+            data-testid="top-stream"
+            onClick={onCopyStream}
+            className="flex items-center justify-center gap-1.5 rounded-md bg-[#171717] px-2.5 py-1.5 text-[10px] tracking-wider text-white/75 transition-colors hover:bg-[#f5f5f5] hover:text-black"
+            title="いまのシーンの配信URL（OBSのブラウザソース用・背景透過）をコピーします。クロマキー合成にしたい場合はURLに &bg=key を付けると緑背景＋フルPostFxになります"
+          >
+            <Clapperboard size={13} />
+            <span className="hidden sm:inline">配信</span>
           </button>
         )}
         <button

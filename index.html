@@ -164,6 +164,10 @@
         // first-visit welcome for the full app; inside an iframe it
         // would only cover the host page's player, so never show it.
         if (show && /[?&]embed=1(?:&|$)/.test(location.search)) show = false;
+        // Stream mode (?stream=1, Phase 8): same reasoning, sharper —
+        // the poster is an opaque full-screen still, and an OBS
+        // Browser Source must open on the live, transparent canvas.
+        if (show && /[?&]stream=1(?:&|$)/.test(location.search)) show = false;
         if (!show) return;
         img.fetchPriority = 'high';
         img.src = window.matchMedia('(max-width: 899px)').matches

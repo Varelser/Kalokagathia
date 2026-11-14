@@ -29,4 +29,17 @@ export type AppSceneProps = {
   saveTrigger: number;
   sequenceStepProgress: number;
   pointCloudCaptureRef?: React.RefObject<PointCloudCaptureState>;
+  /** Stream mode (Phase 8, lib/streamMode): render onto a transparent
+   *  matte — the WebGL context is created with alpha:true, the clear
+   *  alpha is 0, no scene background is attached and PostFx is NOT
+   *  mounted (the custom post passes force alpha to 1.0, so the
+   *  composer chain cannot carry a matte). Default false: every other
+   *  mode renders exactly as before. */
+  transparentBackground?: boolean;
+  /** Stream chroma variants: paint this solid colour as the scene
+   *  background instead of the config tone (config backgroundColor is
+   *  only 'black' | 'white', so a key green cannot travel through the
+   *  config). PostFx stays mounted over the solid colour. Ignored when
+   *  transparentBackground is set. */
+  backgroundOverrideColor?: string;
 };

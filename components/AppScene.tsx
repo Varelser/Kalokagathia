@@ -54,6 +54,8 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
   saveTrigger,
   sequenceStepProgress,
   pointCloudCaptureRef,
+  transparentBackground = false,
+  backgroundOverrideColor,
 }) => {
   const controlsRef = React.useRef<OrbitControlsImpl | null>(null);
   const isInteractingRef = React.useRef(false);
@@ -74,19 +76,32 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
     window.dispatchEvent(new Event('kalokagathia:fx-ready'));
   }, []);
 
+  // Stream chroma variants key against this colour everywhere the
+  // config tone would normally show (background, clear, fog tint);
+  // undefined in every other mode, where the config tone rules.
+  const sceneBackgroundColor = backgroundOverrideColor ?? effectiveConfig.backgroundColor;
+
   return (
     <Canvas
-      gl={{ preserveDrawingBuffer: true, antialias, alpha: false, powerPreference: 'high-performance' }}
+      gl={{ preserveDrawingBuffer: true, antialias, alpha: transparentBackground, powerPreference: 'high-performance' }}
       dpr={adaptiveDpr}
       onCreated={({ gl }) => {
-        gl.setClearColor(new THREE.Color(effectiveConfig.backgroundColor));
+        if (transparentBackground) {
+          gl.setClearColor(0x000000, 0);
+        } else {
+          gl.setClearColor(new THREE.Color(sceneBackgroundColor));
+        }
         rendererRef.current = gl;
       }}
     >
-      <SceneBackgroundSync backgroundColor={effectiveConfig.backgroundColor} />
-      <color attach="background" args={[effectiveConfig.backgroundColor]} />
+      <SceneBackgroundSync
+        backgroundColor={effectiveConfig.backgroundColor}
+        transparentBackground={transparentBackground}
+        backgroundOverrideColor={backgroundOverrideColor}
+      />
+      {!transparentBackground && <color attach="background" args={[sceneBackgroundColor]} />}
       {effectiveConfig.depthFogEnabled && (
-        <fog attach="fog" args={[effectiveConfig.backgroundColor, config.depthFogNear, config.depthFogFar]} />
+        <fog attach="fog" args={[sceneBackgroundColor, config.depthFogNear, config.depthFogFar]} />
       )}
       {effectiveConfig.viewMode === 'orthographic' ? (
         <OrthographicCamera
@@ -145,7 +160,10 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
         isSequencePlaying={isSequencePlaying}
         sequenceStepProgress={sequenceStepProgress}
       />
-      {fxReady && <AppScenePostFx config={effectiveConfig} />}
+      {/* Stream transparent variant: PostFx never mounts — the custom
+          passes force alpha to 1.0, which would destroy the matte
+          (lib/streamMode.ts). Solid stream variants keep it. */}
+      {fxReady && !transparentBackground && <AppScenePostFx config={effectiveConfig} />}
     </Canvas>
   );
 });
