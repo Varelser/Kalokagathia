@@ -1,10 +1,18 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { AmbientTabContent, AudioTabContent } from './controlPanelTabsAudio';
-import { GlobalTabContent } from './controlPanelTabsGlobal';
-import { Layer1TabContent, Layer2TabContent, Layer3TabContent } from './controlPanelTabsLayers';
 import { PlayTabContent } from './controlPanelPlayTab';
-import { AiTabContent } from './controlPanelAiTab';
+
+// Perf (2026-11-14): only the active tab's content is ever mounted, so the
+// non-default tab contents load on first selection instead of in the
+// startup bundle. Play (the default tab) stays eager. While a tab chunk
+// loads, the content area is briefly empty (Suspense fallback below).
+const AmbientTabContent = React.lazy(() => import('./controlPanelTabsAudio').then((m) => ({ default: m.AmbientTabContent })));
+const AudioTabContent = React.lazy(() => import('./controlPanelTabsAudio').then((m) => ({ default: m.AudioTabContent })));
+const GlobalTabContent = React.lazy(() => import('./controlPanelTabsGlobal').then((m) => ({ default: m.GlobalTabContent })));
+const Layer1TabContent = React.lazy(() => import('./controlPanelTabsLayers').then((m) => ({ default: m.Layer1TabContent })));
+const Layer2TabContent = React.lazy(() => import('./controlPanelTabsLayers').then((m) => ({ default: m.Layer2TabContent })));
+const Layer3TabContent = React.lazy(() => import('./controlPanelTabsLayers').then((m) => ({ default: m.Layer3TabContent })));
+const AiTabContent = React.lazy(() => import('./controlPanelAiTab').then((m) => ({ default: m.AiTabContent })));
 import { ControlPanelContentProps } from './controlPanelTabsShared';
 import { PARAMETER_CATALOG } from '../lib/parameterCatalog';
 import { BASIC_PRIMARY_KEYS, basicAppliesTo } from '../lib/basicPrimaryParameters';
@@ -765,14 +773,16 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
         {sharedView ? <span className="text-[10px] tracking-wider text-amber-200/80">共有リンクで表示中（AIオフ）</span> : null}
       </div>
       <div className="mg-flow w-full" data-tab={activeTab}>
-        {activeTab === 'play' && <PlayTabContent {...props} />}
-        {activeTab === 'global' && <GlobalTabContent {...props} />}
-        {activeTab === 'layer1' && <Layer1TabContent {...props} />}
-        {activeTab === 'layer2' && <Layer2TabContent {...props} />}
-        {activeTab === 'layer3' && <Layer3TabContent {...props} />}
-        {activeTab === 'ambient' && <AmbientTabContent {...props} />}
-        {activeTab === 'audio' && <AudioTabContent {...props} />}
-        {activeTab === 'ai' && <AiTabContent {...props} />}
+        <React.Suspense fallback={null}>
+          {activeTab === 'play' && <PlayTabContent {...props} />}
+          {activeTab === 'global' && <GlobalTabContent {...props} />}
+          {activeTab === 'layer1' && <Layer1TabContent {...props} />}
+          {activeTab === 'layer2' && <Layer2TabContent {...props} />}
+          {activeTab === 'layer3' && <Layer3TabContent {...props} />}
+          {activeTab === 'ambient' && <AmbientTabContent {...props} />}
+          {activeTab === 'audio' && <AudioTabContent {...props} />}
+          {activeTab === 'ai' && <AiTabContent {...props} />}
+        </React.Suspense>
       </div>
     </div>
   );

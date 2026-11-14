@@ -1,34 +1,56 @@
 import React from 'react';
 import type { ParticleConfig } from '../types';
 import { SceneGroup, ParticleSystem } from './scenePrimitives';
-import { GpgpuSystem } from './sceneGpgpuSystem';
 import { getSceneGeneration, noteSceneComposition } from '../lib/sceneGeneration';
-import { MetaballSystem, getTexSizeForCount } from './sceneMetaballSystem';
-import { GpgpuSmoothTube } from './sceneGpgpuSmoothTube';
-import { MembraneSystem } from './sceneMembraneSystem';
-import { SurfaceShellSystem } from './sceneSurfaceShellSystem';
-import { SdfSurfaceShellSystem } from './sceneSdfSurfaceShellSystem';
-import { SurfacePatchSystem } from './sceneSurfacePatchSystem';
-import { HybridSurfacePatchSystem } from './sceneHybridSurfacePatchSystem';
-import { BrushSurfaceSystem } from './sceneBrushSurfaceSystem';
-import { FiberFieldSystem } from './sceneFiberFieldSystem';
-import { HybridFiberFieldSystem } from './sceneHybridFiberFieldSystem';
-import { HybridGranularFieldSystem } from './sceneHybridGranularFieldSystem';
-import { HybridMembraneSystem } from './sceneHybridMembraneSystem';
-import { GrowthFieldSystem } from './sceneGrowthFieldSystem';
-import { DepositionFieldSystem } from './sceneDepositionFieldSystem';
-import { CrystalAggregateSystem } from './sceneCrystalAggregateSystem';
-import { ErosionTrailSystem } from './sceneErosionTrailSystem';
-import { VoxelLatticeSystem } from './sceneVoxelLatticeSystem';
-import { CrystalDepositionSystem } from './sceneCrystalDepositionSystem';
-import { ReactionDiffusionSystem } from './sceneReactionDiffusionSystem';
-import { PhysarumSystem } from './scenePhysarumSystem';
-import { DlaSystem } from './sceneDlaSystem';
-import { LSystem } from './sceneLSystem';
-import { RaymarchSystem } from './sceneRaymarchSystem';
-import { VolumeFogSystem } from './sceneVolumeFogSystem';
-import { VolumetricFieldSystem } from './sceneVolumetricFieldSystem';
-import { GlyphOutlineSystem } from './sceneGlyphOutlineSystem';
+// Perf (2026-11-14): the procedural / hybrid scene systems below are only
+// ever mounted when the active layer plan selects them, so they load on
+// demand instead of in the startup bundle. Layer 1 (ParticleSystem from
+// scenePrimitives) stays eager — it is the first thing on screen. While a
+// system chunk loads, its layer simply renders nothing for a few frames
+// (Suspense fallback below), mirroring the lazy starter library pattern.
+function lazySystem<K extends string, C extends React.ComponentType<any>>(
+  load: () => Promise<Record<K, C>>,
+  name: K,
+): React.LazyExoticComponent<C> {
+  return React.lazy(() => load().then((m) => ({ default: m[name] })));
+}
+
+const GpgpuSystem = lazySystem(() => import('./sceneGpgpuSystem'), 'GpgpuSystem');
+const GpgpuSmoothTube = lazySystem(() => import('./sceneGpgpuSmoothTube'), 'GpgpuSmoothTube');
+const MembraneSystem = lazySystem(() => import('./sceneMembraneSystem'), 'MembraneSystem');
+const SurfaceShellSystem = lazySystem(() => import('./sceneSurfaceShellSystem'), 'SurfaceShellSystem');
+const SdfSurfaceShellSystem = lazySystem(() => import('./sceneSdfSurfaceShellSystem'), 'SdfSurfaceShellSystem');
+const SurfacePatchSystem = lazySystem(() => import('./sceneSurfacePatchSystem'), 'SurfacePatchSystem');
+const HybridSurfacePatchSystem = lazySystem(() => import('./sceneHybridSurfacePatchSystem'), 'HybridSurfacePatchSystem');
+const BrushSurfaceSystem = lazySystem(() => import('./sceneBrushSurfaceSystem'), 'BrushSurfaceSystem');
+const FiberFieldSystem = lazySystem(() => import('./sceneFiberFieldSystem'), 'FiberFieldSystem');
+const HybridFiberFieldSystem = lazySystem(() => import('./sceneHybridFiberFieldSystem'), 'HybridFiberFieldSystem');
+const HybridGranularFieldSystem = lazySystem(() => import('./sceneHybridGranularFieldSystem'), 'HybridGranularFieldSystem');
+const HybridMembraneSystem = lazySystem(() => import('./sceneHybridMembraneSystem'), 'HybridMembraneSystem');
+const GrowthFieldSystem = lazySystem(() => import('./sceneGrowthFieldSystem'), 'GrowthFieldSystem');
+const DepositionFieldSystem = lazySystem(() => import('./sceneDepositionFieldSystem'), 'DepositionFieldSystem');
+const CrystalAggregateSystem = lazySystem(() => import('./sceneCrystalAggregateSystem'), 'CrystalAggregateSystem');
+const ErosionTrailSystem = lazySystem(() => import('./sceneErosionTrailSystem'), 'ErosionTrailSystem');
+const VoxelLatticeSystem = lazySystem(() => import('./sceneVoxelLatticeSystem'), 'VoxelLatticeSystem');
+const CrystalDepositionSystem = lazySystem(() => import('./sceneCrystalDepositionSystem'), 'CrystalDepositionSystem');
+const ReactionDiffusionSystem = lazySystem(() => import('./sceneReactionDiffusionSystem'), 'ReactionDiffusionSystem');
+const PhysarumSystem = lazySystem(() => import('./scenePhysarumSystem'), 'PhysarumSystem');
+const DlaSystem = lazySystem(() => import('./sceneDlaSystem'), 'DlaSystem');
+const LSystem = lazySystem(() => import('./sceneLSystem'), 'LSystem');
+const RaymarchSystem = lazySystem(() => import('./sceneRaymarchSystem'), 'RaymarchSystem');
+const VolumeFogSystem = lazySystem(() => import('./sceneVolumeFogSystem'), 'VolumeFogSystem');
+const VolumetricFieldSystem = lazySystem(() => import('./sceneVolumetricFieldSystem'), 'VolumetricFieldSystem');
+const GlyphOutlineSystem = lazySystem(() => import('./sceneGlyphOutlineSystem'), 'GlyphOutlineSystem');
+// MetaballSystem also needs texSize derived from the config; the wrapper
+// computes it inside the lazy module so getTexSizeForCount (and its WebGL
+// cap probe) stays out of the startup bundle too.
+const MetaballSystem = React.lazy(() =>
+  import('./sceneMetaballSystem').then((m) => ({
+    default: (props: Omit<React.ComponentProps<typeof m.MetaballSystem>, 'texSize'>) => (
+      <m.MetaballSystem {...props} texSize={m.getTexSizeForCount(props.config.gpgpuCount)} />
+    ),
+  })),
+);
 import {
   getGpgpuRenderOutputPlan,
   getLayerSceneRenderPlan,
@@ -63,6 +85,7 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
 
   return (
     <SceneGroup config={config} isPlaying={isPlaying}>
+      <React.Suspense fallback={null}>
       {config.layer1Enabled && (
         <ParticleSystem config={config} layerIndex={1} audioRef={audioRef} isPlaying={isPlaying} contactAmount={interLayerContactAmount} />
       )}
@@ -241,10 +264,10 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
         <MetaballSystem
           config={config}
           posReadbackRef={metaballPosRef}
-          texSize={getTexSizeForCount(config.gpgpuCount)}
           isPlaying={isPlaying}
         />
       )}
+      </React.Suspense>
     </SceneGroup>
   );
 };
