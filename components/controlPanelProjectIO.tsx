@@ -13,7 +13,7 @@ export type ControlPanelProjectIOProps = {
   onDismissProjectNotice: () => void;
   onExportProject: () => void;
   projectInputRef: React.RefObject<HTMLInputElement | null>;
-  projectManifest: ProjectManifest;
+  projectManifest: ProjectManifest | null;
   projectNotice: Notice | null;
   layerFocusMode: LayerFocusMode;
   comparePreviewEnabled: boolean;

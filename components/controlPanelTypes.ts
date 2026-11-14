@@ -132,7 +132,7 @@ export interface ControlPanelProjectProps {
   onDismissProjectNotice: () => void;
   onExportProject: () => void;
   projectInputRef: React.RefObject<HTMLInputElement | null>;
-  projectManifest: ProjectManifest;
+  projectManifest: ProjectManifest | null;
   projectNotice: { tone: 'success' | 'error'; message: string } | null;
 }
 

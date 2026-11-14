@@ -4351,6 +4351,38 @@ const SimilaritySection: React.FC<{
   );
 };
 
+/**
+ * Perf stage 4: mount children only once the browser is idle (or after
+ * a short timeout), so the Play sheet's first paint carries just the top
+ * sections. The deferred sections are far below the fold of the 30dvh
+ * sheet; each holds only local UI state, so mounting them a beat later
+ * is invisible except for removing their render cost from the initial
+ * mount (the sheet opens by default, so they used to mount at startup).
+ */
+const DeferredMount: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [ready, setReady] = React.useState(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    const win = window as unknown as {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof win.requestIdleCallback === 'function') {
+      const id = win.requestIdleCallback(() => { if (!cancelled) setReady(true); }, { timeout: 600 });
+      return () => {
+        cancelled = true;
+        win.cancelIdleCallback?.(id);
+      };
+    }
+    const timer = window.setTimeout(() => { if (!cancelled) setReady(true); }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+  return ready ? <>{children}</> : null;
+};
+
 export const PlayTabContent: React.FC<ControlPanelContentProps> = (props) => (
   <div className="mg-flow-sub">
     {/* Four-edge layout: the preset shelf lives in the right-edge panel
@@ -4359,6 +4391,7 @@ export const PlayTabContent: React.FC<ControlPanelContentProps> = (props) => (
     <StageSection config={props.config} presets={props.presets} isPublicLibrary={props.isPublicLibrary} onApplyConfig={props.onApplyConfig} />
     <CleanOutputSection />
     <GpuDiagnosticsSection config={props.config} updateConfig={props.updateConfig} />
+    <DeferredMount>
     <ParameterSearchSection config={props.config} updateConfig={props.updateConfig} onJumpToTab={props.onJumpToTab} />
     <XyPadSection config={props.config} updateConfig={props.updateConfig} />
     <SourceEditorSection config={props.config} updateConfig={props.updateConfig} />
@@ -4400,5 +4433,6 @@ export const PlayTabContent: React.FC<ControlPanelContentProps> = (props) => (
     <GraphSection config={props.config} updateConfig={props.updateConfig} updateMotionArray={props.updateMotionArray} isPublicLibrary={props.isPublicLibrary} />
     <SimilaritySection presets={props.presets} activePresetId={props.activePresetId} onLoadPreset={props.onLoadPreset} />
     <ExpressionMap config={props.config} presets={props.presets} isPublicLibrary={props.isPublicLibrary} onSaveBredPreset={props.onSaveBredPreset} />
+    </DeferredMount>
   </div>
 );

@@ -44,6 +44,23 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
   sequenceStepProgress,
   pointCloudCaptureRef,
 }) => {
+  // Perf stage 4: two-phase mount. The scene canvas mounts and paints
+  // first; the control deck (top bar / rail / shelf / sheet / transport)
+  // mounts two animation frames later, so its large DOM tree stays out
+  // of the first-paint task. All panel state lives in App, and the deck
+  // is a fixed overlay (the canvas is absolute inset-0), so the swap
+  // causes no layout shift.
+  const [panelReady, setPanelReady] = React.useState(false);
+  React.useEffect(() => {
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setPanelReady(true));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      if (second) cancelAnimationFrame(second);
+    };
+  }, []);
   const [cinema, setCinema] = React.useState(false);
   const [hint, setHint] = React.useState(false);
   const [cursorIdle, setCursorIdle] = React.useState(false);
@@ -139,7 +156,7 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
       isSequencePlaying={isSequencePlaying}
       sequenceStepProgress={sequenceStepProgress}
     />
-    <ControlPanel {...controlPanelProps} />
+    {panelReady && <ControlPanel {...controlPanelProps} />}
     <CanvasStreamWidget rendererRef={rendererRef} />
     <AppExecutionDiagnosticsOverlay config={config} />
     {cinema && hint && (

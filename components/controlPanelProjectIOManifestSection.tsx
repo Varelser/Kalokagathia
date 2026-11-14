@@ -16,7 +16,19 @@ const InlineTags: React.FC<{ values: string[]; emptyLabel?: string; tone?: 'neut
   </div>
 );
 
-export const ControlPanelProjectIOManifestSection: React.FC<{ projectManifest: ProjectManifest }> = ({ projectManifest }) => {
+export const ControlPanelProjectIOManifestSection: React.FC<{ projectManifest: ProjectManifest | null }> = ({ projectManifest }) => {
+  // Perf stage 4: the manifest is computed off the render path and is
+  // null until the first debounced computation lands.
+  if (!projectManifest) {
+    return (
+      <div className="mb-3 rounded border border-white/10 bg-black/20 p-2">
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-white/50">
+          <Layers3 size={11} /> Schema-aware snapshot
+        </div>
+        <div className="mt-2 text-[10px] text-white/35">集計中…</div>
+      </div>
+    );
+  }
   return (
     <>
       <div className="mb-3 rounded border border-white/10 bg-black/20 p-2">

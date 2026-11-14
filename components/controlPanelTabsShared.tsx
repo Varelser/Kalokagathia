@@ -51,7 +51,7 @@ export interface ControlPanelContentProps {
   onDismissProjectNotice: () => void;
   onExportProject: () => void;
   projectInputRef: React.RefObject<HTMLInputElement | null>;
-  projectManifest: ProjectManifest;
+  projectManifest: ProjectManifest | null;
   projectNotice: Notice;
   layerFocusMode: LayerFocusMode;
   comparePreviewEnabled: boolean;

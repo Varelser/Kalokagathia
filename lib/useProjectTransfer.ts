@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useCallback, useEffect, useState } from 'react';
+import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from 'react';
 import type { ParticleConfig, PresetRecord, PresetSequenceItem, ProjectData, ProjectManifest } from '../types';
 import { buildProjectManifest, buildProjectData, saveProjectData } from './projectState';
 import {
@@ -98,7 +98,28 @@ export function useProjectTransfer({
     videoFps,
   ]);
 
-  const projectManifest: ProjectManifest = buildProjectManifest(config, presets, presetSequence);
+  // Perf stage 4: the manifest is a display-only statistics snapshot for
+  // one section of the Main tab, but buildProjectManifest walks the whole
+  // library (coverage scorecards over every preset config). Computing it
+  // synchronously on every render taxed the initial mount and every
+  // animation frame of a preset morph. It is now computed off the render
+  // path: debounced 300ms after the inputs settle, reading the latest
+  // inputs from a ref, and null until the first computation lands.
+  const [projectManifest, setProjectManifest] = useState<ProjectManifest | null>(null);
+  const manifestInputsRef = useRef({ config, presets, presetSequence });
+  manifestInputsRef.current = { config, presets, presetSequence };
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      const latest = manifestInputsRef.current;
+      setProjectManifest(buildProjectManifest(latest.config, latest.presets, latest.presetSequence));
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [config, presets, presetSequence]);
 
   useEffect(() => {
     if (isPublicLibraryMode) return;

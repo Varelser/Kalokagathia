@@ -54,17 +54,39 @@ export function useStarterPresetLibrary(enabled: boolean): PresetLibraryData | n
       return;
     }
     let cancelled = false;
-    loadStarterPresetLibrary()
-      .then((loaded) => {
-        if (!cancelled) {
-          setLibrary(loaded);
-        }
-      })
-      .catch((error) => {
-        console.warn('Failed to load starter preset library:', error);
-      });
+    const start = () => {
+      if (cancelled) return;
+      loadStarterPresetLibrary()
+        .then((loaded) => {
+          if (!cancelled) {
+            setLibrary(loaded);
+          }
+        })
+        .catch((error) => {
+          console.warn('Failed to load starter preset library:', error);
+        });
+    };
+    // Perf stage 4: the starter chunk (~205KB of data) used to start
+    // downloading and parsing in the same task burst as the initial
+    // mount. The fill-in design already tolerates the library arriving
+    // after first paint, so schedule the load for the first idle window
+    // (hard cap 800ms) instead. Callers that need the library sooner
+    // (share links) call loadStarterPresetLibrary() directly.
+    const win = window as unknown as {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof win.requestIdleCallback === 'function') {
+      const id = win.requestIdleCallback(start, { timeout: 800 });
+      return () => {
+        cancelled = true;
+        win.cancelIdleCallback?.(id);
+      };
+    }
+    const timer = window.setTimeout(start, 250);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [enabled]);
 

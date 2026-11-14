@@ -13,7 +13,7 @@ import {
   normalizeConfig,
   PUBLIC_PRESET_LIBRARY,
 } from './lib/appState';
-import { useStarterPresetLibrary } from './lib/lazyStarterLibrary';
+import { loadStarterPresetLibrary, useStarterPresetLibrary } from './lib/lazyStarterLibrary';
 import { useStorageHydrated } from './lib/storageDb';
 import { useAppControlPanelBridge } from './lib/useAppControlPanelBridge';
 import { useAppLayerPreview } from './lib/useAppLayerPreview';
@@ -138,14 +138,34 @@ const AppBody: React.FC = () => {
       applyConfigMorph(local.config, presetBlendDuration, local.id);
       return;
     }
-    fetchCatalogPreset(parsed.id)
-      .then((rec) => {
-        if (rec) {
-          setPresets((prev) => (prev.some((preset) => preset.id === rec.id) ? prev : [...prev, rec]));
-          applyConfigMorph(rec.config, presetBlendDuration, rec.id);
+    // Perf stage 4: the starter library now loads on an idle schedule,
+    // so a #p= link to a starter preset can arrive before the library
+    // (and before `presets` contains it). Resolve the starter library
+    // explicitly before falling back to the catalog fetch — this also
+    // closes the same race that existed with the old immediate load.
+    void (async () => {
+      if (!isPublicLibraryMode) {
+        try {
+          const starter = await loadStarterPresetLibrary();
+          const hit = starter.presets.find((preset) => preset.id === parsed.id);
+          if (hit) {
+            setPresets((prev) => (prev.some((preset) => preset.id === hit.id) ? prev : [...prev, hit]));
+            applyConfigMorph(hit.config, presetBlendDuration, hit.id);
+            return;
+          }
+        } catch {
+          /* starter load failed: fall through to the catalog fetch */
         }
-      })
-      .catch(() => { /* unknown preset id: keep the default scene */ });
+      }
+      fetchCatalogPreset(parsed.id)
+        .then((rec) => {
+          if (rec) {
+            setPresets((prev) => (prev.some((preset) => preset.id === rec.id) ? prev : [...prev, rec]));
+            applyConfigMorph(rec.config, presetBlendDuration, rec.id);
+          }
+        })
+        .catch(() => { /* unknown preset id: keep the default scene */ });
+    })();
   }, [applyConfigMorph, presetBlendDuration, presets, setPresets]);
 
   if (initialPresetSequenceRef.current === null) {
