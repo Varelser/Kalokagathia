@@ -301,6 +301,40 @@ export function resolveEffectiveTierSync(): GpuTier {
   return 'standard';
 }
 
+// Bounded GPGPU generation size (item 5, 2026-11-11): the texture side is
+// capped, so one GPGPU generation allocates a bounded number of
+// particles (~190MB of GPU assets at 512^2: trail render targets + tube
+// geometry). Counts above 512^2 previously rounded up to a 1024 texture
+// (1,048,576 particles, ~750MB — Coverage 456 asks for 277,181), whose
+// build/upload could exhaust GPU memory, lose the WebGL context, and
+// fatally crash the next preset switch inside EffectComposer.addPass.
+// Counts <= 512^2 are unaffected; larger counts render at 262,144
+// particles (for 277,181 that is -5% versus the configured count instead
+// of +278%).
+//
+// GPU tiers (2026-11-11): the cap is tier-driven — entry/standard keep
+// 512 exactly as shipped (the iMac gate above was measured at 512),
+// stronger GPUs may allocate more: high 768, flagship 1024. The 456
+// rationale above is why a cap exists at all; do not raise the
+// entry/standard values.
+//
+// (Moved here from components/useGpgpuRuntime.ts in the 2026-11-14 perf
+// stage-2 split: the Play tab reads the cap at startup, and importing it
+// from the GPGPU runtime made the whole scene-gpgpu chunk a static
+// startup dependency.)
+export const MAX_GPGPU_TEX_SIZE = 512;
+
+export const GPGPU_TEX_SIZE_CAPS: Record<GpuTier, number> = {
+  entry: 512,
+  standard: 512,
+  high: 768,
+  flagship: 1024,
+};
+
+export function getMaxGpgpuTexSize(tier?: GpuTier): number {
+  return GPGPU_TEX_SIZE_CAPS[tier ?? resolveEffectiveTierSync()];
+}
+
 let detectionStarted = false;
 
 /** Run detection once (subsequent calls are no-ops). Safe anywhere. */

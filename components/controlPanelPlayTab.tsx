@@ -84,7 +84,7 @@ import {
 } from '../lib/gpuTier';
 import { useGpuTierInfo } from '../lib/useGpuTierInfo';
 import { getRaymarchDefaults } from '../lib/raymarchDefaults';
-import { getMaxGpgpuTexSize } from './useGpgpuRuntime';
+import { getMaxGpgpuTexSize } from '../lib/gpuTier';
 import { generatePromptDrafts, type PromptDraft } from '../lib/promptPreset';
 import {
   COVERAGE_BATCH_LIMIT,

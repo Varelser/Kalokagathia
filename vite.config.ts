@@ -44,6 +44,12 @@ export default defineConfig(({ mode }) => {
                 { name: 'jszip', priority: 76, test: /\/node_modules\/(jszip|pako|lie|setimmediate|readable-stream|inherits|core-util-is|process-nextick-args|util-deprecate|isarray|string_decoder|safe-buffer)\// },
                 { name: 'vendor', priority: 70, test: /\/node_modules\// },
                 { name: 'public-library-data', priority: 62, test: /\/public-library\.json/ },
+                // App-core modules are needed by the initial chunks (state,
+                // routing, scene generation, particle physics/shaders). They
+                // must be claimed BEFORE the depiction/gpgpu/surface groups,
+                // whose dependency capture otherwise drags them into those
+                // chunks and makes the whole group a static startup import.
+                { name: 'app-core', priority: 60, test: /\/(lib\/(appState|sceneRenderRouting|sceneGeneration|gpuTier|storageDb|raymarchDefaults|executionFoundation|simulationAdapter|sourceFieldFoundation|webgpuComputeFoundation|gpgpuExecutionFoundation|temporalProfiles|motionChain|motionDag|motionGraph|motionRoute|lodSystem|webgpuCompute|sourceAwareShaping|seededRng)|components\/(scenePhysics|sceneShader|sceneMotionEstimator|particleData))/ },
                 // Lowest priority on purpose: this group backs the lazily
                 // imported starter library. Groups capture their modules'
                 // still-unclaimed dependencies, so a high priority here would

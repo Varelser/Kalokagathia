@@ -1,5 +1,5 @@
 import type { ParticleConfig } from '../types';
-import { createSeededRng } from './gpgpuInitialData';
+import { createSeededRng } from './seededRng';
 
 /**
  * CSV / JSON data source (roadmap Phase 8A).
