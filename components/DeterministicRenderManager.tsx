@@ -1,11 +1,14 @@
 import React from 'react';
 import { useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 import {
   registerDeterministicRenderHandler,
+  resolveDeterministicBackgroundMode,
   resolveWarmupFrames,
   type DeterministicRenderJob,
   type DeterministicRenderProgress,
 } from '../lib/deterministicRender';
+import { applyUnmultToImageData } from '../lib/unmult';
 import { setPositionFeedbackSuppressed } from '../lib/positionFeedback';
 import { setTimeScaleLocked } from '../lib/playbackTime';
 import {
@@ -34,11 +37,25 @@ import {
 // When the job carries onFrame, each captured PNG is handed to it (awaited)
 // and not retained, keeping long renders at one-part memory; without it the
 // frames are collected and returned as before (the video encoder path).
+//
+// Pro-1.1 background modes (job.backgroundMode, default 'opaque'):
+// 'opaque' runs the exact sequence above and captures the canvas as-is.
+// 'unmult' forces a black scene background / fog tint / clear colour for
+// the whole job (saved and restored afterwards) so the frame the PostFx
+// chain produces is the black-background render Method B assumes, then
+// converts each captured frame with lib/unmult.ts. 'transparent' is the
+// conventional matte: after each stepped advance, the scene is rendered
+// once more, directly into an offscreen RGBA target with no background —
+// the EffectComposer never participates in that render, so no PostFx is
+// applied and the target's alpha is the scene's own. The PostFx code
+// itself is untouched by all three modes.
 export const DeterministicRenderManager: React.FC = () => {
   const advance = useThree((state) => state.advance);
   const setFrameloop = useThree((state) => state.setFrameloop);
   const gl = useThree((state) => state.gl);
   const clock = useThree((state) => state.clock);
+  const scene = useThree((state) => state.scene);
+  const camera = useThree((state) => state.camera);
 
   React.useEffect(
     () =>
@@ -50,6 +67,25 @@ export const DeterministicRenderManager: React.FC = () => {
           // timestep — config.timeScale (including negative values) is
           // neutralised for the whole render, exports stay bit-comparable.
           setTimeScaleLocked(true);
+          const backgroundMode = resolveDeterministicBackgroundMode(job);
+          // UnMult black forcing: the originals are saved once, the
+          // black state is (re)applied before every step (a config
+          // flush from applyAt could otherwise re-attach the configured
+          // background mid-job), and everything is restored in finally.
+          const prevSceneBackground = scene.background;
+          const prevFogColor = scene.fog ? scene.fog.color.clone() : null;
+          const prevClearColor = new THREE.Color();
+          gl.getClearColor(prevClearColor);
+          const prevClearAlpha = gl.getClearAlpha();
+          const applyUnmultBlack = () => {
+            if (backgroundMode !== 'unmult') return;
+            const black = new THREE.Color(0x000000);
+            scene.background = black;
+            if (scene.fog) scene.fog.color.copy(black);
+            gl.setClearColor(black, 1);
+          };
+          let transparentTarget: THREE.WebGLRenderTarget | null = null;
+          let transparentPixels: Uint8Array | null = null;
           try {
             // Remount the scene systems so accumulated per-system state
             // (rotations, phases, the GPGPU sim) restarts from its initial
@@ -81,6 +117,52 @@ export const DeterministicRenderManager: React.FC = () => {
             if (!context) {
               throw new Error('2d context unavailable for frame capture');
             }
+            applyUnmultBlack();
+            // Conventional transparent capture: render the just-stepped
+            // scene directly into an offscreen RGBA target (no scene
+            // background, no EffectComposer, clear alpha 0) and read
+            // the pixels back into the copy canvas, flipping rows —
+            // WebGL readback is bottom-up, canvas ImageData top-down.
+            const captureTransparentFrame = () => {
+              if (!transparentTarget || !transparentPixels) {
+                transparentTarget = new THREE.WebGLRenderTarget(copy.width, copy.height, {
+                  depthBuffer: true,
+                  stencilBuffer: false,
+                  samples: 4,
+                });
+                transparentTarget.texture.colorSpace = THREE.SRGBColorSpace;
+                transparentPixels = new Uint8Array(copy.width * copy.height * 4);
+              }
+              const target = transparentTarget;
+              const pixels = transparentPixels;
+              const framePrevTarget = gl.getRenderTarget();
+              const framePrevBackground = scene.background;
+              const framePrevClearColor = new THREE.Color();
+              gl.getClearColor(framePrevClearColor);
+              const framePrevClearAlpha = gl.getClearAlpha();
+              const framePrevAutoClear = gl.autoClear;
+              try {
+                scene.background = null;
+                gl.setClearColor(0x000000, 0);
+                gl.autoClear = true;
+                gl.setRenderTarget(target);
+                camera.updateMatrixWorld();
+                gl.render(scene, camera);
+                gl.readRenderTargetPixels(target, 0, 0, copy.width, copy.height, pixels);
+              } finally {
+                gl.setRenderTarget(framePrevTarget);
+                scene.background = framePrevBackground;
+                gl.setClearColor(framePrevClearColor, framePrevClearAlpha);
+                gl.autoClear = framePrevAutoClear;
+              }
+              const imageData = context.createImageData(copy.width, copy.height);
+              const rowBytes = copy.width * 4;
+              for (let y = 0; y < copy.height; y += 1) {
+                const srcOffset = (copy.height - 1 - y) * rowBytes;
+                imageData.data.set(pixels.subarray(srcOffset, srcOffset + rowBytes), y * rowBytes);
+              }
+              context.putImageData(imageData, 0, 0);
+            };
             // Warmup: step the same fixed timestep without capturing.
             // applyAt still runs (with the stepped clock's timestamps) so
             // hook-driven state tracks the clock; the take export offsets
@@ -94,6 +176,7 @@ export const DeterministicRenderManager: React.FC = () => {
                   setTimeout(resolve, 30);
                 });
               }
+              applyUnmultBlack();
               advance((warm + 1) * dt);
               await new Promise((resolve) => {
                 setTimeout(resolve, 0);
@@ -109,10 +192,18 @@ export const DeterministicRenderManager: React.FC = () => {
                   setTimeout(resolve, 30);
                 });
               }
+              applyUnmultBlack();
               advance(step * dt);
               // Same-task copy: the drawing buffer still holds the frame
               // that advance() just rendered.
               context.drawImage(source, 0, 0);
+              if (backgroundMode === 'transparent') {
+                captureTransparentFrame();
+              } else if (backgroundMode === 'unmult') {
+                const imageData = context.getImageData(0, 0, copy.width, copy.height);
+                applyUnmultToImageData(imageData);
+                context.putImageData(imageData, 0, 0);
+              }
               const blob = await new Promise<Blob | null>((resolve) => {
                 copy.toBlob(resolve, 'image/png');
               });
@@ -138,13 +229,23 @@ export const DeterministicRenderManager: React.FC = () => {
               warmupFrames,
             };
           } finally {
+            if (transparentTarget) {
+              transparentTarget.dispose();
+              transparentTarget = null;
+              transparentPixels = null;
+            }
+            if (backgroundMode === 'unmult') {
+              scene.background = prevSceneBackground;
+              if (scene.fog && prevFogColor) scene.fog.color.copy(prevFogColor);
+              gl.setClearColor(prevClearColor, prevClearAlpha);
+            }
             setPositionFeedbackSuppressed(false);
             setTimeScaleLocked(false);
             setFrameloop('always');
           }
         },
       ),
-    [advance, clock, gl, setFrameloop],
+    [advance, camera, clock, gl, scene, setFrameloop],
   );
 
   return null;

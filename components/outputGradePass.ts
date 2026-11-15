@@ -3,9 +3,10 @@
 // Kinetix output stage (ACESFilmicToneMapping + exposure on the
 // renderer). Implemented as a shader pass instead of touching the
 // renderer so the stage only exists when the user opts in — with the
-// defaults (exposure 1.0, 'legacy') the stage is inactive and the
-// composer output is unchanged. The ACES curve is the standard
-// Narkowicz fit, re-implemented here.
+// defaults (exposure 1.0, 'legacy', brand duotone off) the stage is
+// inactive and the composer output is unchanged. The ACES curve is
+// the standard Narkowicz fit, re-implemented here. Pro-2 adds the
+// brand monochrome duotone to the same stage (see FRAG).
 
 import { Pass } from 'postprocessing';
 import * as THREE from 'three';
@@ -24,6 +25,9 @@ const FRAG = /* glsl */ `
 uniform sampler2D tDiffuse;
 uniform float uExposure;
 uniform float uAces;
+uniform float uBrandEnabled;
+uniform vec3 uBrandColor;
+uniform float uBrandMid;
 varying vec2 vUv;
 
 vec3 acesFilmic(vec3 x) {
@@ -35,6 +39,18 @@ void main() {
   if (uAces > 0.5) {
     color = acesFilmic(color);
   }
+  if (uBrandEnabled > 0.5) {
+    // Brand monochrome (Pro-2): single-colour duotone. Luminance is
+    // remapped through a black -> brand -> white ramp; the ramp's
+    // midpoint sits at the brand colour's own luminance so a bright
+    // brand colour keeps its dark tones and a dark one keeps its
+    // highlights, instead of crushing one end of the monochrome scale.
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    float mid = clamp(uBrandMid, 0.02, 0.98);
+    color = luma < mid
+      ? mix(vec3(0.0), uBrandColor, luma / mid)
+      : mix(uBrandColor, vec3(1.0), (luma - mid) / (1.0 - mid));
+  }
   gl_FragColor = vec4(color, 1.0);
 }
 `;
@@ -43,6 +59,10 @@ export class OutputGradePass extends Pass {
   exposure = 1.0;
 
   aces = false;
+
+  brandEnabled = false;
+
+  brandColor = new THREE.Color('#c8372d');
 
   private material: THREE.ShaderMaterial;
 
@@ -55,6 +75,9 @@ export class OutputGradePass extends Pass {
         tDiffuse: { value: null },
         uExposure: { value: this.exposure },
         uAces: { value: 0 },
+        uBrandEnabled: { value: 0 },
+        uBrandColor: { value: new THREE.Color('#c8372d') },
+        uBrandMid: { value: 0.18 },
       },
       depthTest: false,
       depthWrite: false,
@@ -71,6 +94,10 @@ export class OutputGradePass extends Pass {
     this.material.uniforms.tDiffuse.value = inputBuffer.texture;
     this.material.uniforms.uExposure.value = this.exposure;
     this.material.uniforms.uAces.value = this.aces ? 1 : 0;
+    this.material.uniforms.uBrandEnabled.value = this.brandEnabled ? 1 : 0;
+    (this.material.uniforms.uBrandColor.value as THREE.Color).copy(this.brandColor);
+    this.material.uniforms.uBrandMid.value =
+      0.2126 * this.brandColor.r + 0.7152 * this.brandColor.g + 0.0722 * this.brandColor.b;
     renderer.setRenderTarget(this.renderToScreen ? null : outputBuffer);
     renderer.render(this.scene, this.camera);
   }

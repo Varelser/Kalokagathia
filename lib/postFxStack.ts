@@ -59,8 +59,13 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
     active.add('radial-blur');
   }
   // Output grade only exists when it would change a pixel: exposure
-  // other than 1.0 or the ACES curve selected. Defaults keep it off.
-  if (Math.abs(config.postExposure - 1.0) > 0.001 || config.postToneMapping === 'aces') {
+  // other than 1.0, the ACES curve selected, or the brand monochrome
+  // duotone (Pro-2) enabled. Defaults keep it off.
+  if (
+    Math.abs(config.postExposure - 1.0) > 0.001 ||
+    config.postToneMapping === 'aces' ||
+    config.postBrandColorEnabled
+  ) {
     active.add('output-grade');
   }
   return Array.from(active);

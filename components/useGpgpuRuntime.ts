@@ -6,6 +6,7 @@ import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
 import { buildGpgpuMorphTargetData } from '../lib/gpgpuMorphTargets';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
+import { sampleSvgPointCloud } from '../lib/svgMorph';
 import { getSceneGeneration, noteGpgpuBackendSettled } from '../lib/sceneGeneration';
 import {
   initWebGPUCompute,
@@ -334,6 +335,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphMediaMap = config.layer2MediaLumaMap;
   const morphMediaWidth = config.layer2MediaMapWidth;
   const morphMediaHeight = config.layer2MediaMapHeight;
+  const morphSvgSource = config.gpgpuMorphSvgSource;
   useEffect(() => {
     morphTexRef.current?.dispose();
     morphTexRef.current = null;
@@ -354,6 +356,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     } else if (morphTarget === 'image' && morphMediaMap.length > 0 && morphMediaWidth > 0 && morphMediaHeight > 0) {
       mediaMap = { map: morphMediaMap, width: morphMediaWidth, height: morphMediaHeight };
     }
+    // svg (Pro-2): re-sample the imported SVG source text into its
+    // outline point cloud; null (no usable geometry) falls back to the
+    // shell inside the bake, exactly like a missing media map.
+    const svgPoints = morphTarget === 'svg' ? sampleSvgPointCloud(morphSvgSource) : null;
     const data = buildGpgpuMorphTargetData({
       texSize,
       target: morphTarget,
@@ -361,6 +367,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       jitter: morphJitter,
       seed: morphSeed,
       mediaMap,
+      svgPoints,
     });
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
@@ -386,6 +393,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphMediaMap,
     morphMediaWidth,
     morphMediaHeight,
+    morphSvgSource,
   ]);
 
   return {

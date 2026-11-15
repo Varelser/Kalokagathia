@@ -1,5 +1,6 @@
 import type { PresetRecord } from '../types';
 import { createStarterPreset } from './starterLibraryCore';
+import { SAMPLE_SVG_STAR } from './svgMorph';
 
 export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
   createStarterPreset('starter-gpgpu-boids-flock-array', 'GPGPU Boids Flock Array', {
@@ -260,6 +261,36 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuTrailEnabled: true,
         gpgpuTrailLength: 9,
         gpgpuTrailFade: 0.72,
+      }),
+  // Pro-2 logo reveal: particles start scattered on a sphere shell
+  // and the morph spring gathers them onto the imported SVG outline
+  // (bundled sample star). No new mechanism — the reveal is the stock
+  // morph combination (emit spread + strength + trails); swapping the
+  // SVG source turns it into a client-logo reveal.
+  createStarterPreset('starter-gpgpu-morph-svg-logo', 'GPGPU Morph SVG Logo (Star)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.12,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'svg',
+        gpgpuMorphSvgSource: SAMPLE_SVG_STAR,
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.05,
+        gpgpuMorphOrbitSpeed: 0.15,
+        gpgpuTrailEnabled: true,
+        gpgpuTrailLength: 8,
+        gpgpuTrailFade: 0.74,
       }),
   createStarterPreset('starter-gpgpu-symmetry-radial6', 'GPGPU Symmetry Radial6 Mandala', {
         renderQuality: 'balanced',

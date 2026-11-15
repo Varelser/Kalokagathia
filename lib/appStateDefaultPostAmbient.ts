@@ -44,6 +44,8 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postRadialBlurStrength: 0.25,
   postExposure: 1.0,
   postToneMapping: 'legacy' as const,
+  postBrandColorEnabled: false,
+  postBrandColor: '#c8372d',
   executionDiagnosticsEnabled: false,
   executionDiagnosticsVerbose: false,
   hybridSdfEnabled: false,

@@ -1475,6 +1475,42 @@
   <url><loc>https://monosphere.pages.dev/share/ray-blobs</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/ray-columns</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/ray-mandelbulb</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-deathburst</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-geom-torus</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-gradient-blackbody</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-gradient-nebula-blur</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-gradient-prism</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-galaxy</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-gyroid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-trefoil</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-quadra-wells</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-shape-lightning</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-symmetry-radial6</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-audio-pulse-crown</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-blackhole-quasar</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-ember-fountain</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-fireworks-aux</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-galaxy-spiral</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-houdini-aizawa-vex</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-houdini-boids-flock</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-houdini-flip-mercury</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-houdini-pop-grains</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-houdini-pyro</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-houdini-vellum-silk</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-houdini-vex-shards</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-kaleido-hyperspace</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-klein-4d</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-lorenz-attractor</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-mandala-prism</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-nbody-quadra</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-nebula-silk</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-plexus-neural</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-solaris-vortex</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-sumie-ink</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-tesseract-4d</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-text-typography</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-trefoil-sculpture</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kinetix-voxel-matrix</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/theory-att-aizawa</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/theory-att-chen</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/theory-att-dejong</loc><priority>0.6</priority></url>

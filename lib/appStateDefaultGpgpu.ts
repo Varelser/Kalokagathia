@@ -123,6 +123,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphScale: 1.0,
   gpgpuMorphJitter: 0.12,
   gpgpuMorphOrbitSpeed: 0.3,
+  gpgpuMorphSvgSource: '',
   // Verlet Integration
   gpgpuVerletEnabled: false,
   // SDF Collider

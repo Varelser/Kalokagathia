@@ -54,6 +54,9 @@ export const GPGPU_MORPH_TARGETS: readonly GpgpuMorphTargetKind[] = [
   'shell',
   'text',
   'image',
+  // 'svg' (Pro-2) stays last: the target index feeds the bake seed,
+  // so appending keeps every existing target's cloud bit-identical.
+  'svg',
 ] as const;
 
 export interface MorphMediaMap {
@@ -73,6 +76,12 @@ export interface GpgpuMorphTargetBuildOptions {
   seed: number;
   /** Luma map for the text/image targets; null falls back to a shell. */
   mediaMap?: MorphMediaMap | null;
+  /**
+   * Normalised point cloud for the svg target (flat xy pairs in
+   * centred y-up space, from lib/svgMorph.ts); null falls back to a
+   * shell, like a missing media map.
+   */
+  svgPoints?: ArrayLike<number> | null;
 }
 
 const TAU = Math.PI * 2;
@@ -122,13 +131,14 @@ function sampleMediaPoint(
  * world units. Pure and deterministic for a given options set.
  */
 export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions): Float32Array {
-  const { texSize, target, worldScale, jitter, seed, mediaMap } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints } = options;
   const count = texSize * texSize;
   const data = new Float32Array(count * 4);
   const targetIndex = GPGPU_MORPH_TARGETS.indexOf(target);
   const rng = createSeededRng(((seed * 1000003 + targetIndex * 7919 + 12345) >>> 0) || 1);
   const isMedia = target === 'text' || target === 'image';
   const media = isMedia && mediaMap && mediaMap.map.length > 0 ? mediaMap : null;
+  const svgPointCount = target === 'svg' && svgPoints ? Math.floor(svgPoints.length / 2) : 0;
   const mediaPoint = { x: 0, y: 0, z: 0 };
 
   for (let i = 0; i < count; i++) {
@@ -139,7 +149,22 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
     let ty = 0;
     let tz = 0;
 
-    if (media) {
+    if (svgPointCount > 0 && svgPoints) {
+      // Imported SVG outline cloud (Pro-2): the samples are already
+      // arc-length uniform, so a seeded uniform pick distributes
+      // particles evenly over the logo outline. Flat in Z, like the
+      // text cloud; the shader's Y orbit supplies the motion.
+      const pick = Math.floor(rng() * svgPointCount) * 2;
+      tx = svgPoints[pick] ?? 0;
+      ty = svgPoints[pick + 1] ?? 0;
+      tz = 0;
+    } else if (target === 'svg') {
+      // svg requested but no usable cloud: shell fallback (as media).
+      const phi = Math.acos(2 * s - 1);
+      tx = 0.9 * Math.sin(phi) * Math.cos(h1 * TAU);
+      ty = 0.9 * Math.sin(phi) * Math.sin(h1 * TAU);
+      tz = 0.9 * Math.cos(phi);
+    } else if (media) {
       let placed = false;
       for (let attempt = 0; attempt < 24 && !placed; attempt++) {
         placed = sampleMediaPoint(media, rng, mediaPoint);

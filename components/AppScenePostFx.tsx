@@ -32,6 +32,8 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   React.useEffect(() => () => outputGradePass.dispose(), [outputGradePass]);
   outputGradePass.exposure = config.postExposure;
   outputGradePass.aces = config.postToneMapping === 'aces';
+  outputGradePass.brandEnabled = config.postBrandColorEnabled;
+  outputGradePass.brandColor.set(config.postBrandColor || '#000000');
 
   if (orderedPostFxStages.length === 0) {
     return null;

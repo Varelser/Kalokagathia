@@ -4,6 +4,42 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.7.0] — 2026-11-16
+
+Transparent delivery with full post-processing (Pro-1.1), and
+logo/brand work for client delivery (Pro-2): SVG morph targets and
+a single-colour brand mode.
+
+### Added
+- **Pro-1.1 UnMult transparent delivery** — the deterministic
+  renderer gains a third background mode: alongside opaque and the
+  legacy transparent matte, "transparent + PostFx (UnMult)" renders
+  on black with the full PostFx stack, then derives alpha from
+  luminance (alpha = max(r,g,b) through a smoothstep threshold
+  curve, fixed at 0.05–0.30) at the capture step only, so glow and
+  bloom survive into transparent PNG sequences. On a real GPU the
+  exported light energy measured 5.1× the legacy transparent path.
+  The mode is recorded in each part's `render.json` manifest
+  (`backgroundMode` / `unmult` / `unmultSmoothstep`). Video formats
+  cannot carry alpha, so transparent modes and video are mutually
+  exclusive in the UI rather than silently falling back to black.
+- **SVG morph target (Pro-2)** — a dependency-free SVG parser
+  (`lib/svgMorph.ts`) samples an imported logo (file upload or
+  pasted text; path commands M/L/H/V/C/S/Q/T/A/Z plus basic
+  shapes and element transforms) into an 8,192-point cloud by arc
+  length and feeds it to the existing morph bake as the new `svg`
+  target, so particles form the logo itself. The SVG source is
+  stored in the config (`gpgpuMorphSvgSource`) and travels with
+  presets. Ships with a bundled star sample and the starter preset
+  `starter-gpgpu-morph-svg-logo`.
+- **Brand single-colour mode (Pro-2)** — an opt-in duotone in the
+  output-grade stage maps luminance through a black → brand colour
+  → white ramp (midpoint at the brand colour's own luminance), for
+  one-client-colour delivery over the monochrome base. Default
+  `#c8372d`; when off, the stage is not inserted and output is
+  identical to before. Applies to the live view and to
+  deterministic renders, including UnMult exports.
+
 ## [1.6.0] — 2026-11-16
 
 Pro delivery rendering, a CPU fallback for weak machines, and the

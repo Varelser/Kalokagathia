@@ -115,6 +115,7 @@ import {
   MAX_DETERMINISTIC_VIDEO_FRAMES,
   renderDeterministicSequence,
   renderDeterministicVideo,
+  type DeterministicBackgroundMode,
   type DeterministicSequencePart,
 } from '../lib/deterministicRender';
 import { VideoEncodeUnsupportedError, type VideoFormat } from '../lib/videoEncode';
@@ -4324,7 +4325,9 @@ const GraphSection: React.FC<{
 
 const ExportSection: React.FC<{
   captureRef?: React.RefObject<PointCloudCaptureState>;
-}> = ({ captureRef }) => {
+  config: ParticleConfig;
+  updateConfig: ControlPanelContentProps['updateConfig'];
+}> = ({ captureRef, config, updateConfig }) => {
   const [status, setStatus] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [svgPlane, setSvgPlane] = React.useState<SvgPlane>('xy');
@@ -4464,7 +4467,7 @@ const ExportSection: React.FC<{
         </button>
       </div>
       {status && <p className="text-[11px] text-white/55 mt-3">{status}</p>}
-      <DeterministicRenderControls />
+      <DeterministicRenderControls config={config} updateConfig={updateConfig} />
     </section>
   );
 };
@@ -4487,9 +4490,12 @@ const KeyboardShortcutsSection: React.FC = () => (
 // App version handed to the deterministic renderer for its render.json
 // manifest. Keep in sync with package.json "version" (the renderer must
 // not import package.json, so the UI supplies it — see PRO1_BRIEF.md).
-const KALOKAGATHIA_APP_VERSION = '1.6.0';
+const KALOKAGATHIA_APP_VERSION = '1.7.0';
 
-const DeterministicRenderControls: React.FC = () => {
+const DeterministicRenderControls: React.FC<{
+  config: ParticleConfig;
+  updateConfig: ControlPanelContentProps['updateConfig'];
+}> = ({ config, updateConfig }) => {
   const [seconds, setSeconds] = React.useState(3);
   const [fps, setFps] = React.useState(24);
   const [format, setFormat] = React.useState<'zip' | VideoFormat>('zip');
@@ -4497,6 +4503,18 @@ const DeterministicRenderControls: React.FC = () => {
   const [rendering, setRendering] = React.useState(false);
   const requestedFrames = Math.max(1, Math.round(seconds * fps));
   const isVideo = format !== 'zip';
+  // Pro-1.1: the background mode is the deterministicBackgroundMode
+  // config key (default 'opaque' = the exact legacy export). An unknown
+  // persisted value is treated as 'opaque' rather than failing.
+  const backgroundMode: DeterministicBackgroundMode =
+    config.deterministicBackgroundMode === 'transparent' || config.deterministicBackgroundMode === 'unmult'
+      ? config.deterministicBackgroundMode
+      : 'opaque';
+  // The video encoder has no alpha channel, so the transparent modes
+  // are PNG-sequence only: the UI disables the combinations outright
+  // (and renderDeterministicVideo throws as a backstop) instead of
+  // silently rendering an opaque video.
+  const videoBlockedByBackground = isVideo && backgroundMode !== 'opaque';
   // ZIP parts stream out of memory, so the sequence path takes the full
   // cap; the video path collects every frame for the encoder and is
   // capped lower (stated in the UI below).
@@ -4515,6 +4533,10 @@ const DeterministicRenderControls: React.FC = () => {
 
   const startRender = async () => {
     if (rendering) return;
+    if (videoBlockedByBackground) {
+      setRenderStatus('透過系の背景モードは動画（WebM／MP4）では書き出せません。形式を PNG連番 ZIP にするか、背景を「背景あり（従来）」にしてください。');
+      return;
+    }
     setRendering(true);
     setRenderStatus('決定的レンダリングを開始します…');
     try {
@@ -4533,7 +4555,7 @@ const DeterministicRenderControls: React.FC = () => {
           );
         };
         await renderDeterministicSequence(
-          { fps, frames, warmupFrames: DEFAULT_WARMUP_FRAMES, appVersion: KALOKAGATHIA_APP_VERSION },
+          { fps, frames, warmupFrames: DEFAULT_WARMUP_FRAMES, appVersion: KALOKAGATHIA_APP_VERSION, backgroundMode },
           (done, total) => {
             setRenderStatus(`レンダリング中… ${done} / ${total} フレーム`);
           },
@@ -4546,7 +4568,7 @@ const DeterministicRenderControls: React.FC = () => {
         );
       } else {
         const video = await renderDeterministicVideo(
-          { fps, frames, warmupFrames: DEFAULT_WARMUP_FRAMES, appVersion: KALOKAGATHIA_APP_VERSION },
+          { fps, frames, warmupFrames: DEFAULT_WARMUP_FRAMES, appVersion: KALOKAGATHIA_APP_VERSION, backgroundMode },
           format,
           (done, total) => {
             setRenderStatus(`レンダリング／エンコード中… ${done} / ${total} フレーム`);
@@ -4601,15 +4623,50 @@ const DeterministicRenderControls: React.FC = () => {
           <button
             key={option.val}
             onClick={() => setFormat(option.val)}
-            className={`px-3 py-1 rounded-full text-[10px] font-bold ${format === option.val ? 'bg-white text-black' : 'bg-white/10 text-white/60'}`}
+            disabled={backgroundMode !== 'opaque' && option.val !== 'zip'}
+            title={backgroundMode !== 'opaque' && option.val !== 'zip' ? '透過系の背景モードは PNG連番 ZIP 専用です' : undefined}
+            className={`px-3 py-1 rounded-full text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-30 ${format === option.val ? 'bg-white text-black' : 'bg-white/10 text-white/60'}`}
           >
             {option.label}
           </button>
         ))}
       </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] text-white/50">背景</span>
+        {([
+          { val: 'opaque', label: '背景あり（従来）' },
+          { val: 'transparent', label: '透過（PostFxなし）' },
+          { val: 'unmult', label: '透過 + PostFx（UnMult）' },
+        ] as const).map((option) => (
+          <button
+            key={option.val}
+            onClick={() => updateConfig('deterministicBackgroundMode', option.val)}
+            disabled={isVideo && option.val !== 'opaque'}
+            title={isVideo && option.val !== 'opaque' ? '動画は alpha を持てないため、透過系は PNG連番 ZIP 専用です' : undefined}
+            className={`px-3 py-1 rounded-full text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-30 ${backgroundMode === option.val ? 'bg-white text-black' : 'bg-white/10 text-white/60'}`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {backgroundMode === 'unmult' && (
+        <p className="text-[11px] leading-relaxed text-white/45">
+          UnMult: 黒背景で PostFx 全段を効かせて描き、キャプチャ時に alpha = smoothstep(max(r,g,b)) を導出して非プリマルチプライで出します。Bloom の光も alpha 付きで残ります。PNG連番 ZIP 専用です。
+        </p>
+      )}
+      {backgroundMode === 'transparent' && (
+        <p className="text-[11px] leading-relaxed text-white/45">
+          従来方式の透過: PostFx を通さずシーンを直接描くため、Bloom 等のポスト効果は乗りません。PNG連番 ZIP 専用です。
+        </p>
+      )}
+      {videoBlockedByBackground && (
+        <p className="text-[11px] leading-relaxed text-amber-200/80">
+          現在は透過系の背景モードと動画形式が組み合わさっています（プリセット読込等で変わった場合）。動画は alpha を持てないため、この組合せでは書き出せません。
+        </p>
+      )}
       <button
         onClick={startRender}
-        disabled={rendering}
+        disabled={rendering || videoBlockedByBackground}
         className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest hover:bg-gray-200 transition-colors disabled:opacity-40"
       >
         {rendering ? 'レンダリング中…' : format === 'zip' ? 'PNG連番を書き出す（ZIP）' : `${format.toUpperCase()} 動画を書き出す`}
@@ -4772,6 +4829,9 @@ const PerformanceSection: React.FC<{
           frames,
           warmupFrames: DEFAULT_WARMUP_FRAMES,
           appVersion: KALOKAGATHIA_APP_VERSION,
+          // The take export keeps its pre-Pro-1.1 opaque behaviour
+          // regardless of the render panel's background-mode key.
+          backgroundMode: 'opaque',
           applyAt: (tSec: number) => onApplyConfig(reconstructInterpolatedAt(take, Math.max(0, (tSec - warmupSeconds) * 1000))),
         },
         (done, total) => setExportNote(`決定論的書き出し中 ${done}/${total}`),
@@ -5306,7 +5366,7 @@ export const PlayTabContent: React.FC<ControlPanelContentProps> = (props) => (
     <OscSection updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
     <ModulationSection isPublicLibrary={props.isPublicLibrary} />
     <PerformanceSection config={props.config} onApplyConfig={props.onApplyConfig} />
-    <ExportSection captureRef={props.pointCloudCaptureRef} />
+    <ExportSection captureRef={props.pointCloudCaptureRef} config={props.config} updateConfig={props.updateConfig} />
     <HistorySection
       entries={props.configHistoryEntries}
       config={props.config}

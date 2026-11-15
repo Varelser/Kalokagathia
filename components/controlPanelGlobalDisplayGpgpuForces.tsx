@@ -4,6 +4,7 @@ import { Slider, Toggle } from './controlPanelParts';
 import { CUSTOM_FORCE_EXAMPLE, useCustomForceStatus } from '../lib/gpgpuCustomForce';
 import { VEX_PRESETS } from '../lib/gpgpuVexPresets';
 import { KINETIX_COLOR_GRADIENTS, getKinetixGradientPreset } from '../lib/kinetixGradients';
+import { SAMPLE_SVG_STAR, sampleSvgPointCloud } from '../lib/svgMorph';
 import { setModulationSetup, useModulationSetup } from '../lib/modulation';
 import type { ParticleConfig } from '../types';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
@@ -303,13 +304,17 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
             <option value="shell">Shell (オウムガイ)</option>
             <option value="text">Text (レイヤー2のテキストマップ)</option>
             <option value="image">Image (レイヤー2の画像マップ)</option>
+            <option value="svg">SVG (取り込んだロゴ/図形)</option>
           </select>
+          {config.gpgpuMorphTarget === 'svg' && (
+            <MorphSvgImportBlock config={config} updateConfig={updateConfig} />
+          )}
           <Slider label="Strength" value={config.gpgpuMorphStrength} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuMorphStrength', v)} />
           <Slider label="Scale" value={config.gpgpuMorphScale} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScale', v)} />
           <Slider label="Jitter" value={config.gpgpuMorphJitter} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphJitter', v)} />
           <Slider label="Orbit Speed" value={config.gpgpuMorphOrbitSpeed} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphOrbitSpeed', v)} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            各粒子に割り当てた形状点群へバネ引力で集めます（Kinetix モーフの GPGPU 再実装）。Text はレイヤー2のテキスト設定、Image はレイヤー2に読み込んだ画像マップを使います。
+            各粒子に割り当てた形状点群へバネ引力で集めます（Kinetix モーフの GPGPU 再実装）。Text はレイヤー2のテキスト設定、Image はレイヤー2に読み込んだ画像マップ、SVG は取り込んだ SVG の輪郭を使います。
           </div>
         </>
       )}
@@ -558,6 +563,71 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
     <SimpleLfoBlock />
   </>
 );
+
+/**
+ * SVG import controls for the morph 'svg' target (Pro-2). The SVG
+ * source text is stored in the config itself (gpgpuMorphSvgSource),
+ * so — like the TextMap text — it survives reloads with the project
+ * and travels with presets. The point cloud is re-sampled from the
+ * source at bake time; the status line below runs the same sampler
+ * so what it reports is what the bake will use.
+ */
+const MorphSvgImportBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const source = config.gpgpuMorphSvgSource;
+  const cloud = React.useMemo(() => (source ? sampleSvgPointCloud(source) : null), [source]);
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    const text = await file.text();
+    updateConfig('gpgpuMorphSvgSource', text.slice(0, 200_000));
+  };
+  return (
+    <div className="mb-3 rounded border border-white/10 bg-white/5 p-2">
+      <div className="mb-2 flex flex-wrap gap-2">
+        <label className="cursor-pointer rounded border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10">
+          SVG ファイルを開く
+          <input
+            type="file"
+            accept=".svg,image/svg+xml,text/plain"
+            className="hidden"
+            onChange={(event) => {
+              void handleFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        <button
+          onClick={() => updateConfig('gpgpuMorphSvgSource', SAMPLE_SVG_STAR)}
+          className="rounded-full border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10"
+        >
+          サンプル (星)
+        </button>
+        {source && (
+          <button
+            onClick={() => updateConfig('gpgpuMorphSvgSource', '')}
+            className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+          >
+            クリア
+          </button>
+        )}
+      </div>
+      <textarea
+        value={source}
+        onChange={(event) => updateConfig('gpgpuMorphSvgSource', event.target.value.slice(0, 200_000))}
+        spellCheck={false}
+        rows={4}
+        className="w-full rounded border border-white/15 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40"
+        placeholder={'<svg viewBox="0 0 100 100"><path d="M ..."/></svg> を貼り付け'}
+      />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {source
+          ? cloud
+            ? `輪郭を ${cloud.length / 2} 点にサンプリングしました（弧長均等）。パス基本コマンド M/L/H/V/C/S/Q/T/A/Z と基本図形に対応。塗りつぶしは輪郭として扱います。`
+            : '読み取れる図形がありません（path 等の図形要素が必要です）。'
+          : 'SVG を取り込むと、その輪郭点群へ粒子が集まります（ロゴ・リビール用）。ソースは config に保持され、再読み込みでも消えません。'}
+      </div>
+    </div>
+  );
+};
 
 const CustomForceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
   const status = useCustomForceStatus();

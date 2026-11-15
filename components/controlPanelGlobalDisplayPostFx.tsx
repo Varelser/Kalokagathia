@@ -186,6 +186,28 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             出力グレード段が有効です（露出 ×{config.postExposure.toFixed(2)}{config.postToneMapping === 'aces' ? ' + ACES' : ''}）。既定（露出1.0 / Legacy）では段自体が無効で従来出力と一致します。
           </div>
         )}
+        <Toggle
+          label="Brand Color (単色デュオトーン)"
+          value={config.postBrandColorEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postBrandColorEnabled', v)}
+        />
+        {config.postBrandColorEnabled && (
+          <>
+            <div className="mb-2 flex items-center gap-2">
+              <input
+                type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(config.postBrandColor) ? config.postBrandColor : '#c8372d'}
+                onChange={(e) => updateConfig('postBrandColor', e.target.value)}
+                className="h-8 w-14 cursor-pointer rounded border border-white/20 bg-transparent p-0.5"
+              />
+              <div className="flex-1 text-[10px] text-white/50">Brand color {config.postBrandColor}</div>
+            </div>
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              画面全体の輝度を 黒 → ブランド色 → 白 の3点ランプに写す単色デュオトーン（Pro-2、業務用）。ランプの中点はブランド色自体の輝度に合わせます。案件ごとの opt-in 機能で、既定は OFF（従来のモノクロ出力）。
+            </div>
+          </>
+        )}
       </div>
     </>
   );

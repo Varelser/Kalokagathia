@@ -74,6 +74,13 @@ export interface ParticleConfigCore {
   depthFogFar: number;
   exportScale: number;
   exportTransparent: boolean;
+  // Deterministic render background (Pro-1.1): 'opaque' is the legacy
+  // export exactly; 'transparent' is the conventional PostFx-off matte;
+  // 'unmult' keeps the full PostFx render on black and derives a
+  // straight-alpha matte at capture time (lib/unmult.ts). This is an
+  // export preference only — no scene system reads it — and the
+  // deterministic render UI passes it to the render job.
+  deterministicBackgroundMode: 'opaque' | 'transparent' | 'unmult';
 
   // SDF Particle Shape & Pseudo-3D Lighting
   sdfShapeEnabled: boolean;
@@ -124,6 +131,13 @@ export interface ParticleConfigCore {
   // byte-identical to before.
   postExposure: number;
   postToneMapping: 'legacy' | 'aces';
+  // Brand monochrome (Pro-2): a single-colour duotone in the same
+  // final output-grade stage — luminance is remapped through a
+  // black -> brand colour -> white ramp whose midpoint tracks the
+  // brand colour's own luminance. Opt-in per project; the defaults
+  // (disabled) keep the stage inactive and the output unchanged.
+  postBrandColorEnabled: boolean;
+  postBrandColor: string;
   executionDiagnosticsEnabled: boolean;
   executionDiagnosticsVerbose: boolean;
   hybridSdfEnabled: boolean;

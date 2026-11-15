@@ -20,4 +20,5 @@ export const APP_STATE_DEFAULT_ENVIRONMENT: Partial<ParticleConfig> = {
   depthFogFar: 2800,
   exportScale: 1,
   exportTransparent: false,
+  deterministicBackgroundMode: 'opaque',
 };

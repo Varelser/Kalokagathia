@@ -34,13 +34,51 @@
 // fresh and keep those off for a byte-identical take. Warmup reduces the
 // ignition-transient jitter inside that envelope; it does not widen it.
 
+// Pro-1.1 (2026-11-16): a job may also choose its background mode.
+// 'opaque' is the legacy behaviour exactly (the scene as configured,
+// PostFx included, alpha untouched). 'transparent' is the conventional
+// matte: the manager re-renders each stepped frame directly to an
+// offscreen target with no scene background and no PostFx. 'unmult'
+// keeps the normal black-background PostFx render and derives a
+// straight-alpha matte from the captured pixels at capture time only
+// (Method B in ALPHA_POSTFX_VERDICT.md; see lib/unmult.ts). The video
+// path rejects both transparent modes — the in-app WebCodecs encoder
+// cannot carry alpha — rather than silently falling back to opaque.
+//
 // JSZip is loaded lazily inside renderDeterministicSequence: it is only
 // needed when the user actually exports, so it stays out of the initial bundle.
 import { encodeFramesToVideo, type VideoFormat } from './videoEncode';
+import { UNMULT_SMOOTHSTEP_HIGH, UNMULT_SMOOTHSTEP_LOW } from './unmult';
+
+/**
+ * Background handling for a deterministic render. 'opaque' (the
+ * default everywhere) reproduces the pre-Pro-1.1 export pixel for
+ * pixel; the other two modes only take effect when a job — or the
+ * deterministicBackgroundMode config key behind the UI — asks for
+ * them explicitly.
+ */
+export type DeterministicBackgroundMode = 'opaque' | 'transparent' | 'unmult';
+
+export const DEFAULT_DETERMINISTIC_BACKGROUND_MODE: DeterministicBackgroundMode = 'opaque';
+
+export function resolveDeterministicBackgroundMode(
+  job: DeterministicRenderJob,
+): DeterministicBackgroundMode {
+  return job.backgroundMode === 'transparent' || job.backgroundMode === 'unmult'
+    ? job.backgroundMode
+    : DEFAULT_DETERMINISTIC_BACKGROUND_MODE;
+}
 
 export interface DeterministicRenderJob {
   fps: number;
   frames: number;
+  /**
+   * Background mode for the captured frames. Omitted (or an unknown
+   * value) means 'opaque', the exact legacy behaviour. Transparent
+   * modes are PNG-sequence only; renderDeterministicVideo throws for
+   * them instead of falling back.
+   */
+  backgroundMode?: DeterministicBackgroundMode;
   /**
    * Frames stepped (but not captured) after the clock reset, before the
    * first captured frame. Defaults to DEFAULT_WARMUP_FRAMES when omitted.
@@ -138,6 +176,13 @@ export interface DeterministicRenderManifest {
   width: number;
   height: number;
   warmupFrames: number;
+  /** Background mode the frames were captured with (Pro-1.1). */
+  backgroundMode: DeterministicBackgroundMode;
+  /** True only for the UnMult mode; kept alongside backgroundMode so
+   *  a manifest can be checked without knowing the mode vocabulary. */
+  unmult: boolean;
+  /** The UnMult threshold curve used, or null for the other modes. */
+  unmultSmoothstep: { low: number; high: number } | null;
   createdAt: string;
   part: number;
   partCount: number;
@@ -162,6 +207,7 @@ export function buildDeterministicRenderManifest(args: {
   partFirstFrame: number;
   partFrames: number;
 }): DeterministicRenderManifest {
+  const backgroundMode = resolveDeterministicBackgroundMode(args.job);
   return {
     app: 'Kalokagathia',
     appVersion: args.job.appVersion ?? 'unknown',
@@ -172,6 +218,11 @@ export function buildDeterministicRenderManifest(args: {
     width: args.width,
     height: args.height,
     warmupFrames: args.warmupFrames,
+    backgroundMode,
+    unmult: backgroundMode === 'unmult',
+    unmultSmoothstep: backgroundMode === 'unmult'
+      ? { low: UNMULT_SMOOTHSTEP_LOW, high: UNMULT_SMOOTHSTEP_HIGH }
+      : null,
     createdAt: args.createdAt,
     part: args.part,
     partCount: args.partCount,
@@ -318,6 +369,15 @@ export async function renderDeterministicVideo(
   if (job.frames > MAX_DETERMINISTIC_VIDEO_FRAMES) {
     throw new Error(
       `deterministic video is limited to ${MAX_DETERMINISTIC_VIDEO_FRAMES} frames (got ${job.frames}); use the PNG sequence (ZIP) export for longer renders`,
+    );
+  }
+  // The WebCodecs encoder path cannot carry an alpha channel, so a
+  // transparent background mode must fail loudly here — falling back
+  // to an opaque render would silently deliver the wrong matte.
+  const backgroundMode = resolveDeterministicBackgroundMode(job);
+  if (backgroundMode !== 'opaque') {
+    throw new Error(
+      `deterministic video does not support the '${backgroundMode}' background mode (the video encoder has no alpha channel); use the PNG sequence (ZIP) export`,
     );
   }
   const result = await handler({ ...job, warmupFrames: resolveWarmupFrames(job) }, onProgress);
