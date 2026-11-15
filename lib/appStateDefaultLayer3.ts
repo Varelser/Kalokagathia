@@ -64,6 +64,7 @@ export const APP_STATE_DEFAULT_LAYER_3: Partial<ParticleConfig> = {
   layer3BurstConeWidth: 0.4,
   layer3EmitterOrbitSpeed: 0,
   layer3EmitterOrbitRadius: 0,
+  layer3EmitterOrbitPath: 'orbit' as const,
   layer3EmitterPulseAmount: 0,
   layer3TrailDrag: 0,
   layer3TrailTurbulence: 0,

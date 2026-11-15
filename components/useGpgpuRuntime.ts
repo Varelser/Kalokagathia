@@ -3,6 +3,9 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
+import { buildGpgpuMorphTargetData } from '../lib/gpgpuMorphTargets';
+import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
+import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
 import { getSceneGeneration, noteGpgpuBackendSettled } from '../lib/sceneGeneration';
 import {
   initWebGPUCompute,
@@ -10,6 +13,7 @@ import {
 } from '../lib/webgpuCompute';
 import type { WebGPUComputeState } from '../lib/webgpuCompute';
 import { FLUID_SIZE } from './gpgpuShaders';
+import { AUX_TEX_SIZE } from './gpgpuShaderAux';
 import { getMaxGpgpuTexSize } from '../lib/gpuTier';
 
 // The GPGPU tex-size caps (MAX_GPGPU_TEX_SIZE / GPGPU_TEX_SIZE_CAPS /
@@ -59,11 +63,19 @@ export type GpgpuRuntimeRefs = {
   pingIsA: MutableRefObject<boolean>;
   prevPosRTRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   initPosTexRef: MutableRefObject<THREE.DataTexture | null>;
+  morphTexRef: MutableRefObject<THREE.DataTexture | null>;
   fluidRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   fluidRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   fluidPingIsA: MutableRefObject<boolean>;
   sortRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   sortRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
+  auxRtRef: MutableRefObject<{
+    posA: THREE.WebGLRenderTarget;
+    posB: THREE.WebGLRenderTarget;
+    velA: THREE.WebGLRenderTarget;
+    velB: THREE.WebGLRenderTarget;
+  } | null>;
+  auxPingIsA: MutableRefObject<boolean>;
   webgpuStateRef: MutableRefObject<WebGPUComputeState | null>;
   webgpuPosTexRef: MutableRefObject<THREE.DataTexture | null>;
   webgpuPingIsARef: MutableRefObject<boolean>;
@@ -85,11 +97,19 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const pingIsA = useRef(true);
   const prevPosRTRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const initPosTexRef = useRef<THREE.DataTexture | null>(null);
+  const morphTexRef = useRef<THREE.DataTexture | null>(null);
   const fluidRTARef = useRef<THREE.WebGLRenderTarget | null>(null);
   const fluidRTBRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const fluidPingIsA = useRef(true);
   const sortRTARef = useRef<THREE.WebGLRenderTarget | null>(null);
   const sortRTBRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const auxRtRef = useRef<{
+    posA: THREE.WebGLRenderTarget;
+    posB: THREE.WebGLRenderTarget;
+    velA: THREE.WebGLRenderTarget;
+    velB: THREE.WebGLRenderTarget;
+  } | null>(null);
+  const auxPingIsA = useRef(true);
   const webgpuStateRef = useRef<WebGPUComputeState | null>(null);
   const webgpuPosTexRef = useRef<THREE.DataTexture | null>(null);
   const webgpuPingIsARef = useRef(true);
@@ -113,7 +133,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     prevPosRTRef.current = prevPos;
     pingIsA.current = true;
 
-    const { posData, velData } = buildGpgpuInitialData(texSize, config.gpgpuBounceRadius, config.gpgpuEmitShape, config.gpgpuSeed);
+    const { posData, velData } = buildGpgpuInitialData(texSize, config.gpgpuBounceRadius, config.gpgpuEmitShape, config.gpgpuSeed, config.gpgpuAgeMax);
 
     const initTex = new THREE.DataTexture(posData.slice(), texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     initTex.needsUpdate = true;
@@ -127,6 +147,13 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     posTex.needsUpdate = true;
     velTex.needsUpdate = true;
     const copyMat = new THREE.MeshBasicMaterial({ map: posTex });
+    // Data copy must be an exact passthrough (2026-11-16, age-scatter
+    // follow-up): with normal alpha blending the .w channel (particle
+    // age, scattered in [0, ageMax)) is used as the blend factor, which
+    // clamps/distorts it and re-synchronised the pool's ages. The old
+    // constant age of 1 made blending an accidental identity, hiding
+    // this. NoBlending copies all four channels verbatim.
+    copyMat.blending = THREE.NoBlending;
     const copyMesh = new THREE.Mesh(copyGeo, copyMat);
     copyScene.add(copyMesh);
     gl.setRenderTarget(posA);
@@ -147,6 +174,55 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     sortRTBRef.current?.dispose();
     sortRTARef.current = makeRT(texSize);
     sortRTBRef.current = makeRT(texSize);
+
+    // Aux event pool (B3): fixed 128x128 ping-pong pair, initialised
+    // to the inactive state (age 10 >= life 0) with the same
+    // DataTexture copy path as the main pool. The passes only run
+    // while gpgpuAuxMode is not 'none', so an unused pool costs just
+    // the four small targets.
+    if (auxRtRef.current) {
+      auxRtRef.current.posA.dispose();
+      auxRtRef.current.posB.dispose();
+      auxRtRef.current.velA.dispose();
+      auxRtRef.current.velB.dispose();
+    }
+    const auxPosA = makeRT(AUX_TEX_SIZE);
+    const auxPosB = makeRT(AUX_TEX_SIZE);
+    const auxVelA = makeRT(AUX_TEX_SIZE);
+    const auxVelB = makeRT(AUX_TEX_SIZE);
+    auxRtRef.current = { posA: auxPosA, posB: auxPosB, velA: auxVelA, velB: auxVelB };
+    auxPingIsA.current = true;
+    {
+      const auxCount = AUX_TEX_SIZE * AUX_TEX_SIZE;
+      const auxPosData = new Float32Array(auxCount * 4);
+      const auxVelData = new Float32Array(auxCount * 4);
+      for (let i = 0; i < auxCount; i++) {
+        auxPosData[i * 4 + 3] = 10; // age: starts past any life → inactive
+        auxVelData[i * 4 + 3] = 0; // life: 0 → inactive
+      }
+      const auxPosTex = new THREE.DataTexture(auxPosData, AUX_TEX_SIZE, AUX_TEX_SIZE, THREE.RGBAFormat, THREE.FloatType);
+      const auxVelTex = new THREE.DataTexture(auxVelData, AUX_TEX_SIZE, AUX_TEX_SIZE, THREE.RGBAFormat, THREE.FloatType);
+      auxPosTex.needsUpdate = true;
+      auxVelTex.needsUpdate = true;
+      const auxCopyMat = new THREE.MeshBasicMaterial({ map: auxPosTex });
+      const auxCopyMesh = new THREE.Mesh(copyGeo, auxCopyMat);
+      copyScene.add(auxCopyMesh);
+      gl.setRenderTarget(auxPosA);
+      gl.render(copyScene, copyCam);
+      gl.setRenderTarget(auxPosB);
+      gl.render(copyScene, copyCam);
+      auxCopyMat.map = auxVelTex;
+      auxCopyMat.needsUpdate = true;
+      gl.setRenderTarget(auxVelA);
+      gl.render(copyScene, copyCam);
+      gl.setRenderTarget(auxVelB);
+      gl.render(copyScene, copyCam);
+      gl.setRenderTarget(null);
+      copyScene.remove(auxCopyMesh);
+      auxCopyMat.dispose();
+      auxPosTex.dispose();
+      auxVelTex.dispose();
+    }
 
     fluidRTARef.current?.dispose();
     fluidRTBRef.current?.dispose();
@@ -218,6 +294,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       sortRTARef.current = null;
       sortRTBRef.current?.dispose();
       sortRTBRef.current = null;
+      auxRtRef.current?.posA.dispose();
+      auxRtRef.current?.posB.dispose();
+      auxRtRef.current?.velA.dispose();
+      auxRtRef.current?.velB.dispose();
+      auxRtRef.current = null;
       fluidRTARef.current?.dispose();
       fluidRTARef.current = null;
       fluidRTBRef.current?.dispose();
@@ -229,18 +310,97 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       webgpuPosTexRef.current?.dispose();
       webgpuPosTexRef.current = null;
     };
-  }, [texSize, gl, config.gpgpuEmitShape, config.gpgpuBounceRadius, config.gpgpuSeed]);
+  }, [texSize, gl, config.gpgpuEmitShape, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax]);
+
+  // Morph target texture (Kinetix integration B1a): the per-particle
+  // target cloud is baked on the CPU (deterministic, seeded) and rebuilt
+  // only when its inputs change. text reuses the layer TextMap renderer
+  // (extractTextLumaMap with layer 2's text settings); image reuses the
+  // media luma map the user loaded for layer 2. When morph is disabled
+  // no texture exists and the velocity shader skips the force entirely,
+  // leaving the stock behaviour bit-identical.
+  const morphEnabled = config.gpgpuMorphEnabled;
+  const morphTarget = config.gpgpuMorphTarget;
+  const morphScale = config.gpgpuMorphScale;
+  const morphJitter = config.gpgpuMorphJitter;
+  const morphSeed = config.gpgpuSeed;
+  const morphBounceRadius = config.gpgpuBounceRadius;
+  const morphText = config.layer2TextMapText;
+  const morphTextFont = config.layer2TextMapFontFamily;
+  const morphTextWeight = config.layer2TextMapWeight;
+  const morphTextSize = config.layer2TextMapSize;
+  const morphTextPadding = config.layer2TextMapPadding;
+  const morphTextInvert = config.layer2TextMapInvert;
+  const morphMediaMap = config.layer2MediaLumaMap;
+  const morphMediaWidth = config.layer2MediaMapWidth;
+  const morphMediaHeight = config.layer2MediaMapHeight;
+  useEffect(() => {
+    morphTexRef.current?.dispose();
+    morphTexRef.current = null;
+    if (!morphEnabled) return;
+    let mediaMap: MorphMediaMap | null = null;
+    if (morphTarget === 'text') {
+      const map = extractTextLumaMap(
+        morphText,
+        128,
+        128,
+        morphTextFont,
+        morphTextWeight,
+        morphTextSize,
+        morphTextPadding,
+        morphTextInvert,
+      );
+      mediaMap = { map, width: 128, height: 128 };
+    } else if (morphTarget === 'image' && morphMediaMap.length > 0 && morphMediaWidth > 0 && morphMediaHeight > 0) {
+      mediaMap = { map: morphMediaMap, width: morphMediaWidth, height: morphMediaHeight };
+    }
+    const data = buildGpgpuMorphTargetData({
+      texSize,
+      target: morphTarget,
+      worldScale: morphScale * morphBounceRadius * 0.48,
+      jitter: morphJitter,
+      seed: morphSeed,
+      mediaMap,
+    });
+    const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    tex.needsUpdate = true;
+    morphTexRef.current = tex;
+    return () => {
+      tex.dispose();
+      if (morphTexRef.current === tex) morphTexRef.current = null;
+    };
+  }, [
+    texSize,
+    morphEnabled,
+    morphTarget,
+    morphScale,
+    morphJitter,
+    morphSeed,
+    morphBounceRadius,
+    morphText,
+    morphTextFont,
+    morphTextWeight,
+    morphTextSize,
+    morphTextPadding,
+    morphTextInvert,
+    morphMediaMap,
+    morphMediaWidth,
+    morphMediaHeight,
+  ]);
 
   return {
     rtRef,
     pingIsA,
     prevPosRTRef,
     initPosTexRef,
+    morphTexRef,
     fluidRTARef,
     fluidRTBRef,
     fluidPingIsA,
     sortRTARef,
     sortRTBRef,
+    auxRtRef,
+    auxPingIsA,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,

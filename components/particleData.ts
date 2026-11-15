@@ -169,6 +169,18 @@ export const generateParticleData = (config: ParticleConfig, layerIndex: 1|2|3|4
       px = Math.cos(theta) * r;
       pz = Math.sin(theta) * r;
       py = (u - 0.5) * 2.0;
+    } else if (sourceShape === 'helix') {
+      // True 3D coil (Kinetix integration B1b): constant-radius helix
+      // with height, unlike 'spiral' whose radius grows from the axis.
+      // w picks a point around the tube cross-section so the coil has
+      // visible thickness instead of being a 1px wire.
+      const theta = u * Math.PI * 2.0 * 3.0;
+      const tubeAng = v * Math.PI * 2.0;
+      const tube = (w - 0.5) * 0.24;
+      const rr = 0.55 + Math.cos(tubeAng) * tube;
+      px = Math.cos(theta) * rr;
+      pz = Math.sin(theta) * rr;
+      py = (u - 0.5) * 2.0 + Math.sin(tubeAng) * tube;
     } else if (sourceShape === 'galaxy') {
       const theta = u * Math.PI * 10.0; const rad = v * 1.5;
       px = Math.cos(theta) * rad + (hash(pSeed + 15) - 0.5) * 0.1;

@@ -4,6 +4,7 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform sampler2D uPosTex;
   uniform sampler2D uVelTex;
   uniform float uDelta;
+  uniform float uTime;
   uniform float uSpeed;
   uniform float uBounceRadius;
   uniform bool  uAgeEnabled;
@@ -17,9 +18,37 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform float uSdfZ;
   uniform float uSdfSize;
   uniform float uSdfBounce;
+  uniform bool  uFloorEnabled;
+  uniform float uFloorY;
+  uniform bool  uMouseEnabled;
+  uniform vec3  uMousePos;
+  uniform float uMouseRadius;
+  uniform int   uMouseMode;
+  uniform float uMousePaintRate;
   varying vec2 vUv;
 
   float hash1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+  // Gyroid SDF (B3) — identical formulation to the velocity shader.
+  float gyroidField(vec3 p, vec3 sc, float size) {
+    vec3 q = (p - sc) * (3.14159265 / max(size, 1.0));
+    return sin(q.x) * cos(q.y) + sin(q.y) * cos(q.z) + sin(q.z) * cos(q.x);
+  }
+  vec3 gyroidNormal(vec3 p, vec3 sc, float size) {
+    vec3 q = (p - sc) * (3.14159265 / max(size, 1.0));
+    vec3 g = vec3(
+      cos(q.x) * cos(q.y) - sin(q.z) * sin(q.x),
+      cos(q.y) * cos(q.z) - sin(q.x) * sin(q.y),
+      cos(q.z) * sin(q.x) - sin(q.y) * sin(q.z)
+    );
+    return normalize(g + vec3(0.0001));
+  }
+
+  // Pointer paint gate (B3): bit-identical with the velocity shader's
+  // copy, so both passes agree on which particles are painted.
+  float paintHash(vec2 uv, float tick) {
+    return fract(sin(dot(uv * 913.7 + vec2(tick * 17.31, tick * 7.77), vec2(12.9898, 78.233))) * 43758.5453);
+  }
 
   void main() {
     vec4 posData = texture2D(uPosTex, vUv);
@@ -58,6 +87,9 @@ export const SIM_POS_FRAG = /* glsl */ `
         sd = length(vec2(ringD, lp.y)) - r2;
         float lxz = length(lp.xz) + 0.001;
         sn = normalize(vec3(lp.x / lxz * ringD, lp.y, lp.z / lxz * ringD));
+      } else if (uSdfShape == 4) {
+        sd = gyroidField(pos, sc, uSdfSize) * uSdfSize * 0.227;
+        sn = gyroidNormal(pos, sc, uSdfSize);
       } else {
         float yc = clamp(pos.y - sc.y, -uSdfSize, uSdfSize);
         vec3 dp = vec3(pos.x - sc.x, pos.y - sc.y - yc, pos.z - sc.z);
@@ -65,6 +97,28 @@ export const SIM_POS_FRAG = /* glsl */ `
         sn = normalize(dp + vec3(0.0001));
       }
       if (sd < 0.0) pos -= sn * sd;
+    }
+
+    // Floor clamp (B3): Kinetix resolves penetration as
+    // floorY + (floorY - y) * 0.1; the velocity pass owns the bounce.
+    if (uFloorEnabled && pos.y < uFloorY) {
+      pos.y = uFloorY + (uFloorY - pos.y) * 0.1;
+    }
+
+    // Pointer paint (B3): gated particles are re-emitted at the brush
+    // position with a hash offset inside the brush disc. The velocity
+    // pass re-seeds their velocity under the same gate.
+    if (uMouseEnabled && uMouseMode == 3) {
+      float paintTick = floor(uTime * 30.0);
+      float paintGate = paintHash(vUv, paintTick);
+      if (paintGate < uMousePaintRate * 0.008) {
+        vec3 paintOffset = vec3(
+          hash1(vUv + paintTick * 0.731),
+          hash1(vUv + paintTick * 1.317 + 4.7),
+          hash1(vUv + paintTick * 2.113 + 9.1)
+        ) - 0.5;
+        pos = uMousePos + paintOffset * uMouseRadius * 0.7;
+      }
     }
 
     if (uAgeEnabled) {

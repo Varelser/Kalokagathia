@@ -3,6 +3,7 @@ import React from 'react';
 import { Camera, Layers3, Monitor, Move3d } from 'lucide-react';
 import { getConfigPerformanceScore, getConfigPerformanceTier, getRenderQualityDescription } from '../lib/performanceHints';
 import { getActiveRenderModes, getRenderCategorySummary, getRenderSupportSummary } from '../lib/renderModeRegistry';
+import { KINETIX_STAGE_BACKGROUNDS } from '../lib/kinetixGradients';
 import { Slider, Toggle } from './controlPanelParts';
 import { ControlPanelContentProps } from './controlPanelTabsShared';
 import { GlobalDisplayEffectsSection } from './controlPanelGlobalDisplayEffects';
@@ -134,6 +135,40 @@ export const GlobalDisplaySection: React.FC<ControlPanelContentProps> = ({
           </div>
         </div>
         <Toggle label="Background" value={config.backgroundColor} options={[{ label: 'Black', val: 'black' }, { label: 'White', val: 'white' }]} onChange={(value) => updateConfig('backgroundColor', value)} />
+        <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Stage Background (Kinetix)</div>
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {KINETIX_STAGE_BACKGROUNDS.map((bg) => {
+            const active = config.backgroundHex === bg.hex;
+            return (
+              <button
+                key={bg.id}
+                onClick={() => {
+                  updateConfig('backgroundHex', bg.hex);
+                  updateConfig('backgroundColor', bg.tone);
+                  updateConfig('particleColor', bg.tone === 'white' ? 'black' : 'white');
+                }}
+                className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] transition-colors ${active ? 'border-cyan-300/40 bg-cyan-400/10 text-cyan-100' : 'border-white/10 bg-black/10 text-white/70 hover:bg-white/5'}`}
+              >
+                <span className="inline-block h-3 w-3 rounded-sm border border-white/30" style={{ backgroundColor: bg.hex }} />
+                {bg.name}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mb-2 flex items-center gap-2">
+          <input
+            type="color"
+            value={/^#[0-9a-fA-F]{6}$/.test(config.backgroundHex) ? config.backgroundHex : '#000000'}
+            onChange={(e) => updateConfig('backgroundHex', e.target.value)}
+            className="h-8 w-14 cursor-pointer rounded border border-white/20 bg-transparent p-0.5"
+          />
+          <div className="flex-1 text-[10px] text-white/50">
+            {config.backgroundHex ? `Custom background ${config.backgroundHex}（トーン判定は Background 側）` : '任意色は未設定（従来の黒/白トーン）'}
+          </div>
+          {config.backgroundHex && (
+            <button onClick={() => updateConfig('backgroundHex', '')} className="rounded border border-white/15 px-2 py-1 text-[10px] text-white/70 hover:bg-white/5">Clear</button>
+          )}
+        </div>
         <Toggle label="Particles" value={config.particleColor} options={[{ label: 'White', val: 'white' }, { label: 'Black', val: 'black' }]} onChange={(value) => updateConfig('particleColor', value)} />
         <Slider label="Base Opacity" value={config.opacity} min={0.1} max={1} step={0.01} onChange={(value) => updateConfig('opacity', value)} />
         <Slider label="Contrast / Intensity" value={config.contrast} min={0.5} max={5.0} step={0.1} onChange={(value) => updateConfig('contrast', value)} />
@@ -198,6 +233,13 @@ export const GlobalDisplaySection: React.FC<ControlPanelContentProps> = ({
                   { label: 'Ring', val: 'ring' },
                   { label: 'Star', val: 'star' },
                   { label: 'Hex', val: 'hexagon' },
+                  { label: 'Diamond', val: 'diamond' },
+                  { label: 'Flare', val: 'flare' },
+                  { label: 'Cloud', val: 'cloud' },
+                  { label: 'Bokeh', val: 'bokeh' },
+                  { label: 'Crosshair', val: 'crosshair' },
+                  { label: 'Iris', val: 'iris' },
+                  { label: 'Lightning', val: 'lightning' },
                 ]}
                 onChange={(value) => updateConfig('sdfShape', value)}
               />
@@ -237,6 +279,63 @@ export const GlobalDisplaySection: React.FC<ControlPanelContentProps> = ({
             : config.cameraControlMode === 'manual'
               ? 'Manual disables camera impulse so orbit, pan, and zoom stay fully user-driven.'
               : 'Hybrid keeps OrbitControls live and adds camera impulse only when you are not interacting.'}
+        </div>
+        <div className="mb-3">
+          <div className="mb-2 text-[10px] uppercase tracking-widest font-medium opacity-70">View Presets</div>
+          <div className="grid grid-cols-4 gap-2">
+            <button
+              onClick={() => {
+                updateConfig('cameraControlMode', 'auto');
+                updateConfig('manualRotationX', 0);
+                updateConfig('manualRotationY', 0);
+                updateConfig('manualRotationZ', 0);
+                updateConfig('cameraDistance', 60);
+                updateConfig('perspective', 1000);
+              }}
+              className="py-2 text-[9px] font-bold uppercase rounded border border-white/20 bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              Perspective
+            </button>
+            <button
+              onClick={() => {
+                updateConfig('cameraControlMode', 'manual');
+                updateConfig('manualRotationX', 0);
+                updateConfig('manualRotationY', 0);
+                updateConfig('manualRotationZ', 0);
+                updateConfig('cameraDistance', 60);
+              }}
+              className="py-2 text-[9px] font-bold uppercase rounded border border-white/20 bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              Front
+            </button>
+            <button
+              onClick={() => {
+                updateConfig('cameraControlMode', 'manual');
+                updateConfig('manualRotationX', Math.PI / 2);
+                updateConfig('manualRotationY', 0);
+                updateConfig('manualRotationZ', 0);
+                updateConfig('cameraDistance', 60);
+              }}
+              className="py-2 text-[9px] font-bold uppercase rounded border border-white/20 bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              Top
+            </button>
+            <button
+              onClick={() => {
+                updateConfig('cameraControlMode', 'manual');
+                updateConfig('manualRotationX', 0);
+                updateConfig('manualRotationY', 0);
+                updateConfig('manualRotationZ', 0);
+                updateConfig('cameraDistance', 28);
+              }}
+              className="py-2 text-[9px] font-bold uppercase rounded border border-white/20 bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              Close-up
+            </button>
+          </div>
+          <div className="mt-2 text-[10px] text-white/45">
+            Kinetix-style viewpoint presets (B4): they only set the existing camera / manual-rotation keys — Perspective restores the auto rig defaults, Top frames the scene from above via the X axis rotation.
+          </div>
         </div>
         <Toggle label="View Mode" value={config.viewMode || 'perspective'} options={[{ label: '3D (Persp)', val: 'perspective' }, { label: '2D (Ortho)', val: 'orthographic' }]} onChange={(value) => updateConfig('viewMode', value)} />
         <Slider label="Perspective (FOV) (3D Only)" value={config.perspective} min={200} max={3000} step={50} onChange={(value) => updateConfig('perspective', value)} />

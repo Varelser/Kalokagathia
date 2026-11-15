@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import type { PointCloudCaptureState } from '../lib/pointCloudExport';
 import { LodSystem } from '../lib/lodSystem';
+import { scaleFrameDelta } from '../lib/playbackTime';
 import { useGpgpuAssets } from './useGpgpuAssets';
 import { getTexSize, useGpgpuRuntime } from './useGpgpuRuntime';
 import { GpgpuRenderOutputs } from './gpgpuRenderOutputs';
@@ -26,6 +27,7 @@ import {
 } from './gpgpuVisualUpdates';
 import {
   blitPreviousPositionPass,
+  runAuxSimulationPasses,
   runFluidAdvectionPass,
   runSimulationPasses,
   updateMouseWorldPosition,
@@ -85,12 +87,16 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     simMeshRef,
     velSimMat,
     posSimMat,
+    auxVelMat,
+    auxPosMat,
     blitMat,
     sortDepthMat,
     bitonicMat,
     fluidAdvectMat,
     drawGeo,
     streakGeo,
+    auxDrawGeo,
+    auxDrawMat,
     trailRTs,
     trailHead,
   } = assets;
@@ -101,11 +107,14 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     pingIsA,
     prevPosRTRef,
     initPosTexRef,
+    morphTexRef,
     fluidRTARef,
     fluidRTBRef,
     fluidPingIsA,
     sortRTARef,
     sortRTBRef,
+    auxRtRef,
+    auxPingIsA,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,
@@ -114,7 +123,13 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   useFrame(({ gl: glCtx }, delta) => {
     if (!isPlaying || !rtRef.current || !simMeshRef.current) return;
 
-    const dt = Math.min(delta, 0.05);
+    // Global time scale (B3): scales the sim step (and the accumulated
+    // sim clock) in realtime playback; the deterministic renderer locks
+    // the scale to 1, so exports keep their fixed-timestep envelope.
+    // The scaled step is clamped to the same ±0.05s the raw step used,
+    // so a large positive scale cannot destabilise the integrators.
+    const rawDt = Math.min(delta, 0.05);
+    const dt = Math.max(-0.05, Math.min(0.05, scaleFrameDelta(rawDt, config)));
     timeRef.current += dt;
     if (config.autoLod) lodSystem.update(dt);
 
@@ -183,11 +198,46 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       velSimMat,
       posSimMat,
       initPosTex: initPosTexRef.current,
+      morphTex: morphTexRef.current,
       prevPosTex: prevPosRTRef.current?.texture ?? null,
       webgpuState: webgpuStateRef.current,
       webgpuPosTex: webgpuPosTexRef.current,
       webgpuPingIsARef,
     });
+
+    // Aux event emission (B3, WebGL path only — the WebGPU compute
+    // backend has no aux pool, and its draw material simply never
+    // activates). Reads the main pool's frame-start textures so death
+    // and bounce events are located where they happened this frame.
+    if (!routing.useWebGPU && config.gpgpuAuxMode !== 'none' && auxRtRef.current && simMeshRef.current) {
+      const auxTargets = resolvePingPongTargets(auxRtRef.current, auxPingIsA.current);
+      runAuxSimulationPasses({
+        config,
+        texSize,
+        dt,
+        time: timeRef.current,
+        simMesh: simMeshRef.current,
+        gl: glCtx,
+        simScene,
+        simCamera,
+        mainPosTex: posIn.texture,
+        mainVelTex: velIn.texture,
+        auxPosIn: auxTargets.posIn,
+        auxPosOut: auxTargets.posOut,
+        auxVelIn: auxTargets.velIn,
+        auxVelOut: auxTargets.velOut,
+        auxVelMat,
+        auxPosMat,
+      });
+      auxPingIsA.current = !auxPingIsA.current;
+      auxDrawMat.uniforms.uAuxPosTex.value = auxTargets.posOut.texture;
+      auxDrawMat.uniforms.uAuxVelTex.value = auxTargets.velOut.texture;
+      auxDrawMat.uniforms.uColor.value.setStyle(config.gpgpuColor);
+      auxDrawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
+      auxDrawMat.uniforms.uAuxSize.value = config.gpgpuAuxSize;
+      auxDrawMat.blending = config.gpgpuBlendMode === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
+      auxDrawGeo.setDrawRange(0, Math.max(0, Math.min(16384, Math.round(config.gpgpuAuxCount))));
+    }
 
     const finalSortTex = runDepthSortPass({
       config,
@@ -263,6 +313,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       velTexture: velOut.texture,
       finalSortTex,
       texSize,
+      time: timeRef.current,
     });
   });
 

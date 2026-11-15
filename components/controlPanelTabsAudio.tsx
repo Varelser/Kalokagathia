@@ -217,6 +217,9 @@ export const AudioTabContent: React.FC<ControlPanelContentProps> = ({
         />
         <Slider label="Synth Base Hz" value={config.synthBaseFrequency} min={40} max={440} step={1} onChange={(v) => updateConfig('synthBaseFrequency', v)} />
         <Slider label="Synth Tempo" value={config.synthTempo} min={60} max={180} step={1} onChange={(v) => updateConfig('synthTempo', v)} />
+        <div className="mb-3 -mt-1 text-[10px] uppercase tracking-widest text-white/55">
+          BPM: {Math.round(config.synthTempo)}（1拍 {Math.round(60000 / Math.max(1, config.synthTempo))} ms / パルスは8分音符 {Math.round(30000 / Math.max(1, config.synthTempo))} ms）
+        </div>
         <Slider label="Synth Volume" value={config.synthVolume} min={0.01} max={0.4} step={0.01} onChange={(v) => updateConfig('synthVolume', v)} />
         <Slider label="Synth Cutoff" value={config.synthCutoff} min={120} max={6000} step={10} onChange={(v) => updateConfig('synthCutoff', v)} />
         <Slider label="Pattern Depth" value={config.synthPatternDepth} min={0} max={1} step={0.01} onChange={(v) => updateConfig('synthPatternDepth', v)} />

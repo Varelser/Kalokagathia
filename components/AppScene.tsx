@@ -79,7 +79,10 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
   // Stream chroma variants key against this colour everywhere the
   // config tone would normally show (background, clear, fog tint);
   // undefined in every other mode, where the config tone rules.
-  const sceneBackgroundColor = backgroundOverrideColor ?? effectiveConfig.backgroundColor;
+  // Kinetix Color (B2): a non-empty backgroundHex overrides the tone
+  // for the rendered surface only; tone logic elsewhere (contrast
+  // normalisation, blend selection) still follows backgroundColor.
+  const sceneBackgroundColor = backgroundOverrideColor ?? (effectiveConfig.backgroundHex || effectiveConfig.backgroundColor);
 
   return (
     <Canvas
@@ -97,7 +100,7 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
       <SceneBackgroundSync
         backgroundColor={effectiveConfig.backgroundColor}
         transparentBackground={transparentBackground}
-        backgroundOverrideColor={backgroundOverrideColor}
+        backgroundOverrideColor={backgroundOverrideColor ?? (effectiveConfig.backgroundHex || undefined)}
       />
       {!transparentBackground && <color attach="background" args={[sceneBackgroundColor]} />}
       {effectiveConfig.depthFogEnabled && (

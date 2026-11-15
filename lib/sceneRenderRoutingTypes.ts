@@ -127,6 +127,7 @@ export interface LayerRuntimeParticleFieldSnapshot extends LayerRuntimeSourceLay
   burstConeWidth: number;
   emitterOrbitSpeed: number;
   emitterOrbitRadius: number;
+  emitterOrbitPath: number;
   emitterPulseAmount: number;
   trailDrag: number;
   trailTurbulence: number;

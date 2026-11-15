@@ -102,6 +102,7 @@ export function createParticleUniforms(config: ParticleConfig, isAux: boolean) {
     uBurstConeWidth: { value: 0.4 },
     uEmitterOrbitSpeed: { value: 0 },
     uEmitterOrbitRadius: { value: 0 },
+    uEmitterOrbitPath: { value: 0 },
     uEmitterPulseAmount: { value: 0 },
     uTrailDrag: { value: 0 },
     uTrailTurbulence: { value: 0 },

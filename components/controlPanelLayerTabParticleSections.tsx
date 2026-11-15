@@ -192,6 +192,16 @@ export const SharedLayerTabParticleSections: React.FC<SharedLayerParticleSection
       <Slider label="Cone Width" value={read('BurstConeWidth')} min={0} max={1} step={0.01} onChange={(v) => write('BurstConeWidth', v)} />
       <Slider label="Emitter Orbit Spd" value={read('EmitterOrbitSpeed')} min={0} max={6} step={0.01} onChange={(v) => write('EmitterOrbitSpeed', v)} />
       <Slider label="Emitter Orbit Rad" value={read('EmitterOrbitRadius')} min={0} max={400} step={1} onChange={(v) => write('EmitterOrbitRadius', v)} />
+      <Toggle
+        label="Emitter Orbit Path"
+        value={read('EmitterOrbitPath')}
+        options={[
+          { label: 'Orbit', val: 'orbit' },
+          { label: 'Lissajous', val: 'lissajous' },
+          { label: 'Figure 8', val: 'figure8' },
+        ]}
+        onChange={(v) => write('EmitterOrbitPath', v)}
+      />
       <Slider label="Emitter Pulse" value={read('EmitterPulseAmount')} min={0} max={1.5} step={0.01} onChange={(v) => write('EmitterPulseAmount', v)} />
       <Slider label="Trail Drag" value={read('TrailDrag')} min={0} max={1.5} step={0.01} onChange={(v) => write('TrailDrag', v)} />
       <Slider label="Trail Turbulence" value={read('TrailTurbulence')} min={0} max={1.5} step={0.01} onChange={(v) => write('TrailTurbulence', v)} />
@@ -219,6 +229,8 @@ export const SharedLayerTabParticleSections: React.FC<SharedLayerParticleSection
           { label: 'Cube', val: 'cube' },
           { label: 'Tetra', val: 'tetra' },
           { label: 'Icosa', val: 'icosa' },
+          { label: 'Torus', val: 'torus' },
+          { label: 'Cone', val: 'cone' },
         ]}
         onChange={(v) => write('GeomMode3D', v)}
       />
@@ -269,7 +281,7 @@ export const SharedLayerTabParticleSections: React.FC<SharedLayerParticleSection
       <Toggle label="SDF Shape Mode" value={read('SdfEnabled')} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => write('SdfEnabled', v)} />
       {read('SdfEnabled') && (
         <>
-          <Toggle label="Shape" value={read('SdfShape')} options={[{ label: 'Sphere', val: 'sphere' }, { label: 'Ring', val: 'ring' }, { label: 'Star', val: 'star' }, { label: 'Hex', val: 'hexagon' }]} onChange={(v) => write('SdfShape', v)} />
+          <Toggle label="Shape" value={read('SdfShape')} options={[{ label: 'Sphere', val: 'sphere' }, { label: 'Ring', val: 'ring' }, { label: 'Star', val: 'star' }, { label: 'Hex', val: 'hexagon' }, { label: 'Diamond', val: 'diamond' }, { label: 'Flare', val: 'flare' }, { label: 'Cloud', val: 'cloud' }, { label: 'Bokeh', val: 'bokeh' }, { label: 'Crosshair', val: 'crosshair' }, { label: 'Iris', val: 'iris' }, { label: 'Lightning', val: 'lightning' }]} onChange={(v) => write('SdfShape', v)} />
           <Slider label="Specular" value={read('SdfSpecular')} min={0} max={3} step={0.05} onChange={(v) => write('SdfSpecular', v)} />
           <Slider label="Shininess" value={read('SdfShininess')} min={1} max={64} step={1} onChange={(v) => write('SdfShininess', v)} />
           <Slider label="Ambient" value={read('SdfAmbient')} min={0} max={1} step={0.01} onChange={(v) => write('SdfAmbient', v)} />

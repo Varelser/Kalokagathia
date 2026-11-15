@@ -256,6 +256,7 @@ export type Layer3Source =
   | 'cone'
   | 'torus'
   | 'spiral'
+  | 'helix'
   | 'galaxy'
   | 'grid'
   | 'plane'

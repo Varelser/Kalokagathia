@@ -24,7 +24,7 @@ export interface ParticleConfigLayer1 {
   pulseAmplitude: number;
   // Per-layer SDF
   layer1SdfEnabled: boolean;
-  layer1SdfShape: 'sphere' | 'ring' | 'star' | 'hexagon';
+  layer1SdfShape: 'sphere' | 'ring' | 'star' | 'hexagon' | 'diamond' | 'flare' | 'cloud' | 'bokeh' | 'crosshair' | 'iris' | 'lightning';
   layer1SdfLightX: number;
   layer1SdfLightY: number;
   layer1SdfSpecular: number;

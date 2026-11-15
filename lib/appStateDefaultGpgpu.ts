@@ -24,6 +24,11 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGeomMode: 'point' as const,
   gpgpuGeomVelocityAlign: false,
   gpgpuGeomScale: 1.0,
+  // Geometry material extras + point shape (Kinetix integration B1b)
+  gpgpuGeomEnvReflect: 0.0,
+  gpgpuGeomSpinSpeed: 0.0,
+  gpgpuGeomStretch: 0.0,
+  gpgpuPointShape: 'soft' as const,
   gpgpuNBodyEnabled: false,
   gpgpuNBodyStrength: 1.0,
   gpgpuNBodyRepulsion: 5.0,
@@ -40,6 +45,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuCurlEnabled: false,
   gpgpuCurlStrength: 1.0,
   gpgpuCurlScale: 0.008,
+  gpgpuCurlSymmetry: 'none' as const,
+  // Curl flavour + octaves (B3): legacy field by default.
+  gpgpuCurlMode: 'curl' as const,
+  gpgpuCurlOctaves: 1,
   gpgpuBoidsEnabled: false,
   gpgpuBoidsSeparation: 1.0,
   gpgpuBoidsAlignment: 0.5,
@@ -65,6 +74,9 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuWellStrength: 1.0,
   gpgpuWellSoftening: 10.0,
   gpgpuWellOrbit: 0.5,
+  // Multiple wells (B3): 1 = legacy single well at the origin.
+  gpgpuWellCount: 1,
+  gpgpuWellSpread: 70.0,
   // Elastic Spring
   gpgpuElasticEnabled: false,
   gpgpuElasticStrength: 0.5,
@@ -104,6 +116,13 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // Spring (to spawn pos)
   gpgpuSpringEnabled: false,
   gpgpuSpringStrength: 1.0,
+  // Morph Targets (Kinetix integration B1a)
+  gpgpuMorphEnabled: false,
+  gpgpuMorphTarget: 'trefoil' as const,
+  gpgpuMorphStrength: 3.0,
+  gpgpuMorphScale: 1.0,
+  gpgpuMorphJitter: 0.12,
+  gpgpuMorphOrbitSpeed: 0.3,
   // Verlet Integration
   gpgpuVerletEnabled: false,
   // SDF Collider
@@ -114,21 +133,45 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSdfZ: 0.0,
   gpgpuSdfSize: 80.0,
   gpgpuSdfBounce: 0.5,
+  // Floor bounce (B3): off by default.
+  gpgpuFloorEnabled: false,
+  gpgpuFloorY: -110.0,
+  gpgpuFloorBounce: 0.62,
+  // Aux event emission (B3): off by default.
+  gpgpuAuxMode: 'none' as const,
+  gpgpuAuxCount: 4096,
+  gpgpuAuxIntensity: 1.0,
+  gpgpuAuxLife: 0.75,
+  gpgpuAuxSpeed: 26.0,
+  gpgpuAuxSize: 1.1,
   // Emission Shape
   gpgpuEmitShape: 'sphere' as const,
   // Color over Lifetime
   gpgpuAgeColorEnabled: false,
   gpgpuAgeColorYoung: '#00aaff',
   gpgpuAgeColorOld: '#ff4400',
+  // Kinetix Color gradient (B2): disabled by default — monochrome /
+  // legacy colour behaviour is unchanged until the user opts in.
+  // Default stops are the Kinetix 'nebula' gradient values.
+  gpgpuGradEnabled: false,
+  gpgpuGradDriver: 'life' as const,
+  gpgpuGradStart: '#e0f2fe',
+  gpgpuGradMid: '#38bdf8',
+  gpgpuGradEnd: '#8b5cf6',
+  gpgpuGradPreset: 'nebula',
+  gpgpuGradSpatialScale: 0.008,
+  gpgpuBlendMode: 'additive' as const,
   // Size over Lifetime
   gpgpuAgeSizeEnabled: false,
   gpgpuAgeSizeStart: 2.0,
   gpgpuAgeSizeEnd: 0.2,
+  gpgpuAgeSizeCurve: 'linear' as const,
   // Mouse Force
   gpgpuMouseEnabled: false,
   gpgpuMouseStrength: 2.0,
   gpgpuMouseRadius: 150.0,
   gpgpuMouseMode: 'attract' as const,
+  gpgpuMousePaintRate: 0.6,
   // Streak Rendering
   gpgpuStreakEnabled: false,
   gpgpuStreakLength: 15.0,

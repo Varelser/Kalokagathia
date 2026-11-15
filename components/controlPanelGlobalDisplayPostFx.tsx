@@ -164,6 +164,28 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             <Slider label="Slit Scan Cycle" value={config.postSlitScanCycle} min={2} max={120} step={1} onChange={(v) => updateConfig('postSlitScanCycle', v)} />
           </>
         )}
+        <Toggle
+          label="Radial Blur"
+          value={config.postRadialBlurEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postRadialBlurEnabled', v)}
+        />
+        {config.postRadialBlurEnabled && (
+          <Slider label="Radial Blur Strength" value={config.postRadialBlurStrength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postRadialBlurStrength', v)} />
+        )}
+        <div className="mb-1 mt-4 text-[9px] uppercase tracking-widest opacity-60">Output Grade</div>
+        <Toggle
+          label="Tone Mapping"
+          value={config.postToneMapping}
+          options={[{ label: 'Legacy', val: 'legacy' }, { label: 'ACES', val: 'aces' }]}
+          onChange={(v) => updateConfig('postToneMapping', v)}
+        />
+        <Slider label="Exposure" value={config.postExposure} min={0.1} max={3} step={0.01} onChange={(v) => updateConfig('postExposure', v)} />
+        {(Math.abs(config.postExposure - 1) > 0.001 || config.postToneMapping === 'aces') && (
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            出力グレード段が有効です（露出 ×{config.postExposure.toFixed(2)}{config.postToneMapping === 'aces' ? ' + ACES' : ''}）。既定（露出1.0 / Legacy）では段自体が無効で従来出力と一致します。
+          </div>
+        )}
       </div>
     </>
   );

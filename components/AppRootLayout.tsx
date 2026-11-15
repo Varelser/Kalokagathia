@@ -2,6 +2,8 @@ import React from 'react';
 import type * as THREE from 'three';
 import { ControlPanel } from './ControlPanel';
 import { AppScene } from './AppScene';
+import { CpuFallbackScene } from './CpuFallbackScene';
+import { setCpuFallbackSetting, useCpuFallback } from '../lib/cpuFallback';
 import { AppComparePreview } from './AppComparePreview';
 import { AppExecutionDiagnosticsOverlay } from './AppExecutionDiagnosticsOverlay';
 import { CanvasStreamWidget } from './canvasStreamWidget';
@@ -61,6 +63,11 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
       if (second) cancelAnimationFrame(second);
     };
   }, []);
+  // CPU fallback (2026-11-15): on software renderers / missing WebGL
+  // (or when forced manually / via ?cpu=1) the WebGL canvas is not
+  // mounted at all and the Canvas 2D degraded renderer takes its place.
+  // The deck, shelf and transport below are untouched either way.
+  const cpuFallback = useCpuFallback();
   const [cinema, setCinema] = React.useState(false);
   const [hint, setHint] = React.useState(false);
   const [cursorIdle, setCursorIdle] = React.useState(false);
@@ -132,19 +139,29 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
       // click-through orbiting exactly as before).
       if (cinema && window.matchMedia('(max-width: 640px)').matches) setCinema(false);
     }}
+    style={config.backgroundHex ? { backgroundColor: config.backgroundHex } : undefined}
     className={`mg-root relative w-full h-screen ${config.backgroundColor === 'white' ? 'bg-white' : 'bg-black'}${cinema ? ' mg-cinema' : ''}${cinema && cursorIdle ? ' cursor-none' : ''}`}>
     <div className="absolute inset-0">
-      <AppScene
-        audioRef={audioRef}
-        config={displayConfig}
-        interLayerContactAmount={getInterLayerContactAmount(displayConfig)}
-        isPlaying={isPlaying}
-        isSequencePlaying={isSequencePlaying}
-        rendererRef={rendererRef}
-        saveTrigger={saveTrigger}
-        sequenceStepProgress={sequenceStepProgress}
-        pointCloudCaptureRef={pointCloudCaptureRef}
-      />
+      {cpuFallback.active ? (
+        <CpuFallbackScene
+          config={displayConfig}
+          isPlaying={isPlaying}
+          reason={cpuFallback.reason}
+          onExit={cpuFallback.reason === 'query' ? null : () => setCpuFallbackSetting('off')}
+        />
+      ) : (
+        <AppScene
+          audioRef={audioRef}
+          config={displayConfig}
+          interLayerContactAmount={getInterLayerContactAmount(displayConfig)}
+          isPlaying={isPlaying}
+          isSequencePlaying={isSequencePlaying}
+          rendererRef={rendererRef}
+          saveTrigger={saveTrigger}
+          sequenceStepProgress={sequenceStepProgress}
+          pointCloudCaptureRef={pointCloudCaptureRef}
+        />
+      )}
     </div>
     <AppComparePreview
       audioRef={audioRef}

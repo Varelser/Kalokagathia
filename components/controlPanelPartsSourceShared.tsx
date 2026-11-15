@@ -15,6 +15,7 @@ import {
   Sparkles,
   Square,
   Target,
+  Tornado,
 } from 'lucide-react';
 import type { Layer3Source } from '../types';
 import { Slider } from './controlPanelPartsCore';
@@ -174,7 +175,8 @@ export const SourceSelector: React.FC<{
     { id: 'cylinder', label: 'Cyl', icon: Cylinder },
     { id: 'cone', label: 'Cone', icon: Cone },
     { id: 'torus', label: 'Torus', icon: LifeBuoy },
-    { id: 'spiral', label: 'Helix', icon: Dna },
+    { id: 'spiral', label: 'Spiral', icon: Dna },
+    { id: 'helix', label: 'Coil', icon: Tornado },
     { id: 'galaxy', label: 'Galaxy', icon: Orbit },
     { id: 'grid', label: 'Grid', icon: Grid },
     { id: 'plane', label: 'Plane', icon: Square },

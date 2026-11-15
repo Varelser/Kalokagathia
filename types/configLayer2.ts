@@ -90,6 +90,10 @@ export interface ParticleConfigLayer2 {
   layer2BurstConeWidth: number;
   layer2EmitterOrbitSpeed: number;
   layer2EmitterOrbitRadius: number;
+  // Emitter orbit path (Kinetix integration B3, Kinetix EmitterMotion):
+  // 'orbit' (default) is the exact legacy circular offset; 'lissajous'
+  // and 'figure8' re-implement Kinetix's emitter trajectory formulas.
+  layer2EmitterOrbitPath: 'orbit' | 'lissajous' | 'figure8';
   layer2EmitterPulseAmount: number;
   layer2TrailDrag: number;
   layer2TrailTurbulence: number;
@@ -151,7 +155,7 @@ export interface ParticleConfigLayer2 {
   layer2SparkLife: number;
   layer2SparkDiffusion: number;
   layer2SparkBurst: number;
-  layer2GeomMode3D: 'billboard' | 'cube' | 'tetra' | 'icosa';
+  layer2GeomMode3D: 'billboard' | 'cube' | 'tetra' | 'icosa' | 'torus' | 'cone';
   layer2GeomScale3D: number;
   layer2SheetOpacity: number;
   layer2SheetFresnel: number;
@@ -164,7 +168,7 @@ export interface ParticleConfigLayer2 {
   layer2GhostTrailFade: number;
   // Per-layer SDF
   layer2SdfEnabled: boolean;
-  layer2SdfShape: 'sphere' | 'ring' | 'star' | 'hexagon';
+  layer2SdfShape: 'sphere' | 'ring' | 'star' | 'hexagon' | 'diamond' | 'flare' | 'cloud' | 'bokeh' | 'crosshair' | 'iris' | 'lightning';
   layer2SdfLightX: number;
   layer2SdfLightY: number;
   layer2SdfSpecular: number;

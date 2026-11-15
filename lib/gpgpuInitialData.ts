@@ -31,6 +31,7 @@ export function buildGpgpuInitialData(
   bounceRadius: number,
   emitShape: GpgpuEmitShape,
   seed: number,
+  ageMax = 8,
 ): GpgpuInitialData {
   const random = createSeededRng(seed);
   const count = texSize * texSize;
@@ -78,7 +79,14 @@ export function buildGpgpuInitialData(
     posData[i * 4] = px;
     posData[i * 4 + 1] = py;
     posData[i * 4 + 2] = pz;
-    posData[i * 4 + 3] = 1;
+    // Age scatter (2026-11-16, iMac gate case 6): the initial age used to
+    // be a constant 1 for every particle, so the whole pool respawned on
+    // the same frame and vNormAge was identical across the field — any
+    // age-driven look (age colour/size, the B2 blackbody gradient) pulsed
+    // in sync with period ageMax. Seeding age uniformly in [0, ageMax)
+    // gives each particle its own lifecycle phase while staying a pure
+    // function of the seed, so determinism is preserved.
+    posData[i * 4 + 3] = random() * ageMax;
     velData[i * 4] = (random() - 0.5) * 4;
     velData[i * 4 + 1] = (random() - 0.5) * 4;
     velData[i * 4 + 2] = (random() - 0.5) * 4;

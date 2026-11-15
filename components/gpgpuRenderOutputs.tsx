@@ -36,6 +36,8 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
     streakGeo,
     streakMat,
     volumetricMeshObj,
+    auxDrawGeo,
+    auxDrawMat,
   } = assets;
   const plan = getGpgpuRenderOutputPlan(config);
 
@@ -43,6 +45,9 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
     <>
       {plan.pointSprites && (
         <points geometry={drawGeo} material={drawMat} />
+      )}
+      {config.gpgpuAuxMode !== 'none' && (
+        <points geometry={auxDrawGeo} material={auxDrawMat} />
       )}
       {plan.instancedSolids && geomMeshObj && (
         <primitive object={geomMeshObj} />

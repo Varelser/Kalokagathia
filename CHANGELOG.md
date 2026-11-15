@@ -4,6 +4,64 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.6.0] — 2026-11-16
+
+Pro delivery rendering, a CPU fallback for weak machines, and the
+Kinetix integration (morph targets, colour gradients, event-driven
+Aux emission).
+
+### Added
+- **Pro-1 delivery renderer** — the deterministic renderer's cap rose
+  from 240 to 3,600 frames (1–30 s, 12/24/30/60 fps); ZIP sequence
+  export now streams in 600-frame parts with continuous frame
+  numbering across parts, video export is capped explicitly at 1,800
+  frames, and a warmup period (default 30 frames, stepped but not
+  captured) suppresses the ignition transient. Each part's
+  `render.json` manifest now records the app version, the actual
+  resolution, warmup frames, part numbering and the determinism
+  boundary.
+- **CPU fallback mode** — for machines where WebGL is unavailable or
+  software-rendered: a Canvas 2D renderer (up to 4,000 particles)
+  that reuses the deterministic CPU layouts and ports the attractor
+  ODEs, so a preset still reads as itself. Activates automatically
+  when a software renderer is detected, or manually from the Play
+  tab's GPU diagnostics; the WebGL canvas is not mounted while it is
+  active.
+- **Morph targets (Kinetix integration B1)** — a GPGPU attraction
+  force that pulls particles onto a target point cloud baked into a
+  float texture: 16 shapes (trefoil, torus knot, gyroid, klein,
+  hypercube, cymatic and more, plus text / image targets reusing the
+  existing media maps). Field symmetry sampling
+  (mirrorX / radial4 / radial6 / octahedral), seven new sprite
+  shapes, torus / cone geometry particles with an environment
+  reflection option, bell size curve, geometry spin and stretch.
+- **Colour gradients (B2, opt-in)** — a unified 3-point gradient
+  (start / mid / end) sampled through a 256 px LUT, with six drivers
+  (life / velocity / spatial / prism / image / blackbody) and
+  Kinetix's ten gradient presets carried over value-for-value. The
+  default look stays monochrome; colour is enabled explicitly.
+  Also: arbitrary background colour with five stage presets, a
+  radial-blur post pass, and an exposure + ACES output grade
+  (defaults reproduce the previous output exactly).
+- **Event-driven Aux emission (B3)** — a GPU Aux pool that emits on
+  particle death (deathBurst), on bounce (bounceSplash) or
+  continuously (sparkTrail); a pointer `paint` mouse-force mode;
+  lissajous / figure-8 emitter orbits; up to four attractor wells;
+  ridged / vortex curl fields; a gyroid SDF collider; GPGPU floor
+  bounce; named VEX deform presets; and a global time scale
+  (locked to 1 during deterministic renders).
+- **Kinetix preset pack (B4)** — all 26 Kinetix studio presets
+  converted into the starter library (481 presets total), and
+  curated mutation adjustments in the preset breeding mutator.
+
+### Fixed
+- **GPGPU age synchronisation** — initial particle ages were uniform,
+  so every particle respawned on the same frame and age-driven
+  colour pulsed across the whole field (~7 s period). Initial ages
+  are now scattered with the seeded RNG: age colour / size and
+  deathBurst now follow per-particle lifecycles. Verified on a real
+  GPU (iMac gate, all 14 cases plus the fix re-check PASS).
+
 ## [1.5.0] — 2026-11-14
 
 Phase 8 — OBS stream mode: a pure-picture player for live compositors.

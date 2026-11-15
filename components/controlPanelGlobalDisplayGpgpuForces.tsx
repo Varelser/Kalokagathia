@@ -2,6 +2,10 @@ import React from 'react';
 
 import { Slider, Toggle } from './controlPanelParts';
 import { CUSTOM_FORCE_EXAMPLE, useCustomForceStatus } from '../lib/gpgpuCustomForce';
+import { VEX_PRESETS } from '../lib/gpgpuVexPresets';
+import { KINETIX_COLOR_GRADIENTS, getKinetixGradientPreset } from '../lib/kinetixGradients';
+import { setModulationSetup, useModulationSetup } from '../lib/modulation';
+import type { ParticleConfig } from '../types';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
 
 export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
@@ -53,6 +57,35 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
         <>
           <Slider label="Strength" value={config.gpgpuCurlStrength} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuCurlStrength', v)} />
           <Slider label="Scale" value={config.gpgpuCurlScale} min={0.001} max={0.05} step={0.001} onChange={(v) => updateConfig('gpgpuCurlScale', v)} />
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Field Mode (場の型)</div>
+          <select
+            value={config.gpgpuCurlMode}
+            onChange={(e) => updateConfig('gpgpuCurlMode', e.target.value as typeof config.gpgpuCurlMode)}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="curl">Curl (従来のカール)</option>
+            <option value="ridged">Ridged (稜線状に尖る)</option>
+            <option value="vortex">Vortex (渦巻きを加える)</option>
+          </select>
+          <Slider label="Octaves (重ね)" value={config.gpgpuCurlOctaves} min={1} max={3} step={1} onChange={(v) => updateConfig('gpgpuCurlOctaves', Math.round(v))} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            場の型とオクターブ合成は Kinetix の noiseMode / turbulenceOctaves の移植です。Curl + 1オクターブが従来の場そのものです。
+          </div>
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Field Symmetry</div>
+          <select
+            value={config.gpgpuCurlSymmetry}
+            onChange={(e) => updateConfig('gpgpuCurlSymmetry', e.target.value as typeof config.gpgpuCurlSymmetry)}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="none">None (対称なし)</option>
+            <option value="mirrorX">Mirror X (Xミラー)</option>
+            <option value="radial4">Radial 4 (放射4分割)</option>
+            <option value="radial6">Radial 6 (放射6分割)</option>
+            <option value="octahedral">Octahedral (八面体)</option>
+          </select>
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            カール場のサンプリング座標を対称化します（Kinetix の対称サンプリングの移植）。粒子の位置や画面の対称とは別物で、場そのものが万華鏡状になります。
+          </div>
         </>
       )}
     </div>
@@ -171,6 +204,15 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <Slider label="Strength" value={config.gpgpuWellStrength} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuWellStrength', v)} />
           <Slider label="Softening" value={config.gpgpuWellSoftening} min={1} max={100} step={1} onChange={(v) => updateConfig('gpgpuWellSoftening', v)} />
           <Slider label="Orbit (tangential)" value={config.gpgpuWellOrbit} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuWellOrbit', v)} />
+          <Slider label="Well Count (ウェル数)" value={config.gpgpuWellCount} min={1} max={4} step={1} onChange={(v) => updateConfig('gpgpuWellCount', Math.round(v))} />
+          {config.gpgpuWellCount > 1 && (
+            <>
+              <Slider label="Well Spread (配置半径)" value={config.gpgpuWellSpread} min={10} max={300} step={5} onChange={(v) => updateConfig('gpgpuWellSpread', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                2〜4個のウェルがゆっくり回るリング上に並びます（Kinetix の多重ウェル）。1個が従来の中心ウェルです。
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
@@ -234,6 +276,45 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
       )}
     </div>
 
+    {/* Morph Targets (Kinetix integration B1a) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Morph Targets" value={config.gpgpuMorphEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphEnabled', v)} />
+      {config.gpgpuMorphEnabled && (
+        <>
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Target Shape</div>
+          <select
+            value={config.gpgpuMorphTarget}
+            onChange={(e) => updateConfig('gpgpuMorphTarget', e.target.value as typeof config.gpgpuMorphTarget)}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="trefoil">Trefoil (三つ葉結び)</option>
+            <option value="torusKnot">Torus Knot (3,5)</option>
+            <option value="galaxy">Galaxy (渦巻銀河)</option>
+            <option value="mobius">Möbius (メビウス帯)</option>
+            <option value="geodesic">Geodesic (測地ドーム)</option>
+            <option value="crown">Crown (王冠)</option>
+            <option value="blackhole">Black Hole (降着円盤+ジェット)</option>
+            <option value="klein">Klein Bottle (クラインの壺)</option>
+            <option value="cymatic">Cymatic (球面調和シェル)</option>
+            <option value="gyroid">Gyroid (ジャイロイド曲面)</option>
+            <option value="dnaRibbon">DNA Ribbon (二重螺旋)</option>
+            <option value="hypercube">Hypercube (4次元立方体)</option>
+            <option value="mandelbulb">Mandelbulb (点群近似)</option>
+            <option value="shell">Shell (オウムガイ)</option>
+            <option value="text">Text (レイヤー2のテキストマップ)</option>
+            <option value="image">Image (レイヤー2の画像マップ)</option>
+          </select>
+          <Slider label="Strength" value={config.gpgpuMorphStrength} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuMorphStrength', v)} />
+          <Slider label="Scale" value={config.gpgpuMorphScale} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScale', v)} />
+          <Slider label="Jitter" value={config.gpgpuMorphJitter} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphJitter', v)} />
+          <Slider label="Orbit Speed" value={config.gpgpuMorphOrbitSpeed} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphOrbitSpeed', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            各粒子に割り当てた形状点群へバネ引力で集めます（Kinetix モーフの GPGPU 再実装）。Text はレイヤー2のテキスト設定、Image はレイヤー2に読み込んだ画像マップを使います。
+          </div>
+        </>
+      )}
+    </div>
+
     {/* Verlet Integration */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Verlet Integration" value={config.gpgpuVerletEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuVerletEnabled', v)} />
@@ -247,14 +328,60 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <Toggle
             label="Shape"
             value={config.gpgpuSdfShape}
-            options={[{ label: 'Sphere', val: 'sphere' }, { label: 'Box', val: 'box' }, { label: 'Torus', val: 'torus' }, { label: 'Capsule', val: 'capsule' }]}
+            options={[{ label: 'Sphere', val: 'sphere' }, { label: 'Box', val: 'box' }, { label: 'Torus', val: 'torus' }, { label: 'Capsule', val: 'capsule' }, { label: 'Gyroid', val: 'gyroid' }]}
             onChange={(v) => updateConfig('gpgpuSdfShape', v)}
           />
+          {config.gpgpuSdfShape === 'gyroid' && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              Gyroid: ジャイロイド曲面（TPMS）の内側が固体になる迷路状コライダです（Kinetix の gyro）。Size が周期の大きさを決めます。
+            </div>
+          )}
           <Slider label="Size" value={config.gpgpuSdfSize} min={5} max={300} step={5} onChange={(v) => updateConfig('gpgpuSdfSize', v)} />
           <Slider label="Bounce" value={config.gpgpuSdfBounce} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuSdfBounce', v)} />
           <Slider label="Center X" value={config.gpgpuSdfX} min={-300} max={300} step={5} onChange={(v) => updateConfig('gpgpuSdfX', v)} />
           <Slider label="Center Y" value={config.gpgpuSdfY} min={-300} max={300} step={5} onChange={(v) => updateConfig('gpgpuSdfY', v)} />
           <Slider label="Center Z" value={config.gpgpuSdfZ} min={-300} max={300} step={5} onChange={(v) => updateConfig('gpgpuSdfZ', v)} />
+        </>
+      )}
+    </div>
+
+    {/* Floor Bounce (B3) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Floor Bounce (床)" value={config.gpgpuFloorEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuFloorEnabled', v)} />
+      {config.gpgpuFloorEnabled && (
+        <>
+          <Slider label="Floor Y" value={config.gpgpuFloorY} min={-400} max={100} step={5} onChange={(v) => updateConfig('gpgpuFloorY', v)} />
+          <Slider label="Restitution (反発)" value={config.gpgpuFloorBounce} min={0} max={1} step={0.02} onChange={(v) => updateConfig('gpgpuFloorBounce', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            GPGPU 粒子が水平な床で跳ね返ります（Kinetix floorBounce）。球境界だけだった GPGPU に床が増えます。
+          </div>
+        </>
+      )}
+    </div>
+
+    {/* Aux Event Emission (B3) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Aux Event Emission (イベント放出)</div>
+      <select
+        value={config.gpgpuAuxMode}
+        onChange={(e) => updateConfig('gpgpuAuxMode', e.target.value as typeof config.gpgpuAuxMode)}
+        className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+      >
+        <option value="none">None (なし)</option>
+        <option value="deathBurst">Death Burst (死亡時に飛沫)</option>
+        <option value="bounceSplash">Bounce Splash (バウンス時に飛沫)</option>
+        <option value="sparkTrail">Spark Trail (火花を落としながら進む)</option>
+      </select>
+      {config.gpgpuAuxMode !== 'none' && (
+        <>
+          <Slider label="Pool Count" value={config.gpgpuAuxCount} min={256} max={16384} step={256} onChange={(v) => updateConfig('gpgpuAuxCount', Math.round(v))} />
+          <Slider label="Intensity" value={config.gpgpuAuxIntensity} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAuxIntensity', v)} />
+          <Slider label="Aux Life (s)" value={config.gpgpuAuxLife} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAuxLife', v)} />
+          <Slider label="Aux Speed" value={config.gpgpuAuxSpeed} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuAuxSpeed', v)} />
+          <Slider label="Aux Size" value={config.gpgpuAuxSize} min={0.3} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuAuxSize', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            主粒子のイベントで二次粒子を放つ専用プールです（Kinetix auxMode の GPU 実装）。Death Burst は Life System が On のときだけ発火します。レイヤー側の Aux/Spark（常時型）とは別系統で併存します。
+          </div>
         </>
       )}
     </div>
@@ -276,13 +403,102 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
       )}
     </div>
 
+    {/* Kinetix Color gradient (B2, opt-in) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Kinetix Color Gradient" value={config.gpgpuGradEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGradEnabled', v)} />
+      {config.gpgpuGradEnabled && (
+        <>
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Driver</div>
+          <select
+            value={config.gpgpuGradDriver}
+            onChange={(e) => updateConfig('gpgpuGradDriver', e.target.value as typeof config.gpgpuGradDriver)}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="life">Life（寿命）</option>
+            <option value="velocity">Velocity（速度）</option>
+            <option value="spatial">Spatial（中心からの距離）</option>
+            <option value="prism">Prism（色相環）</option>
+            <option value="blackbody">Blackbody（黒体放射）</option>
+            <option value="image">Image（当面は Life 代替）</option>
+          </select>
+          <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Gradient Preset</div>
+          <select
+            value={config.gpgpuGradPreset}
+            onChange={(e) => {
+              const preset = getKinetixGradientPreset(e.target.value);
+              if (preset) {
+                updateConfig('gpgpuGradPreset', preset.id);
+                updateConfig('gpgpuGradStart', preset.start);
+                updateConfig('gpgpuGradMid', preset.mid);
+                updateConfig('gpgpuGradEnd', preset.end);
+              } else {
+                updateConfig('gpgpuGradPreset', 'custom');
+              }
+            }}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            {KINETIX_COLOR_GRADIENTS.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+            <option value="custom">Custom</option>
+          </select>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <div className="mb-1 text-[9px] opacity-60 uppercase tracking-widest">Start</div>
+              <input type="color" value={config.gpgpuGradStart} onChange={(e) => { updateConfig('gpgpuGradStart', e.target.value); updateConfig('gpgpuGradPreset', 'custom'); }} className="h-8 w-full cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
+            </div>
+            <div className="flex-1">
+              <div className="mb-1 text-[9px] opacity-60 uppercase tracking-widest">Mid</div>
+              <input type="color" value={config.gpgpuGradMid} onChange={(e) => { updateConfig('gpgpuGradMid', e.target.value); updateConfig('gpgpuGradPreset', 'custom'); }} className="h-8 w-full cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
+            </div>
+            <div className="flex-1">
+              <div className="mb-1 text-[9px] opacity-60 uppercase tracking-widest">End</div>
+              <input type="color" value={config.gpgpuGradEnd} onChange={(e) => { updateConfig('gpgpuGradEnd', e.target.value); updateConfig('gpgpuGradPreset', 'custom'); }} className="h-8 w-full cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
+            </div>
+          </div>
+          {config.gpgpuGradDriver === 'spatial' && (
+            <Slider label="Spatial Scale" value={config.gpgpuGradSpatialScale} min={0.001} max={0.05} step={0.001} onChange={(v) => updateConfig('gpgpuGradSpatialScale', v)} />
+          )}
+          {config.gpgpuGradDriver === 'prism' && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              Prism はグラデーション色を使わず、寿命と粒子ごとのシードで色相環を回します（Kinetix の prism と同義）。
+            </div>
+          )}
+          {config.gpgpuGradDriver === 'blackbody' && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              Blackbody はグラデーション色を使わず、寿命と速度から熱（煙→煤→深紅→橙→白熱）を近似します（Kinetix の黒体ランプと同値）。
+            </div>
+          )}
+        </>
+      )}
+      <div className="mt-3">
+        <Toggle
+          label="Blend Mode"
+          value={config.gpgpuBlendMode}
+          options={[{ label: 'Additive', val: 'additive' }, { label: 'Normal', val: 'normal' }]}
+          onChange={(v) => updateConfig('gpgpuBlendMode', v)}
+        />
+      </div>
+    </div>
+
     {/* Size over Lifetime */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Size over Lifetime" value={config.gpgpuAgeSizeEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuAgeSizeEnabled', v)} />
       {config.gpgpuAgeSizeEnabled && (
         <>
+          <Toggle
+            label="Curve"
+            value={config.gpgpuAgeSizeCurve}
+            options={[{ label: 'Linear', val: 'linear' }, { label: 'Bell', val: 'bell' }]}
+            onChange={(v) => updateConfig('gpgpuAgeSizeCurve', v)}
+          />
           <Slider label="Size at Birth" value={config.gpgpuAgeSizeStart} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuAgeSizeStart', v)} />
           <Slider label="Size at Death" value={config.gpgpuAgeSizeEnd} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuAgeSizeEnd', v)} />
+          {config.gpgpuAgeSizeCurve === 'bell' && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              Bell: 寿命の中間で「Size at Birth」の大きさまで膨らみ、両端では「Size at Death」の大きさになります（Kinetix の bell カーブ）。
+            </div>
+          )}
         </>
       )}
     </div>
@@ -295,11 +511,19 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <Toggle
             label="Mode"
             value={config.gpgpuMouseMode}
-            options={[{ label: 'Attract', val: 'attract' }, { label: 'Repel', val: 'repel' }, { label: 'Swirl', val: 'swirl' }]}
+            options={[{ label: 'Attract', val: 'attract' }, { label: 'Repel', val: 'repel' }, { label: 'Swirl', val: 'swirl' }, { label: 'Paint', val: 'paint' }]}
             onChange={(v) => updateConfig('gpgpuMouseMode', v)}
           />
           <Slider label="Strength" value={config.gpgpuMouseStrength} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuMouseStrength', v)} />
           <Slider label="Radius" value={config.gpgpuMouseRadius} min={10} max={500} step={10} onChange={(v) => updateConfig('gpgpuMouseRadius', v)} />
+          {config.gpgpuMouseMode === 'paint' && (
+            <>
+              <Slider label="Paint Rate (描く量)" value={config.gpgpuMousePaintRate} min={0.05} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMousePaintRate', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                Paint: ポインタ位置から粒子が湧き出します（Kinetix の pointer paint）。プールの一部が毎ティック、ブラシ位置へ再放出されます。Strength が初速、Radius がブラシの広がりです。
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
@@ -329,6 +553,9 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
 
     {/* Custom GLSL Force */}
     <CustomForceBlock config={config} updateConfig={updateConfig} />
+
+    {/* Simple LFO (B3, Kinetix-style single-target view of the modulation engine) */}
+    <SimpleLfoBlock />
   </>
 );
 
@@ -352,6 +579,22 @@ const CustomForceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, u
             className="mt-2 w-full rounded bg-black/40 border border-white/15 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40"
             placeholder={'// 例: vel.y += sin(pos.x * 0.05 + uTime) * 20.0 * uDelta;'}
           />
+          <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">VEX Deform Presets (名前付き変形)</div>
+          <div className="flex flex-wrap gap-2">
+            {VEX_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => { setDraft(preset.code); updateConfig('gpgpuCustomForceCode', preset.code); }}
+                title={preset.description}
+                className="px-3 py-1.5 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            Kinetix の VEX 変形4種を Custom Force のプリセットとして読み込みます（押すと即適用）。変形先の位置へ速度を寄せる方式で、他のフォースと併用できます。
+          </div>
           <div className="mt-2 flex items-center gap-2">
             <button
               onClick={() => updateConfig('gpgpuCustomForceCode', draft)}
@@ -372,6 +615,67 @@ const CustomForceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, u
           {status.state === 'error' && (
             <p className="mt-2 text-[10px] leading-relaxed text-red-300/90">適用できませんでした（前のシェーダを維持しています）: {status.message}</p>
           )}
+        </>
+      )}
+    </div>
+  );
+};
+
+// Simple LFO (Kinetix integration B3): Kinetix exposes its modulator
+// as one target + speed + amount. The modulation engine underneath is
+// Kalokagathia's own (LFO x4 routed to any catalogued parameter); this
+// block is only the single-target view of it — it owns one route
+// (id below) on LFO 0 with a sine wave, and never touches other routes.
+const SIMPLE_LFO_ROUTE_ID = 'kinetix-simple-lfo';
+const SIMPLE_LFO_TARGETS: { value: keyof ParticleConfig; label: string }[] = [
+  { value: 'gpgpuTurbulence', label: 'Turbulence' },
+  { value: 'gpgpuVortexStrength', label: 'Swirl (Vortex Strength)' },
+  { value: 'gpgpuMorphStrength', label: 'Morph Strength' },
+  { value: 'gpgpuSize', label: 'Particle Size' },
+  { value: 'gpgpuWellStrength', label: 'Attractor (Well Strength)' },
+];
+
+const SimpleLfoBlock: React.FC = () => {
+  const setup = useModulationSetup();
+  const route = setup.routes.find((r) => r.id === SIMPLE_LFO_ROUTE_ID);
+  const lfo = setup.lfos[0] ?? { waveform: 'sine' as const, rate: 0.5 };
+  const enabled = !!route;
+  const write = (next: { target?: keyof ParticleConfig; rate?: number; depth?: number; on?: boolean }) => {
+    const on = next.on ?? enabled;
+    const routes = setup.routes.filter((r) => r.id !== SIMPLE_LFO_ROUTE_ID);
+    if (on) {
+      routes.push({
+        id: SIMPLE_LFO_ROUTE_ID,
+        source: { kind: 'lfo', index: 0 },
+        target: next.target ?? route?.target ?? 'gpgpuTurbulence',
+        depth: next.depth ?? route?.depth ?? 0.35,
+      });
+    }
+    const lfos = setup.lfos.slice();
+    while (lfos.length < 4) lfos.push({ waveform: 'sine', rate: 0.5 });
+    lfos[0] = { waveform: 'sine', rate: next.rate ?? lfo.rate };
+    setModulationSetup({ ...setup, enabled: on ? true : setup.enabled, lfos, routes });
+  };
+  return (
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Simple LFO (簡易LFO)" value={enabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => write({ on: v })} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        1つのパラメータを正弦波で揺らす簡易版です（Kinetix の LFO の見せ方）。実体はモジュレーション基盤の LFO 0 + 専用ルートで、Play タブの詳細なルーティングと併存します。
+      </div>
+      {enabled && route && (
+        <>
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Target</div>
+          <select
+            value={route.target}
+            onChange={(e) => write({ target: e.target.value as keyof ParticleConfig })}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            {SIMPLE_LFO_TARGETS.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+          <Slider label="Rate (Hz)" value={lfo.rate} min={0.05} max={3} step={0.05} onChange={(v) => write({ rate: v })} />
+          <Slider label="Amount (深さ)" value={route.depth} min={0} max={1} step={0.01} onChange={(v) => write({ depth: v })} />
         </>
       )}
     </div>

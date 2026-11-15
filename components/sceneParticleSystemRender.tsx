@@ -37,6 +37,8 @@ function ParticleGeometry({ geomMode3D, data }: { geomMode3D: string; data: Part
   if (geomMode3D === 'cube') return <boxGeometry args={[1, 1, 1]}>{attrs}</boxGeometry>;
   if (geomMode3D === 'tetra') return <tetrahedronGeometry args={[0.7]}>{attrs}</tetrahedronGeometry>;
   if (geomMode3D === 'icosa') return <icosahedronGeometry args={[0.72]}>{attrs}</icosahedronGeometry>;
+  if (geomMode3D === 'torus') return <torusGeometry args={[0.62, 0.26, 10, 20]}>{attrs}</torusGeometry>;
+  if (geomMode3D === 'cone') return <coneGeometry args={[0.55, 1.0, 16]}>{attrs}</coneGeometry>;
   return <planeGeometry args={[1, 1]}>{attrs}</planeGeometry>;
 }
 

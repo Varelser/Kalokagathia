@@ -3,6 +3,7 @@ import type { ParticleConfig } from '../types';
 export const APP_STATE_DEFAULT_VIEW_DISPLAY: Partial<ParticleConfig> = {
   // View & Camera
   viewMode: 'perspective',
+  timeScale: 1,
   cameraControlMode: 'hybrid',
   renderQuality: 'balanced',
   autoLod: false,
@@ -25,6 +26,7 @@ export const APP_STATE_DEFAULT_VIEW_DISPLAY: Partial<ParticleConfig> = {
   particleGlow: 0.2,
   particleColor: 'white',
   backgroundColor: 'black',
+  backgroundHex: '',
 
   // Screen FX
   screenScanlineIntensity: 0.0,

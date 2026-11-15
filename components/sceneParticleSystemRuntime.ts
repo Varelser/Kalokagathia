@@ -5,6 +5,7 @@ export type {
 } from './sceneParticleSystemRuntimeTypes';
 
 import * as THREE from 'three';
+import { scaleFrameDelta } from '../lib/playbackTime';
 import type { UpdateParticleSystemFrameArgs } from './sceneParticleSystemRuntimeTypes';
 import { getLayerRuntimeParticleVisualSnapshot } from '../lib/sceneRenderRouting';
 import { applyParticleAudioUniforms } from './sceneParticleSystemRuntimeAudio';
@@ -34,7 +35,10 @@ export const updateParticleSystemFrame = ({
   if (!meshRef.current) return;
 
   const mat = meshRef.current.material as THREE.ShaderMaterial;
-  if (isPlaying) mat.uniforms.uTime.value += delta;
+  // Global time scale (B3): layer clocks advance by the scaled delta in
+  // realtime playback (negative values run the layer motion backwards);
+  // the deterministic renderer locks the scale to 1 during exports.
+  if (isPlaying) mat.uniforms.uTime.value += scaleFrameDelta(delta, config);
 
   applyParticleAudioUniforms(mat, config, audioRef, prevAudioEnabledRef);
 

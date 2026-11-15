@@ -78,6 +78,7 @@ export function resolveParticleLayerUniformState(
     burstConeWidth: 0.4,
     emitterOrbitSpeed: 0,
     emitterOrbitRadius: 0,
+    emitterOrbitPath: 0,
     emitterPulseAmount: 0,
     trailDrag: 0,
     trailTurbulence: 0,
@@ -181,6 +182,7 @@ export function resolveParticleLayerUniformState(
     next.burstConeWidth = p.burstConeWidth;
     next.emitterOrbitSpeed = p.emitterOrbitSpeed;
     next.emitterOrbitRadius = p.emitterOrbitRadius;
+    next.emitterOrbitPath = p.emitterOrbitPath;
     next.emitterPulseAmount = p.emitterPulseAmount;
     next.trailDrag = p.trailDrag;
     next.trailTurbulence = p.trailTurbulence;
@@ -210,7 +212,7 @@ export function resolveParticleLayerUniformState(
 }
 
 export function buildParticleLayerKey(state: ParticleLayerUniformState) {
-  return `${state.chainType2},${state.chainType3},${state.graphSteps.map((v) => `${v.x},${v.y},${v.z},${v.w}`).join(',')},${state.dagNodes.map((v) => `${v.x},${v.y},${v.z},${v.w}`).join(',')},${state.dagMotions.join(',')},${state.dagOutput},${state.routeType},${state.routeChainType2},${state.routeChainType3},${state.routeSpeed},${state.routeAmp},${state.routeFreq},${state.routeNoise},${state.routeComplexity},${state.routeEvol},${state.routeFluid},${state.routeVis},${state.routeFid},${state.routeOct},${state.routeWind.x},${state.routeWind.y},${state.routeWind.z},${state.speed},${state.amp},${state.freq},${state.noise},${state.complexity},${state.evol},${state.fid},${state.oct},${state.rad},${state.size},${state.grav},${state.vis},${state.fluid},${state.affectPos},${state.resistance},${state.moveWithWind},${state.neighborForce},${state.collisionMode},${state.collisionRadius},${state.repulsion},${state.trail},${state.life},${state.lifeSpread},${state.lifeSizeBoost},${state.lifeSizeTaper},${state.burst},${state.burstPhase},${state.burstMode},${state.burstWaveform},${state.burstSweepSpeed},${state.burstSweepTilt},${state.burstConeWidth},${state.emitterOrbitSpeed},${state.emitterOrbitRadius},${state.emitterPulseAmount},${state.trailDrag},${state.trailTurbulence},${state.trailDrift},${state.velocityGlow},${state.velocityAlpha},${state.flickerAmount},${state.flickerSpeed},${state.streak},${state.spriteMode},${state.auxLife},${state.mouseForce},${state.mouseRadius},${state.wind.x},${state.wind.y},${state.wind.z},${state.spin.x},${state.spin.y},${state.spin.z},${state.boundaryY},${state.boundaryEnabled},${state.boundaryBounce},${state.warpEnabled},${state.warpAmount},${state.warpScale}`;
+  return `${state.chainType2},${state.chainType3},${state.graphSteps.map((v) => `${v.x},${v.y},${v.z},${v.w}`).join(',')},${state.dagNodes.map((v) => `${v.x},${v.y},${v.z},${v.w}`).join(',')},${state.dagMotions.join(',')},${state.dagOutput},${state.routeType},${state.routeChainType2},${state.routeChainType3},${state.routeSpeed},${state.routeAmp},${state.routeFreq},${state.routeNoise},${state.routeComplexity},${state.routeEvol},${state.routeFluid},${state.routeVis},${state.routeFid},${state.routeOct},${state.routeWind.x},${state.routeWind.y},${state.routeWind.z},${state.speed},${state.amp},${state.freq},${state.noise},${state.complexity},${state.evol},${state.fid},${state.oct},${state.rad},${state.size},${state.grav},${state.vis},${state.fluid},${state.affectPos},${state.resistance},${state.moveWithWind},${state.neighborForce},${state.collisionMode},${state.collisionRadius},${state.repulsion},${state.trail},${state.life},${state.lifeSpread},${state.lifeSizeBoost},${state.lifeSizeTaper},${state.burst},${state.burstPhase},${state.burstMode},${state.burstWaveform},${state.burstSweepSpeed},${state.burstSweepTilt},${state.burstConeWidth},${state.emitterOrbitSpeed},${state.emitterOrbitRadius},${state.emitterOrbitPath},${state.emitterPulseAmount},${state.trailDrag},${state.trailTurbulence},${state.trailDrift},${state.velocityGlow},${state.velocityAlpha},${state.flickerAmount},${state.flickerSpeed},${state.streak},${state.spriteMode},${state.auxLife},${state.mouseForce},${state.mouseRadius},${state.wind.x},${state.wind.y},${state.wind.z},${state.spin.x},${state.spin.y},${state.spin.z},${state.boundaryY},${state.boundaryEnabled},${state.boundaryBounce},${state.warpEnabled},${state.warpAmount},${state.warpScale}`;
 }
 
 export function applyParticleLayerUniforms(
@@ -294,6 +296,7 @@ export function applyParticleLayerUniforms(
   mat.uniforms.uBurstConeWidth.value = state.burstConeWidth;
   mat.uniforms.uEmitterOrbitSpeed.value = state.emitterOrbitSpeed;
   mat.uniforms.uEmitterOrbitRadius.value = state.emitterOrbitRadius;
+  if (mat.uniforms.uEmitterOrbitPath) mat.uniforms.uEmitterOrbitPath.value = state.emitterOrbitPath;
   mat.uniforms.uEmitterPulseAmount.value = state.emitterPulseAmount;
   mat.uniforms.uTrailDrag.value = state.trailDrag;
   mat.uniforms.uTrailTurbulence.value = state.trailTurbulence;

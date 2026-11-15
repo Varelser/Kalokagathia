@@ -12,6 +12,8 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
     if      (config.gpgpuGeomMode === 'cube')  baseGeo = new THREE.BoxGeometry(1, 1, 1);
     else if (config.gpgpuGeomMode === 'tetra') baseGeo = new THREE.TetrahedronGeometry(0.8);
     else if (config.gpgpuGeomMode === 'icosa') baseGeo = new THREE.IcosahedronGeometry(0.82);
+    else if (config.gpgpuGeomMode === 'torus') baseGeo = new THREE.TorusGeometry(0.68, 0.27, 10, 20);
+    else if (config.gpgpuGeomMode === 'cone')  baseGeo = new THREE.ConeGeometry(0.6, 1.05, 20);
     else                                        baseGeo = new THREE.OctahedronGeometry(0.7);
     if (baseGeo.index) geo.setIndex(baseGeo.index);
     geo.setAttribute('position', baseGeo.attributes.position);
@@ -35,6 +37,10 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       uOpacity:      { value: config.gpgpuOpacity },
       uGeomScale:    { value: config.gpgpuBounceRadius * 0.02 },
       uVelocityAlign:{ value: 0 },
+      uTime:         { value: 0 },
+      uSpinSpeed:    { value: 0 },
+      uMeshStretch:  { value: 0 },
+      uEnvReflect:   { value: 0 },
     },
     vertexShader: GEOM_VERT, fragmentShader: GEOM_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,

@@ -80,7 +80,7 @@ export const Layer1TabContent: React.FC<ControlPanelContentProps> = ({ config, l
         <Toggle label="SDF Shape Mode" value={config.layer1SdfEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('layer1SdfEnabled', v)} />
         {config.layer1SdfEnabled && (
           <>
-            <Toggle label="Shape" value={config.layer1SdfShape} options={[{ label: 'Sphere', val: 'sphere' }, { label: 'Ring', val: 'ring' }, { label: 'Star', val: 'star' }, { label: 'Hex', val: 'hexagon' }]} onChange={(v) => updateConfig('layer1SdfShape', v)} />
+            <Toggle label="Shape" value={config.layer1SdfShape} options={[{ label: 'Sphere', val: 'sphere' }, { label: 'Ring', val: 'ring' }, { label: 'Star', val: 'star' }, { label: 'Hex', val: 'hexagon' }, { label: 'Diamond', val: 'diamond' }, { label: 'Flare', val: 'flare' }, { label: 'Cloud', val: 'cloud' }, { label: 'Bokeh', val: 'bokeh' }, { label: 'Crosshair', val: 'crosshair' }, { label: 'Iris', val: 'iris' }, { label: 'Lightning', val: 'lightning' }]} onChange={(v) => updateConfig('layer1SdfShape', v)} />
             <Slider label="Specular" value={config.layer1SdfSpecular} min={0} max={3} step={0.05} onChange={(v) => updateConfig('layer1SdfSpecular', v)} />
             <Slider label="Shininess" value={config.layer1SdfShininess} min={1} max={64} step={1} onChange={(v) => updateConfig('layer1SdfShininess', v)} />
             <Slider label="Ambient" value={config.layer1SdfAmbient} min={0} max={1} step={0.01} onChange={(v) => updateConfig('layer1SdfAmbient', v)} />

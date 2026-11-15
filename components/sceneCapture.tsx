@@ -33,7 +33,7 @@ export const ScreenshotManager: React.FC<{ config: ParticleConfig; saveTrigger: 
       scene.background = null;
       gl.setClearColor(0x000000, 0);
     } else {
-      const bgColor = new THREE.Color(cfg.backgroundColor);
+      const bgColor = new THREE.Color(cfg.backgroundHex || cfg.backgroundColor);
       scene.background = bgColor;
       gl.setClearColor(bgColor, 1);
     }

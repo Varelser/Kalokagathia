@@ -24,7 +24,7 @@ export const PARTICLE_VERTEX_SHADER = `
   uniform float uViscosity; uniform float uFluidForce;
     uniform float uResistance; uniform float uMoveWithWind; uniform float uNeighborForce;
     uniform float uCollisionMode; uniform float uCollisionRadius; uniform float uRepulsion;
-    uniform float uTrail; uniform float uLife; uniform float uLifeSpread; uniform float uLifeSizeBoost; uniform float uLifeSizeTaper; uniform float uBurst; uniform float uBurstPhase; uniform float uBurstMode; uniform float uBurstWaveform; uniform float uBurstSweepSpeed; uniform float uBurstSweepTilt; uniform float uBurstConeWidth; uniform float uEmitterOrbitSpeed; uniform float uEmitterOrbitRadius; uniform float uEmitterPulseAmount; uniform float uTrailDrag; uniform float uTrailTurbulence; uniform float uTrailDrift; uniform float uVelocityGlow; uniform float uVelocityAlpha; uniform float uFlickerAmount; uniform float uFlickerSpeed; uniform float uStreak; uniform float uSpriteMode; uniform float uAuxLife; uniform float uIsAux;
+    uniform float uTrail; uniform float uLife; uniform float uLifeSpread; uniform float uLifeSizeBoost; uniform float uLifeSizeTaper; uniform float uBurst; uniform float uBurstPhase; uniform float uBurstMode; uniform float uBurstWaveform; uniform float uBurstSweepSpeed; uniform float uBurstSweepTilt; uniform float uBurstConeWidth; uniform float uEmitterOrbitSpeed; uniform float uEmitterOrbitRadius; uniform float uEmitterOrbitPath; uniform float uEmitterPulseAmount; uniform float uTrailDrag; uniform float uTrailTurbulence; uniform float uTrailDrift; uniform float uVelocityGlow; uniform float uVelocityAlpha; uniform float uFlickerAmount; uniform float uFlickerSpeed; uniform float uStreak; uniform float uSpriteMode; uniform float uAuxLife; uniform float uIsAux;
   uniform float uAffectPos; uniform vec2 uMouse; uniform float uMouseForce;
   uniform float uMouseRadius; uniform float uIsOrthographic;
         uniform float uInterLayerEnabled; uniform int uInterLayerColliderCount; uniform vec4 uInterLayerColliders[MAX_INTER_LAYER_COLLIDERS]; uniform float uInterLayerStrength; uniform float uInterLayerPadding;
@@ -56,6 +56,23 @@ export const PARTICLE_VERTEX_SHADER = `
     pos += tearDir * amp * uAudioShatter * tearMask * mix(0.02, 0.16, variant);
     return pos;
   }
+  // Emitter orbit paths (Kinetix integration B3): path 0 is the exact
+  // legacy circular offset. Paths 1/2 re-implement Kinetix's
+  // EmitterMotion trajectories with w = phase * 1.8 (Kinetix runs its
+  // emitter angle at t * speed * 1.8): lissajous =
+  // (sin(1.5w), cos(w) * 0.65, sin(2w) * 0.7), figure8 =
+  // (sin(w), sin(2w) * 0.45, cos(w) * 0.5), each scaled by the radius.
+  vec3 emitterOrbitOffsetFor(float phase, float path, float radius) {
+    if (path > 1.5) {
+      float w = phase * 1.8;
+      return vec3(sin(w), sin(w * 2.0) * 0.45, cos(w) * 0.5) * radius;
+    }
+    if (path > 0.5) {
+      float w = phase * 1.8;
+      return vec3(sin(w * 1.5), cos(w) * 0.65, sin(w * 2.0) * 0.7) * radius;
+    }
+    return vec3(cos(phase), sin(phase * 0.5) * 0.25, sin(phase)) * radius;
+  }
   void main() {
     vUv = uv; float aPhase = aData1.x; float aRandom = aData1.y; float aMotionType = aData1.z;
     float aBaseRadiusFactor = aData1.w; float aSpeedFactor = aData2.x; float aAmpFactor = aData2.y;
@@ -85,8 +102,8 @@ export const PARTICLE_VERTEX_SHADER = `
       animatedOffset = rotate(animatedOffset, vec3(0.0, 1.0, 0.0), emitterOrbitPhase);
       prevAnimatedOffset = rotate(prevAnimatedOffset, vec3(0.0, 1.0, 0.0), prevEmitterOrbitPhase);
     }
-    vec3 emitterOrbitOffset = vec3(cos(emitterOrbitPhase), sin(emitterOrbitPhase * 0.5) * 0.25, sin(emitterOrbitPhase)) * uEmitterOrbitRadius;
-    vec3 prevEmitterOrbitOffset = vec3(cos(prevEmitterOrbitPhase), sin(prevEmitterOrbitPhase * 0.5) * 0.25, sin(prevEmitterOrbitPhase)) * uEmitterOrbitRadius;
+    vec3 emitterOrbitOffset = emitterOrbitOffsetFor(emitterOrbitPhase, uEmitterOrbitPath, uEmitterOrbitRadius);
+    vec3 prevEmitterOrbitOffset = emitterOrbitOffsetFor(prevEmitterOrbitPhase, uEmitterOrbitPath, uEmitterOrbitRadius);
     animatedOffset += emitterOrbitOffset;
     prevAnimatedOffset += prevEmitterOrbitOffset;
 

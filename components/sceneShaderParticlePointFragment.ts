@@ -1,3 +1,5 @@
+import { PARTICLE_SHAPE_GLSL } from './particleShapeGlsl';
+
 export const FRAGMENT_SHADER = `
   precision highp float;
   varying float vAlpha;
@@ -49,6 +51,12 @@ export const FRAGMENT_SHADER = `
     q -= vec2(clamp(q.x, -k.y * r, k.y * r), r);
     return length(q) * sign(q.y);
   }
+
+  // Shared sprite shape masks (Kinetix integration B1b): kinds 5..11
+  // (diamond / flare / cloud / bokeh / crosshair / iris / lightning)
+  // are used by the uSdfShape >= 4 branch below; kinds are offset by
+  // +1 from the uSdfShape ids (see particleShapeGlsl.ts).
+  ${PARTICLE_SHAPE_GLSL}
 
   vec3 rgb2hsv(vec3 c) {
     vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
@@ -112,6 +120,16 @@ export const FRAGMENT_SHADER = `
     // SDF shape + pseudo-3D lighting
     if (uSdfEnabled > 0.5) {
       vec2 p = vUv - 0.5; // [-0.5, 0.5]
+      if (uSdfShape >= 4) {
+        // Kinetix shape set (B1b): mask-based sprites without the
+        // pseudo-3D lighting (they are flat graphic shapes). The +1
+        // converts the uSdfShape id to the shared shape-kind id.
+        float shapeMask = particleShapeMask(uSdfShape + 1, p * 2.0, vVariant);
+        if (shapeMask < 0.01) discard;
+        alpha = clamp(vAlpha * shapeMask * velocityAlpha * flicker, 0.0, 1.0);
+        gl_FragColor = vec4(finalColor, alpha);
+        return;
+      }
       float sdfDist;
       if (uSdfShape == 1) {
         // ring

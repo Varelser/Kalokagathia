@@ -109,7 +109,14 @@ import {
   type NoiseSourceId,
 } from '../lib/modulation';
 import { buildPresetVector, cosineSimilarity, projectPresetsTo2D } from '../lib/presetSimilarity';
-import { MAX_DETERMINISTIC_FRAMES, renderDeterministicSequence, renderDeterministicVideo } from '../lib/deterministicRender';
+import {
+  DEFAULT_WARMUP_FRAMES,
+  MAX_DETERMINISTIC_FRAMES,
+  MAX_DETERMINISTIC_VIDEO_FRAMES,
+  renderDeterministicSequence,
+  renderDeterministicVideo,
+  type DeterministicSequencePart,
+} from '../lib/deterministicRender';
 import { VideoEncodeUnsupportedError, type VideoFormat } from '../lib/videoEncode';
 import { closeCleanOutput, isCleanOutputOpen, openCleanOutput } from '../lib/cleanOutput';
 import { collectGpuDiagnostics, type GpuDiagnosticsReport } from '../lib/gpuDiagnostics';
@@ -120,6 +127,7 @@ import {
   type GpuTier,
 } from '../lib/gpuTier';
 import { useGpuTierInfo } from '../lib/useGpuTierInfo';
+import { setCpuFallbackSetting, useCpuFallback, type CpuFallbackSetting } from '../lib/cpuFallback';
 import { getRaymarchDefaults } from '../lib/raymarchDefaults';
 import { getMaxGpgpuTexSize } from '../lib/gpuTier';
 import { generatePromptDrafts, type PromptDraft } from '../lib/promptPreset';
@@ -2979,6 +2987,7 @@ const GpuDiagnosticsSection: React.FC<{
   const [running, setRunning] = React.useState(false);
   const [lightened, setLightened] = React.useState(false);
   const tierInfo = useGpuTierInfo();
+  const cpuFallback = useCpuFallback();
   const tierRaymarchDefaults = getRaymarchDefaults(tierInfo.tier);
   const tierGpgpuCap = getMaxGpgpuTexSize(tierInfo.tier);
 
@@ -3058,6 +3067,39 @@ const GpuDiagnosticsSection: React.FC<{
           >
             再検出
           </button>
+        </div>
+        <div className="space-y-1.5 border-t border-white/10 pt-2.5">
+          <div className="flex items-baseline justify-between gap-3 text-[11px]">
+            <span className="shrink-0 text-white/40">CPUフォールバック</span>
+            <span className="text-right text-white/80">
+              {cpuFallback.active ? '有効（CPU表示中）' : '無効'}
+              {cpuFallback.active && cpuFallback.fps !== null && (
+                <span className="text-white/40"> · {cpuFallback.fps} fps / {cpuFallback.particleCount?.toLocaleString()} 粒子</span>
+              )}
+            </span>
+          </div>
+          <p className="text-[11px] leading-relaxed text-white/40">
+            WebGL が実質使えない弱いマシン向けの軽量表示です（Canvas 2D、上限4,000粒子、運動は近似）。「自動」ではソフトウェア描画の検出時に切り替わります。
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            {([
+              { value: 'auto', label: '自動' },
+              { value: 'on', label: 'ON（強制）' },
+              { value: 'off', label: 'OFF' },
+            ] as Array<{ value: CpuFallbackSetting; label: string }>).map((option) => {
+              const isActive = cpuFallback.setting === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setCpuFallbackSetting(option.value)}
+                  className={`rounded-full border px-2.5 py-1 text-[10px] transition ${isActive ? 'border-amber-200/50 bg-amber-200/15 text-amber-100' : 'border-white/15 bg-white/5 text-white/65 hover:bg-white/10'}`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
       <button
@@ -4442,13 +4484,25 @@ const KeyboardShortcutsSection: React.FC = () => (
   </section>
 );
 
+// App version handed to the deterministic renderer for its render.json
+// manifest. Keep in sync with package.json "version" (the renderer must
+// not import package.json, so the UI supplies it — see PRO1_BRIEF.md).
+const KALOKAGATHIA_APP_VERSION = '1.6.0';
+
 const DeterministicRenderControls: React.FC = () => {
   const [seconds, setSeconds] = React.useState(3);
   const [fps, setFps] = React.useState(24);
   const [format, setFormat] = React.useState<'zip' | VideoFormat>('zip');
   const [renderStatus, setRenderStatus] = React.useState('');
   const [rendering, setRendering] = React.useState(false);
-  const frames = Math.min(MAX_DETERMINISTIC_FRAMES, Math.max(1, Math.round(seconds * fps)));
+  const requestedFrames = Math.max(1, Math.round(seconds * fps));
+  const isVideo = format !== 'zip';
+  // ZIP parts stream out of memory, so the sequence path takes the full
+  // cap; the video path collects every frame for the encoder and is
+  // capped lower (stated in the UI below).
+  const frameCap = isVideo ? MAX_DETERMINISTIC_VIDEO_FRAMES : MAX_DETERMINISTIC_FRAMES;
+  const frames = Math.min(frameCap, requestedFrames);
+  const capped = frames < requestedFrames;
 
   const download = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
@@ -4465,20 +4519,42 @@ const DeterministicRenderControls: React.FC = () => {
     setRenderStatus('決定的レンダリングを開始します…');
     try {
       if (format === 'zip') {
-        const zip = await renderDeterministicSequence({ fps, frames }, (done, total) => {
-          setRenderStatus(`レンダリング中… ${done} / ${total} フレーム`);
-        });
-        download(zip, 'monosphere-frames.zip');
+        let partTotal = 1;
+        const downloadPart = (part: DeterministicSequencePart) => {
+          partTotal = part.partCount;
+          download(
+            part.blob,
+            part.partCount > 1 ? `monosphere-frames-part${part.part}-of-${part.partCount}.zip` : 'monosphere-frames.zip',
+          );
+          setRenderStatus(
+            part.partCount > 1
+              ? `パート ${part.part} / ${part.partCount} をダウンロードしました（フレーム ${part.firstFrame + 1}〜${part.firstFrame + part.frames}）。残りをレンダリング中…`
+              : 'ZIP をダウンロードしました。',
+          );
+        };
+        await renderDeterministicSequence(
+          { fps, frames, warmupFrames: DEFAULT_WARMUP_FRAMES, appVersion: KALOKAGATHIA_APP_VERSION },
+          (done, total) => {
+            setRenderStatus(`レンダリング中… ${done} / ${total} フレーム`);
+          },
+          downloadPart,
+        );
         setRenderStatus(
-          `${frames} フレームを ZIP に書き出しました（${fps}fps 固定ステップ）。ffmpeg -framerate ${fps} -i frame-%04d.png などで動画化できます。`,
+          partTotal > 1
+            ? `${frames} フレームを ${partTotal} 個の ZIP パートに分けて書き出しました（${fps}fps 固定ステップ・ウォームアップ ${DEFAULT_WARMUP_FRAMES} フレーム）。各パートのフレーム番号は通し番号なので、同じフォルダに展開すれば1本の連番になります。ffmpeg -framerate ${fps} -i frame-%04d.png などで動画化できます。`
+            : `${frames} フレームを ZIP に書き出しました（${fps}fps 固定ステップ・ウォームアップ ${DEFAULT_WARMUP_FRAMES} フレーム）。ffmpeg -framerate ${fps} -i frame-%04d.png などで動画化できます。`,
         );
       } else {
-        const video = await renderDeterministicVideo({ fps, frames }, format, (done, total) => {
-          setRenderStatus(`レンダリング／エンコード中… ${done} / ${total} フレーム`);
-        });
+        const video = await renderDeterministicVideo(
+          { fps, frames, warmupFrames: DEFAULT_WARMUP_FRAMES, appVersion: KALOKAGATHIA_APP_VERSION },
+          format,
+          (done, total) => {
+            setRenderStatus(`レンダリング／エンコード中… ${done} / ${total} フレーム`);
+          },
+        );
         download(video, `monosphere-render.${format}`);
         setRenderStatus(
-          `${frames} フレームを ${format.toUpperCase()} 動画に書き出しました（${fps}fps 固定ステップ・フレーム時刻ちょうど）。`,
+          `${frames} フレームを ${format.toUpperCase()} 動画に書き出しました（${fps}fps 固定ステップ・フレーム時刻ちょうど・ウォームアップ ${DEFAULT_WARMUP_FRAMES} フレーム）。`,
         );
       }
     } catch (error) {
@@ -4498,10 +4574,13 @@ const DeterministicRenderControls: React.FC = () => {
       <p className="text-[11px] leading-relaxed text-white/45">
         シーンを初期状態に組み直し、時計を 0 に戻して、1フレーム = 1/{fps} 秒の固定ステップで進めながら PNG 連番を書き出します。機械の速さに依存せず、フレーム i は常にシミュレーション時刻 (i+1)/{fps} 秒の絵になります（通常の動画書き出しは実時間録画のため再現しません）。GPGPU の初期状態はシードで決まります。時間で動くオーバーレイ（テンポラルプロファイル／モジュレーション／音反応）は再現の範囲外なので、厳密な再現が必要なときは切ってください。GPUシミュレーションの粒子単位の完全一致は GPU の浮動小数点の決定性にも依存します（ソフトウェアGL環境では形状・個数・タイミングが一致しても粒子単位で数%ずれることを確認済み）。
       </p>
-      <Slider label="Seconds · 長さ（秒）" value={seconds} min={1} max={8} step={1} onChange={setSeconds} />
+      <p className="text-[11px] leading-relaxed text-white/45">
+        書き出しは現在のキャンバス解像度で行われます（解像度プリセットは未対応。実解像度は各 ZIP の render.json に記録されます）。撮影前に点火直後の過渡をやり過ごすため、最初の {DEFAULT_WARMUP_FRAMES} フレームは撮影せずにステップだけ進めます（ウォームアップ。フレーム i のシミュレーション時刻は ({DEFAULT_WARMUP_FRAMES}+i+1)/{fps} 秒になります）。PNG連番（ZIP）は最大 {MAX_DETERMINISTIC_FRAMES} フレームまで、600フレームごとにパート分割して順次ダウンロードします。動画（WebM／MP4）は全フレームをメモリに保持するため最大 {MAX_DETERMINISTIC_VIDEO_FRAMES} フレームまでです{capped ? `（現在の設定は上限で ${frames} フレームに制限されています）` : ''}。
+      </p>
+      <Slider label="Seconds · 長さ（秒）" value={seconds} min={1} max={30} step={1} onChange={setSeconds} />
       <div className="flex items-center gap-2">
         <span className="text-[11px] text-white/50">FPS</span>
-        {([12, 24, 30] as const).map((option) => (
+        {([12, 24, 30, 60] as const).map((option) => (
           <button
             key={option}
             onClick={() => setFps(option)}
@@ -4678,22 +4757,37 @@ const PerformanceSection: React.FC<{
     try {
       onApplyConfig(take.base);
       const fps = 30;
-      const frames = Math.min(MAX_DETERMINISTIC_FRAMES, Math.max(1, Math.ceil((take.durationMs / 1000) * fps)));
-      const zip = await renderDeterministicSequence(
+      const requestedFrames = Math.max(1, Math.ceil((take.durationMs / 1000) * fps));
+      const frames = Math.min(MAX_DETERMINISTIC_FRAMES, requestedFrames);
+      const truncated = frames < requestedFrames;
+      // The renderer's applyAt receives stepped-clock time including the
+      // warmup; offset by the warmup so captured frame i still applies the
+      // take at its own (i+1)/fps (warmup steps land at t <= 0, i.e. the
+      // take's initial config — the base applied above).
+      const warmupSeconds = DEFAULT_WARMUP_FRAMES / fps;
+      let partTotal = 1;
+      await renderDeterministicSequence(
         {
           fps,
           frames,
-          applyAt: (tSec: number) => onApplyConfig(reconstructInterpolatedAt(take, tSec * 1000)),
+          warmupFrames: DEFAULT_WARMUP_FRAMES,
+          appVersion: KALOKAGATHIA_APP_VERSION,
+          applyAt: (tSec: number) => onApplyConfig(reconstructInterpolatedAt(take, Math.max(0, (tSec - warmupSeconds) * 1000))),
         },
         (done, total) => setExportNote(`決定論的書き出し中 ${done}/${total}`),
+        (part) => {
+          partTotal = part.partCount;
+          const url = URL.createObjectURL(part.blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = part.partCount > 1
+            ? `kalokagathia_take_frames_part${part.part}-of-${part.partCount}_${Date.now()}.zip`
+            : `kalokagathia_take_frames_${Date.now()}.zip`;
+          a.click();
+          URL.revokeObjectURL(url);
+        },
       );
-      const url = URL.createObjectURL(zip);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `kalokagathia_take_frames_${Date.now()}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setExportNote(`決定論的書き出しが完了しました（${frames} フレーム / 30fps${frames >= MAX_DETERMINISTIC_FRAMES ? '、上限で打ち切り' : ''}）`);
+      setExportNote(`決定論的書き出しが完了しました（${frames} フレーム / 30fps${partTotal > 1 ? `、${partTotal} パートに分割` : ''}${truncated ? `、上限 ${MAX_DETERMINISTIC_FRAMES} フレームで打ち切り` : ''}）`);
     } catch {
       setExportNote('決定論的書き出しに失敗しました');
     } finally {

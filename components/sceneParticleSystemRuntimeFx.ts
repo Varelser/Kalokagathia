@@ -44,7 +44,19 @@ export function applyParticleSdfUniforms(
   const sdfShin = layerIndex === 1 ? config.layer1SdfShininess : sdfSnapshot ? sdfSnapshot.shininess : config.sdfSpecularShininess;
   const sdfAmb = layerIndex === 1 ? config.layer1SdfAmbient : sdfSnapshot ? sdfSnapshot.ambient : config.sdfAmbientLight;
   mat.uniforms.uSdfEnabled.value = sdfOn ? 1 : 0;
-  mat.uniforms.uSdfShape.value = sdfShape === 'ring' ? 1 : sdfShape === 'star' ? 2 : sdfShape === 'hexagon' ? 3 : 0;
+  // Shape ids in the point fragment shader: 0 sphere / 1 ring / 2 star /
+  // 3 hexagon (lit SDF path), 4..10 the Kinetix mask shapes (B1b).
+  mat.uniforms.uSdfShape.value = sdfShape === 'ring' ? 1
+    : sdfShape === 'star' ? 2
+    : sdfShape === 'hexagon' ? 3
+    : sdfShape === 'diamond' ? 4
+    : sdfShape === 'flare' ? 5
+    : sdfShape === 'cloud' ? 6
+    : sdfShape === 'bokeh' ? 7
+    : sdfShape === 'crosshair' ? 8
+    : sdfShape === 'iris' ? 9
+    : sdfShape === 'lightning' ? 10
+    : 0;
   mat.uniforms.uSdfLight.value.set(sdfLX, sdfLY);
   mat.uniforms.uSdfSpecular.value = sdfSpec;
   mat.uniforms.uSdfShininess.value = sdfShin;
@@ -77,6 +89,11 @@ export function applyParticleGhostUniforms(
       gm.uniforms.uAudioTrebleMotion.value = mat.uniforms.uAudioTrebleMotion.value;
       gm.uniforms.uTime.value = mainTime - (i + 1) * ghostDt;
       gm.uniforms.uOpacity.value = mainOpacity * Math.pow(ghostFade, i + 1);
+      // Ghost copies must follow the same emitter orbit path (B3) or
+      // their time-offset positions would trace the legacy circle.
+      if (gm.uniforms.uEmitterOrbitPath && mat.uniforms.uEmitterOrbitPath) {
+        gm.uniforms.uEmitterOrbitPath.value = mat.uniforms.uEmitterOrbitPath.value;
+      }
     } else {
       gm.uniforms.uOpacity.value = 0;
     }

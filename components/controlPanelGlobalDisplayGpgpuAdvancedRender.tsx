@@ -13,13 +13,39 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
       <Toggle
         label="Geometry Mode"
         value={config.gpgpuGeomMode}
-        options={[{ label: 'Point', val: 'point' }, { label: 'Cube', val: 'cube' }, { label: 'Tetra', val: 'tetra' }, { label: 'Octa', val: 'octa' }, { label: 'Icosa', val: 'icosa' }]}
+        options={[{ label: 'Point', val: 'point' }, { label: 'Cube', val: 'cube' }, { label: 'Tetra', val: 'tetra' }, { label: 'Octa', val: 'octa' }, { label: 'Icosa', val: 'icosa' }, { label: 'Torus', val: 'torus' }, { label: 'Cone', val: 'cone' }]}
         onChange={(v) => updateConfig('gpgpuGeomMode', v)}
       />
+      {config.gpgpuGeomMode === 'point' && (
+        <>
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Point Shape</div>
+          <select
+            value={config.gpgpuPointShape}
+            onChange={(e) => updateConfig('gpgpuPointShape', e.target.value as typeof config.gpgpuPointShape)}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="soft">Soft (従来のグロー)</option>
+            <option value="sphere">Sphere</option>
+            <option value="ring">Ring</option>
+            <option value="star">Star</option>
+            <option value="hexagon">Hexagon</option>
+            <option value="diamond">Diamond</option>
+            <option value="flare">Flare</option>
+            <option value="cloud">Cloud</option>
+            <option value="bokeh">Bokeh</option>
+            <option value="crosshair">Crosshair</option>
+            <option value="iris">Iris</option>
+            <option value="lightning">Lightning</option>
+          </select>
+        </>
+      )}
       {config.gpgpuGeomMode !== 'point' && (
         <>
           <Slider label="Geom Scale" value={config.gpgpuGeomScale} min={0.1} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuGeomScale', v)} />
           <Toggle label="Velocity Align" value={config.gpgpuGeomVelocityAlign} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGeomVelocityAlign', v)} />
+          <Slider label="Env Reflect (Crystal)" value={config.gpgpuGeomEnvReflect} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGeomEnvReflect', v)} />
+          <Slider label="Spin Speed" value={config.gpgpuGeomSpinSpeed} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuGeomSpinSpeed', v)} />
+          <Slider label="Mesh Stretch" value={config.gpgpuGeomStretch} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuGeomStretch', v)} />
         </>
       )}
     </div>

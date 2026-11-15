@@ -126,6 +126,7 @@ export function getLayerRuntimeParticleFieldSnapshot(config: ParticleConfig, lay
     burstConeWidth: layerIndex === 2 ? config.layer2BurstConeWidth : config.layer3BurstConeWidth,
     emitterOrbitSpeed: layerIndex === 2 ? config.layer2EmitterOrbitSpeed : config.layer3EmitterOrbitSpeed,
     emitterOrbitRadius: layerIndex === 2 ? config.layer2EmitterOrbitRadius : config.layer3EmitterOrbitRadius,
+    emitterOrbitPath: (layerIndex === 2 ? config.layer2EmitterOrbitPath : config.layer3EmitterOrbitPath) === 'lissajous' ? 1 : (layerIndex === 2 ? config.layer2EmitterOrbitPath : config.layer3EmitterOrbitPath) === 'figure8' ? 2 : 0,
     emitterPulseAmount: layerIndex === 2 ? config.layer2EmitterPulseAmount : config.layer3EmitterPulseAmount,
     trailDrag: layerIndex === 2 ? config.layer2TrailDrag : config.layer3TrailDrag,
     trailTurbulence: layerIndex === 2 ? config.layer2TrailTurbulence : config.layer3TrailTurbulence,

@@ -215,11 +215,30 @@ export function estimateLayerPositionApprox({
   const orbitPhase = time * Math.max(0, orbitSpeed);
   const emitterPulse = 1 + Math.sin(time * Math.max(0.05, orbitSpeed || 0.5) * 1.6 + phase) * emitterPulseAmount;
   const animatedOffset = offset.clone().multiplyScalar(emitterPulse).applyAxisAngle(upAxis, orbitPhase);
-  animatedOffset.add(new THREE.Vector3(
-    Math.cos(orbitPhase) * orbitRadius,
-    Math.sin(orbitPhase * 0.5) * orbitRadius * 0.25,
-    Math.sin(orbitPhase) * orbitRadius,
-  ));
+  // Emitter orbit path (B3): mirrors the vertex shader — 'orbit' is
+  // the legacy circle, lissajous/figure8 use Kinetix's trajectories.
+  const orbitPath = isLayer2 ? config.layer2EmitterOrbitPath : config.layer3EmitterOrbitPath;
+  if (orbitPath === 'figure8') {
+    const w = orbitPhase * 1.8;
+    animatedOffset.add(new THREE.Vector3(
+      Math.sin(w) * orbitRadius,
+      Math.sin(w * 2) * orbitRadius * 0.45,
+      Math.cos(w) * orbitRadius * 0.5,
+    ));
+  } else if (orbitPath === 'lissajous') {
+    const w = orbitPhase * 1.8;
+    animatedOffset.add(new THREE.Vector3(
+      Math.sin(w * 1.5) * orbitRadius,
+      Math.cos(w) * orbitRadius * 0.65,
+      Math.sin(w * 2) * orbitRadius * 0.7,
+    ));
+  } else {
+    animatedOffset.add(new THREE.Vector3(
+      Math.cos(orbitPhase) * orbitRadius,
+      Math.sin(orbitPhase * 0.5) * orbitRadius * 0.25,
+      Math.sin(orbitPhase) * orbitRadius,
+    ));
+  }
 
   const position = base.clone().add(animatedOffset);
   // Domain warp mirror: same two-octave noise displacement at the stack

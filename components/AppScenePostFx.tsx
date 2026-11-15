@@ -7,6 +7,8 @@ import { getOrderedActivePostFxStageIds } from '../lib/postFxStack';
 import { FeedbackPass } from './feedbackPass';
 import { KaleidoscopePass } from './kaleidoscopePass';
 import { SlitScanPass } from './slitScanPass';
+import { RadialBlurPass } from './radialBlurPass';
+import { OutputGradePass } from './outputGradePass';
 
 export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config }) => {
   const orderedPostFxStages = React.useMemo(() => getOrderedActivePostFxStageIds(config), [config]);
@@ -23,6 +25,13 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   React.useEffect(() => () => slitScanPass.dispose(), [slitScanPass]);
   slitScanPass.bands = config.postSlitScanBands;
   slitScanPass.cycle = config.postSlitScanCycle;
+  const radialBlurPass = React.useMemo(() => new RadialBlurPass(), []);
+  React.useEffect(() => () => radialBlurPass.dispose(), [radialBlurPass]);
+  radialBlurPass.strength = config.postRadialBlurStrength;
+  const outputGradePass = React.useMemo(() => new OutputGradePass(), []);
+  React.useEffect(() => () => outputGradePass.dispose(), [outputGradePass]);
+  outputGradePass.exposure = config.postExposure;
+  outputGradePass.aces = config.postToneMapping === 'aces';
 
   if (orderedPostFxStages.length === 0) {
     return null;
@@ -94,6 +103,10 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
             return <primitive key={stage} object={slitScanPass} />;
           case 'feedback':
             return <primitive key={stage} object={feedbackPass} />;
+          case 'radial-blur':
+            return <primitive key={stage} object={radialBlurPass} />;
+          case 'output-grade':
+            return <primitive key={stage} object={outputGradePass} />;
           default:
             return null;
         }

@@ -1,5 +1,6 @@
 import type { ParticleConfig } from '../types';
 import { normalizeConfig } from './appStateConfigNormalization';
+import { KINETIX_COLOR_GRADIENTS } from './kinetixGradients';
 
 /**
  * Preset breeding (roadmap Phase 7B).
@@ -89,9 +90,57 @@ export function breedConfigs(
 }
 
 /**
+ * Curated interference adjustments (Kinetix integration B4, after
+ * Kinetix's mutateParams). Plain numeric mutation can leave a GPGPU
+ * config in combinations that fight each other; Kinetix's curated
+ * randomizer avoids that by adjusting coupled fields together. The
+ * same rules run here as a post-pass over mutated GPGPU configs:
+ *
+ * - Morph x field symmetry: a morph target owns the shape, so the
+ *   curl-field symmetry is cleared (Kinetix forces symmetryMode
+ *   'none' and a static emitter whenever a morph is chosen).
+ * - deathBurst x Life System: the B3 aux pool detects death on the
+ *   age wrap, so a deathBurst config without the Life System gets it
+ *   switched on — otherwise the burst can never fire.
+ * - Palette coherence: gradient colours are never left as three
+ *   independently drifted stops; with probability 0.65 they snap to
+ *   one whole Kinetix gradient palette (Kinetix always re-picks a
+ *   single palette for start/mid/end together).
+ *
+ * Layer-only configs are untouched, and the seeded RNG keeps the
+ * whole mutation reproducible as before.
+ */
+export function applyCuratedAdjustments(
+  out: Record<string, unknown>,
+  rng: Rng,
+): void {
+  if (out.gpgpuEnabled !== true) return;
+  if (out.gpgpuMorphEnabled === true && out.gpgpuCurlSymmetry !== 'none') {
+    out.gpgpuCurlSymmetry = 'none';
+  }
+  if (out.gpgpuAuxMode === 'deathBurst' && out.gpgpuAgeEnabled !== true) {
+    out.gpgpuAgeEnabled = true;
+    if (typeof out.gpgpuAgeMax !== 'number' || (out.gpgpuAgeMax as number) <= 0) {
+      out.gpgpuAgeMax = 4;
+    }
+  }
+  if (out.gpgpuGradEnabled === true && rng() < 0.65) {
+    const palette = KINETIX_COLOR_GRADIENTS[Math.floor(rng() * KINETIX_COLOR_GRADIENTS.length)];
+    if (palette) {
+      out.gpgpuGradStart = palette.start;
+      out.gpgpuGradMid = palette.mid;
+      out.gpgpuGradEnd = palette.end;
+      out.gpgpuGradPreset = palette.id;
+    }
+  }
+}
+
+/**
  * Perturb a fraction of the numeric fields of a config.
  * `amount` is a relative perturbation (0.1 = up to ±10%); probability is
  * the chance that any given numeric field is perturbed at all.
+ * GPGPU configs then pass through the curated interference
+ * adjustments above before normalization.
  */
 export function mutateConfig(
   config: ParticleConfig,
@@ -114,6 +163,7 @@ export function mutateConfig(
       out[key] = value.map((item) => perturb(item as number));
     }
   });
+  applyCuratedAdjustments(out, rng);
   return normalizeConfig(out as Partial<ParticleConfig>);
 }
 

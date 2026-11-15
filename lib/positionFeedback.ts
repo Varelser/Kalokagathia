@@ -41,7 +41,7 @@ const SHARED_UNIFORM_KEYS = [
   'uCollisionRadius', 'uRepulsion', 'uGravity', 'uBoundaryY', 'uBoundaryEnabled',
   'uBoundaryBounce', 'uInterLayerEnabled', 'uInterLayerColliderCount',
   'uInterLayerColliders', 'uInterLayerStrength', 'uInterLayerPadding',
-  'uEmitterOrbitSpeed', 'uEmitterOrbitRadius', 'uEmitterPulseAmount',
+  'uEmitterOrbitSpeed', 'uEmitterOrbitRadius', 'uEmitterOrbitPath', 'uEmitterPulseAmount',
   'uMotionChainType2', 'uMotionChainType3', 'uMotionRouteType',
   'uMotionRouteChainType2', 'uMotionRouteChainType3', 'uRouteSpeed', 'uRouteAmp',
   'uRouteFreq', 'uRouteWind', 'uRouteNoiseScale', 'uRouteEvolution',
@@ -72,7 +72,7 @@ const SIM_FRAGMENT = /* glsl */ `
   uniform float uInterLayerEnabled; uniform int uInterLayerColliderCount;
   uniform vec4 uInterLayerColliders[MAX_INTER_LAYER_COLLIDERS];
   uniform float uInterLayerStrength; uniform float uInterLayerPadding;
-  uniform float uEmitterOrbitSpeed; uniform float uEmitterOrbitRadius; uniform float uEmitterPulseAmount;
+  uniform float uEmitterOrbitSpeed; uniform float uEmitterOrbitRadius; uniform float uEmitterOrbitPath; uniform float uEmitterPulseAmount;
   uniform sampler2D uFbDataA; uniform sampler2D uFbDataB; uniform sampler2D uFbDataC; uniform sampler2D uFbDataD;
   uniform sampler2D uFbPrev;
   uniform float uFeedback; uniform float uFeedbackDecay; uniform float uFeedbackInit;
@@ -97,7 +97,19 @@ const SIM_FRAGMENT = /* glsl */ `
     if (uEmitterOrbitRadius > 0.0 || length(off0.xz) > 0.001) {
       animatedOffset = rotate(animatedOffset, vec3(0.0, 1.0, 0.0), emitterOrbitPhase);
     }
-    animatedOffset += vec3(cos(emitterOrbitPhase), sin(emitterOrbitPhase * 0.5) * 0.25, sin(emitterOrbitPhase)) * uEmitterOrbitRadius;
+    // Emitter orbit path (B3): mirrors emitterOrbitOffsetFor in the
+    // layer vertex shader so feedback positions match the drawn ones.
+    vec3 fbOrbitOffset;
+    if (uEmitterOrbitPath > 1.5) {
+      float fbW = emitterOrbitPhase * 1.8;
+      fbOrbitOffset = vec3(sin(fbW), sin(fbW * 2.0) * 0.45, cos(fbW) * 0.5) * uEmitterOrbitRadius;
+    } else if (uEmitterOrbitPath > 0.5) {
+      float fbW = emitterOrbitPhase * 1.8;
+      fbOrbitOffset = vec3(sin(fbW * 1.5), cos(fbW) * 0.65, sin(fbW * 2.0) * 0.7) * uEmitterOrbitRadius;
+    } else {
+      fbOrbitOffset = vec3(cos(emitterOrbitPhase), sin(emitterOrbitPhase * 0.5) * 0.25, sin(emitterOrbitPhase)) * uEmitterOrbitRadius;
+    }
+    animatedOffset += fbOrbitOffset;
     vec3 evaluated = calculateLayerPosition(
       srcPos, animatedOffset, motionType, uTime,
       speed, amp, freq, radius,

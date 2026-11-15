@@ -9,16 +9,21 @@ export type PostFxStageId =
   | 'vignette'
   | 'kaleidoscope'
   | 'slit-scan'
-  | 'feedback';
+  | 'feedback'
+  | 'radial-blur'
+  | 'output-grade';
 
 export type PostFxStackProfile = ParticleConfig['postFxStackProfile'];
 
+// 'radial-blur' (B2) sits with the other spatial lens stages, after
+// depth-of-field; 'output-grade' (B2) is always the final stage so
+// exposure / ACES grade the finished frame.
 const STACK_ORDERS: Record<PostFxStackProfile, PostFxStageId[]> = {
-  manual: ['brightness-contrast', 'noise', 'bloom', 'chromatic-aberration', 'depth-of-field', 'vignette', 'kaleidoscope', 'slit-scan', 'feedback'],
-  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'vignette', 'depth-of-field', 'kaleidoscope', 'slit-scan', 'feedback'],
-  'particular-glow': ['brightness-contrast', 'bloom', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'kaleidoscope', 'slit-scan', 'feedback'],
-  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'depth-of-field', 'kaleidoscope', 'slit-scan', 'feedback'],
-  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'chromatic-aberration', 'noise', 'vignette', 'kaleidoscope', 'slit-scan', 'feedback'],
+  manual: ['brightness-contrast', 'noise', 'bloom', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
+  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
+  'particular-glow': ['brightness-contrast', 'bloom', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
+  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
+  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
 };
 
 export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[] {
@@ -49,6 +54,14 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   }
   if (config.postFeedbackEnabled) {
     active.add('feedback');
+  }
+  if (config.postRadialBlurEnabled && config.postRadialBlurStrength > 0.001) {
+    active.add('radial-blur');
+  }
+  // Output grade only exists when it would change a pixel: exposure
+  // other than 1.0 or the ACES curve selected. Defaults keep it off.
+  if (Math.abs(config.postExposure - 1.0) > 0.001 || config.postToneMapping === 'aces') {
+    active.add('output-grade');
   }
   return Array.from(active);
 }

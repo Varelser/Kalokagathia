@@ -96,6 +96,10 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
           <Slider label="Seed" value={config.gpgpuSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuSeed', v)} />
           <Slider label="Particle Size" value={config.gpgpuSize} min={0.5} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuSize', v)} />
           <Slider label="Speed" value={config.gpgpuSpeed} min={0.1} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuSpeed', v)} />
+          <Slider label="Time Scale (全体)" value={config.timeScale} min={-2} max={3} step={0.05} onChange={(v) => updateConfig('timeScale', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            レイヤーと GPGPU の時間の進み方を全体で拡縮します（Kinetix timeScale）。負値で逆再生。決定論的レンダー書き出し中は自動で 1 に固定されます。
+          </div>
           <Slider label="Opacity" value={config.gpgpuOpacity} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuOpacity', v)} />
           <div className="mb-4">
             <div className="mb-2 text-[10px] uppercase tracking-widest font-medium opacity-70">GPGPU Color</div>

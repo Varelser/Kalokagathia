@@ -129,6 +129,7 @@ export function runSimulationPasses(args: {
   velSimMat: THREE.ShaderMaterial;
   posSimMat: THREE.ShaderMaterial;
   initPosTex: THREE.Texture | null;
+  morphTex: THREE.Texture | null;
   prevPosTex: THREE.Texture | null;
   webgpuState: WebGPUComputeState | null;
   webgpuPosTex: THREE.DataTexture | null;
@@ -153,6 +154,7 @@ export function runSimulationPasses(args: {
     velSimMat,
     posSimMat,
     initPosTex,
+    morphTex,
     prevPosTex,
     webgpuState,
     webgpuPosTex,
@@ -202,6 +204,9 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uCurlEnabled.value = config.gpgpuCurlEnabled;
   velSimMat.uniforms.uCurlStrength.value = config.gpgpuCurlStrength;
   velSimMat.uniforms.uCurlScale.value = config.gpgpuCurlScale;
+  velSimMat.uniforms.uCurlSymmetry.value = { none: 0, mirrorX: 1, radial4: 2, radial6: 3, octahedral: 4 }[config.gpgpuCurlSymmetry] ?? 0;
+  velSimMat.uniforms.uCurlMode.value = { curl: 0, ridged: 1, vortex: 2 }[config.gpgpuCurlMode] ?? 0;
+  velSimMat.uniforms.uCurlOctaves.value = Math.max(1, Math.min(3, Math.round(config.gpgpuCurlOctaves)));
   velSimMat.uniforms.uBoidsEnabled.value = config.gpgpuBoidsEnabled;
   velSimMat.uniforms.uBoidsSeparation.value = config.gpgpuBoidsSeparation;
   velSimMat.uniforms.uBoidsAlignment.value = config.gpgpuBoidsAlignment;
@@ -237,6 +242,8 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uWellStrength.value = config.gpgpuWellStrength;
   velSimMat.uniforms.uWellSoftening.value = config.gpgpuWellSoftening;
   velSimMat.uniforms.uWellOrbit.value = config.gpgpuWellOrbit;
+  velSimMat.uniforms.uWellCount.value = Math.max(1, Math.min(4, Math.round(config.gpgpuWellCount)));
+  velSimMat.uniforms.uWellSpread.value = config.gpgpuWellSpread;
   velSimMat.uniforms.uElasticEnabled.value = config.gpgpuElasticEnabled;
   velSimMat.uniforms.uElasticStrength.value = config.gpgpuElasticStrength;
   velSimMat.uniforms.uMagneticEnabled.value = config.gpgpuMagneticEnabled;
@@ -256,18 +263,27 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uSpringEnabled.value = config.gpgpuSpringEnabled;
   velSimMat.uniforms.uSpringStrength.value = config.gpgpuSpringStrength;
   velSimMat.uniforms.uInitPosTex.value = initPosTex;
+  velSimMat.uniforms.uMorphEnabled.value = config.gpgpuMorphEnabled && !!morphTex;
+  velSimMat.uniforms.uMorphTex.value = morphTex;
+  velSimMat.uniforms.uMorphStrength.value = config.gpgpuMorphStrength;
+  velSimMat.uniforms.uMorphOrbitSpeed.value = config.gpgpuMorphOrbitSpeed;
+  velSimMat.uniforms.uSpeed.value = config.gpgpuSpeed;
   velSimMat.uniforms.uSdfEnabled.value = config.gpgpuSdfEnabled;
-  velSimMat.uniforms.uSdfShape.value = config.gpgpuSdfShape === 'sphere' ? 0 : config.gpgpuSdfShape === 'box' ? 1 : config.gpgpuSdfShape === 'torus' ? 2 : 3;
+  velSimMat.uniforms.uSdfShape.value = SDF_SHAPE_IDS[config.gpgpuSdfShape] ?? 0;
   velSimMat.uniforms.uSdfX.value = config.gpgpuSdfX;
   velSimMat.uniforms.uSdfY.value = config.gpgpuSdfY;
   velSimMat.uniforms.uSdfZ.value = config.gpgpuSdfZ;
   velSimMat.uniforms.uSdfSize.value = config.gpgpuSdfSize;
   velSimMat.uniforms.uSdfBounce.value = config.gpgpuSdfBounce;
+  velSimMat.uniforms.uFloorEnabled.value = config.gpgpuFloorEnabled;
+  velSimMat.uniforms.uFloorY.value = config.gpgpuFloorY;
+  velSimMat.uniforms.uFloorBounce.value = config.gpgpuFloorBounce;
   velSimMat.uniforms.uMouseEnabled.value = config.gpgpuMouseEnabled;
   velSimMat.uniforms.uMousePos.value.copy(mouseWorld);
   velSimMat.uniforms.uMouseStrength.value = config.gpgpuMouseStrength;
   velSimMat.uniforms.uMouseRadius.value = config.gpgpuMouseRadius;
-  velSimMat.uniforms.uMouseMode.value = config.gpgpuMouseMode === 'attract' ? 0 : config.gpgpuMouseMode === 'repel' ? 1 : 2;
+  velSimMat.uniforms.uMouseMode.value = MOUSE_MODE_IDS[config.gpgpuMouseMode] ?? 0;
+  velSimMat.uniforms.uMousePaintRate.value = config.gpgpuMousePaintRate;
   simMesh.material = velSimMat;
   gl.setRenderTarget(velOut);
   gl.render(simScene, simCamera);
@@ -275,6 +291,7 @@ export function runSimulationPasses(args: {
   posSimMat.uniforms.uPosTex.value = posIn.texture;
   posSimMat.uniforms.uVelTex.value = velOut.texture;
   posSimMat.uniforms.uDelta.value = dt;
+  posSimMat.uniforms.uTime.value = time;
   posSimMat.uniforms.uSpeed.value = config.gpgpuSpeed;
   posSimMat.uniforms.uBounceRadius.value = config.gpgpuBounceRadius;
   posSimMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled;
@@ -282,13 +299,135 @@ export function runSimulationPasses(args: {
   posSimMat.uniforms.uVerletEnabled.value = config.gpgpuVerletEnabled;
   posSimMat.uniforms.uPrevPosTex.value = prevPosTex;
   posSimMat.uniforms.uSdfEnabled.value = config.gpgpuSdfEnabled;
-  posSimMat.uniforms.uSdfShape.value = config.gpgpuSdfShape === 'sphere' ? 0 : config.gpgpuSdfShape === 'box' ? 1 : config.gpgpuSdfShape === 'torus' ? 2 : 3;
+  posSimMat.uniforms.uSdfShape.value = SDF_SHAPE_IDS[config.gpgpuSdfShape] ?? 0;
   posSimMat.uniforms.uSdfX.value = config.gpgpuSdfX;
   posSimMat.uniforms.uSdfY.value = config.gpgpuSdfY;
   posSimMat.uniforms.uSdfZ.value = config.gpgpuSdfZ;
   posSimMat.uniforms.uSdfSize.value = config.gpgpuSdfSize;
   posSimMat.uniforms.uSdfBounce.value = config.gpgpuSdfBounce;
+  posSimMat.uniforms.uFloorEnabled.value = config.gpgpuFloorEnabled;
+  posSimMat.uniforms.uFloorY.value = config.gpgpuFloorY;
+  posSimMat.uniforms.uMouseEnabled.value = config.gpgpuMouseEnabled;
+  posSimMat.uniforms.uMousePos.value.copy(mouseWorld);
+  posSimMat.uniforms.uMouseRadius.value = config.gpgpuMouseRadius;
+  posSimMat.uniforms.uMouseMode.value = MOUSE_MODE_IDS[config.gpgpuMouseMode] ?? 0;
+  posSimMat.uniforms.uMousePaintRate.value = config.gpgpuMousePaintRate;
   simMesh.material = posSimMat;
   gl.setRenderTarget(posOut);
+  gl.render(simScene, simCamera);
+}
+
+const SDF_SHAPE_IDS: Record<ParticleConfig['gpgpuSdfShape'], number> = {
+  sphere: 0,
+  box: 1,
+  torus: 2,
+  capsule: 3,
+  gyroid: 4,
+};
+
+const MOUSE_MODE_IDS: Record<ParticleConfig['gpgpuMouseMode'], number> = {
+  attract: 0,
+  repel: 1,
+  swirl: 2,
+  paint: 3,
+};
+
+const AUX_MODE_IDS: Record<Exclude<ParticleConfig['gpgpuAuxMode'], 'none'>, number> = {
+  deathBurst: 0,
+  bounceSplash: 1,
+  sparkTrail: 2,
+};
+
+// Aux event emission passes (B3): run after the main velocity/position
+// passes, reading the main pool's frame-start textures (posIn/velIn —
+// the death position and contact velocities of this frame) and the aux
+// pool's own ping-pong pair. The caller flips the aux ping-pong and
+// points the aux draw material at the outputs.
+export function runAuxSimulationPasses(args: {
+  config: ParticleConfig;
+  texSize: number;
+  dt: number;
+  time: number;
+  simMesh: THREE.Mesh;
+  gl: THREE.WebGLRenderer;
+  simScene: THREE.Scene;
+  simCamera: THREE.Camera;
+  mainPosTex: THREE.Texture;
+  mainVelTex: THREE.Texture;
+  auxPosIn: THREE.WebGLRenderTarget;
+  auxPosOut: THREE.WebGLRenderTarget;
+  auxVelIn: THREE.WebGLRenderTarget;
+  auxVelOut: THREE.WebGLRenderTarget;
+  auxVelMat: THREE.ShaderMaterial;
+  auxPosMat: THREE.ShaderMaterial;
+}): void {
+  const {
+    config,
+    texSize,
+    dt,
+    time,
+    simMesh,
+    gl,
+    simScene,
+    simCamera,
+    mainPosTex,
+    mainVelTex,
+    auxPosIn,
+    auxPosOut,
+    auxVelIn,
+    auxVelOut,
+    auxVelMat,
+    auxPosMat,
+  } = args;
+
+  if (config.gpgpuAuxMode === 'none') return;
+  const modeId = AUX_MODE_IDS[config.gpgpuAuxMode] ?? 0;
+  const auxCount = Math.max(0, Math.min(16384, Math.round(config.gpgpuAuxCount)));
+
+  const velU = auxVelMat.uniforms;
+  velU.uAuxPosTex.value = auxPosIn.texture;
+  velU.uAuxVelTex.value = auxVelIn.texture;
+  velU.uMainPosTex.value = mainPosTex;
+  velU.uMainVelTex.value = mainVelTex;
+  velU.uMainTexSizeF.value = texSize;
+  velU.uAuxCount.value = auxCount;
+  velU.uAuxMode.value = modeId;
+  velU.uAuxIntensity.value = config.gpgpuAuxIntensity;
+  velU.uAuxSpeed.value = config.gpgpuAuxSpeed;
+  velU.uAuxLife.value = config.gpgpuAuxLife;
+  velU.uAgeEnabled.value = config.gpgpuAgeEnabled;
+  velU.uAgeMax.value = config.gpgpuAgeMax;
+  velU.uFloorEnabled.value = config.gpgpuFloorEnabled;
+  velU.uFloorY.value = config.gpgpuFloorY;
+  velU.uFloorBounce.value = config.gpgpuFloorBounce;
+  velU.uBounceRadius.value = config.gpgpuBounceRadius;
+  velU.uBounce.value = config.gpgpuBounce;
+  velU.uGravity.value = config.gpgpuGravity;
+  velU.uDelta.value = dt;
+  velU.uTime.value = time;
+  simMesh.material = auxVelMat;
+  gl.setRenderTarget(auxVelOut);
+  gl.render(simScene, simCamera);
+
+  const posU = auxPosMat.uniforms;
+  posU.uAuxPosTex.value = auxPosIn.texture;
+  posU.uAuxVelTex.value = auxVelIn.texture;
+  posU.uAuxVelOutTex.value = auxVelOut.texture;
+  posU.uMainPosTex.value = mainPosTex;
+  posU.uMainVelTex.value = mainVelTex;
+  posU.uMainTexSizeF.value = texSize;
+  posU.uAuxCount.value = auxCount;
+  posU.uAuxMode.value = modeId;
+  posU.uAuxIntensity.value = config.gpgpuAuxIntensity;
+  posU.uAuxSpeed.value = config.gpgpuAuxSpeed;
+  posU.uAgeEnabled.value = config.gpgpuAgeEnabled;
+  posU.uAgeMax.value = config.gpgpuAgeMax;
+  posU.uFloorEnabled.value = config.gpgpuFloorEnabled;
+  posU.uFloorY.value = config.gpgpuFloorY;
+  posU.uBounceRadius.value = config.gpgpuBounceRadius;
+  posU.uDelta.value = dt;
+  posU.uTime.value = time;
+  simMesh.material = auxPosMat;
+  gl.setRenderTarget(auxPosOut);
   gl.render(simScene, simCamera);
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { BLIT_FRAG, FLUID_ADVECT_FRAG, SIM_POS_FRAG, SIM_VERT, SIM_VEL_FRAG, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildVelocityFragment } from "./gpgpuShaders";
+import { AUX_POS_FRAG, AUX_VEL_FRAG } from "./gpgpuShaderAux";
 import { useThree } from "@react-three/fiber";
 import { buildCustomForceHarness, compileCheckShader, setCustomForceStatus, validateCustomForceCode } from "../lib/gpgpuCustomForce";
 import type { UseGpgpuAssetsArgs } from "./gpgpuAssetShared";
@@ -26,6 +27,9 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uCurlEnabled:       { value: false },
       uCurlStrength:      { value: 1.0 },
       uCurlScale:         { value: 0.008 },
+      uCurlSymmetry:      { value: 0 },
+      uCurlMode:          { value: 0 },
+      uCurlOctaves:       { value: 1 },
       uBoidsEnabled:      { value: false },
       uBoidsSeparation:   { value: 1.0 },
       uBoidsAlignment:    { value: 0.5 },
@@ -61,6 +65,8 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uWellStrength:     { value: 1.0 },
       uWellSoftening:    { value: 10.0 },
       uWellOrbit:        { value: 0.5 },
+      uWellCount:        { value: 1 },
+      uWellSpread:       { value: 70.0 },
       uElasticEnabled:   { value: false },
       uElasticStrength:  { value: 0.5 },
       uMagneticEnabled:  { value: false },
@@ -80,6 +86,11 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uSpringEnabled:   { value: false },
       uSpringStrength:  { value: 1.0 },
       uInitPosTex:      { value: null },
+      uMorphEnabled:    { value: false },
+      uMorphTex:        { value: null },
+      uMorphStrength:   { value: 3.0 },
+      uMorphOrbitSpeed: { value: 0.3 },
+      uSpeed:           { value: 1.0 },
       uSdfEnabled:      { value: false },
       uSdfShape:        { value: 0 },
       uSdfX:            { value: 0.0 },
@@ -87,11 +98,15 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uSdfZ:            { value: 0.0 },
       uSdfSize:         { value: 80.0 },
       uSdfBounce:       { value: 0.5 },
+      uFloorEnabled:    { value: false },
+      uFloorY:          { value: -110.0 },
+      uFloorBounce:     { value: 0.62 },
       uMouseEnabled:    { value: false },
       uMousePos:        { value: new THREE.Vector3(0, 0, 0) },
       uMouseStrength:   { value: 2.0 },
       uMouseRadius:     { value: 150.0 },
       uMouseMode:       { value: 0 },
+      uMousePaintRate:  { value: 0.6 },
       uFluidEnabled:    { value: false },
       uFluidTex:        { value: null },
       uFluidInfluence:  { value: 0.8 },
@@ -119,8 +134,71 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uSdfZ:          { value: 0.0 },
       uSdfSize:       { value: 80.0 },
       uSdfBounce:     { value: 0.5 },
+      // Floor bounce + pointer paint (B3)
+      uTime:          { value: 0 },
+      uFloorEnabled:  { value: false },
+      uFloorY:        { value: -110.0 },
+      uMouseEnabled:  { value: false },
+      uMousePos:      { value: new THREE.Vector3(0, 0, 0) },
+      uMouseRadius:   { value: 150.0 },
+      uMouseMode:     { value: 0 },
+      uMousePaintRate:{ value: 0.6 },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_POS_FRAG,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  // Aux event emission materials (B3): the shared event uniforms are
+  // declared in gpgpuShaderAux's AUX_EVENT_GLSL chunk; the passes in
+  // gpgpuSimulationPasses.runAuxSimulationPasses fill them per frame.
+  const auxVelMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uAuxPosTex:    { value: null },
+      uAuxVelTex:    { value: null },
+      uMainPosTex:   { value: null },
+      uMainVelTex:   { value: null },
+      uMainTexSizeF: { value: texSize },
+      uAuxCount:     { value: 4096 },
+      uAuxMode:      { value: 0 },
+      uAuxIntensity: { value: 1.0 },
+      uAuxSpeed:     { value: 26.0 },
+      uAuxLife:      { value: 0.75 },
+      uAgeEnabled:   { value: false },
+      uAgeMax:       { value: 8.0 },
+      uFloorEnabled: { value: false },
+      uFloorY:       { value: -110.0 },
+      uFloorBounce:  { value: 0.62 },
+      uBounceRadius: { value: 150.0 },
+      uBounce:       { value: 0.65 },
+      uGravity:      { value: 0.2 },
+      uDelta:        { value: 0.016 },
+      uTime:         { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: AUX_VEL_FRAG,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  const auxPosMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uAuxPosTex:    { value: null },
+      uAuxVelTex:    { value: null },
+      uAuxVelOutTex: { value: null },
+      uMainPosTex:   { value: null },
+      uMainVelTex:   { value: null },
+      uMainTexSizeF: { value: texSize },
+      uAuxCount:     { value: 4096 },
+      uAuxMode:      { value: 0 },
+      uAuxIntensity: { value: 1.0 },
+      uAuxSpeed:     { value: 26.0 },
+      uAgeEnabled:   { value: false },
+      uAgeMax:       { value: 8.0 },
+      uFloorEnabled: { value: false },
+      uFloorY:       { value: -110.0 },
+      uBounceRadius: { value: 150.0 },
+      uDelta:        { value: 0.016 },
+      uTime:         { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: AUX_POS_FRAG,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
@@ -208,6 +286,8 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     simMeshRef,
     velSimMat,
     posSimMat,
+    auxVelMat,
+    auxPosMat,
     blitMat,
     sortDepthMat,
     bitonicMat,

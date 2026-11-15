@@ -4,6 +4,16 @@ import type { ParticleConfig } from '../types';
 import type { LodSystem } from '../lib/lodSystem';
 import type { GpgpuAssetBundle } from './useGpgpuAssets';
 import { MAX_TRAIL } from './gpgpuShaders';
+import { fillGradientLutData } from '../lib/kinetixGradients';
+
+const GRAD_DRIVER_IDS: Record<ParticleConfig['gpgpuGradDriver'], number> = {
+  life: 0,
+  velocity: 1,
+  spatial: 2,
+  prism: 3,
+  image: 4,
+  blackbody: 5,
+};
 
 export function runDepthSortPass(args: {
   config: ParticleConfig;
@@ -114,8 +124,9 @@ export function syncVisualUniforms(args: {
   velTexture: THREE.Texture;
   finalSortTex: THREE.Texture | null;
   texSize?: number;
+  time?: number;
 }): void {
-  const { config, activeCount, assets, posTexture, velTexture, finalSortTex, texSize } = args;
+  const { config, activeCount, assets, posTexture, velTexture, finalSortTex, texSize, time } = args;
   const {
     drawMat,
     trailRTs,
@@ -150,12 +161,36 @@ export function syncVisualUniforms(args: {
   drawMat.uniforms.uAgeColorEnabled.value = config.gpgpuAgeColorEnabled;
   drawMat.uniforms.uAgeColorYoung.value.setStyle(config.gpgpuAgeColorYoung);
   drawMat.uniforms.uAgeColorOld.value.setStyle(config.gpgpuAgeColorOld);
+  // Kinetix Color gradient (B2): sync the driver uniforms and rebake
+  // the 256px LUT only when the three stops actually change (the key
+  // is cached on the material so per-frame sync stays allocation-free).
+  if (drawMat.uniforms.uGradEnabled) {
+    drawMat.uniforms.uGradEnabled.value = config.gpgpuGradEnabled;
+    drawMat.uniforms.uGradDriver.value = GRAD_DRIVER_IDS[config.gpgpuGradDriver] ?? 0;
+    drawMat.uniforms.uGradSpatialScale.value = config.gpgpuGradSpatialScale;
+    drawMat.uniforms.uGradTime.value = time ?? 0;
+    const lut = drawMat.uniforms.uGradLut.value as THREE.DataTexture | null;
+    if (lut) {
+      const lutKey = `${config.gpgpuGradStart}|${config.gpgpuGradMid}|${config.gpgpuGradEnd}`;
+      if (drawMat.userData.gradLutKey !== lutKey) {
+        drawMat.userData.gradLutKey = lutKey;
+        fillGradientLutData(lut.image.data as Uint8Array, config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd);
+        lut.needsUpdate = true;
+      }
+    }
+  }
   drawMat.uniforms.uAgeSizeEnabled.value = config.gpgpuAgeSizeEnabled;
   drawMat.uniforms.uAgeSizeStart.value = config.gpgpuAgeSizeStart;
   drawMat.uniforms.uAgeSizeEnd.value = config.gpgpuAgeSizeEnd;
+  if (drawMat.uniforms.uAgeSizeCurve) drawMat.uniforms.uAgeSizeCurve.value = config.gpgpuAgeSizeCurve === 'bell' ? 1 : 0;
+  if (drawMat.uniforms.uPointShape) drawMat.uniforms.uPointShape.value = { soft: 0, sphere: 1, ring: 2, star: 3, hexagon: 4, diamond: 5, flare: 6, cloud: 7, bokeh: 8, crosshair: 9, iris: 10, lightning: 11 }[config.gpgpuPointShape] ?? 0;
   drawMat.uniforms.uSortEnabled.value = config.gpgpuSortEnabled && finalSortTex !== null;
   drawMat.uniforms.uSortTex.value = finalSortTex;
-  drawMat.blending = config.gpgpuSortEnabled ? THREE.NormalBlending : THREE.AdditiveBlending;
+  // Sort-based transparency needs Normal blending; otherwise the
+  // Kinetix Color blend key rules ('additive' = legacy default).
+  drawMat.blending = config.gpgpuSortEnabled || config.gpgpuBlendMode === 'normal'
+    ? THREE.NormalBlending
+    : THREE.AdditiveBlending;
 
   if (config.gpgpuStreakEnabled) {
     streakMat.uniforms.uPosTex.value = posTexture;
@@ -229,6 +264,10 @@ export function syncVisualUniforms(args: {
     geomMat.uniforms.uOpacity.value = config.gpgpuOpacity;
     geomMat.uniforms.uGeomScale.value = config.gpgpuBounceRadius * 0.02 * config.gpgpuGeomScale;
     geomMat.uniforms.uVelocityAlign.value = config.gpgpuGeomVelocityAlign ? 1 : 0;
+    if (geomMat.uniforms.uTime) geomMat.uniforms.uTime.value = time ?? 0;
+    if (geomMat.uniforms.uSpinSpeed) geomMat.uniforms.uSpinSpeed.value = config.gpgpuGeomSpinSpeed;
+    if (geomMat.uniforms.uMeshStretch) geomMat.uniforms.uMeshStretch.value = config.gpgpuGeomStretch;
+    if (geomMat.uniforms.uEnvReflect) geomMat.uniforms.uEnvReflect.value = config.gpgpuGeomEnvReflect;
   }
 
   if (config.gpgpuVolumetricEnabled) {

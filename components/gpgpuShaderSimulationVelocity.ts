@@ -19,6 +19,9 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform bool  uCurlEnabled;
   uniform float uCurlStrength;
   uniform float uCurlScale;
+  uniform int   uCurlSymmetry;
+  uniform int   uCurlMode;
+  uniform int   uCurlOctaves;
   uniform bool  uBoidsEnabled;
   uniform float uBoidsSeparation;
   uniform float uBoidsAlignment;
@@ -54,6 +57,8 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uWellStrength;
   uniform float uWellSoftening;
   uniform float uWellOrbit;
+  uniform int   uWellCount;
+  uniform float uWellSpread;
   uniform bool  uElasticEnabled;
   uniform float uElasticStrength;
   uniform bool  uMagneticEnabled;
@@ -73,6 +78,11 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform bool  uSpringEnabled;
   uniform float uSpringStrength;
   uniform sampler2D uInitPosTex;
+  uniform bool  uMorphEnabled;
+  uniform sampler2D uMorphTex;
+  uniform float uMorphStrength;
+  uniform float uMorphOrbitSpeed;
+  uniform float uSpeed;
   uniform bool  uSdfEnabled;
   uniform int   uSdfShape;
   uniform float uSdfX;
@@ -80,11 +90,15 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uSdfZ;
   uniform float uSdfSize;
   uniform float uSdfBounce;
+  uniform bool  uFloorEnabled;
+  uniform float uFloorY;
+  uniform float uFloorBounce;
   uniform bool  uMouseEnabled;
   uniform vec3  uMousePos;
   uniform float uMouseStrength;
   uniform float uMouseRadius;
   uniform int   uMouseMode;
+  uniform float uMousePaintRate;
   uniform bool  uFluidEnabled;
   uniform sampler2D uFluidTex;
   uniform float uFluidInfluence;
@@ -115,6 +129,92 @@ export const SIM_VEL_FRAG = /* glsl */ `
     float dFy_dx = vnoise(p1 + vec3(e,0,0)) - vnoise(p1 - vec3(e,0,0));
     float dFx_dy = vnoise(p  + vec3(0,e,0)) - vnoise(p  - vec3(0,e,0));
     return vec3(dFz_dy - dFy_dz, dFx_dz - dFz_dx, dFy_dx - dFx_dy) / (2.0 * e);
+  }
+
+  // Curl field symmetry (Kinetix integration B1b): the sampling
+  // coordinates are folded into a symmetric fundamental domain before
+  // the curl is evaluated, and the sampled vector is unfolded back —
+  // the same construction as Kinetix's sampleSymmetricCurl. This is a
+  // symmetry of the FIELD, not of particle positions or the screen.
+  // uCurlSymmetry: 0 none (never routed here), 1 mirrorX, 2 radial4,
+  // 3 radial6, 4 octahedral. tOff is the usual time offset vector added
+  // to the (folded) sample position, matching the unsymmetric path.
+  vec3 symmetricCurl(vec3 p, vec3 tOff) {
+    if (uCurlSymmetry == 1) { // mirrorX
+      float sx = p.x < 0.0 ? -1.0 : 1.0;
+      vec3 c = curlNoise(vec3(abs(p.x), p.y, p.z) + tOff);
+      return vec3(c.x * sx, c.y, c.z);
+    }
+    if (uCurlSymmetry == 4) { // octahedral
+      vec3 s = vec3(p.x < 0.0 ? -1.0 : 1.0, p.y < 0.0 ? -1.0 : 1.0, p.z < 0.0 ? -1.0 : 1.0);
+      vec3 c = curlNoise(abs(p) + tOff);
+      return c * s;
+    }
+    // radial4 / radial6: fold the XZ polar angle into one sector
+    // (mirrored at the sector half), sample, rotate the vector back.
+    float k = uCurlSymmetry == 2 ? 4.0 : 6.0;
+    float sector = 6.28318530718 / k;
+    float r = length(p.xz);
+    float theta = atan(p.z, p.x);
+    float normTheta = mod(theta, sector);
+    float folded = normTheta > sector * 0.5 ? sector - normTheta : normTheta;
+    vec3 fp = vec3(r * cos(folded), p.y, r * sin(folded));
+    vec3 c = curlNoise(fp + tOff);
+    float rot = theta - folded;
+    float rc = cos(rot);
+    float rs = sin(rot);
+    return vec3(c.x * rc - c.z * rs, c.y, c.x * rs + c.z * rc);
+  }
+
+  // One curl sample with the field symmetry applied (or not). The
+  // legacy call sites below keep their exact original expressions;
+  // this helper serves only the generalised B3 field path.
+  vec3 curlSampleAt(vec3 p, vec3 tOff) {
+    return uCurlSymmetry == 0 ? curlNoise(p + tOff) : symmetricCurl(p, tOff);
+  }
+
+  // Kinetix field flavours (B3, re-implemented from computeCurlNoise):
+  // octave composition adds the 2.13x octave at 0.45 and the 4.27x
+  // octave at 0.22. 'ridged' shapes each component through
+  // sign(c) * (1.25 - exp(-|c| * 0.9)) * 2.1 (Kinetix's ridge shaping);
+  // 'vortex' adds a tangential swirl around Y proportional to the
+  // sampling coordinate (Kinetix: cross with radial * 1.4 at 0.35
+  // scale, folded here into the 0.49 factor on the scaled position).
+  vec3 curlField(vec3 p, vec3 tOff) {
+    vec3 c = curlSampleAt(p, tOff);
+    if (uCurlOctaves >= 2) c += 0.45 * curlSampleAt(p * 2.13, tOff + vec3(17.1, -9.4, 5.7));
+    if (uCurlOctaves >= 3) c += 0.22 * curlSampleAt(p * 4.27, tOff + vec3(-11.3, 21.8, -14.2));
+    if (uCurlMode == 1) { // ridged
+      c = sign(c) * (vec3(1.25) - exp(-abs(c) * 0.9)) * 2.1;
+    } else if (uCurlMode == 2) { // vortex
+      c += vec3(-p.z, 0.0, p.x) * 0.49;
+    }
+    return c;
+  }
+
+  // Gyroid SDF (B3): TPMS gyroid implicit surface. The distance is the
+  // standard gradient-normalised approximation; the normal is the
+  // analytic gradient in the scaled coordinate frame.
+  float gyroidField(vec3 p, vec3 sc, float size) {
+    vec3 q = (p - sc) * (3.14159265 / max(size, 1.0));
+    return sin(q.x) * cos(q.y) + sin(q.y) * cos(q.z) + sin(q.z) * cos(q.x);
+  }
+  vec3 gyroidNormal(vec3 p, vec3 sc, float size) {
+    vec3 q = (p - sc) * (3.14159265 / max(size, 1.0));
+    vec3 g = vec3(
+      cos(q.x) * cos(q.y) - sin(q.z) * sin(q.x),
+      cos(q.y) * cos(q.z) - sin(q.x) * sin(q.y),
+      cos(q.z) * sin(q.x) - sin(q.y) * sin(q.z)
+    );
+    return normalize(g + vec3(0.0001));
+  }
+
+  // Pointer paint gate (B3): must stay bit-identical with the copy in
+  // the position shader — both passes evaluate the same hash of
+  // (texel, 30Hz tick) so a gated particle is teleported by the
+  // position pass in the same frame the velocity pass re-seeds it.
+  float paintHash(vec2 uv, float tick) {
+    return fract(sin(dot(uv * 913.7 + vec2(tick * 17.31, tick * 7.77), vec2(12.9898, 78.233))) * 43758.5453);
   }
 
   // Particle Life species: fixed per particle, derived from the texel
@@ -174,9 +274,16 @@ export const SIM_VEL_FRAG = /* glsl */ `
       vel += acc * uNBodyStrength * uDelta * 500.0;
     }
 
-    // Curl Noise
+    // Curl Noise (with optional field symmetry, B1b; symmetry 0 keeps
+    // the exact legacy sampling expression). The B3 flavours/octaves
+    // route through curlField; mode 'curl' with 1 octave keeps the
+    // exact legacy expression below, untouched.
     if (uCurlEnabled) {
-      vec3 curl = curlNoise(pos * uCurlScale + vec3(uTime * 0.15));
+      vec3 curl = (uCurlMode == 0 && uCurlOctaves <= 1)
+        ? (uCurlSymmetry == 0
+          ? curlNoise(pos * uCurlScale + vec3(uTime * 0.15))
+          : symmetricCurl(pos * uCurlScale, vec3(uTime * 0.15)))
+        : curlField(pos * uCurlScale, vec3(uTime * 0.15));
       vel += curl * uCurlStrength * 20.0 * uDelta;
     }
 
@@ -341,13 +448,28 @@ export const SIM_VEL_FRAG = /* glsl */ `
       vel += (normalize(vec3(uWindX, uWindY, uWindZ) + vec3(0.0001)) * uWindStrength + gust) * uDelta * 30.0;
     }
 
-    // Gravity Well
+    // Gravity Well(s). Count 1 keeps the exact legacy single well at
+    // the origin; counts 2-4 (B3) place the wells on a slowly rotating
+    // ring of radius uWellSpread, each with the same force law.
     if (uWellEnabled) {
-      vec3 toCenter = -pos;
-      float d = length(toCenter) + uWellSoftening;
-      vel += (toCenter / (d * d)) * uWellStrength * uDelta * 2000.0;
-      vec3 tangent2 = cross(normalize(toCenter + vec3(0.001, 0.0, 0.0)), vec3(0.0, 1.0, 0.0));
-      vel += tangent2 * uWellOrbit * uDelta * 50.0;
+      if (uWellCount <= 1) {
+        vec3 toCenter = -pos;
+        float d = length(toCenter) + uWellSoftening;
+        vel += (toCenter / (d * d)) * uWellStrength * uDelta * 2000.0;
+        vec3 tangent2 = cross(normalize(toCenter + vec3(0.001, 0.0, 0.0)), vec3(0.0, 1.0, 0.0));
+        vel += tangent2 * uWellOrbit * uDelta * 50.0;
+      } else {
+        for (int wi = 0; wi < 4; wi++) {
+          if (wi >= uWellCount) break;
+          float wa = uTime * 0.35 + float(wi) * 6.2831853 / float(uWellCount);
+          vec3 wellPos = vec3(cos(wa), 0.35 * sin(wa * 1.3), sin(wa)) * uWellSpread;
+          vec3 toWell = wellPos - pos;
+          float wd = length(toWell) + uWellSoftening;
+          vel += (toWell / (wd * wd)) * uWellStrength * uDelta * 2000.0;
+          vec3 wellTangent = cross(normalize(toWell + vec3(0.001, 0.0, 0.0)), vec3(0.0, 1.0, 0.0));
+          vel += wellTangent * uWellOrbit * uDelta * 50.0;
+        }
+      }
     }
 
     // Elastic Spring
@@ -440,6 +562,39 @@ export const SIM_VEL_FRAG = /* glsl */ `
       vel += (spawnPos - pos) * uSpringStrength * uDelta * 3.0;
     }
 
+    // Morph Target Attraction (Kinetix integration B1a): each particle
+    // owns one target point baked into uMorphTex (same texel layout as
+    // the position texture; scale and jitter are baked in). The target
+    // cloud orbits around Y by uTime * uMorphOrbitSpeed, matching
+    // Kinetix's morphPhase rotation of its sampled clouds.
+    //
+    // Force law: Kinetix accumulates vel += (target - pos) * strength
+    // * dt on the CPU, where its position step is pos += vel * dt.
+    // Here the position pass integrates pos += vel * dt * uSpeed * 60,
+    // so the same accumulation overshoots into a limit cycle whenever
+    // dt grows (measured headless: a diffuse cloud instead of the
+    // knot). The adaptation below keeps Kinetix's own stability-guard
+    // form — the exponential snap factor 1 - exp(-k * c) it uses past
+    // k = 0.85 — and applies it at every strength: the particle's
+    // velocity is relaxed toward the velocity that would cover the
+    // fraction mf of the remaining distance this step. The approach is
+    // frame-rate independent and stable for any dt, and mf reduces to
+    // ~strength * dt * 3 for small steps, i.e. Kinetix's spring rate.
+    if (uMorphEnabled) {
+      vec3 mTarget = texture2D(uMorphTex, vUv).xyz;
+      float mAng = uTime * uMorphOrbitSpeed;
+      float mCos = cos(mAng);
+      float mSin = sin(mAng);
+      mTarget = vec3(
+        mTarget.x * mCos - mTarget.z * mSin,
+        mTarget.y,
+        mTarget.x * mSin + mTarget.z * mCos
+      );
+      float mf = 1.0 - exp(-uMorphStrength * uDelta * 3.0);
+      vec3 vWant = (mTarget - pos) * (mf / max(uDelta * uSpeed * 60.0, 0.001));
+      vel += (vWant - vel) * clamp(mf + uDelta * 6.0, 0.0, 1.0);
+    }
+
     // SDF Collider — velocity reflection
     if (uSdfEnabled) {
       vec3 sc = vec3(uSdfX, uSdfY, uSdfZ);
@@ -461,6 +616,11 @@ export const SIM_VEL_FRAG = /* glsl */ `
         sd = length(vec2(ringD, lp.y)) - r2;
         float lxz = length(lp.xz) + 0.001;
         sn = normalize(vec3(lp.x / lxz * ringD, lp.y, lp.z / lxz * ringD));
+      } else if (uSdfShape == 4) {
+        // Gyroid (B3): sd is the gradient-normalised field value; the
+        // g < 0 labyrinth is the solid side.
+        sd = gyroidField(pos, sc, uSdfSize) * uSdfSize * 0.227;
+        sn = gyroidNormal(pos, sc, uSdfSize);
       } else {
         float yc = clamp(pos.y - sc.y, -uSdfSize, uSdfSize);
         vec3 dp = vec3(pos.x - sc.x, pos.y - sc.y - yc, pos.z - sc.z);
@@ -485,11 +645,35 @@ export const SIM_VEL_FRAG = /* glsl */ `
           vel += dir * falloff * uMouseStrength * uDelta * 200.0;
         } else if (uMouseMode == 1) { // repel
           vel -= dir * falloff * uMouseStrength * uDelta * 200.0;
-        } else { // swirl
+        } else if (uMouseMode == 2) { // swirl (mode 3 = paint, handled separately below)
           vec3 swirl = cross(dir, vec3(0.0, 1.0, 0.001));
           vel += normalize(swirl) * falloff * uMouseStrength * uDelta * 150.0;
         }
       }
+    }
+
+    // Pointer paint (B3): the gate hash is shared with the position
+    // pass, which teleports gated particles to the brush this same
+    // frame; here they receive a fresh random velocity so the painted
+    // particles stream away from the pointer instead of freezing.
+    if (uMouseEnabled && uMouseMode == 3) {
+      float paintTick = floor(uTime * 30.0);
+      float paintGate = paintHash(vUv, paintTick);
+      if (paintGate < uMousePaintRate * 0.008) {
+        vec3 paintHashDir = hash3(vec3(vUv * 517.3, paintTick * 3.71));
+        float paintSpeedMix = fract(paintGate * 91.7 + paintTick * 0.013);
+        vel = normalize(paintHashDir + vec3(0.0001)) * (6.0 + 26.0 * paintSpeedMix) * max(uMouseStrength, 0.05);
+      }
+    }
+
+    // Floor bounce (B3): reflect the downward velocity at the floor
+    // plane with restitution and Kinetix's 0.92 tangential friction.
+    // The position pass clamps penetration, so this only ever fires
+    // for particles at (or just below) the plane.
+    if (uFloorEnabled && pos.y < uFloorY + 0.5 && vel.y < 0.0) {
+      vel.y = -vel.y * uFloorBounce;
+      vel.x *= 0.92;
+      vel.z *= 0.92;
     }
 
     // Fluid Advection

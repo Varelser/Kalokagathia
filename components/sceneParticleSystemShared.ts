@@ -57,6 +57,7 @@ export type LayerParams = {
   burstConeWidth: number;
   emitterOrbitSpeed: number;
   emitterOrbitRadius: number;
+  emitterOrbitPath: number;
   emitterPulseAmount: number;
   trailDrag: number;
   trailTurbulence: number;
@@ -142,6 +143,7 @@ export function resolveLayerParams(
     burstConeWidth: runtime.burstConeWidth,
     emitterOrbitSpeed: runtime.emitterOrbitSpeed,
     emitterOrbitRadius: runtime.emitterOrbitRadius,
+    emitterOrbitPath: runtime.emitterOrbitPath,
     emitterPulseAmount: runtime.emitterPulseAmount,
     trailDrag: runtime.trailDrag,
     trailTurbulence: runtime.trailTurbulence,
