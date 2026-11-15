@@ -404,7 +404,7 @@ export const PresetShelf: React.FC<{
     [genres, membersByGenre, filtering, matchesFilters],
   );
 
-  // --- generated collection (the 746 static presets) --------------------
+  // --- generated collection (the static generated presets) -------------
   // A separate shelf group below the bundled library. The compact index
   // is fetched lazily — the first time the group is opened or a search
   // is typed — and cached for the session by lib/generatedCollection.
@@ -4490,7 +4490,7 @@ const KeyboardShortcutsSection: React.FC = () => (
 // App version handed to the deterministic renderer for its render.json
 // manifest. Keep in sync with package.json "version" (the renderer must
 // not import package.json, so the UI supplies it — see PRO1_BRIEF.md).
-const KALOKAGATHIA_APP_VERSION = '1.7.0';
+const KALOKAGATHIA_APP_VERSION = '1.7.1';
 
 const DeterministicRenderControls: React.FC<{
   config: ParticleConfig;

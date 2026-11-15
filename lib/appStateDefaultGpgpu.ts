@@ -161,6 +161,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGradEnd: '#8b5cf6',
   gpgpuGradPreset: 'nebula',
   gpgpuGradSpatialScale: 0.008,
+  gpgpuGradImageSource: '',
   gpgpuBlendMode: 'additive' as const,
   // Size over Lifetime
   gpgpuAgeSizeEnabled: false,

@@ -5,6 +5,7 @@ import type { LodSystem } from '../lib/lodSystem';
 import type { GpgpuAssetBundle } from './useGpgpuAssets';
 import { MAX_TRAIL } from './gpgpuShaders';
 import { fillGradientLutData } from '../lib/kinetixGradients';
+import { getGradImageTexture } from '../lib/gradImageTexture';
 
 const GRAD_DRIVER_IDS: Record<ParticleConfig['gpgpuGradDriver'], number> = {
   life: 0,
@@ -176,6 +177,18 @@ export function syncVisualUniforms(args: {
         drawMat.userData.gradLutKey = lutKey;
         fillGradientLutData(lut.image.data as Uint8Array, config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd);
         lut.needsUpdate = true;
+      }
+    }
+    // Image driver (Phase A): hand the decoded user image to the
+    // shader. The lookup is cached by source string, so per-frame
+    // sync stays cheap; while the texture is not ready the shader
+    // keeps the life LUT (the UI states this fallback explicitly).
+    if (drawMat.uniforms.uGradImageTex) {
+      const imageState = getGradImageTexture(config.gpgpuGradImageSource);
+      drawMat.uniforms.uGradImageTex.value = imageState.texture;
+      if (drawMat.uniforms.uGradImageReady) drawMat.uniforms.uGradImageReady.value = imageState.ready;
+      if (drawMat.uniforms.uGradImageScale) {
+        drawMat.uniforms.uGradImageScale.value = 1 / (2 * Math.max(config.gpgpuBounceRadius, 1));
       }
     }
   }

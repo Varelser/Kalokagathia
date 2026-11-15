@@ -1,7 +1,42 @@
+import fs from 'node:fs';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
+import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+
+/**
+ * Preset-count injection (Phase A): index.html carries the literal
+ * token __PRESET_COUNT__ wherever the copy states how many generated
+ * presets ship with the app (description / og:description). At build
+ * time the token is replaced with the real count from
+ * public/generated-collection.json — which the prebuild step
+ * (scripts/build-generated-index.mjs) has just regenerated — so the
+ * public copy can never go stale the way the hand-written "750" did.
+ * If the index cannot be read, the count phrase is dropped instead
+ * of leaving a wrong number (or the raw token) in the page.
+ */
+function presetCountPlugin(): Plugin {
+  return {
+    name: 'kalokagathia-preset-count',
+    transformIndexHtml(html) {
+      let count = '';
+      try {
+        const raw = fs.readFileSync(path.resolve(import.meta.dirname, 'public/generated-collection.json'), 'utf8');
+        const parsed = JSON.parse(raw) as { count?: unknown };
+        if (typeof parsed.count === 'number' && parsed.count > 0) {
+          count = parsed.count.toLocaleString('en-US');
+        }
+      } catch {
+        // Fall through to the count-free wording below.
+      }
+      if (count) return html.replaceAll('__PRESET_COUNT__', count);
+      return html
+        .replaceAll('__PRESET_COUNT__種の', '')
+        .replaceAll('__PRESET_COUNT__ ', '');
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -11,7 +46,7 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
       },
-      plugins: [tailwindcss(), react()],
+      plugins: [tailwindcss(), react(), presetCountPlugin()],
       define: {
         '__LIBRARY_SCOPE__': JSON.stringify(libraryScope),
       },

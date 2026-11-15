@@ -106,13 +106,17 @@ export const DRAW_FRAG = /* glsl */ `
   uniform bool  uParticleLifeEnabled;
   uniform int   uPointShape;
   // Kinetix Color gradient (B2): 3-stop LUT + driver. Driver ids:
-  // 0 life, 1 velocity, 2 spatial, 3 prism, 4 image (life fallback
-  // until an RGB media map exists), 5 blackbody.
+  // 0 life, 1 velocity, 2 spatial, 3 prism, 4 image (samples the
+  // user image by particle position; life LUT fallback while no
+  // image is ready), 5 blackbody.
   uniform bool      uGradEnabled;
   uniform int       uGradDriver;
   uniform sampler2D uGradLut;
   uniform float     uGradSpatialScale;
   uniform float     uGradTime;
+  uniform sampler2D uGradImageTex;
+  uniform bool      uGradImageReady;
+  uniform float     uGradImageScale;
   varying float vSpeed;
   varying float vNormAge;
   varying float vPhaseMix;
@@ -173,6 +177,14 @@ export const DRAW_FRAG = /* glsl */ `
         col = hsl2rgb(hue, 0.85, 0.6);
       } else if (uGradDriver == 5) {
         col = blackbodyColor(vNormAge, vSpeed);
+      } else if (uGradDriver == 4 && uGradImageReady) {
+        // Image driver: the particle takes the colour of the user
+        // image at its own position — world XY mapped over the
+        // bounce sphere (uGradImageScale = 1 / (2 * bounceRadius)),
+        // clamped at the edges. Mirrors Kinetix's image colour mode
+        // (colour comes from the image, not from a gradient ramp).
+        vec2 imageUv = clamp(vWorldPos.xy * uGradImageScale + 0.5, 0.0, 1.0);
+        col = texture2D(uGradImageTex, imageUv).rgb;
       } else {
         float gt = vNormAge;
         if (uGradDriver == 1) {

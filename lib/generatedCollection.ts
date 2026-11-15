@@ -1,6 +1,6 @@
 // Lazy access to the GENERATED preset collection index.
 //
-// The 746 generated presets (2026-11-09..11 batches) live outside the app
+// The generated presets live outside the app
 // bundle as static files on the same origin (/presets/<id>.json,
 // /catalog/thumbs/<id>.jpg, /share/<id>). Their records carry no genre or
 // tag fields — only id, name, config, timestamps — so the shelf groups
@@ -25,6 +25,7 @@ export interface GeneratedSeries {
 // Display order + labels for the known series (brief order). Unknown
 // prefixes are appended alphabetically by deriveGeneratedSeries().
 const KNOWN_SERIES: GeneratedSeries[] = [
+  { key: 'expansion', label: 'Expansion' },
   { key: 'coverage', label: 'Coverage' },
   { key: 'ignition', label: 'Ignition' },
   { key: 'theory', label: 'Theory' },

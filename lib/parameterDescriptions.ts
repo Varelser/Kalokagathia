@@ -176,6 +176,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuVelColorHueMax: '速度カラーの色相の上限（度）',
   gpgpuVelColorSaturation: '速度カラーの彩度',
   gpgpuGradSpatialScale: 'グラデーションの spatial ドライバで中心からの距離を色位置へ換算する倍率',
+  gpgpuGradImageSource: 'グラデーションの image ドライバが色を拾う元画像（data URL、粒子位置でサンプリング）',
   gpgpuSdfX: 'SDF 障害物の中心 X',
   gpgpuSdfY: 'SDF 障害物の中心 Y',
   gpgpuSdfZ: 'SDF 障害物の中心 Z',

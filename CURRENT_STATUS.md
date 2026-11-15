@@ -1425,3 +1425,39 @@ AI 制御カタログ拡張（デプロイ cf9f9cb5）: AI が操作できるキ
 
 
 文書の正本について: 本書の Drive 版（Google ドキュメント）とローカル Markdown 版は、2026-11-11 の照合で内容同一（差異は番号付きリストの表記のみ）であることを確認した。以後はローカル Markdown を正本として更新し、Drive へ反映する。
+
+
+
+## 2026-11-16 追記（現状総括 — v1.7.1 / カタログ 1,536 件 / スターター 482 件）
+
+
+
+本節が現在の正本である。個別作業の詳細は ~/workspace/kalokagathia-pro/ の各レポート（SHIP170 / GATE2 / AUDIT170 / PHASE_A 等）が正本。
+
+
+
+本番状態: https://monosphere.pages.dev/（Cloudflare Pages、プロジェクト monosphere）。現行バージョンは **v1.7.1**。ソースの同期先は GitHub リポジトリ Varelser/Kalokagathia。
+
+
+
+資産の実数（2026-11-16 実測）: 生成プリセットのカタログ **1,536 件**（catalog / share / presets が 1:1:1 で欠けなし）、アプリ内蔵スターター **482 件**、config キー約 900 件。カタログの fps 実測カバー率は 311/1,536（約20%）で、バックフィルは改善計画 Phase B の対象。
+
+
+
+v1.6.0（2026-11-16）: Kinetix Particle Studio 統合 B1〜B4（形状モーフ 17 目標・3点グラデーション+ドライバ・Aux イベント放出・ポインターペイント・Kinetix プリセット 26 件移植）、弱いマシン向け CPU フォールバック、Pro-1 納品レンダラー（決定的レンダー 3,600 フレーム化・600 フレーム分割 ZIP・ウォームアップ・60fps）。初期 age 散らし＋初期データコピーの NoBlending 化で blackbody 点滅を解消。
+
+
+
+v1.7.0（2026-11-16）: Pro-1.1 透過+PostFx 納品（UnMult 背景モード。Bloom の光量を従来透過の約5.1倍保持して alpha 付き書き出し）、Pro-2 ロゴ/ブランド（依存なし SVG パーサによるモーフ目標 'svg'、ブランド単色モード #c8372d 既定・OFF 時は従来出力と同一）。
+
+
+
+v1.7.1（2026-11-16、改善計画 Phase A）: image グラデーションドライバ実装（B2 で予約した ID 4。config 内 data URL の画像を粒子位置でサンプリング。未設定時は life 代替を UI に明示し無言フォールバックを解消）、og/description のプリセット件数をビルド時自動注入に変更（public/generated-collection.json の count が正本。手書きの「750種」は廃止）、starter-kinetix-metallic-crystals の白飛びを値修正で解消（加算+両面ジオメトリの面あたり寄与とモーフ jitter を是正）。
+
+
+
+監査: v1.7.0 時点の総合評価は 8.8/10（AUDIT170）。Maxon/Trapcode カバレッジは加重 46%。残る表現面の主対象は LightFX（Shine/Starglow/Lux 相当）で改善計画 Phase D、商品化（Pro Pack＋商用ライセンス＋Gumroad 下書き）は Phase F（公開は user 判断待ち）。解像度プリセットとシームレスループ保証は Phase C。
+
+
+
+運用上の注意（継続）: デプロイ時のステージングで rsync --delete は使用禁止（配信ツリーの catalog/ share/ presets/ が消える）。deploy.py には --project-name monosphere を明示する。GitHub への書き込みは Varelser ログインのアカウント指定が必須。シェーダ変更は iMac 実GPUゲートを通すまで検証済みとしない。

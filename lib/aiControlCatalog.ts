@@ -456,7 +456,7 @@ const ENUMS: { key: keyof ParticleConfig; gloss: string; values: readonly string
   { key: 'layer3EmitterOrbitPath', gloss: 'レイヤー3発生源の軌道', values: ['orbit', 'lissajous', 'figure8'] },
   { key: 'gpgpuPointShape', gloss: 'GPGPUポイント粒子の形状', values: ['soft', 'sphere', 'ring', 'star', 'hexagon', 'diamond', 'flare', 'cloud', 'bokeh', 'crosshair', 'iris', 'lightning'] },
   { key: 'gpgpuAgeSizeCurve', gloss: 'GPGPU寿命サイズカーブの形', values: ['linear', 'bell'] },
-  { key: 'gpgpuGradDriver', gloss: 'Kinetix Color グラデーションのドライバ（image は当面 life 代替）', values: ['life', 'velocity', 'spatial', 'prism', 'image', 'blackbody'] },
+  { key: 'gpgpuGradDriver', gloss: 'Kinetix Color グラデーションのドライバ（image は粒子位置で元画像の色をサンプリング、未設定時は life 代替）', values: ['life', 'velocity', 'spatial', 'prism', 'image', 'blackbody'] },
   { key: 'gpgpuGradPreset', gloss: 'Kinetix Color グラデーションのプリセット', values: ['nebula', 'solaris', 'aurora', 'plasma', 'golddust', 'emerald', 'inferno', 'arctic', 'ultraviolet', 'sumie', 'custom'] },
   { key: 'gpgpuBlendMode', gloss: 'GPGPUポイント素材のブレンド方式', values: ['additive', 'normal'] },
   { key: 'postToneMapping', gloss: '出力段のトーンマッピング', values: ['legacy', 'aces'] },

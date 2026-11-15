@@ -424,7 +424,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
             <option value="spatial">Spatial（中心からの距離）</option>
             <option value="prism">Prism（色相環）</option>
             <option value="blackbody">Blackbody（黒体放射）</option>
-            <option value="image">Image（当面は Life 代替）</option>
+            <option value="image">Image（画像から色）</option>
           </select>
           <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Gradient Preset</div>
           <select
@@ -473,6 +473,9 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
             <div className="mt-1 text-[9px] leading-relaxed text-white/40">
               Blackbody はグラデーション色を使わず、寿命と速度から熱（煙→煤→深紅→橙→白熱）を近似します（Kinetix の黒体ランプと同値）。
             </div>
+          )}
+          {config.gpgpuGradDriver === 'image' && (
+            <GradImageBlock config={config} updateConfig={updateConfig} />
           )}
         </>
       )}
@@ -563,6 +566,78 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
     <SimpleLfoBlock />
   </>
 );
+
+/**
+ * Image source controls for the gradient 'image' driver (Phase A).
+ * The picked image is downscaled to <=256px and stored in the config
+ * as a data URL (gpgpuGradImageSource), so — like the SVG morph
+ * source — it persists with presets / projects. The point shader
+ * samples the image by particle position (world XY over the bounce
+ * sphere). While no image is set the driver falls back to the life
+ * gradient; the status line below states that explicitly instead of
+ * falling back silently.
+ */
+const GradImageBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const source = config.gpgpuGradImageSource;
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error('image load failed'));
+        el.src = url;
+      });
+      const scale = Math.min(1, 256 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+      canvas.height = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      updateConfig('gpgpuGradImageSource', canvas.toDataURL('image/jpeg', 0.87));
+    } catch {
+      // Unreadable file: keep the previous source untouched.
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+  return (
+    <div className="mb-3 rounded border border-white/10 bg-white/5 p-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label className="cursor-pointer rounded border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10">
+          画像を開く
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        {source && (
+          <>
+            <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />
+            <button
+              onClick={() => updateConfig('gpgpuGradImageSource', '')}
+              className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+            >
+              クリア
+            </button>
+          </>
+        )}
+      </div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {source
+          ? '画像を設定済み: 粒子は自分の位置（XY 平面、バウンス範囲全体に画像を広げる）で画像の色を拾います。画像は 256px 以下に縮小され、config に保持されます。'
+          : '画像が未設定のため、いまは Life グラデーションで代替しています。画像を設定すると、粒子が位置ごとに画像の色を拾うようになります。'}
+      </div>
+    </div>
+  );
+};
 
 /**
  * SVG import controls for the morph 'svg' target (Pro-2). The SVG

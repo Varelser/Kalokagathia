@@ -198,9 +198,10 @@ export interface ParticleConfigGpgpu {
   // driven by life / velocity / spatial position / prism / image /
   // blackbody. Opt-in only — when disabled the legacy colour paths
   // (single colour, age 2-stop, velocity hue) run exactly as before.
-  // The 'image' driver is declared here but falls back to the life
-  // driver in the shader until an RGB media colour map exists
-  // (MediaLumaMap carries luma only).
+  // The 'image' driver samples a user image (gpgpuGradImageSource)
+  // by particle position in the point shader; while no image is set
+  // (or it is still loading) it falls back to the life driver, and
+  // the UI says so explicitly.
   gpgpuGradEnabled: boolean;
   gpgpuGradDriver: 'life' | 'velocity' | 'spatial' | 'prism' | 'image' | 'blackbody';
   gpgpuGradStart: string;
@@ -208,6 +209,11 @@ export interface ParticleConfigGpgpu {
   gpgpuGradEnd: string;
   gpgpuGradPreset: string;
   gpgpuGradSpatialScale: number;
+  // Source image for the 'image' gradient driver, held in the config
+  // as a data URL (downscaled to <=256px by the UI) so it persists
+  // with presets / projects like the SVG morph source does. Empty
+  // string = no image (the driver falls back to life).
+  gpgpuGradImageSource: string;
   // Point material blending (Kinetix integration B2): 'additive' is the
   // legacy default; 'normal' is the Kinetix Normal blend. The sort-based
   // transparency path still forces Normal while sorting is on.

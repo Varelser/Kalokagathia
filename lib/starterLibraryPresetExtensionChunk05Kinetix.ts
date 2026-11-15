@@ -138,7 +138,20 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_KINETIX: PresetRecord[] = [
         gpgpuCount: 4608,
         gpgpuEmitShape: 'sphere',
         gpgpuSize: 1.75,
-        gpgpuOpacity: 0.88,
+        // Phase A fix: the B4-converted values blew the whole frame
+        // out to white — the geometry material is additive and
+        // double-sided, so the bright default colour (#88aaff) at
+        // opacity 0.88 with env-reflect 0.55 stacked faces past
+        // clipping (measured: 47% of lit pixels near-white), and
+        // morph jitter 0.35 scattered the cubes off the torus-knot
+        // tube into a filled ball, hiding the knot entirely. Fixed
+        // at the source: darker steel colour, lower opacity, smaller
+        // cubes, tighter jitter (0.15) so the knot reads, gentler
+        // bloom / chromatic aberration. A global exposure cut alone
+        // (0.45) was already tried in the acquisition round and
+        // could not rescue it.
+        gpgpuColor: '#42556b',
+        gpgpuOpacity: 0.32,
         gpgpuSpeed: 0.73,
         gpgpuGravity: 0,
         gpgpuTurbulence: 0.13,
@@ -151,7 +164,7 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_KINETIX: PresetRecord[] = [
         gpgpuMorphTarget: 'torusKnot',
         gpgpuMorphStrength: 2.43,
         gpgpuMorphScale: 0.95,
-        gpgpuMorphJitter: 0.35,
+        gpgpuMorphJitter: 0.15,
         gpgpuMorphOrbitSpeed: 0.33,
         gpgpuGradEnabled: true,
         gpgpuGradDriver: 'spatial',
@@ -161,22 +174,22 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_KINETIX: PresetRecord[] = [
         gpgpuGradPreset: 'custom',
         gpgpuGradSpatialScale: 0.008,
         gpgpuGeomMode: 'cube',
-        gpgpuGeomEnvReflect: 0.55,
-        gpgpuGeomScale: 0.93,
+        gpgpuGeomEnvReflect: 0.35,
+        gpgpuGeomScale: 0.62,
         gpgpuGeomSpinSpeed: 1,
         layer2Enabled: false,
         postBloomEnabled: true,
-        postBloomIntensity: 0.85,
-        postBloomRadius: 0.55,
-        postBloomThreshold: 0.18,
+        postBloomIntensity: 0.55,
+        postBloomRadius: 0.45,
+        postBloomThreshold: 0.3,
         postChromaticAberrationEnabled: true,
-        postChromaticAberrationOffset: 0.003,
+        postChromaticAberrationOffset: 0.0012,
         postNoiseEnabled: true,
         postNoiseOpacity: 0.08,
         postVignetteEnabled: true,
         postVignetteOffset: 0.35,
         postVignetteDarkness: 0.45,
-        postExposure: 1.08,
+        postExposure: 1.0,
         postToneMapping: 'aces',
       }),
   createStarterPreset('starter-kinetix-sumie-ink', 'Kinetix Sumi-e Ink Flow', {

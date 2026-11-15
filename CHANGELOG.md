@@ -4,6 +4,43 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.7.1] — 2026-11-16
+
+Correctness fixes from the v1.7.0 audit (improvement plan Phase A):
+features that could be selected but did nothing now work, and the
+public copy can no longer drift from the real preset count.
+
+### Added
+- **Image gradient driver** — the Kinetix Color gradient's `image`
+  driver (id 4, reserved in B2) is implemented: pick an image in the
+  GPGPU panel and each particle takes the colour of the image at its
+  own position (world XY mapped over the bounce sphere), mirroring
+  Kinetix's image colour mode. The image is downscaled to ≤256px and
+  stored in the config as a data URL (`gpgpuGradImageSource`), so it
+  persists with presets and projects like the SVG morph source.
+  While no image is set the driver still falls back to the life
+  gradient, but the panel now says so explicitly — the silent
+  fallback flagged in the audit is gone.
+
+### Changed
+- **Preset counts in the page metadata are injected at build time**
+  from `public/generated-collection.json` (the `__PRESET_COUNT__`
+  token in index.html), replacing the hand-written "750" that had
+  gone stale in the description / og:description. If the index
+  cannot be read, the count phrase is dropped rather than left
+  wrong.
+
+### Fixed
+- **starter-kinetix-metallic-crystals no longer blows out to
+  white.** The geometry material is additive and double-sided, so
+  the B4-converted values (bright default colour, opacity 0.88,
+  env-reflect 0.55) stacked faces past clipping — 47% of lit pixels
+  measured near-white — and morph jitter 0.35 scattered the cubes
+  off the torus-knot tube into a filled ball. The preset now uses a
+  darker steel colour, lower opacity, smaller cubes, tighter jitter
+  (0.15) and gentler bloom / chromatic aberration, so individual
+  crystals and the knot structure read clearly (0% blown pixels).
+
 ## [1.7.0] — 2026-11-16
 
 Transparent delivery with full post-processing (Pro-1.1), and
