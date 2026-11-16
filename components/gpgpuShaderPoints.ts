@@ -1,5 +1,27 @@
 import { PARTICLE_SHAPE_GLSL } from './particleShapeGlsl';
 
+// Phase U shared helpers: the 5-point age curve (GLSL twin of
+// lib/ageCurve.ts evaluateAgeCurve — same knots at t = 0/.25/.5/.75/1,
+// same piecewise-linear blend, so an all-ones curve is exactly 1.0)
+// and the per-property Layer Map factor (mix(1, luma, amount): 0 is
+// identity, 1 makes the sampled luminance the multiplier itself).
+const AGE_CURVE_GLSL = /* glsl */ `
+  float kaloEvalCurve5(float t, float p0, float p1, float p2, float p3, float p4) {
+    float x = clamp(t, 0.0, 1.0) * 4.0;
+    float v = p0;
+    v = mix(v, p1, clamp(x, 0.0, 1.0));
+    v = mix(v, p2, clamp(x - 1.0, 0.0, 1.0));
+    v = mix(v, p3, clamp(x - 2.0, 0.0, 1.0));
+    v = mix(v, p4, clamp(x - 3.0, 0.0, 1.0));
+    return v;
+  }
+  float kaloMapFactor(sampler2D tex, vec2 worldXy, float scale, float amount) {
+    vec2 mapUv = clamp(worldXy * scale + 0.5, 0.0, 1.0);
+    float luma = dot(texture2D(tex, mapUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+    return mix(1.0, luma, amount);
+  }
+`;
+
 // ── Draw vertex (main points) ──
 export const DRAW_VERT = /* glsl */ `
   precision highp float;
@@ -16,6 +38,15 @@ export const DRAW_VERT = /* glsl */ `
   uniform float uKuramotoInfluence;
   uniform float uAgeSizeStart;
   uniform float uAgeSizeEnd;
+  // Age curve (Phase U): size multiplier over normalised age.
+  uniform bool  uAgeCurveSizeEnabled;
+  uniform float uAgeCurveSize[5];
+  // Layer Map (Phase U): the gradient image sampled by particle
+  // position (same uniforms the fragment's image driver uses).
+  uniform sampler2D uGradImageTex;
+  uniform bool      uGradImageReady;
+  uniform float     uGradImageScale;
+  uniform float     uMapSizeAmount;
   uniform bool  uParticleLifeEnabled;
   uniform int   uParticleLifeSpecies;
   uniform float uTexSizeF;
@@ -26,6 +57,9 @@ export const DRAW_VERT = /* glsl */ `
   varying float vPlBright;
   varying float vSeed;
   varying vec3 vWorldPos;
+
+  ${AGE_CURVE_GLSL}
+
   // Particle Life species helpers — must match the velocity sim exactly.
   float plHash(float n) {
     return fract(sin(n * 127.1 + 311.7) * 43758.5453123);
@@ -68,6 +102,17 @@ export const DRAW_VERT = /* glsl */ `
       sizeMul = uAgeSizeCurve == 1
         ? mix(uAgeSizeEnd, uAgeSizeStart, sin(3.14159265 * vNormAge))
         : mix(uAgeSizeStart, uAgeSizeEnd, vNormAge);
+    }
+    // Age curve (Phase U): a multiplier layered on the legacy size
+    // path — flat (all-ones) points keep the legacy size bit-exact.
+    if (uAgeCurveSizeEnabled) {
+      sizeMul *= kaloEvalCurve5(vNormAge, uAgeCurveSize[0], uAgeCurveSize[1], uAgeCurveSize[2], uAgeCurveSize[3], uAgeCurveSize[4]);
+    }
+    // Layer Map (Phase U): size modulated by the gradient image's
+    // luminance at the particle's own position. Amount 0 (default)
+    // skips the fetch entirely, so the legacy path is untouched.
+    if (uMapSizeAmount > 0.0 && uGradImageReady) {
+      sizeMul *= kaloMapFactor(uGradImageTex, worldPos.xy, uGradImageScale, uMapSizeAmount);
     }
     vPhaseMix = 1.0;
     vPlBright = 1.0;
@@ -118,6 +163,16 @@ export const DRAW_FRAG = /* glsl */ `
   uniform sampler2D uGradImageTex;
   uniform bool      uGradImageReady;
   uniform float     uGradImageScale;
+  // Age curve (Phase U): opacity multiplier over normalised age.
+  uniform bool      uAgeCurveOpacityEnabled;
+  uniform float     uAgeCurveOpacity[5];
+  // Layer Map (Phase U): opacity modulated by the gradient image.
+  uniform float     uMapOpacityAmount;
+  // Sprite image (Phase U): when ready, the sprite's shape comes
+  // from the user image (luminance baked into the texture) instead
+  // of the procedural point shapes.
+  uniform sampler2D uSpriteImageTex;
+  uniform bool      uSpriteImageReady;
   varying float vSpeed;
   varying float vNormAge;
   varying float vPhaseMix;
@@ -126,6 +181,8 @@ export const DRAW_FRAG = /* glsl */ `
   varying vec3 vWorldPos;
 
   ${PARTICLE_SHAPE_GLSL}
+
+  ${AGE_CURVE_GLSL}
 
   vec3 hsv2rgb(float h, float s, float v) {
     vec3 p = abs(fract(vec3(h) + vec3(1.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);
@@ -212,12 +269,30 @@ export const DRAW_FRAG = /* glsl */ `
       ageFade  = smoothstep(0.0, uAgeFadeIn, vNormAge);
       ageFade *= smoothstep(1.0, 1.0 - uAgeFadeOut, vNormAge);
     }
+    // Age curve (Phase U): a multiplier layered on the legacy fade —
+    // flat (all-ones) points keep the legacy alpha bit-exact.
+    float opacityMul = ageFade;
+    if (uAgeCurveOpacityEnabled) {
+      opacityMul *= kaloEvalCurve5(vNormAge, uAgeCurveOpacity[0], uAgeCurveOpacity[1], uAgeCurveOpacity[2], uAgeCurveOpacity[3], uAgeCurveOpacity[4]);
+    }
+    // Layer Map (Phase U): opacity modulated by the gradient image's
+    // luminance at the particle's own position.
+    if (uMapOpacityAmount > 0.0 && uGradImageReady) {
+      opacityMul *= kaloMapFactor(uGradImageTex, vWorldPos.xy, uGradImageScale, uMapOpacityAmount);
+    }
 
-    // Point shape: 0 keeps the legacy soft disc exactly; kinds 1..11
-    // use the shared shape masks (Kinetix integration B1b), the same
-    // set the layer point shader exposes through sdfShape.
+    // Point shape: a ready sprite image (Phase U) takes priority —
+    // its baked luminance IS the shape. Otherwise 0 keeps the legacy
+    // soft disc exactly; kinds 1..11 use the shared shape masks
+    // (Kinetix integration B1b), the same set the layer point shader
+    // exposes through sdfShape.
     float shapeAlpha;
-    if (uPointShape == 0) {
+    if (uSpriteImageReady) {
+      // gl_PointCoord y grows downward; the sprite texture holds the
+      // image top at v=1, so v = 1 - y draws the image upright.
+      shapeAlpha = texture2D(uSpriteImageTex, vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y)).r;
+      if (shapeAlpha < 0.01) discard;
+    } else if (uPointShape == 0) {
       shapeAlpha = smoothstep(0.5, 0.12, d);
     } else {
       vec2 pq = (gl_PointCoord - 0.5) * 2.0;
@@ -226,7 +301,7 @@ export const DRAW_FRAG = /* glsl */ `
       if (shapeAlpha < 0.01) discard;
     }
 
-    gl_FragColor = vec4(col, shapeAlpha * uOpacity * ageFade * vPhaseMix);
+    gl_FragColor = vec4(col, shapeAlpha * uOpacity * opacityMul * vPhaseMix);
   }
 `;
 

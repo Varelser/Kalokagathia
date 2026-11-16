@@ -33,6 +33,17 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uAgeSizeStart:      { value: 2.0 },
       uAgeSizeEnd:        { value: 0.2 },
       uAgeSizeCurve:      { value: 0 },
+      // Phase U: age curves / Layer Maps / sprite image. Defaults are
+      // the identity configuration (curves disabled, flat points,
+      // amounts 0, no sprite), so the legacy draw is bit-identical.
+      uAgeCurveSizeEnabled:    { value: false },
+      uAgeCurveSize:           { value: [1, 1, 1, 1, 1] },
+      uAgeCurveOpacityEnabled: { value: false },
+      uAgeCurveOpacity:        { value: [1, 1, 1, 1, 1] },
+      uMapSizeAmount:          { value: 0 },
+      uMapOpacityAmount:       { value: 0 },
+      uSpriteImageTex:         { value: null },
+      uSpriteImageReady:       { value: false },
       uPointShape:        { value: 0 },
       uGradEnabled:       { value: false },
       uGradDriver:        { value: 0 },

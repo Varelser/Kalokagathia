@@ -6,6 +6,8 @@ import type { GpgpuAssetBundle } from './useGpgpuAssets';
 import { MAX_TRAIL } from './gpgpuShaders';
 import { fillGradientLutData } from '../lib/kinetixGradients';
 import { getGradImageTexture } from '../lib/gradImageTexture';
+import { getSpriteImageTexture } from '../lib/spriteImageTexture';
+import { normalizeAgeCurvePoints } from '../lib/ageCurve';
 
 const GRAD_DRIVER_IDS: Record<ParticleConfig['gpgpuGradDriver'], number> = {
   life: 0,
@@ -197,6 +199,28 @@ export function syncVisualUniforms(args: {
   drawMat.uniforms.uAgeSizeStart.value = config.gpgpuAgeSizeStart;
   drawMat.uniforms.uAgeSizeEnd.value = config.gpgpuAgeSizeEnd;
   if (drawMat.uniforms.uAgeSizeCurve) drawMat.uniforms.uAgeSizeCurve.value = config.gpgpuAgeSizeCurve === 'bell' ? 1 : 0;
+  // Age curves + Layer Maps + sprite image (Phase U). The point
+  // lists are sanitised on the way in (exactly five finite, clamped
+  // values) so a malformed preset can never push NaN into the
+  // shader; the sprite lookup is cached by source string, like the
+  // gradient image above. The map amounts reuse the gradient image
+  // uniforms synced in the gradient block (texture / ready / scale
+  // are refreshed every frame regardless of the colour driver).
+  if (drawMat.uniforms.uAgeCurveSizeEnabled) {
+    drawMat.uniforms.uAgeCurveSizeEnabled.value = config.gpgpuAgeCurveSizeEnabled;
+    drawMat.uniforms.uAgeCurveSize.value = normalizeAgeCurvePoints(config.gpgpuAgeCurveSizePoints);
+  }
+  if (drawMat.uniforms.uAgeCurveOpacityEnabled) {
+    drawMat.uniforms.uAgeCurveOpacityEnabled.value = config.gpgpuAgeCurveOpacityEnabled;
+    drawMat.uniforms.uAgeCurveOpacity.value = normalizeAgeCurvePoints(config.gpgpuAgeCurveOpacityPoints);
+  }
+  if (drawMat.uniforms.uMapSizeAmount) drawMat.uniforms.uMapSizeAmount.value = config.gpgpuMapSizeAmount;
+  if (drawMat.uniforms.uMapOpacityAmount) drawMat.uniforms.uMapOpacityAmount.value = config.gpgpuMapOpacityAmount;
+  if (drawMat.uniforms.uSpriteImageTex) {
+    const spriteState = getSpriteImageTexture(config.gpgpuSpriteImage);
+    drawMat.uniforms.uSpriteImageTex.value = spriteState.texture;
+    if (drawMat.uniforms.uSpriteImageReady) drawMat.uniforms.uSpriteImageReady.value = spriteState.ready;
+  }
   if (drawMat.uniforms.uPointShape) drawMat.uniforms.uPointShape.value = { soft: 0, sphere: 1, ring: 2, star: 3, hexagon: 4, diamond: 5, flare: 6, cloud: 7, bokeh: 8, crosshair: 9, iris: 10, lightning: 11 }[config.gpgpuPointShape] ?? 0;
   drawMat.uniforms.uSortEnabled.value = config.gpgpuSortEnabled && finalSortTex !== null;
   drawMat.uniforms.uSortTex.value = finalSortTex;
