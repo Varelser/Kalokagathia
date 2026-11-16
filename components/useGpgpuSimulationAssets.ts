@@ -151,6 +151,10 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uMouseRadius:   { value: 150.0 },
       uMouseMode:     { value: 0 },
       uMousePaintRate:{ value: 0.6 },
+      // Light emitter respawn (Phase T): off unless the emit shape
+      // is 'light'; the position then mirrors the light keys.
+      uEmitLight:     { value: false },
+      uEmitLightPos:  { value: new THREE.Vector3(0, 0, 0) },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_POS_FRAG,
   // eslint-disable-next-line react-hooks/exhaustive-deps

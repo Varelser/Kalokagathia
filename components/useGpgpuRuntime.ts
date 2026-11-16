@@ -236,6 +236,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       config.gpgpuMorphEnabled && config.gpgpuMorphReplicaCount > 1 && config.gpgpuMorphReplicaAgeStep > 0
         ? { count: config.gpgpuMorphReplicaCount, step: config.gpgpuMorphReplicaAgeStep }
         : null,
+      // Light emitter (Phase T): the light position is an emitter
+      // input only for the 'light' shape; every other shape ignores
+      // it, so their seeded arrays stay byte-identical.
+      config.gpgpuEmitShape === 'light'
+        ? { lightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ } }
+        : null,
     );
     const initTex = new THREE.DataTexture(posData.slice(), texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     initTex.needsUpdate = true;
@@ -415,7 +421,13 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       webgpuPosTexRef.current?.dispose();
       webgpuPosTexRef.current = null;
     };
-  }, [texSize, gl, config.gpgpuEmitShape, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax, config.gpgpuMorphEnabled, config.gpgpuMorphReplicaCount, config.gpgpuMorphReplicaAgeStep]);
+  }, [texSize, gl, config.gpgpuEmitShape, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax, config.gpgpuMorphEnabled, config.gpgpuMorphReplicaCount, config.gpgpuMorphReplicaAgeStep,
+    // Light position only re-seeds while the 'light' emitter is in
+    // use (Phase T); for other shapes it is masked to 0 so dragging
+    // the light never resets their cloud.
+    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0,
+    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0,
+    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0]);
 
   // Morph target texture (Kinetix integration B1a): the per-particle
   // target cloud is baked on the CPU (deterministic, seeded) and rebuilt

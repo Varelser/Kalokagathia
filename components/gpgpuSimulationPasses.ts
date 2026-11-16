@@ -346,6 +346,13 @@ export function runSimulationPasses(args: {
   posSimMat.uniforms.uMouseRadius.value = config.gpgpuMouseRadius;
   posSimMat.uniforms.uMouseMode.value = MOUSE_MODE_IDS[config.gpgpuMouseMode] ?? 0;
   posSimMat.uniforms.uMousePaintRate.value = config.gpgpuMousePaintRate;
+  // Light emitter (Phase T): only the 'light' emit shape reroutes
+  // the age respawn to the light position; everything else keeps
+  // the legacy origin-sphere respawn.
+  if (posSimMat.uniforms.uEmitLight) {
+    posSimMat.uniforms.uEmitLight.value = config.gpgpuEmitShape === 'light';
+    (posSimMat.uniforms.uEmitLightPos.value as THREE.Vector3).set(config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ);
+  }
   simMesh.material = posSimMat;
   gl.setRenderTarget(posOut);
   gl.render(simScene, simCamera);

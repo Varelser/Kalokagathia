@@ -28,6 +28,11 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform float uMouseRadius;
   uniform int   uMouseMode;
   uniform float uMousePaintRate;
+  // Light emitter (Phase T): while the emit shape is 'light', the
+  // age respawn re-emits around the light position instead of the
+  // origin sphere. False (default) keeps the legacy statement.
+  uniform bool  uEmitLight;
+  uniform vec3  uEmitLightPos;
   varying vec2 vUv;
 
   float hash1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -130,7 +135,17 @@ export const SIM_POS_FRAG = /* glsl */ `
         float r   = uBounceRadius * (0.05 + hash1(vUv + vec2(age)) * 0.9);
         float th  = hash1(vUv + vec2(1.3)) * 6.2832;
         float phi = acos(2.0 * hash1(vUv + vec2(2.7)) - 1.0);
-        pos = vec3(r * sin(phi) * cos(th), r * sin(phi) * sin(th), r * cos(phi));
+        if (uEmitLight) {
+          // Light emitter (Phase T): respawn as a small ball around
+          // the light position — the same hash draws, the radius
+          // scaled to 5% — so the emitter keeps feeding particles
+          // from the light. Every other shape takes the legacy
+          // statement below, verbatim.
+          float jr = r * 0.05;
+          pos = uEmitLightPos + vec3(jr * sin(phi) * cos(th), jr * sin(phi) * sin(th), jr * cos(phi));
+        } else {
+          pos = vec3(r * sin(phi) * cos(th), r * sin(phi) * sin(th), r * cos(phi));
+        }
         // Replica age phase (Phase M): the respawn restarts the
         // lifecycle at this particle's replica-block offset instead
         // of 0, so the copies keep their phase separation forever
