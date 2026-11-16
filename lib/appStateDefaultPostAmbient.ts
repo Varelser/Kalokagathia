@@ -46,6 +46,28 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postToneMapping: 'legacy' as const,
   postBrandColorEnabled: false,
   postBrandColor: '#c8372d',
+  // LightFX (Phase D): all sub-effects OFF by default — the stage is
+  // not inserted and the output is unchanged. Light position is the
+  // frame centre; the Lux cone defaults to pointing down-screen
+  // (270 degrees in UV space, where 0 = right and 90 = up) with its
+  // length at 0, i.e. glow only until the user asks for a cone.
+  postLightX: 0.5,
+  postLightY: 0.5,
+  postShineEnabled: false,
+  postShineIntensity: 1.0,
+  postShineLength: 0.5,
+  postShineThreshold: 0.6,
+  postStarglowEnabled: false,
+  postStarglowIntensity: 1.0,
+  postStarglowLength: 0.35,
+  postStarglowThreshold: 0.6,
+  postStarglowDiagonal: false,
+  postLuxEnabled: false,
+  postLuxIntensity: 1.0,
+  postLuxSize: 0.35,
+  postLuxConeLength: 0,
+  postLuxConeAngle: 270,
+  postLuxConeSpread: 32,
   executionDiagnosticsEnabled: false,
   executionDiagnosticsVerbose: false,
   hybridSdfEnabled: false,

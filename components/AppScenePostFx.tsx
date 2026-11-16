@@ -8,6 +8,7 @@ import { FeedbackPass } from './feedbackPass';
 import { KaleidoscopePass } from './kaleidoscopePass';
 import { SlitScanPass } from './slitScanPass';
 import { RadialBlurPass } from './radialBlurPass';
+import { LightFxPass } from './lightFxPass';
 import { OutputGradePass } from './outputGradePass';
 
 export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config }) => {
@@ -28,6 +29,24 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   const radialBlurPass = React.useMemo(() => new RadialBlurPass(), []);
   React.useEffect(() => () => radialBlurPass.dispose(), [radialBlurPass]);
   radialBlurPass.strength = config.postRadialBlurStrength;
+  const lightFxPass = React.useMemo(() => new LightFxPass(), []);
+  React.useEffect(() => () => lightFxPass.dispose(), [lightFxPass]);
+  lightFxPass.lightPos.set(config.postLightX, config.postLightY);
+  lightFxPass.shineEnabled = config.postShineEnabled;
+  lightFxPass.shineIntensity = config.postShineIntensity;
+  lightFxPass.shineLength = config.postShineLength;
+  lightFxPass.shineThreshold = config.postShineThreshold;
+  lightFxPass.starglowEnabled = config.postStarglowEnabled;
+  lightFxPass.starglowIntensity = config.postStarglowIntensity;
+  lightFxPass.starglowLength = config.postStarglowLength;
+  lightFxPass.starglowThreshold = config.postStarglowThreshold;
+  lightFxPass.starglowDiagonal = config.postStarglowDiagonal;
+  lightFxPass.luxEnabled = config.postLuxEnabled;
+  lightFxPass.luxIntensity = config.postLuxIntensity;
+  lightFxPass.luxSize = config.postLuxSize;
+  lightFxPass.luxConeLength = config.postLuxConeLength;
+  lightFxPass.luxConeAngle = config.postLuxConeAngle;
+  lightFxPass.luxConeSpread = config.postLuxConeSpread;
   const outputGradePass = React.useMemo(() => new OutputGradePass(), []);
   React.useEffect(() => () => outputGradePass.dispose(), [outputGradePass]);
   outputGradePass.exposure = config.postExposure;
@@ -107,6 +126,8 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
             return <primitive key={stage} object={feedbackPass} />;
           case 'radial-blur':
             return <primitive key={stage} object={radialBlurPass} />;
+          case 'light-fx':
+            return <primitive key={stage} object={lightFxPass} />;
           case 'output-grade':
             return <primitive key={stage} object={outputGradePass} />;
           default:

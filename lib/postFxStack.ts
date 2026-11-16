@@ -11,19 +11,24 @@ export type PostFxStageId =
   | 'slit-scan'
   | 'feedback'
   | 'radial-blur'
+  | 'light-fx'
   | 'output-grade';
 
 export type PostFxStackProfile = ParticleConfig['postFxStackProfile'];
 
 // 'radial-blur' (B2) sits with the other spatial lens stages, after
 // depth-of-field; 'output-grade' (B2) is always the final stage so
-// exposure / ACES grade the finished frame.
+// exposure / ACES grade the finished frame. 'light-fx' (Phase D:
+// Shine / Starglow / Lux) sits immediately after 'bloom' in every
+// profile so streaks and glints are extracted from the bloomed
+// highlights, and before 'output-grade' so the brand duotone and
+// exposure grade the finished light as well.
 const STACK_ORDERS: Record<PostFxStackProfile, PostFxStageId[]> = {
-  manual: ['brightness-contrast', 'noise', 'bloom', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
-  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
-  'particular-glow': ['brightness-contrast', 'bloom', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
-  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
-  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
+  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
+  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
+  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
+  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
+  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
 };
 
 export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[] {
@@ -57,6 +62,16 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   }
   if (config.postRadialBlurEnabled && config.postRadialBlurStrength > 0.001) {
     active.add('radial-blur');
+  }
+  // LightFX (Phase D) exists only when at least one sub-effect would
+  // change a pixel; all three default OFF, so the stage is absent and
+  // the output is unchanged.
+  if (
+    (config.postShineEnabled && config.postShineIntensity > 0.001) ||
+    (config.postStarglowEnabled && config.postStarglowIntensity > 0.001) ||
+    (config.postLuxEnabled && config.postLuxIntensity > 0.001)
+  ) {
+    active.add('light-fx');
   }
   // Output grade only exists when it would change a pixel: exposure
   // other than 1.0, the ACES curve selected, or the brand monochrome

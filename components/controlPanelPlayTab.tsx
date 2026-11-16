@@ -4491,7 +4491,7 @@ const KeyboardShortcutsSection: React.FC = () => (
 // App version handed to the deterministic renderer for its render.json
 // manifest. Keep in sync with package.json "version" (the renderer must
 // not import package.json, so the UI supplies it — see PRO1_BRIEF.md).
-const KALOKAGATHIA_APP_VERSION = '1.8.0';
+const KALOKAGATHIA_APP_VERSION = '1.9.0';
 
 // Phase C resolution presets for the deterministic renderer. 'canvas'
 // captures at the canvas's current size (the pre-Phase-C behaviour);

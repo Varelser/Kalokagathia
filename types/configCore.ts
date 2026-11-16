@@ -138,6 +138,31 @@ export interface ParticleConfigCore {
   // (disabled) keep the stage inactive and the output unchanged.
   postBrandColorEnabled: boolean;
   postBrandColor: string;
+  // LightFX (Phase D): Trapcode Shine / Starglow / Lux equivalents as
+  // a single post stage. One shared light-source position (UV) feeds
+  // the Shine ray centre and the Lux source. Every sub-effect defaults
+  // OFF; with all three off the stage is not inserted at all and the
+  // output is identical to before. Monochrome by construction — the
+  // streaks/glints are extracted from the frame's own highlights, so
+  // they inherit whatever colour the existing paths (gradient / brand)
+  // already produced; the Lux source itself is neutral white.
+  postLightX: number;
+  postLightY: number;
+  postShineEnabled: boolean;
+  postShineIntensity: number;
+  postShineLength: number;
+  postShineThreshold: number;
+  postStarglowEnabled: boolean;
+  postStarglowIntensity: number;
+  postStarglowLength: number;
+  postStarglowThreshold: number;
+  postStarglowDiagonal: boolean;
+  postLuxEnabled: boolean;
+  postLuxIntensity: number;
+  postLuxSize: number;
+  postLuxConeLength: number;
+  postLuxConeAngle: number;
+  postLuxConeSpread: number;
   executionDiagnosticsEnabled: boolean;
   executionDiagnosticsVerbose: boolean;
   hybridSdfEnabled: boolean;

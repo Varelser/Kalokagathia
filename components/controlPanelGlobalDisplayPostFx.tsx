@@ -173,6 +173,66 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
         {config.postRadialBlurEnabled && (
           <Slider label="Radial Blur Strength" value={config.postRadialBlurStrength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postRadialBlurStrength', v)} />
         )}
+        <div className="mb-1 mt-4 text-[9px] uppercase tracking-widest opacity-60">LightFX (Shine / Starglow / Lux)</div>
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          光源位置（画面UV）を共有する光のポスト段（Phase D）。筋とグリントは画面自身の高輝度部から抽出するのでモノクロのまま色は付かず、ブランド単色やグラデーションの色はそのまま受け継ぎます。全て既定 OFF で、OFF の間は段自体が無く従来出力と同一です。
+        </div>
+        <Slider label="Light Position X" value={config.postLightX} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postLightX', v)} />
+        <Slider label="Light Position Y" value={config.postLightY} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postLightY', v)} />
+        <Toggle
+          label="Shine (放射光)"
+          value={config.postShineEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postShineEnabled', v)}
+        />
+        {config.postShineEnabled && (
+          <>
+            <Slider label="Shine Intensity" value={config.postShineIntensity} min={0} max={3} step={0.05} onChange={(v) => updateConfig('postShineIntensity', v)} />
+            <Slider label="Shine Length" value={config.postShineLength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postShineLength', v)} />
+            <Slider label="Shine Threshold" value={config.postShineThreshold} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postShineThreshold', v)} />
+          </>
+        )}
+        <Toggle
+          label="Starglow (十字グリント)"
+          value={config.postStarglowEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postStarglowEnabled', v)}
+        />
+        {config.postStarglowEnabled && (
+          <>
+            <Slider label="Starglow Intensity" value={config.postStarglowIntensity} min={0} max={3} step={0.05} onChange={(v) => updateConfig('postStarglowIntensity', v)} />
+            <Slider label="Starglow Length" value={config.postStarglowLength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postStarglowLength', v)} />
+            <Slider label="Starglow Threshold" value={config.postStarglowThreshold} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postStarglowThreshold', v)} />
+            <Toggle
+              label="Starglow Diagonal (8方向)"
+              value={config.postStarglowDiagonal}
+              options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+              onChange={(v) => updateConfig('postStarglowDiagonal', v)}
+            />
+          </>
+        )}
+        <Toggle
+          label="Lux (光源の可視化)"
+          value={config.postLuxEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postLuxEnabled', v)}
+        />
+        {config.postLuxEnabled && (
+          <>
+            <Slider label="Lux Intensity" value={config.postLuxIntensity} min={0} max={3} step={0.05} onChange={(v) => updateConfig('postLuxIntensity', v)} />
+            <Slider label="Lux Size" value={config.postLuxSize} min={0.02} max={1} step={0.01} onChange={(v) => updateConfig('postLuxSize', v)} />
+            <Slider label="Lux Cone Length (0=グローonly)" value={config.postLuxConeLength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postLuxConeLength', v)} />
+            {config.postLuxConeLength > 0.001 && (
+              <>
+                <Slider label="Lux Cone Angle (deg)" value={config.postLuxConeAngle} min={0} max={360} step={1} onChange={(v) => updateConfig('postLuxConeAngle', v)} />
+                <Slider label="Lux Cone Spread (deg)" value={config.postLuxConeSpread} min={5} max={90} step={1} onChange={(v) => updateConfig('postLuxConeSpread', v)} />
+              </>
+            )}
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              光源位置は上の Light Position で指定します（手動UV。GPGPU の井戸位置とは連動しません — シミュレーション時刻とポスト段の時刻が独立なため、投影すると決定レンダーでずれる恐れがある設計判断です）。角度は 0=右 / 90=上 / 270=下（画面下向きが既定）。
+            </div>
+          </>
+        )}
         <div className="mb-1 mt-4 text-[9px] uppercase tracking-widest opacity-60">Output Grade</div>
         <Toggle
           label="Tone Mapping"

@@ -4,6 +4,41 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.9.0] — 2026-11-16
+
+LightFX (improvement plan Phase D): the Trapcode Shine / Starglow /
+Lux family arrives as a single new post stage, closing the largest
+remaining gap in the Maxon coverage audit. Everything defaults OFF;
+with all sub-effects off the stage is not inserted and the output is
+identical to before.
+
+### Added
+- **Shine** — screen-space light rays: highlights above a threshold
+  are accumulated along the ray from the shared light position
+  through each pixel, smearing bright objects into rays that emanate
+  from the source (`postShineEnabled / Intensity / Length /
+  Threshold`, light position via `postLightX / postLightY`).
+- **Starglow** — star glints on highlights: the bright-pass is
+  streak-blurred horizontally and vertically, with an optional
+  diagonal pair for 8-point stars (`postStarglowEnabled / Intensity
+  / Length / Threshold / Diagonal`).
+- **Lux** — the light source made visible: a neutral-white glow disc
+  with a hot core at the light position, plus an optional
+  screen-space cone (`postLuxEnabled / Intensity / Size /
+  ConeLength / ConeAngle / ConeSpread`). The source position is the
+  manual UV position, deliberately not a projection of the GPGPU
+  well positions — the simulation time base is not visible to the
+  post chain, so a projected position could drift in deterministic
+  renders.
+- The stage sits immediately after Bloom in every stack profile and
+  before the output grade, so deterministic renders (opaque and
+  UnMult) and the brand single-colour mode apply to the finished
+  light. Streaks and glints are extracted from the frame itself, so
+  the monochrome discipline holds — colour only ever comes from the
+  existing gradient / brand paths.
+- Three starter presets: `starter-post-lightfx-shine-logo`,
+  `starter-post-lightfx-starglow-field`, `starter-post-lightfx-lux-spot`.
+
 ## [1.8.0] — 2026-11-16
 
 Pro-1 completion (improvement plan Phase C): the deterministic
