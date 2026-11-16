@@ -13,6 +13,34 @@ export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   // WebGL). Before Phase R morph was not even listed as a requested
   // feature, so morph configs silently lost the force on this path.
   'morph',
+  // Phase X3: the WGSL passes now carry the full WebGL force set
+  // (verbatim force laws in lib/webgpuCompute.ts), including the
+  // OBJ normal kick inside the morph block, so every feature below
+  // is genuinely implemented on this path. Still unsupported —
+  // and therefore still routing to WebGL — are 'age' (the respawn
+  // lifecycle lives in the WebGL position pass), 'fluid-field'
+  // (its solver is a WebGL FBO pass with no WGSL counterpart) and
+  // 'custom-force' (user GLSL cannot be compiled to WGSL).
+  'audio-reactive',
+  'verlet',
+  'nbody',
+  'curl',
+  'boids',
+  'attractor',
+  'vortex',
+  'wind',
+  'well',
+  'elastic',
+  'magnetic',
+  'sph',
+  'vector-field',
+  'spring',
+  'sdf-collider',
+  'mouse-force',
+  'kuramoto',
+  'particle-life',
+  'levy',
+  'floor',
 ] as const;
 
 export type WebgpuComputeFeature = typeof WEBGPU_COMPUTE_SUPPORTED_FEATURES[number];
@@ -46,6 +74,21 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   if (config.gpgpuMouseEnabled) features.push('mouse-force');
   if (config.gpgpuFluidEnabled) features.push('fluid-field');
   if (config.gpgpuMorphEnabled) features.push('morph');
+  // Phase X3 inventory: the features below exist in the WebGL
+  // velocity/position shaders but were never requested here, so
+  // configs using them silently lost the effect on the WebGPU
+  // path (the Phase R morph bug, in four more places). Kuramoto,
+  // Particle Life, Lévy and floor are implemented in WGSL as of
+  // Phase X3; custom force (user GLSL) and the Aux event pools
+  // (WebGL FBO passes that only run off the WebGPU path) stay
+  // unsupported so those configs route to WebGL instead of
+  // dropping the effect without a word.
+  if (config.gpgpuKuramotoEnabled) features.push('kuramoto');
+  if (config.gpgpuParticleLifeEnabled) features.push('particle-life');
+  if (config.gpgpuLevyEnabled) features.push('levy');
+  if (config.gpgpuFloorEnabled) features.push('floor');
+  if (config.gpgpuCustomForceEnabled && (config.gpgpuCustomForceCode || '').trim().length > 0) features.push('custom-force');
+  if (config.gpgpuAuxMode !== 'none') features.push('aux');
   return features;
 }
 
