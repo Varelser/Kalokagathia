@@ -42,6 +42,22 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uAgeCurveOpacity:        { value: [1, 1, 1, 1, 1] },
       uMapSizeAmount:          { value: 0 },
       uMapOpacityAmount:       { value: 0 },
+      // Phase X: per-property map textures / displacement / mask.
+      // All defaults are the inactive configuration (nothing ready,
+      // amount 0, mask off), so the legacy draw is bit-identical.
+      uMapSizeTex:             { value: null },
+      uMapSizeReady:           { value: false },
+      uMapOpacityTex:          { value: null },
+      uMapOpacityReady:        { value: false },
+      uMapDisplaceTex:         { value: null },
+      uMapDisplaceReady:       { value: false },
+      uMapDisplaceAmount:      { value: 0 },
+      uMapDisplaceRadius:      { value: 1 },
+      uMaskTex:                { value: null },
+      uMaskReady:              { value: false },
+      uMaskMode:               { value: 0 },
+      uMaskThreshold:          { value: 0.5 },
+      uMaskInvert:             { value: false },
       uSpriteImageTex:         { value: null },
       uSpriteImageReady:       { value: false },
       // 3D light (Phase T): disabled by default; the vertex shader

@@ -8,6 +8,7 @@ import { SAMPLE_SVG_STAR, sampleSvgPointCloud } from '../lib/svgMorph';
 import { AGE_CURVE_POINT_MAX, AGE_CURVE_PRESETS, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT, parseObjGeometry, isObjClosedMesh } from '../lib/objMorph';
 import { setModulationSetup, useModulationSetup } from '../lib/modulation';
+import { extractLumaMap } from './controlPanelPartsSourceMediaUtils';
 import type { ParticleConfig } from '../types';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
 
@@ -710,15 +711,66 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
     </div>
 
     {/* Layer Maps (Phase U): the gradient image modulates size /
-        opacity per property, sampled by particle position. */}
+        opacity per property, sampled by particle position.
+        Phase X: each property can carry its own image (unset =
+        the common gradient image), displacement joins the set,
+        and a raster mask section follows below. */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-white/70">Layer Maps（画像マップ）</div>
       <Slider label="Map Size Amount" value={config.gpgpuMapSizeAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMapSizeAmount', v)} />
       <Slider label="Map Opacity Amount" value={config.gpgpuMapOpacityAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMapOpacityAmount', v)} />
+      <Slider label="Map Displace Amount" value={config.gpgpuMapDisplaceAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMapDisplaceAmount', v)} />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         {config.gpgpuGradImageSource
-          ? 'マップ画像は Color Gradient の Image ドライバと同じ画像（設定済み）を使います。粒子は自分の位置（XY 平面、バウンス範囲全体）で画像の輝度を引き、Amount 1 で輝度がそのまま倍率になります。'
-          : '画像が未設定のため、Amount を上げても変調は効きません。Color Gradient の Driver を Image にして画像を設定すると、その画像がマップとして使われます。'}
+          ? '共通マップは Color Gradient の Image ドライバと同じ画像（設定済み）を使います。粒子は自分の位置（XY 平面、バウンス範囲全体）で画像の輝度を引き、Amount 1 で輝度がそのまま倍率になります。変位は輝度で配置点を半径方向にずらします。'
+          : '共通画像が未設定のため、専用画像を設定したプロパティ以外は Amount を上げても変調は効きません。Color Gradient の Driver を Image にして画像を設定すると、その画像が共通マップとして使われます。'}
+      </div>
+      <MapSourceBlock
+        title="Size Map（サイズ専用）"
+        source={config.gpgpuMapSizeSource}
+        onSource={(v) => updateConfig('gpgpuMapSizeSource', v)}
+      />
+      <MapSourceBlock
+        title="Opacity Map（不透明度専用）"
+        source={config.gpgpuMapOpacitySource}
+        onSource={(v) => updateConfig('gpgpuMapOpacitySource', v)}
+      />
+      <MapSourceBlock
+        title="Color Map（色専用）"
+        source={config.gpgpuMapColorSource}
+        onSource={(v) => updateConfig('gpgpuMapColorSource', v)}
+      />
+      <MapSourceBlock
+        title="Displace Map（変位専用）"
+        source={config.gpgpuMapDisplaceSource}
+        onSource={(v) => updateConfig('gpgpuMapDisplaceSource', v)}
+      />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        専用画像が未設定のプロパティは共通マップにフォールバックします。Color Map を設定すると、Image ドライバの入力はその画像になります（色は輝度ドライバとして消費されます）。
+      </div>
+    </div>
+
+    {/* Raster Mask (Phase X): a luminance image that clips or
+        shapes placement — baked into the morph targets and the
+        layer media placement, and enforced live by the draw
+        shader's fragment clip. */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-white/70">Raster Mask（ラスタマスク）</div>
+      <Toggle
+        label="Mask Mode"
+        value={config.gpgpuMaskMode}
+        options={[{ label: 'Off', val: 'off' }, { label: 'Clip', val: 'clip' }, { label: 'Shape', val: 'shape' }]}
+        onChange={(v) => updateConfig('gpgpuMaskMode', v)}
+      />
+      {config.gpgpuMaskMode !== 'off' && (
+        <>
+          <Slider label="Mask Threshold" value={config.gpgpuMaskThreshold} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMaskThreshold', v)} />
+          <Toggle label="Mask Invert" value={config.gpgpuMaskInvert} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMaskInvert', v)} />
+        </>
+      )}
+      <MaskSourceBlock config={config} updateConfig={updateConfig} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        clip は閾値未満の領域を間引き（ベイク時はマスク内へ再配置、描画時はフラグメントを破棄）、shape は輝度を確率としてマスク形状そのものから配置をサンプリングします。モーフ目標の配置とレイヤーのメディア配置の両方に同じ意味で効きます。
       </div>
     </div>
 
@@ -826,6 +878,162 @@ const AgeCurveBlock: React.FC<{
           ))}
         </>
       )}
+    </div>
+  );
+};
+
+/** Load an image file element from a picked file (shared helper). */
+async function loadPickedImage(file: File): Promise<HTMLImageElement> {
+  const url = URL.createObjectURL(file);
+  try {
+    return await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('image load failed'));
+      el.src = url;
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Downscale an image to <= maxPx and return a JPEG data URL. */
+function downscaledDataUrl(img: HTMLImageElement, maxPx: number): string {
+  const scale = Math.min(1, maxPx / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+  canvas.height = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.87);
+}
+
+/**
+ * One per-property Layer Map source (Phase X): same import flow
+ * as the common gradient image (downscaled data URL in config),
+ * with an explicit "未設定 = 共通マップ" state instead of a
+ * silent fallback.
+ */
+const MapSourceBlock: React.FC<{
+  title: string;
+  source: string;
+  onSource: (v: string) => void;
+}> = ({ title, source, onSource }) => {
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const img = await loadPickedImage(file);
+      const url = downscaledDataUrl(img, 256);
+      if (url) onSource(url);
+    } catch {
+      // Unreadable file: keep the previous source untouched.
+    }
+  };
+  return (
+    <div className="mb-2 mt-2 rounded border border-white/10 bg-white/5 p-2">
+      <div className="mb-1 text-[9px] font-bold uppercase tracking-widest text-white/50">{title}</div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="cursor-pointer rounded border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10">
+          画像を開く
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        {source && (
+          <>
+            <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />
+            <button
+              onClick={() => onSource('')}
+              className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+            >
+              クリア
+            </button>
+          </>
+        )}
+      </div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {source ? '専用画像を設定済み: このプロパティは共通マップではなくこの画像を使います。' : '未設定: このプロパティは共通マップを使います。'}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Raster mask source (Phase X): importing an image stores both
+ * the data URL (for the draw shader's fragment clip and the
+ * preview) and the numeric luma map captured at <=128px (for the
+ * deterministic bake and media placement), following the
+ * layer2MediaLumaMap precedent. Clearing removes both.
+ */
+const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const source = config.gpgpuMaskSource;
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const img = await loadPickedImage(file);
+      const url = downscaledDataUrl(img, 256);
+      if (!url) return;
+      const iw = img.naturalWidth || 1;
+      const ih = img.naturalHeight || 1;
+      const scale = Math.min(1, 128 / Math.max(iw, ih));
+      const w = Math.max(1, Math.round(iw * scale));
+      const h = Math.max(1, Math.round(ih * scale));
+      const map = extractLumaMap(img, w, h);
+      updateConfig('gpgpuMaskSource', url);
+      updateConfig('gpgpuMaskMap', map);
+      updateConfig('gpgpuMaskMapWidth', w);
+      updateConfig('gpgpuMaskMapHeight', h);
+    } catch {
+      // Unreadable file: keep the previous mask untouched.
+    }
+  };
+  const clear = () => {
+    updateConfig('gpgpuMaskSource', '');
+    updateConfig('gpgpuMaskMap', []);
+    updateConfig('gpgpuMaskMapWidth', 0);
+    updateConfig('gpgpuMaskMapHeight', 0);
+  };
+  return (
+    <div className="mb-2 mt-2 rounded border border-white/10 bg-white/5 p-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="cursor-pointer rounded border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10">
+          マスク画像を開く
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        {(source || config.gpgpuMaskMap.length > 0) && (
+          <>
+            {source && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
+            <button
+              onClick={clear}
+              className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+            >
+              クリア
+            </button>
+          </>
+        )}
+      </div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {source
+          ? `マスク設定済み（輝度マップ ${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight} を取り込み時に抽出）。白い領域が残り、黒い領域が間引かれます。`
+          : config.gpgpuMaskMap.length > 0
+            ? `輝度マップのみ設定済み（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}、プリセット由来）。ベイクとメディア配置には効きますが、描画時のフラグメント clip には画像本体が必要です。`
+            : 'マスク画像が未設定のため、Mode を切り替えてもマスクは効きません。'}
+      </div>
     </div>
   );
 };

@@ -20,6 +20,12 @@ const AGE_CURVE_GLSL = /* glsl */ `
     float luma = dot(texture2D(tex, mapUv).rgb, vec3(0.2126, 0.7152, 0.0722));
     return mix(1.0, luma, amount);
   }
+  // Raw map luminance at a world position (Phase X: displacement
+  // and the fragment mask clip share the map UV rule).
+  float kaloMapLuma(sampler2D tex, vec2 worldXy, float scale) {
+    vec2 mapUv = clamp(worldXy * scale + 0.5, 0.0, 1.0);
+    return dot(texture2D(tex, mapUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+  }
 `;
 
 // 3D light (Phase T): GLSL twins of lib/gpgpuLight.ts — the same
@@ -78,6 +84,18 @@ export const DRAW_VERT = /* glsl */ `
   uniform bool      uGradImageReady;
   uniform float     uGradImageScale;
   uniform float     uMapSizeAmount;
+  // Per-property map + displacement (Phase X): when the size map
+  // has its own source its texture is ready here and takes priority
+  // over the common gradient image; displacement samples its own
+  // (or the fallback common) texture and offsets the point radially
+  // by (luma - 0.5) * amount * radius. Amount 0 / not ready keeps
+  // the legacy position bit-exact.
+  uniform sampler2D uMapSizeTex;
+  uniform bool      uMapSizeReady;
+  uniform sampler2D uMapDisplaceTex;
+  uniform bool      uMapDisplaceReady;
+  uniform float     uMapDisplaceAmount;
+  uniform float     uMapDisplaceRadius;
   // 3D light (Phase T): brightness multiplier from the light object.
   uniform bool  uLightEnabled;
   uniform vec3  uLightPos;
@@ -131,6 +149,18 @@ export const DRAW_VERT = /* glsl */ `
     vec2 particleUv = uSortEnabled ? texture2D(uSortTex, aTexCoord).xy : aTexCoord;
     vec4 posData  = texture2D(uPosTex, particleUv);
     vec3 worldPos = posData.xyz;
+    // Displacement map (Phase X): the baked point is pushed along
+    // its own radial direction by the displacement map's luminance
+    // at its position — the map-space twin of the media relief the
+    // bake applies to text/image targets. Gated on amount > 0 and a
+    // ready texture, so the default path is untouched.
+    if (uMapDisplaceAmount > 0.0 && uMapDisplaceReady) {
+      float dLuma = kaloMapLuma(uMapDisplaceTex, worldPos.xy, uGradImageScale);
+      float rLen = length(worldPos);
+      if (rLen > 0.0001) {
+        worldPos += (worldPos / rLen) * ((dLuma - 0.5) * uMapDisplaceAmount * uMapDisplaceRadius);
+      }
+    }
     vWorldPos = worldPos;
     // 3D light (Phase T): a pure function of the world position —
     // the simulation is never touched. Disabled means exactly 1.0,
@@ -159,8 +189,14 @@ export const DRAW_VERT = /* glsl */ `
     // Layer Map (Phase U): size modulated by the gradient image's
     // luminance at the particle's own position. Amount 0 (default)
     // skips the fetch entirely, so the legacy path is untouched.
-    if (uMapSizeAmount > 0.0 && uGradImageReady) {
-      sizeMul *= kaloMapFactor(uGradImageTex, worldPos.xy, uGradImageScale, uMapSizeAmount);
+    // Phase X: a dedicated size map, when ready, replaces the
+    // common image for this property only.
+    if (uMapSizeAmount > 0.0) {
+      if (uMapSizeReady) {
+        sizeMul *= kaloMapFactor(uMapSizeTex, worldPos.xy, uGradImageScale, uMapSizeAmount);
+      } else if (uGradImageReady) {
+        sizeMul *= kaloMapFactor(uGradImageTex, worldPos.xy, uGradImageScale, uMapSizeAmount);
+      }
     }
     vPhaseMix = 1.0;
     vPlBright = 1.0;
@@ -216,6 +252,18 @@ export const DRAW_FRAG = /* glsl */ `
   uniform float     uAgeCurveOpacity[5];
   // Layer Map (Phase U): opacity modulated by the gradient image.
   uniform float     uMapOpacityAmount;
+  // Per-property opacity map + raster mask clip (Phase X): the
+  // opacity map replaces the common image for opacity when ready;
+  // the mask clip discards fragments whose position falls in a
+  // rejected mask region (mode 1 = clip; mode 2 = shape is baked
+  // into placement and needs no fragment action).
+  uniform sampler2D uMapOpacityTex;
+  uniform bool      uMapOpacityReady;
+  uniform sampler2D uMaskTex;
+  uniform bool      uMaskReady;
+  uniform int       uMaskMode;
+  uniform float     uMaskThreshold;
+  uniform bool      uMaskInvert;
   // Sprite image (Phase U): when ready, the sprite's shape comes
   // from the user image (luminance baked into the texture) instead
   // of the procedural point shapes.
@@ -331,9 +379,23 @@ export const DRAW_FRAG = /* glsl */ `
       opacityMul *= kaloEvalCurve5(vNormAge, uAgeCurveOpacity[0], uAgeCurveOpacity[1], uAgeCurveOpacity[2], uAgeCurveOpacity[3], uAgeCurveOpacity[4]);
     }
     // Layer Map (Phase U): opacity modulated by the gradient image's
-    // luminance at the particle's own position.
-    if (uMapOpacityAmount > 0.0 && uGradImageReady) {
-      opacityMul *= kaloMapFactor(uGradImageTex, vWorldPos.xy, uGradImageScale, uMapOpacityAmount);
+    // luminance at the particle's own position. Phase X: a
+    // dedicated opacity map, when ready, replaces the common image
+    // for this property only.
+    if (uMapOpacityAmount > 0.0) {
+      if (uMapOpacityReady) {
+        opacityMul *= kaloMapFactor(uMapOpacityTex, vWorldPos.xy, uGradImageScale, uMapOpacityAmount);
+      } else if (uGradImageReady) {
+        opacityMul *= kaloMapFactor(uGradImageTex, vWorldPos.xy, uGradImageScale, uMapOpacityAmount);
+      }
+    }
+    // Raster mask clip (Phase X): live positions in rejected mask
+    // regions are discarded, complementing the bake-time relocation
+    // (particles move, so the mask is enforced where they are now).
+    if (uMaskMode == 1 && uMaskReady) {
+      float mLuma = kaloMapLuma(uMaskTex, vWorldPos.xy, uGradImageScale);
+      if (uMaskInvert) mLuma = 1.0 - mLuma;
+      if (mLuma < uMaskThreshold) discard;
     }
 
     // Point shape: a ready sprite image (Phase U) takes priority —

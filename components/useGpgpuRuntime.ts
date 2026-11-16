@@ -285,6 +285,27 @@ type UseGpgpuRuntimeArgs = {
  * text reuses the layer TextMap renderer, image reuses the loaded
  * layer-2 media luma map, svg/obj re-sample their source texts.
  */
+/**
+ * Raster mask option for the morph bake (Phase X): the numeric
+ * luma map captured at import time, or null while the mask is off
+ * / has no usable map — null keeps the bake bit-identical.
+ */
+export function morphMaskOption(config: ParticleConfig) {
+  if (config.gpgpuMaskMode === 'off') return null;
+  if (!config.gpgpuMaskMap || config.gpgpuMaskMap.length === 0) return null;
+  if (!(config.gpgpuMaskMapWidth > 0) || !(config.gpgpuMaskMapHeight > 0)) return null;
+  return {
+    map: {
+      map: config.gpgpuMaskMap,
+      width: config.gpgpuMaskMapWidth,
+      height: config.gpgpuMaskMapHeight,
+    },
+    mode: config.gpgpuMaskMode,
+    threshold: config.gpgpuMaskThreshold,
+    invert: config.gpgpuMaskInvert,
+  };
+}
+
 export function buildMorphBakeData(
   config: ParticleConfig,
   texSize: number,
@@ -359,6 +380,7 @@ export function buildMorphBakeData(
       octaves: config.gpgpuMorphTerrainOctaves,
       seed: config.gpgpuMorphTerrainSeed,
     },
+    mask: morphMaskOption(config),
   });
 }
 
@@ -731,6 +753,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphPathTaper = config.gpgpuMorphPathTaper;
   const morphPathTaperShape = config.gpgpuMorphPathTaperShape;
   const morphPathSubpathMode = config.gpgpuMorphPathSubpathMode;
+  const morphMaskMode = config.gpgpuMaskMode;
+  const morphMaskMap = config.gpgpuMaskMap;
+  const morphMaskWidth = config.gpgpuMaskMapWidth;
+  const morphMaskHeight = config.gpgpuMaskMapHeight;
+  const morphMaskThreshold = config.gpgpuMaskThreshold;
+  const morphMaskInvert = config.gpgpuMaskInvert;
   useEffect(() => {
     morphTexRef.current?.dispose();
     morphTexRef.current = null;
@@ -809,6 +837,16 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         octaves: morphTerrainOctaves,
         seed: morphTerrainSeed,
       },
+      // Raster mask (Phase X): same option the shared bake builder
+      // assembles, from the effect's own captured values.
+      mask: morphMaskMode !== 'off' && morphMaskMap.length > 0 && morphMaskWidth > 0 && morphMaskHeight > 0
+        ? {
+          map: { map: morphMaskMap, width: morphMaskWidth, height: morphMaskHeight },
+          mode: morphMaskMode,
+          threshold: morphMaskThreshold,
+          invert: morphMaskInvert,
+        }
+        : null,
     });
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
@@ -866,6 +904,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphPathTaper,
     morphPathTaperShape,
     morphPathSubpathMode,
+    morphMaskMode,
+    morphMaskMap,
+    morphMaskWidth,
+    morphMaskHeight,
+    morphMaskThreshold,
+    morphMaskInvert,
   ]);
 
   return {

@@ -2,6 +2,7 @@ import type { Layer2Type, ParticleConfig } from '../types';
 import { getLayerRuntimeParticleFieldSnapshot, getLayerRuntimeSourceLayoutSnapshot } from '../lib/sceneRenderRouting';
 import { MOTION_MAP } from './sceneShaders';
 import { resolveSourceRoute } from '../lib/motionRoute';
+import { maskAcceptsAt, maskLumaAt, resolveActiveMask } from '../lib/layerMask';
 
 export type ParticleData = {
   pos: Float32Array;
@@ -126,6 +127,16 @@ export const generateParticleData = (config: ParticleConfig, layerIndex: 1|2|3|4
   const mediaThreshold = shapeLayout?.mediaThreshold ?? 0.45;
   const mediaDepth = shapeLayout?.mediaDepth ?? 0.65;
   const mediaInvert = shapeLayout?.mediaInvert ?? false;
+  // Raster mask (Phase X): the same mask that governs the morph
+  // bake also filters media placement here, with the same meaning
+  // (clip = threshold rejection, shape = luminance probability).
+  // Null while the mask is off, so legacy placement is untouched.
+  const activeMask = resolveActiveMask(
+    config.gpgpuMaskMap && config.gpgpuMaskMap.length > 0
+      ? { map: config.gpgpuMaskMap, width: config.gpgpuMaskMapWidth, height: config.gpgpuMaskMapHeight }
+      : null,
+    { mode: config.gpgpuMaskMode, threshold: config.gpgpuMaskThreshold, invert: config.gpgpuMaskInvert },
+  );
   const pos = new Float32Array(count * 3);
   const off = new Float32Array(count * 3);
   const d1 = new Float32Array(count * 4);
@@ -193,7 +204,23 @@ export const generateParticleData = (config: ParticleConfig, layerIndex: 1|2|3|4
     } else if (sourceShape === 'plane') {
       px = u * 2 - 1; pz = v * 2 - 1; py = 0;
     } else if (sourceShape === 'image' || sourceShape === 'video' || sourceShape === 'text') {
-      const mediaSample = sampleFromMediaMap(mediaMap, mediaMapWidth, mediaMapHeight, mediaThreshold, mediaInvert, pSeed + srcId * 97);
+      let mediaSample = sampleFromMediaMap(mediaMap, mediaMapWidth, mediaMapHeight, mediaThreshold, mediaInvert, pSeed + srcId * 97);
+      if (mediaSample && activeMask) {
+        // Raster mask filter (Phase X): resample with varied seeds
+        // until a placement passes the mask; if none does, the
+        // placement falls back exactly like a blank media map.
+        const passesMask = (sample: { x: number; y: number }, attempt: number) => activeMask.mode === 'clip'
+          ? maskAcceptsAt(activeMask, sample.x, sample.y)
+          : hash(pSeed + attempt * 77 + 913) <= maskLumaAt(activeMask, sample.x, sample.y, activeMask.invert);
+        let accepted = passesMask(mediaSample, 0);
+        for (let attempt = 1; attempt < 12 && !accepted; attempt++) {
+          const alt = sampleFromMediaMap(mediaMap, mediaMapWidth, mediaMapHeight, mediaThreshold, mediaInvert, pSeed + srcId * 97 + attempt * 131);
+          if (!alt) break;
+          mediaSample = alt;
+          accepted = passesMask(alt, attempt);
+        }
+        if (!accepted) mediaSample = null;
+      }
       if (mediaSample) {
         px = mediaSample.x;
         pz = mediaSample.y;
