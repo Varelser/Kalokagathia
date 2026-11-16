@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import type { ParticleConfig } from '../types';
 import { getConfigPerformanceScore } from '../lib/performanceHints';
+import { isCameraDeterminismLocked } from '../lib/cameraDeterminism';
 import { getBurstDriveEnergy } from './sceneBurstDrive';
 import type { SceneAudioRef } from './AppSceneTypes';
 
@@ -77,6 +78,44 @@ export const CameraImpulseRig: React.FC<{
 
   useFrame(({ clock }) => {
     if (config.cameraControlMode === 'manual') {
+      return;
+    }
+    if (isCameraDeterminismLocked()) {
+      // Deterministic export in progress (Phase G): pin the camera to the
+      // config's canonical framing — the position / target a fresh load
+      // shows — and apply no impulse, drift or fov terms. The rig's normal
+      // time source (clock.getElapsedTime()) is wall-clock driven, so
+      // without this pin identical exports rendered from different camera
+      // distances run to run. The base refs are re-synced to the canonical
+      // values so the first live frame after the job does not snap.
+      const canonical = getDefaultCameraPosition(config);
+      basePositionRef.current.copy(canonical);
+      baseTargetRef.current.set(0, 0, 0);
+      baseModeRef.current = config.viewMode;
+      baseDistanceRef.current = config.cameraDistance;
+      initializedRef.current = true;
+      camera.position.copy(canonical);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(0, 0, 0);
+        controlsRef.current.update();
+      } else {
+        camera.lookAt(0, 0, 0);
+      }
+      if ('fov' in camera && config.viewMode !== 'orthographic') {
+        const canonicalFov = config.perspective / 20;
+        if (Math.abs(camera.fov - canonicalFov) > 1e-6) {
+          camera.fov = canonicalFov;
+          camera.updateProjectionMatrix();
+        }
+        baseFovRef.current = canonicalFov;
+      } else if ('zoom' in camera && config.viewMode === 'orthographic') {
+        const canonicalZoom = Math.max(1, 1500 / Math.max(10, config.cameraDistance));
+        if (Math.abs(camera.zoom - canonicalZoom) > 1e-6) {
+          camera.zoom = canonicalZoom;
+          camera.updateProjectionMatrix();
+        }
+        baseZoomRef.current = canonicalZoom;
+      }
       return;
     }
     const t = clock.getElapsedTime();

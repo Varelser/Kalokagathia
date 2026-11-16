@@ -10,6 +10,7 @@ import {
   type DeterministicRenderProgress,
 } from '../lib/deterministicRender';
 import { applyUnmultToImageData } from '../lib/unmult';
+import { setCameraDeterminismLocked } from '../lib/cameraDeterminism';
 import { setPositionFeedbackSuppressed } from '../lib/positionFeedback';
 import { setTimeScaleLocked } from '../lib/playbackTime';
 import {
@@ -113,6 +114,11 @@ export const DeterministicRenderManager: React.FC = () => {
           // timestep — config.timeScale (including negative values) is
           // neutralised for the whole render, exports stay bit-comparable.
           setTimeScaleLocked(true);
+          // Camera pin (Phase G): the impulse rig's ambient drift reads
+          // the wall-clock-driven R3F clock, so without this lock the
+          // camera distance — and therefore the whole framing — differed
+          // between identical exports.
+          setCameraDeterminismLocked(true);
           const backgroundMode = resolveDeterministicBackgroundMode(job);
           // UnMult black forcing: the originals are saved once, the
           // black state is (re)applied before every step (a config
@@ -378,6 +384,7 @@ export const DeterministicRenderManager: React.FC = () => {
             }
             setPositionFeedbackSuppressed(false);
             setTimeScaleLocked(false);
+            setCameraDeterminismLocked(false);
             setFrameloop('always');
           }
         },

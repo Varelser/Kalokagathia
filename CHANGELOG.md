@@ -4,6 +4,59 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.10.0] — 2026-11-16
+
+Deterministic-export reproducibility (leftover plan Phase G): exports
+of the same configuration are now bit-identical across runs, and the
+SVG morph parser accepts group transforms.
+
+### Fixed
+- **Deterministic exports inherited the camera impulse rig's ambient
+  drift.** The rig's z-drift term
+  (`sin(t · speed · 0.47) · cameraImpulseDrift · 60`) is not gated by
+  the impulse strength, so with the shipped defaults (impulse 0, burst
+  boost 0.35, drift 0.2) the camera wandered ±12 units even with every
+  burst source at zero; the rig also reads `clock.getElapsedTime()`,
+  which THREE.Clock derives from the wall clock, so the render
+  manager's clock resets never made the rig's phase deterministic.
+  Identical exports therefore rendered from a different camera distance
+  every run — the discrepancy the Phase E audit measured on the frozen
+  layer-2 subject (mean absolute difference 0.105). The layer-2 layout
+  itself was never at fault: it is fully hash-seeded and reproduces
+  bit-exactly. While a deterministic job runs, the manager now sets a
+  camera determinism lock (the same suppression pattern as the
+  position-feedback and time-scale locks) and the rig pins the camera
+  to the config's canonical position / target with no impulse, drift
+  or fov terms. **Behaviour change, exports only:** deterministic
+  renders now always use the canonical framing for the configuration
+  (the framing a fresh load shows) instead of the live camera's
+  approximate position ± drift. Live behaviour is unchanged. Verified
+  on the iMac real GPU: cross-load, same-session, post-GPGPU and
+  camera-feature-stress exports are all bit-identical (difference
+  0.00000 on every frame).
+
+### Added
+- **SVG morph: `<g transform>` support.** The SVG parser
+  (`lib/svgMorph.ts`) now maintains a group transform stack while
+  scanning, composing nested group transforms with per-element
+  transforms, so imported logos that wrap artwork in transformed
+  groups form at the intended position, scale and orientation.
+  Documents without `<g>` produce bit-identical point clouds to
+  before (unit tests), and a group-transformed shape renders
+  identically to the same shape with the transform baked into its
+  coordinates (iMac real-GPU check, difference ≤ 0.00001).
+
+### Verified
+- **LightFX long renders** (Phase D leftover): 660-frame deterministic
+  renders with Shine + Starglow (diagonal) + Lux (with cone) all on
+  complete cleanly in opaque (16 s) and UnMult (31 s) modes; UnMult
+  corners are alpha 0 and the Lux disc measures 0.52 centre luminance.
+- **Pointer paint** (B3 leftover): with `gpgpuMouseMode: 'paint'` at
+  the default rate, brushing a circle on the iMac real GPU raised the
+  swept annulus's lit ratio from 0.179 to 0.303 (+69%) and its mean
+  luminance 2.0×, persisting at least 3 s; the mouse-disabled control
+  run stayed flat. No fix was needed.
+
 ## [1.9.1] — 2026-11-16
 
 Internal refactoring only — **no behavior changes**. The Play tab's

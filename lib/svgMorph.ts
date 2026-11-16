@@ -15,7 +15,11 @@
  *  - <polygon> / <polyline> / <line> / <rect> / <circle> / <ellipse>
  *    converted to polylines (rect corner radius is ignored).
  *  - Element-level transform attributes (matrix / translate / scale /
- *    rotate / skewX / skewY). Group (<g>) transforms are NOT applied.
+ *    rotate / skewX / skewY), including transforms on enclosing
+ *    <g> groups (nested groups compose outermost-first, per the SVG
+ *    rendering model). Documents without <g> transforms sample
+ *    exactly as before: the group matrix stays the identity and the
+ *    composition is value-preserving.
  *  - viewBox normalisation when present; otherwise the geometry's own
  *    bounding box is used. Aspect ratio is always preserved and the
  *    SVG y-down axis is flipped to the morph space's y-up.
@@ -409,12 +413,32 @@ export function parseSvgGeometry(svgText: string): SvgGeometry {
     }
   }
 
-  const tagRe = /<(path|rect|circle|ellipse|line|polyline|polygon)\b[^>]*>/gi;
+  // Single scan over group and shape tags in document order. A stack
+  // of group matrices tracks <g> nesting: entering a group composes
+  // its transform onto the accumulated matrix (outermost first), and
+  // each shape's effective matrix is group ∘ element. With no <g>
+  // transforms in the document the accumulated matrix stays IDENTITY,
+  // so matMul(IDENTITY, element) returns the element matrix unchanged
+  // and legacy documents sample bit-identically.
+  const tagRe = /<(\/?)(g|path|rect|circle|ellipse|line|polyline|polygon)\b[^>]*>/gi;
   let tagMatch: RegExpExecArray | null;
+  let groupMat: Mat = IDENTITY;
+  const groupStack: Mat[] = [];
   while ((tagMatch = tagRe.exec(svgText)) !== null) {
     const tag = tagMatch[0];
-    const kind = tagMatch[1].toLowerCase();
-    const mat = parseTransform(getAttr(tag, 'transform'));
+    const isClosing = tagMatch[1] === '/';
+    const kind = tagMatch[2].toLowerCase();
+    if (kind === 'g') {
+      if (isClosing) {
+        groupMat = groupStack.pop() ?? IDENTITY;
+      } else if (!tag.endsWith('/>')) {
+        groupStack.push(groupMat);
+        groupMat = matMul(groupMat, parseTransform(getAttr(tag, 'transform')));
+      }
+      continue;
+    }
+    if (isClosing) continue;
+    const mat = matMul(groupMat, parseTransform(getAttr(tag, 'transform')));
     const push = (line: Pt[], close: boolean) => {
       if (line.length < 2) return;
       const mapped = line.map((p) => matApply(mat, p));
