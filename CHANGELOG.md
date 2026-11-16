@@ -4,6 +4,42 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.23.0] — 2026-11-16
+
+Third-period plan Phase T: a 3D light object for the GPGPU points —
+a point light with radial falloff, an optional spotlight cone, and
+a Light emitter shape. Lighting multiplies the drawn brightness
+only; the simulation is never touched.
+
+### Added
+- **3D light** (11 new keys `gpgpuLight*`, all default-off /
+  identity): `gpgpuLightEnabled`, `gpgpuLightPosX/Y/Z` (world
+  position), `gpgpuLightIntensity` (brightness added at the centre),
+  `gpgpuLightRadius` (falloff radius), `gpgpuLightConeEnabled`,
+  `gpgpuLightConeAngleDeg` (half angle), `gpgpuLightDirX/Y/Z` (cone
+  direction, normalised on use). The multiplier is
+  `1 + intensity * falloff * cone`, with falloff `(1-(d/R)^2)^2`
+  inside the radius and exactly 1 outside it, so disabled /
+  intensity-0 / out-of-radius are all bit-exact identities. The
+  cone feathers smoothly out to 1.25x the half angle. Pure
+  functions live in `lib/gpgpuLight.ts` with a GLSL twin in the
+  point shader; the factor is computed per particle in the vertex
+  shader from the world position and multiplied into the fragment
+  colour. Monochrome only (brightness, never colour). The PostFx
+  Lux screen-space lights are unchanged.
+- **Light emitter**: `gpgpuEmitShape` gains `'light'` — particles
+  are emitted from the light position (a small ball of 5% of the
+  bounce radius) and the age respawn re-emits there too, whether
+  or not the light itself is enabled (Particular's Light Emitter
+  semantics: the position is borrowed, the light need not shine).
+  Other shapes' seeded data and respawn are byte-identical.
+- Starters +3 (506 -> 509): Point Core, Cone Beam, Light Emitter
+  (Source Point). Config keys 971 -> 982.
+- Out of scope by design: shadows / occlusion (the point draw has
+  no depth-bearing representation of the field to occlude with);
+  the CPU fallback (its Canvas 2D draw has no per-particle
+  brightness-from-position path); Aux / streak / trail draws.
+
 ## [1.22.0] — 2026-11-16
 
 Third-period plan Phase U: particle quality — arbitrary sprite
