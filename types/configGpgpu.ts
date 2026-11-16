@@ -262,6 +262,16 @@ export interface ParticleConfigGpgpu {
   gpgpuAuxLife: number;
   gpgpuAuxSpeed: number;
   gpgpuAuxSize: number;
+  // Child-emitter independence (Phase Q, Parent/Child): the Aux pool
+  // is a full second simulation spawned by parent events; these keys
+  // give the CHILD its own physics and look instead of sharing the
+  // parent's. Every default reproduces the legacy shared behaviour
+  // exactly: gravity scale 1 (same softened gravity), extra drag 0,
+  // curl 0 (term omitted), colour '' (inherit the parent colour).
+  gpgpuAuxGravityScale: number;
+  gpgpuAuxDrag: number;
+  gpgpuAuxCurl: number;
+  gpgpuAuxColor: string;
   // Emission Shape
   gpgpuEmitShape: 'sphere' | 'disc' | 'ring' | 'box' | 'shell' | 'cone';
   // Color over Lifetime

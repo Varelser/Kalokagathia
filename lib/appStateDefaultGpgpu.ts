@@ -170,6 +170,12 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuAuxLife: 0.75,
   gpgpuAuxSpeed: 26.0,
   gpgpuAuxSize: 1.1,
+  // Child-emitter independence (Phase Q): defaults = legacy shared
+  // behaviour (gravity x1, no extra drag, no curl, colour inherited).
+  gpgpuAuxGravityScale: 1.0,
+  gpgpuAuxDrag: 0,
+  gpgpuAuxCurl: 0,
+  gpgpuAuxColor: '',
   // Emission Shape
   gpgpuEmitShape: 'sphere' as const,
   // Color over Lifetime
