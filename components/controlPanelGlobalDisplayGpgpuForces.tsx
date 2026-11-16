@@ -353,6 +353,45 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
       )}
     </div>
 
+    {/* Terrain Mesh (Phase P, Mir-style polygon terrain) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Terrain Mesh （地形メッシュ）" value={config.gpgpuTerrainMeshEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuTerrainMeshEnabled', v)} />
+      {config.gpgpuTerrainMeshEnabled && (
+        <>
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Display （表示形態）</div>
+          <Toggle label="Display" value={config.gpgpuTerrainMeshDisplay} options={[{ label: 'Shaded', val: 'shaded' as const }, { label: 'Wireframe', val: 'wireframe' as const }, { label: 'Points', val: 'points' as const }]} onChange={(v) => updateConfig('gpgpuTerrainMeshDisplay', v)} />
+          <Toggle label="Tunnel （トンネル）" value={config.gpgpuTerrainMeshTunnel} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuTerrainMeshTunnel', v)} />
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Texture （表面テクスチャ）</div>
+          <select
+            value={config.gpgpuTerrainMeshTexture}
+            onChange={(e) => updateConfig('gpgpuTerrainMeshTexture', e.target.value as typeof config.gpgpuTerrainMeshTexture)}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="none">None (単色陰影)</option>
+            <option value="gradient">Gradient (モノクロ+等高線)</option>
+            <option value="grid">Grid (測量グリッド)</option>
+            <option value="image">Image (Horizon 背景画像を流用)</option>
+          </select>
+          {config.gpgpuTerrainMeshTexture === 'image' && !config.backgroundImageSource && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              背景画像が未設定のため、設定されるまでは単色陰影で表示します（Global の Horizon で画像背景を設定してください）。
+            </div>
+          )}
+          <Slider label="Scale （大きさ）" value={config.gpgpuTerrainMeshScale} min={0.25} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainMeshScale', v)} />
+          <Slider label="Opacity （不透明度）" value={config.gpgpuTerrainMeshOpacity} min={0.05} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainMeshOpacity', v)} />
+          <Slider label="Brightness （明るさ）" value={config.gpgpuTerrainMeshBrightness} min={0.1} max={2.5} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainMeshBrightness', v)} />
+          <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Terrain Field （高度場・モーフ地形と共有）</div>
+          <Slider label="Amplitude （標高の振幅）" value={config.gpgpuMorphTerrainAmplitude} min={0} max={1.5} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainAmplitude', v)} />
+          <Slider label="Frequency （周波数）" value={config.gpgpuMorphTerrainFrequency} min={0.4} max={4} step={0.1} onChange={(v) => updateConfig('gpgpuMorphTerrainFrequency', v)} />
+          <Slider label="Octaves （オクターブ）" value={config.gpgpuMorphTerrainOctaves} min={1} max={6} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainOctaves', Math.round(v))} />
+          <Slider label="Terrain Seed （地形シード）" value={config.gpgpuMorphTerrainSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainSeed', Math.round(v))} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は Horizon 背景画像（backgroundImageSource）を面の map として流用します。
+          </div>
+        </>
+      )}
+    </div>
+
     {/* Verlet Integration */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Verlet Integration" value={config.gpgpuVerletEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuVerletEnabled', v)} />
