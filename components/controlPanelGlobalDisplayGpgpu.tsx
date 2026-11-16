@@ -86,9 +86,15 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
               { label: 'Sphere', val: 'sphere' }, { label: 'Shell', val: 'shell' },
               { label: 'Disc', val: 'disc' },   { label: 'Ring', val: 'ring' },
               { label: 'Box', val: 'box' },     { label: 'Cone', val: 'cone' },
+              { label: 'Light', val: 'light' },
             ]}
             onChange={(v) => updateConfig('gpgpuEmitShape', v)}
           />
+          {config.gpgpuEmitShape === 'light' && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              Light 形状は下の 3D Light の位置から放出します（ライト自体の On/Off とは独立です）。
+            </div>
+          )}
           <Slider label="Gravity" value={config.gpgpuGravity} min={0} max={2} step={0.01} onChange={(v) => updateConfig('gpgpuGravity', v)} />
           <Slider label="Turbulence" value={config.gpgpuTurbulence} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuTurbulence', v)} />
           <Slider label="Bounce" value={config.gpgpuBounce} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuBounce', v)} />
@@ -113,6 +119,45 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
               <span className="font-mono text-[10px] opacity-60">{config.gpgpuColor.toUpperCase()}</span>
               <button onClick={() => updateConfig('gpgpuColor', '#88aaff')} className="ml-auto rounded border border-white/15 bg-white/5 px-2 py-1 text-[9px] uppercase hover:bg-white/10">Reset</button>
             </div>
+          </div>
+          <div className="mb-4 rounded border border-white/10 bg-white/5 p-3">
+            <div className="mb-2 text-[10px] uppercase tracking-widest font-medium opacity-70">GPGPU Light (3D)</div>
+            <Toggle
+              label="Light Enabled"
+              value={config.gpgpuLightEnabled}
+              options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+              onChange={(v) => updateConfig('gpgpuLightEnabled', v)}
+            />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              粒子の描画輝度だけを変える3Dライトです（物理には干渉しません）。PostFx の Lux とは別物です。
+            </div>
+            {(config.gpgpuLightEnabled || config.gpgpuEmitShape === 'light') && (
+              <>
+                <Slider label="Light Pos X" value={config.gpgpuLightPosX} min={-300} max={300} step={5} onChange={(v) => updateConfig('gpgpuLightPosX', v)} />
+                <Slider label="Light Pos Y" value={config.gpgpuLightPosY} min={-300} max={300} step={5} onChange={(v) => updateConfig('gpgpuLightPosY', v)} />
+                <Slider label="Light Pos Z" value={config.gpgpuLightPosZ} min={-300} max={300} step={5} onChange={(v) => updateConfig('gpgpuLightPosZ', v)} />
+              </>
+            )}
+            {config.gpgpuLightEnabled && (
+              <>
+                <Slider label="Light Intensity" value={config.gpgpuLightIntensity} min={0} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuLightIntensity', v)} />
+                <Slider label="Light Radius" value={config.gpgpuLightRadius} min={0} max={500} step={1} onChange={(v) => updateConfig('gpgpuLightRadius', v)} />
+                <Toggle
+                  label="Cone (Spotlight)"
+                  value={config.gpgpuLightConeEnabled}
+                  options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+                  onChange={(v) => updateConfig('gpgpuLightConeEnabled', v)}
+                />
+                {config.gpgpuLightConeEnabled && (
+                  <>
+                    <Slider label="Cone Angle (deg)" value={config.gpgpuLightConeAngleDeg} min={0} max={180} step={1} onChange={(v) => updateConfig('gpgpuLightConeAngleDeg', v)} />
+                    <Slider label="Cone Dir X" value={config.gpgpuLightDirX} min={-1} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuLightDirX', v)} />
+                    <Slider label="Cone Dir Y" value={config.gpgpuLightDirY} min={-1} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuLightDirY', v)} />
+                    <Slider label="Cone Dir Z" value={config.gpgpuLightDirZ} min={-1} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuLightDirZ', v)} />
+                  </>
+                )}
+              </>
+            )}
           </div>
           <Toggle
             label="Audio Reactive"

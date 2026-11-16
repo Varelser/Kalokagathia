@@ -135,4 +135,5 @@ export const GRAPH_EMIT_SHAPE_OPTIONS: GraphOption[] = [
   { value: 'ring', label: 'Ring 環' },
   { value: 'box', label: 'Box 箱' },
   { value: 'cone', label: 'Cone 円錐' },
+  { value: 'light', label: 'Light 光源' },
 ];
