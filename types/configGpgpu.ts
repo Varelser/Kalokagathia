@@ -192,6 +192,17 @@ export interface ParticleConfigGpgpu {
   // as the bake. 0 (default) / count 1 reproduces the legacy
   // initial data and respawn behaviour bit-for-bit.
   gpgpuMorphReplicaAgeStep: number;
+  // Replica independent simulation (Phase W2, method (a) state
+  // separation): each replica block gets its own simulation stack
+  // (own position/velocity state, own pass, own field seed and
+  // clock offset) whose results merge back into the shared layout
+  // every frame. Divergence scales the per-copy seed/time offsets
+  // (0 = same field realization and clock as the shared sim,
+  // modulo neighbour confinement to the copy's own stack).
+  // false (default) keeps the single shared simulation and
+  // reproduces the legacy behaviour bit-for-bit.
+  gpgpuMorphReplicaIndependent: boolean;
+  gpgpuMorphReplicaDivergence: number;
   // Terrain (Phase L, Mir-style): the 'terrain' morph target places
   // particles on a seeded fractal height field (value-noise fBm,
   // lib/gpgpuMorphTargets.ts). The field is a pure function of

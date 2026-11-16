@@ -135,6 +135,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphReplicaScaleStep: 1,
   gpgpuMorphReplicaPhaseStep: 0,
   gpgpuMorphReplicaAgeStep: 0,
+  // Replica independent sim (Phase W2): off by default = the
+  // shared simulation, bit-identical to v1.25.0.
+  gpgpuMorphReplicaIndependent: false,
+  gpgpuMorphReplicaDivergence: 1,
   // Terrain (Phase L): seeded fBm height field for the 'terrain'
   // morph target. Only read when the target is 'terrain'.
   gpgpuMorphTerrainAmplitude: 0.55,
