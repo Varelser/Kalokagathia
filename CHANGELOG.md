@@ -4,6 +4,44 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.21.0] — 2026-11-16
+
+Third-period plan Phase S: an authored-path basis for the SVG morph
+target, plus the Phase Q test-suite follow-up.
+
+### Added
+- **Path placement for the SVG morph target** (new module
+  `lib/pathGeometry.ts`): the imported SVG is also parsed as ordered
+  subpaths with true arc-length tables, built by M2 adaptive
+  subdivision (flatness judged on 16 interior sample points,
+  eps = 0.001 in document coordinates) so the path basis does not
+  inherit the legacy flatten's arc coarseness (-1.6e-03 on an ellipse
+  half). Six new config keys (total 958 -> 964), all defaulting to
+  the legacy behaviour: `gpgpuMorphPathMode` ('off' default / 'along'
+  / 'writeOn'), `gpgpuMorphPathWriteOnStart` (0),
+  `gpgpuMorphPathWriteOnEnd` (1), `gpgpuMorphPathTaper` (0),
+  `gpgpuMorphPathTaperShape` ('linear' / 'smooth' / 'bell'),
+  `gpgpuMorphPathSubpathMode` ('proportional' / 'even' / 'first').
+  'along' assigns particle i to path position s in arc-length order;
+  'writeOn' assigns inside the [start, end] window only (start > end
+  collapses to a zero-width window at the start, never a fallback).
+  Taper widens the placement band along the path normal (maximum
+  width fixed at 0.1 normalised units, offset reuses the existing h2
+  bake draw, so no new RNG consumption). With replicas, each copy
+  receives one contiguous segment of the path. The path branch lives
+  inside the shared morph bake, so the WebGL, WebGPU and CPU
+  fallback paths all gain it at once; with mode 'off' the bake is
+  byte-identical to v1.20.0 (unit-tested, including with replicas
+  active). UI: a Path subsection inside Morph Targets, shown for the
+  SVG target, with the extra controls collapsed while 'off'.
+- **Starters +2** (501 -> 503): a tapered 'along' star and a
+  'writeOn' 0-60% star, both monochrome.
+
+### Fixed
+- Phase Q unit test expectation followed the Phase Q identity fix
+  (aux gravity factor order in the shader); the suite is back to
+  19/19 with no application behaviour change.
+
 ## [1.20.0] — 2026-11-16
 
 Second-period plan Phase R (final phase): the two sub-paths catch
