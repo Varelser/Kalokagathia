@@ -4,6 +4,45 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.20.0] — 2026-11-16
+
+Second-period plan Phase R (final phase): the two sub-paths catch
+up with the main WebGL path's morph.
+
+### Added
+- **CPU fallback morph**: the Canvas 2D fallback simulator now
+  applies the morph attraction. It reuses the exact GPGPU morph
+  bake (`buildGpgpuMorphTargetData`, texSize 64) at normalised
+  scale, assigns each CPU particle its own baked target, and pulls
+  it there with the velocity shader's force law (Y orbit with the
+  baked replica phase, exponential snap factor). All bake-complete
+  targets work: built-in shapes, terrain, OBJ, SVG, and — via the
+  same media maps the GPU runtime assembles — text and image.
+  Replica grammar is baked in as on the GPU path. No new config
+  keys: the existing `gpgpuMorph*` keys are read as-is. With morph
+  off, the CPU step is bit-identical to v1.19.0 (unit-tested
+  against the legacy sim). Not ported: the OBJ normal kick (an
+  emission pulse tied to the GPU age/respawn system, which the CPU
+  sim does not have) and morph inside CPU attractor mode (the
+  attractor branch keeps precedence).
+- **WebGPU morph**: the WGSL velocity pass gains the morph
+  attraction — the baked cloud rides a storage buffer with the
+  same index layout as the position buffers, and the force law is
+  the WebGL shader's, verbatim in structure. Morph joins the
+  WebGPU capability registry as a supported feature (before this
+  it was not even listed, so morph configs silently lost the
+  force on the WebGPU path). With morph off the WGSL block is
+  skipped entirely. Not ported to WGSL: the OBJ normal kick and
+  every other WebGL-only force (unchanged from before).
+
+### Notes
+- No new config keys (958), no new starters (501), catalog
+  unchanged (1,541). The WebGL path is untouched: the frozen
+  deterministic render is bit-identical to v1.19.0.
+- This closes the second-period plan (Phases M–R). The Maxon
+  coverage audit does not cover these sub-paths; the Phase Q
+  value (70%) stands as the second period's final coverage.
+
 ## [1.19.0] — 2026-11-16
 
 Parent/Child (second-period plan Phase Q): the B3 Aux pool — a
