@@ -47,6 +47,18 @@ forward travel.
   Repeat (grid x4, offset 0.25), Terrain Tunnel Cruise (speed 24).
   All monochrome. Config keys 982 → 996.
 
+### Fixed
+- **Terrain 'image' texture never became visible** (latent since
+  the terrain mesh shipped in v1.18.0): the image loads
+  asynchronously and is swapped into the mesh material, but a
+  material first rendered without a map never recompiled with
+  USE_MAP, so the terrain rendered untextured. The material is
+  now keyed on map presence so it remounts when the texture
+  lands. Found and proven in the Phase V real-GPU gate (probe
+  build: texture loaded and set in state, surface still plain);
+  the no-map form is unchanged and the default render stays
+  bit-identical.
+
 ## [1.23.0] — 2026-11-16
 
 Third-period plan Phase T: a 3D light object for the GPGPU points —
