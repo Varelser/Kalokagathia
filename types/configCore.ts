@@ -100,6 +100,21 @@ export interface ParticleConfigCore {
    *  'fit' shows the whole image with the solid background in the
    *  letterbox area. */
   backgroundImageFit: 'cover' | 'fit';
+  /** Horizon image projection (Phase N): 'flat' (default) is the
+   *  Phase I plane backdrop exactly — the image is baked at the
+   *  frame aspect with cover/fit applied. 'equirect' treats the
+   *  source as a 360° equirectangular panorama: the texture is
+   *  loaded with THREE.EquirectangularReflectionMapping and set as
+   *  scene.background, so three.js renders it on the inside of the
+   *  background sphere and the view follows the camera (the
+   *  Trapcode Horizon core behaviour). The fit key is ignored in
+   *  equirect mode; a 2:1 source is recommended (other aspects are
+   *  stretched over the sphere, never broken). */
+  backgroundImageProjection: 'flat' | 'equirect';
+  /** Equirect yaw offset in degrees (Phase N): rotates the
+   *  panorama horizontally via scene.backgroundRotation.y.
+   *  Default 0. Only read in equirect projection. */
+  backgroundEquirectYaw: number;
   depthFogEnabled: boolean;
   depthFogNear: number;
   depthFogFar: number;

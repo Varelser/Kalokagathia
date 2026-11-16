@@ -37,6 +37,10 @@ export const APP_STATE_DEFAULT_VIEW_DISPLAY: Partial<ParticleConfig> = {
   backgroundGradientAngle: 90,
   backgroundImageSource: '',
   backgroundImageFit: 'cover',
+  // Horizon projection (Phase N): 'flat' is the Phase I plane
+  // backdrop exactly; 'equirect' is the 360° panorama.
+  backgroundImageProjection: 'flat',
+  backgroundEquirectYaw: 0,
 
   // Screen FX
   screenScanlineIntensity: 0.0,

@@ -88,6 +88,8 @@ const DESCRIPTIONS: Record<string, string> = {
   backgroundGradientAngle: 'Horizon 直線グラデーションの角度（度、画面空間。0=左→右、90=下→上）',
   backgroundImageSource: 'Horizon 背景画像（data URL）。未設定の間は従来の単色背景',
   backgroundImageFit: 'Horizon 背景画像の収め方（cover=切り取って全面 / fit=全体表示で余白は単色）',
+  backgroundImageProjection: 'Horizon 背景画像の投影方式（flat=従来の平面 / equirect=360°パノラマ・球体内面マッピングでカメラ連動）',
+  backgroundEquirectYaw: 'Horizon equirect 背景の水平回転オフセット（度、equirect 時のみ）',
   sdfAmbientLight: 'SDF面への環境光の量',
   sdfLightX: 'SDF面ライトのX方向位置',
   sdfLightY: 'SDF面ライトのY方向位置',

@@ -511,19 +511,41 @@ const HorizonImageBlock: React.FC<Pick<ControlPanelContentProps, 'config' | 'upd
         )}
       </div>
       <Toggle
-        label="Image Fit"
-        value={config.backgroundImageFit}
+        label="Image Projection"
+        value={config.backgroundImageProjection}
         options={[
-          { label: 'Cover', val: 'cover' },
-          { label: 'Fit', val: 'fit' },
+          { label: 'Flat', val: 'flat' },
+          { label: 'Equirect 360°', val: 'equirect' },
         ]}
-        onChange={(value) => updateConfig('backgroundImageFit', value)}
+        onChange={(value) => updateConfig('backgroundImageProjection', value)}
       />
-      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-        {source
-          ? '画像を設定済み: 背景として表示されます（Cover=画面いっぱいに拡大して余りを切り取り、Fit=全体を表示して余白は単色背景）。画像は 1024px 以下に縮小され、config に保持されます。透過書き出し・配信の透過面では背景は従来どおり無効になります。'
-          : '画像が未設定のため、いまは従来の単色背景が表示されています。画像を設定すると背景として表示されます。'}
-      </div>
+      {config.backgroundImageProjection === 'equirect' ? (
+        <>
+          <Slider label="Equirect Yaw" value={config.backgroundEquirectYaw} min={-180} max={180} step={1} onChange={(value) => updateConfig('backgroundEquirectYaw', value)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            {source
+              ? '360°パノラマとして球体内面に表示され、カメラの向きに連動します。2:1 のパノラマ画像推奨（それ以外のアスペクトは球面に引き伸ばして表示されます）。Yaw で水平方向の向きをずらせます。透過書き出し・配信の透過面では背景は従来どおり無効になります。'
+              : '画像が未設定のため、いまは従来の単色背景が表示されています。2:1 のパノラマ画像を設定すると 360°背景として表示されます。'}
+          </div>
+        </>
+      ) : (
+        <>
+          <Toggle
+            label="Image Fit"
+            value={config.backgroundImageFit}
+            options={[
+              { label: 'Cover', val: 'cover' },
+              { label: 'Fit', val: 'fit' },
+            ]}
+            onChange={(value) => updateConfig('backgroundImageFit', value)}
+          />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            {source
+              ? '画像を設定済み: 背景として表示されます（Cover=画面いっぱいに拡大して余りを切り取り、Fit=全体を表示して余白は単色背景）。画像は 1024px 以下に縮小され、config に保持されます。透過書き出し・配信の透過面では背景は従来どおり無効になります。'
+              : '画像が未設定のため、いまは従来の単色背景が表示されています。画像を設定すると背景として表示されます。'}
+          </div>
+        </>
+      )}
     </div>
   );
 };

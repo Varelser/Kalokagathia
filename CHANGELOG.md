@@ -4,6 +4,39 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.16.0] — 2026-11-16
+
+Horizon 360° (second-period plan Phase N): the Horizon image
+background gains an equirectangular projection, so a panorama
+becomes a true camera-following environment instead of a flat
+backdrop.
+
+### Added
+- **Image projection** (`backgroundImageProjection`, 'flat' default
+  / 'equirect'): 'flat' is the Phase I plane backdrop exactly (the
+  image baked at the frame aspect with cover/fit). 'equirect'
+  decodes the source at its native size, loads it with
+  `THREE.EquirectangularReflectionMapping` and sets it as
+  `scene.background` — three.js renders it on the inside of the
+  background sphere, so the visible slice follows the camera.
+  A 2:1 panorama is recommended; other aspects are stretched over
+  the sphere rather than failing. The fit key is ignored in
+  equirect mode.
+- **Equirect yaw** (`backgroundEquirectYaw`, degrees, default 0):
+  rotates the panorama horizontally via
+  `scene.backgroundRotation.y` (the three.js scene-background
+  rotation API), reset to zero whenever equirect is not active.
+- Config keys 943 → 945. No new starters (bundling a background
+  image would bloat every config that carries it).
+
+### Notes
+- The existing background semantics are unchanged: deterministic
+  renders keep transparent = background dropped, unmult = black
+  matte, opaque = background included (the Phase G camera pin
+  makes equirect renders reproducible frame-for-frame); stream
+  mode still suppresses Horizon; still captures keep the texture
+  for opaque and drop it for transparent.
+
 ## [1.15.0] — 2026-11-16
 
 Light, colour and chain finishing (second-period plan Phase M):

@@ -228,3 +228,73 @@ export function getHorizonImageTexture(
   img.src = source;
   return entry;
 }
+
+// ---------------------------------------------------------------------------
+// Equirect image texture (Phase N, decoded, cached by source string)
+//
+// The 360° path deliberately does NOT bake the frame aspect: the
+// source is decoded at its native size and handed to three.js with
+// EquirectangularReflectionMapping, so scene.background renders it
+// on the inside of the background sphere and the visible slice
+// follows the camera. A 2:1 source maps cleanly; any other aspect
+// is simply stretched over the sphere (never an error). Horizontal
+// wrapping is Repeat so the seam at the back of the sphere joins —
+// an equirect source whose left/right edges match shows no seam.
+
+interface EquirectEntry extends HorizonImageTextureState {
+  key: string;
+}
+
+let equirectEntry: EquirectEntry | null = null;
+
+function disposeEquirectEntry(): void {
+  if (equirectEntry?.texture) equirectEntry.texture.dispose();
+  equirectEntry = null;
+}
+
+export function getHorizonEquirectTexture(source: string): HorizonImageTextureState {
+  if (!source) {
+    disposeEquirectEntry();
+    return IMAGE_NOT_READY;
+  }
+  if (equirectEntry && equirectEntry.key === source) return equirectEntry;
+  disposeEquirectEntry();
+  const entry: EquirectEntry = { key: source, texture: null, ready: false };
+  equirectEntry = entry;
+  if (typeof document === 'undefined') return entry;
+  const img = new Image();
+  img.onload = () => {
+    if (equirectEntry !== entry) return; // superseded while decoding
+    try {
+      const width = Math.max(1, img.naturalWidth || img.width || 1);
+      const height = Math.max(1, img.naturalHeight || img.height || 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, width, height);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      entry.texture = tex;
+      entry.ready = true;
+    } catch {
+      // Decode failure: stay not-ready; the solid background remains.
+    }
+  };
+  img.onerror = () => {
+    // Unreadable source: stay not-ready (solid fallback, UI states it).
+  };
+  img.src = source;
+  return entry;
+}
+
+/** Yaw offset (degrees, config) -> scene.backgroundRotation.y
+ *  (radians). Non-finite input falls back to 0. */
+export function horizonEquirectYawRadians(yaw: number | undefined): number {
+  const deg = Number.isFinite(yaw) ? (yaw as number) : 0;
+  return (deg * Math.PI) / 180;
+}
