@@ -9,6 +9,7 @@ import { noteSceneGenerationMounted, useSceneGeneration } from '../lib/sceneGene
 import { CameraImpulseRig, getAdaptiveDprRange, SceneBackgroundSync, shouldUseAntialias } from './AppSceneCameraRig';
 import { HorizonBackground } from './HorizonBackground';
 import { TerrainMesh } from './TerrainMesh';
+import { ObjMesh } from './ObjMesh';
 import { isHorizonActive, isHorizonSuppressed } from '../lib/horizonBackground';
 import { AppSceneLayerContent } from './AppSceneLayerContent';
 import { AppScenePostFx } from './AppScenePostFx';
@@ -165,8 +166,13 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
       />
       {/* Terrain Mesh (Phase P): mounts only when enabled in the
           config; with the default off it returns null and the scene
-          is exactly the legacy one. */}
-      <TerrainMesh config={effectiveConfig} />
+          is exactly the legacy one. Keyed by scene generation
+          (Phase V) so a deterministic render job remounts it and
+          the tunnel cruise phase restarts from 0 with the job. */}
+      <TerrainMesh key={`terrain-${sceneGeneration}`} config={effectiveConfig} isPlaying={isPlaying} />
+      {/* OBJ Mesh (Phase V): the polygon face of the imported OBJ;
+          mounts only when enabled with a usable source. */}
+      <ObjMesh config={effectiveConfig} />
       <AppSceneLayerContent
         key={`layers-${sceneGeneration}`}
         audioRef={audioRef}
