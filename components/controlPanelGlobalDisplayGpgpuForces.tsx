@@ -504,6 +504,50 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             主粒子（親）のイベントで生まれる子エミッタ専用プールです（Kinetix auxMode の GPU 実装が土台）。子は独自のシミュレーションを持ち、上の Child 系キーで親と違う重力（0で無重力・負で反重力）・ドラッグ・渦・色で生きられます。既定（重力倍率1／ドラッグ0／渦0／色は継承）は従来の共有挙動と同一です。Death Burst は Life System が On のときだけ発火します。レイヤー側の Aux/Spark（常時型）とは別系統で併存します。
           </div>
+          <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Chain — Grandchild Emitters （連鎖・孫エミッタ — Phase W1）</div>
+          <select
+            value={String(config.gpgpuAuxDepth)}
+            onChange={(e) => updateConfig('gpgpuAuxDepth', Number(e.target.value))}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="1">Depth 1 （子まで — 従来どおり）</option>
+            <option value="2">Depth 2 （孫まで）</option>
+            <option value="3">Depth 3 （ひ孫まで — 最大3段）</option>
+          </select>
+          {config.gpgpuAuxDepth >= 2 && (
+            <>
+              <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Grandchild Event （孫のイベント方式 — レベル2以上の共通設定）</div>
+              <select
+                value={config.gpgpuAux2Mode}
+                onChange={(e) => updateConfig('gpgpuAux2Mode', e.target.value as typeof config.gpgpuAux2Mode)}
+                className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+              >
+                <option value="none">None （連鎖しない）</option>
+                <option value="deathBurst">Death Burst （子の死亡時に飛沫）</option>
+                <option value="bounceSplash">Bounce Splash （子のバウンス時に飛沫）</option>
+                <option value="sparkTrail">Spark Trail （子が火花を落とす）</option>
+              </select>
+              {config.gpgpuAux2Mode !== 'none' && (
+                <>
+                  <Slider label="Grandchild Intensity" value={config.gpgpuAux2Intensity} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAux2Intensity', v)} />
+                  <Slider label="Grandchild Life (s)" value={config.gpgpuAux2Life} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAux2Life', v)} />
+                  <Slider label="Grandchild Speed" value={config.gpgpuAux2Speed} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuAux2Speed', v)} />
+                  <Slider label="Grandchild Size" value={config.gpgpuAux2Size} min={0.3} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuAux2Size', v)} />
+                  <Slider label="Grandchild Gravity Scale （孫の重力倍率）" value={config.gpgpuAux2GravityScale} min={-3} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAux2GravityScale', v)} />
+                  <Slider label="Grandchild Drag （孫の追加ドラッグ）" value={config.gpgpuAux2Drag} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuAux2Drag', v)} />
+                  <Slider label="Grandchild Curl （孫の渦）" value={config.gpgpuAux2Curl} min={-5} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuAux2Curl', v)} />
+                  <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Grandchild Color （孫の色）{config.gpgpuAux2Color ? '' : ' — 子と同じ（継承中）'}</div>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={config.gpgpuAux2Color || '#ffffff'} onChange={(e) => updateConfig('gpgpuAux2Color', e.target.value)} className="h-8 flex-1 cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
+                    <button type="button" onClick={() => updateConfig('gpgpuAux2Color', '')} className="cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90">子を継承</button>
+                  </div>
+                </>
+              )}
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                子のイベントで孫が生まれる多段連鎖です（最大3段まで — テクスチャと描画のコストが段数に比例するため上限があります）。レベル2以上の設定は1セットを共有し、深さ3では孫の設定がひ孫にもそのまま再帰適用されます。深さ2以上で Aux2 が None のときは連鎖しません。プールは深さが届く段だけ確保されます。
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
