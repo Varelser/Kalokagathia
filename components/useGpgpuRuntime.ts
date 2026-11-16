@@ -3,11 +3,11 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
-import { buildGpgpuMorphTargetData } from '../lib/gpgpuMorphTargets';
+import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
-import { sampleObjPointCloud } from '../lib/objMorph';
+import { sampleObjPointCloudWithNormals } from '../lib/objMorph';
 import { getSceneGeneration, noteGpgpuBackendSettled } from '../lib/sceneGeneration';
 import {
   initWebGPUCompute,
@@ -66,6 +66,7 @@ export type GpgpuRuntimeRefs = {
   prevPosRTRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   initPosTexRef: MutableRefObject<THREE.DataTexture | null>;
   morphTexRef: MutableRefObject<THREE.DataTexture | null>;
+  morphNormalTexRef: MutableRefObject<THREE.DataTexture | null>;
   fluidRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   fluidRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   fluidPingIsA: MutableRefObject<boolean>;
@@ -100,6 +101,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const prevPosRTRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const initPosTexRef = useRef<THREE.DataTexture | null>(null);
   const morphTexRef = useRef<THREE.DataTexture | null>(null);
+  const morphNormalTexRef = useRef<THREE.DataTexture | null>(null);
   const fluidRTARef = useRef<THREE.WebGLRenderTarget | null>(null);
   const fluidRTBRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const fluidPingIsA = useRef(true);
@@ -348,6 +350,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphMediaHeight = config.layer2MediaMapHeight;
   const morphSvgSource = config.gpgpuMorphSvgSource;
   const morphObjSource = config.gpgpuMorphObjSource;
+  const morphObjSampleMode = config.gpgpuMorphObjSampleMode;
   const morphReplicaCount = config.gpgpuMorphReplicaCount;
   const morphReplicaSpacing = config.gpgpuMorphReplicaSpacing;
   const morphReplicaAxis = config.gpgpuMorphReplicaAxis;
@@ -361,6 +364,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   useEffect(() => {
     morphTexRef.current?.dispose();
     morphTexRef.current = null;
+    morphNormalTexRef.current?.dispose();
+    morphNormalTexRef.current = null;
     if (!morphEnabled) return;
     let mediaMap: MorphMediaMap | null = null;
     if (morphTarget === 'text') {
@@ -382,11 +387,16 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // outline point cloud; null (no usable geometry) falls back to the
     // shell inside the bake, exactly like a missing media map.
     const svgPoints = morphTarget === 'svg' ? sampleSvgPointCloud(morphSvgSource) : null;
-    // obj (Phase J): re-sample the imported OBJ source text into its
-    // surface point cloud; null (no usable geometry) falls back to
-    // the shell inside the bake, exactly like a missing media map.
-    const objPoints = morphTarget === 'obj' ? sampleObjPointCloud(morphObjSource) : null;
-    const data = buildGpgpuMorphTargetData({
+    // obj (Phase J, modes + normals in Phase O): re-sample the
+    // imported OBJ source text in the selected mode; null (no usable
+    // geometry) falls back to the shell inside the bake, exactly like
+    // a missing media map. The 'surface' mode's points are
+    // bit-identical to the Phase J sampler; the parallel normal cloud
+    // feeds the companion normal texture below.
+    const objSample = morphTarget === 'obj' ? sampleObjPointCloudWithNormals(morphObjSource, morphObjSampleMode) : null;
+    const objPoints = objSample ? objSample.points : null;
+    const objNormals = objSample ? objSample.normals : null;
+    const { data, normalData } = buildGpgpuMorphTargetDataWithNormals({
       texSize,
       target: morphTarget,
       worldScale: morphScale * morphBounceRadius * 0.48,
@@ -395,6 +405,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       mediaMap,
       svgPoints,
       objPoints,
+      objNormals,
       // Replica grammar (Phase K): count 1 reproduces the legacy
       // bake exactly; higher counts split the same point budget into
       // offset copies (see lib/gpgpuMorphTargets.ts).
@@ -418,9 +429,16 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
     morphTexRef.current = tex;
+    // Companion normal texture (Phase O): same texel layout as the
+    // morph target texture; xyz is a unit direction (not scaled).
+    const normalTex = new THREE.DataTexture(normalData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    normalTex.needsUpdate = true;
+    morphNormalTexRef.current = normalTex;
     return () => {
       tex.dispose();
       if (morphTexRef.current === tex) morphTexRef.current = null;
+      normalTex.dispose();
+      if (morphNormalTexRef.current === normalTex) morphNormalTexRef.current = null;
     };
   }, [
     texSize,
@@ -441,6 +459,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphMediaHeight,
     morphSvgSource,
     morphObjSource,
+    morphObjSampleMode,
     morphReplicaCount,
     morphReplicaSpacing,
     morphReplicaAxis,
@@ -459,6 +478,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     prevPosRTRef,
     initPosTexRef,
     morphTexRef,
+    morphNormalTexRef,
     fluidRTARef,
     fluidRTBRef,
     fluidPingIsA,

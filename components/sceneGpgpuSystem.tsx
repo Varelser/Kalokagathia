@@ -48,6 +48,15 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const tempMouseVec = useRef(new THREE.Vector3());
   const tempMouseDir = useRef(new THREE.Vector3());
   const timeRef = useRef(0);
+  // OBJ normal kick (Phase O): the sim time at which the current
+  // morph bake / normal-speed value was (re)placed. The velocity
+  // shader's kick envelope runs from this instant, so re-baking the
+  // morph (preset apply, OBJ edit, mode change) or changing the
+  // speed key re-emits the particles along their normals.
+  const morphKickStartRef = useRef(0);
+  const morphKickTexRef = useRef<THREE.DataTexture | null>(null);
+  const morphKickSpeedRef = useRef(0);
+  const morphKickInitRef = useRef(false);
   const routingSnapshotRef = useRef<GpgpuFrameDiagnosticSnapshot | null>(null);
 
   useEffect(() => {
@@ -108,6 +117,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     prevPosRTRef,
     initPosTexRef,
     morphTexRef,
+    morphNormalTexRef,
     fluidRTARef,
     fluidRTBRef,
     fluidPingIsA,
@@ -170,6 +180,23 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       time: timeRef.current,
     });
 
+    // OBJ normal kick placement detection (Phase O): a new morph
+    // normal texture (re-bake) or a changed normal-speed key marks
+    // a (re)placement — the kick envelope restarts from this frame.
+    // The FIRST placement after a (re)mount keeps kickStart = 0:
+    // the sim clock restarts at mount too, and deterministic
+    // renders remount the scene, so frame-timing jitter in this
+    // detection can never leak into an export.
+    if (
+      morphNormalTexRef.current !== morphKickTexRef.current ||
+      config.gpgpuMorphObjNormalSpeed !== morphKickSpeedRef.current
+    ) {
+      morphKickTexRef.current = morphNormalTexRef.current;
+      morphKickSpeedRef.current = config.gpgpuMorphObjNormalSpeed;
+      if (morphKickInitRef.current) morphKickStartRef.current = timeRef.current;
+      morphKickInitRef.current = true;
+    }
+
     const routing = resolveGpgpuFrameRouting({
       config,
       webgpuState: webgpuStateRef.current,
@@ -199,6 +226,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       posSimMat,
       initPosTex: initPosTexRef.current,
       morphTex: morphTexRef.current,
+      morphNormalTex: morphNormalTexRef.current,
+      morphKickStart: morphKickStartRef.current,
       prevPosTex: prevPosRTRef.current?.texture ?? null,
       webgpuState: webgpuStateRef.current,
       webgpuPosTex: webgpuPosTexRef.current,
