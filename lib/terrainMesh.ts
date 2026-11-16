@@ -166,6 +166,43 @@ export function buildTerrainMeshGeometryData(
   };
 }
 
+/**
+ * Terrain texture UV transform (Phase V): the standard map
+ * transform uv' = uv * repeat + offset, applied by three.js from
+ * the texture's repeat / offset fields. This pure form exists so
+ * the semantics are unit-testable and documented in one place; the
+ * defaults (repeat 1, offsets 0) are the identity, which is what
+ * keeps pre-Phase-V renders bit-identical.
+ */
+export function terrainTextureUvTransform(
+  u: number,
+  v: number,
+  repeat: number,
+  offsetX: number,
+  offsetY: number,
+): [number, number] {
+  return [u * repeat + offsetX, v * repeat + offsetY];
+}
+
+/**
+ * Tunnel scroll offset (Phase V): how far the tunnel terrain has
+ * travelled toward the viewer after `timeSeconds` of scene time at
+ * `speed` world units per second, folded into [0, tunnelLength).
+ * The tunnel field is periodic over exactly one tunnel length
+ * (the cross-fade tiling in buildTerrainMeshGeometryData), so the
+ * fold is invisible — the wrap lands on identical geometry. The
+ * offset is a pure function of accumulated scene time: during a
+ * deterministic render the stepped clock makes it a function of
+ * the frame index, and speed 0 yields exactly 0 (the legacy static
+ * tunnel) for every t.
+ */
+export function tunnelScrollOffset(timeSeconds: number, speed: number, tunnelLength: number): number {
+  if (!(tunnelLength > 0) || !Number.isFinite(timeSeconds) || !Number.isFinite(speed)) return 0;
+  const raw = timeSeconds * speed;
+  const folded = raw % tunnelLength;
+  return folded < 0 ? folded + tunnelLength : folded;
+}
+
 // ---------------------------------------------------------------------------
 // Procedural surface textures (monochrome, canvas-baked, cached)
 
