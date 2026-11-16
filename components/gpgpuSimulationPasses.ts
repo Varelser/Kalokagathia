@@ -24,6 +24,8 @@ function resolveParticleLifeMatrix(config: ParticleConfig): Float32Array {
   return plMatrixCacheValue;
 }
 import type { WebGPUComputeState } from '../lib/webgpuCompute';
+import { AUX_TEX_SIZE } from './gpgpuShaderAux';
+import type { AuxLevelParams } from '../lib/auxChain';
 
 export function updateMouseWorldPosition(args: {
   mouseNDC: THREE.Vector2;
@@ -472,6 +474,107 @@ export function runAuxSimulationPasses(args: {
   posU.uDelta.value = dt;
   posU.uTime.value = time;
   simMesh.material = auxPosMat;
+  gl.setRenderTarget(auxPosOut);
+  gl.render(simScene, simCamera);
+}
+
+// Aux chain passes (Phase W1): one chain level (2 or 3) against the
+// previous level's FRAME-START textures — the same pre-update state
+// level 1 reads from the main pool, so a death/bounce event is
+// located where it happened this frame at every level. The level's
+// resolved parameters (lib/auxChain.ts) drive both passes; level >= 2
+// physics (gravity / floor / sphere bound) follow the scene config
+// exactly as level 1's do, with the level's own gravity scale, drag
+// and curl in place of the shared ones.
+export function runAuxChainSimulationPasses(args: {
+  config: ParticleConfig;
+  dt: number;
+  time: number;
+  simMesh: THREE.Mesh;
+  gl: THREE.WebGLRenderer;
+  simScene: THREE.Scene;
+  simCamera: THREE.Camera;
+  level: AuxLevelParams;
+  srcPosTex: THREE.Texture;
+  srcVelTex: THREE.Texture;
+  srcCount: number;
+  auxPosIn: THREE.WebGLRenderTarget;
+  auxPosOut: THREE.WebGLRenderTarget;
+  auxVelIn: THREE.WebGLRenderTarget;
+  auxVelOut: THREE.WebGLRenderTarget;
+  auxChainVelMat: THREE.ShaderMaterial;
+  auxChainPosMat: THREE.ShaderMaterial;
+}): void {
+  const {
+    config,
+    dt,
+    time,
+    simMesh,
+    gl,
+    simScene,
+    simCamera,
+    level,
+    srcPosTex,
+    srcVelTex,
+    srcCount,
+    auxPosIn,
+    auxPosOut,
+    auxVelIn,
+    auxVelOut,
+    auxChainVelMat,
+    auxChainPosMat,
+  } = args;
+
+  const modeId = AUX_MODE_IDS[level.mode] ?? 0;
+  const auxCount = Math.max(0, Math.min(16384, Math.round(config.gpgpuAuxCount)));
+
+  const velU = auxChainVelMat.uniforms;
+  velU.uAuxPosTex.value = auxPosIn.texture;
+  velU.uAuxVelTex.value = auxVelIn.texture;
+  velU.uMainPosTex.value = srcPosTex;
+  velU.uMainVelTex.value = srcVelTex;
+  velU.uMainTexSizeF.value = AUX_TEX_SIZE;
+  velU.uSrcCount.value = srcCount;
+  velU.uAuxCount.value = auxCount;
+  velU.uAuxMode.value = modeId;
+  velU.uAuxIntensity.value = level.intensity;
+  velU.uAuxSpeed.value = level.speed;
+  velU.uAuxLife.value = level.life;
+  velU.uAuxGravityScale.value = level.gravityScale;
+  velU.uAuxDrag.value = level.drag;
+  velU.uAuxCurl.value = level.curl;
+  velU.uChainSalt.value = level.salt;
+  velU.uFloorEnabled.value = config.gpgpuFloorEnabled;
+  velU.uFloorY.value = config.gpgpuFloorY;
+  velU.uFloorBounce.value = config.gpgpuFloorBounce;
+  velU.uBounceRadius.value = config.gpgpuBounceRadius;
+  velU.uBounce.value = config.gpgpuBounce;
+  velU.uGravity.value = config.gpgpuGravity;
+  velU.uDelta.value = dt;
+  velU.uTime.value = time;
+  simMesh.material = auxChainVelMat;
+  gl.setRenderTarget(auxVelOut);
+  gl.render(simScene, simCamera);
+
+  const posU = auxChainPosMat.uniforms;
+  posU.uAuxPosTex.value = auxPosIn.texture;
+  posU.uAuxVelTex.value = auxVelIn.texture;
+  posU.uAuxVelOutTex.value = auxVelOut.texture;
+  posU.uMainPosTex.value = srcPosTex;
+  posU.uMainVelTex.value = srcVelTex;
+  posU.uMainTexSizeF.value = AUX_TEX_SIZE;
+  posU.uSrcCount.value = srcCount;
+  posU.uAuxCount.value = auxCount;
+  posU.uAuxMode.value = modeId;
+  posU.uAuxIntensity.value = level.intensity;
+  posU.uAuxSpeed.value = level.speed;
+  posU.uChainSalt.value = level.salt;
+  posU.uFloorEnabled.value = config.gpgpuFloorEnabled;
+  posU.uFloorY.value = config.gpgpuFloorY;
+  posU.uBounceRadius.value = config.gpgpuBounceRadius;
+  posU.uDelta.value = dt;
+  posU.uTime.value = time;
+  simMesh.material = auxChainPosMat;
   gl.setRenderTarget(auxPosOut);
   gl.render(simScene, simCamera);
 }

@@ -27,11 +27,13 @@ import {
 } from './gpgpuVisualUpdates';
 import {
   blitPreviousPositionPass,
+  runAuxChainSimulationPasses,
   runAuxSimulationPasses,
   runFluidAdvectionPass,
   runSimulationPasses,
   updateMouseWorldPosition,
 } from './gpgpuSimulationPasses';
+import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
 
 type GpgpuSystemProps = {
   audioRef: MutableRefObject<{ bass: number; treble: number; pulse: number }>;
@@ -98,6 +100,10 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     posSimMat,
     auxVelMat,
     auxPosMat,
+    auxChainVelMat,
+    auxChainPosMat,
+    aux2DrawMat,
+    aux3DrawMat,
     blitMat,
     sortDepthMat,
     bitonicMat,
@@ -125,6 +131,10 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     sortRTBRef,
     auxRtRef,
     auxPingIsA,
+    aux2RtRef,
+    aux2PingIsA,
+    aux3RtRef,
+    aux3PingIsA,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,
@@ -269,6 +279,76 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       auxDrawMat.uniforms.uAuxSize.value = config.gpgpuAuxSize;
       auxDrawMat.blending = config.gpgpuBlendMode === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
       auxDrawGeo.setDrawRange(0, Math.max(0, Math.min(16384, Math.round(config.gpgpuAuxCount))));
+
+      // Aux chain (Phase W1): levels 2 and 3 run the same two-pass
+      // machinery against the previous level's frame-start textures
+      // (auxTargets / aux2Targets inputs), so every level locates
+      // its events where they happened this frame. Level params and
+      // gating come from lib/auxChain.ts; a level whose pool is not
+      // allocated (depth lowered mid-session) is simply skipped.
+      const chainLevels = resolveAuxChainLevels(config);
+      const chainSrcCount = Math.max(0, Math.min(16384, Math.round(config.gpgpuAuxCount)));
+      const level2 = chainLevels.find((l) => l.level === 2);
+      if (level2 && aux2RtRef.current && simMeshRef.current) {
+        const aux2Targets = resolvePingPongTargets(aux2RtRef.current, aux2PingIsA.current);
+        runAuxChainSimulationPasses({
+          config,
+          dt,
+          time: timeRef.current,
+          simMesh: simMeshRef.current,
+          gl: glCtx,
+          simScene,
+          simCamera,
+          level: level2,
+          srcPosTex: auxTargets.posIn.texture,
+          srcVelTex: auxTargets.velIn.texture,
+          srcCount: chainSrcCount,
+          auxPosIn: aux2Targets.posIn,
+          auxPosOut: aux2Targets.posOut,
+          auxVelIn: aux2Targets.velIn,
+          auxVelOut: aux2Targets.velOut,
+          auxChainVelMat,
+          auxChainPosMat,
+        });
+        aux2PingIsA.current = !aux2PingIsA.current;
+        aux2DrawMat.uniforms.uAuxPosTex.value = aux2Targets.posOut.texture;
+        aux2DrawMat.uniforms.uAuxVelTex.value = aux2Targets.velOut.texture;
+        aux2DrawMat.uniforms.uColor.value.setStyle(resolveAuxLevelColor(config, 2));
+        aux2DrawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
+        aux2DrawMat.uniforms.uAuxSize.value = level2.size;
+        aux2DrawMat.blending = auxDrawMat.blending;
+
+        const level3 = chainLevels.find((l) => l.level === 3);
+        if (level3 && aux3RtRef.current && simMeshRef.current) {
+          const aux3Targets = resolvePingPongTargets(aux3RtRef.current, aux3PingIsA.current);
+          runAuxChainSimulationPasses({
+            config,
+            dt,
+            time: timeRef.current,
+            simMesh: simMeshRef.current,
+            gl: glCtx,
+            simScene,
+            simCamera,
+            level: level3,
+            srcPosTex: aux2Targets.posIn.texture,
+            srcVelTex: aux2Targets.velIn.texture,
+            srcCount: chainSrcCount,
+            auxPosIn: aux3Targets.posIn,
+            auxPosOut: aux3Targets.posOut,
+            auxVelIn: aux3Targets.velIn,
+            auxVelOut: aux3Targets.velOut,
+            auxChainVelMat,
+            auxChainPosMat,
+          });
+          aux3PingIsA.current = !aux3PingIsA.current;
+          aux3DrawMat.uniforms.uAuxPosTex.value = aux3Targets.posOut.texture;
+          aux3DrawMat.uniforms.uAuxVelTex.value = aux3Targets.velOut.texture;
+          aux3DrawMat.uniforms.uColor.value.setStyle(resolveAuxLevelColor(config, 3));
+          aux3DrawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
+          aux3DrawMat.uniforms.uAuxSize.value = level3.size;
+          aux3DrawMat.blending = auxDrawMat.blending;
+        }
+      }
     }
 
     const finalSortTex = runDepthSortPass({

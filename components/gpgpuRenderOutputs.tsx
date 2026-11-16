@@ -2,6 +2,7 @@ import React from 'react';
 import type { FC } from 'react';
 import type { ParticleConfig } from '../types';
 import { getGpgpuRenderOutputPlan } from '../lib/sceneRenderRouting';
+import { resolveAuxChainLevels } from '../lib/auxChain';
 import { MAX_TRAIL } from './gpgpuShaderConstants';
 import type { GpgpuAssetBundle } from './useGpgpuAssets';
 
@@ -38,8 +39,11 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
     volumetricMeshObj,
     auxDrawGeo,
     auxDrawMat,
+    aux2DrawMat,
+    aux3DrawMat,
   } = assets;
   const plan = getGpgpuRenderOutputPlan(config);
+  const chainLevels = resolveAuxChainLevels(config);
 
   return (
     <>
@@ -48,6 +52,12 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
       )}
       {config.gpgpuAuxMode !== 'none' && (
         <points geometry={auxDrawGeo} material={auxDrawMat} />
+      )}
+      {chainLevels.some((l) => l.level === 2) && (
+        <points geometry={auxDrawGeo} material={aux2DrawMat} />
+      )}
+      {chainLevels.some((l) => l.level === 3) && (
+        <points geometry={auxDrawGeo} material={aux3DrawMat} />
       )}
       {plan.instancedSolids && geomMeshObj && (
         <primitive object={geomMeshObj} />
