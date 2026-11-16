@@ -150,6 +150,13 @@ export interface GpgpuMorphTargetBuildOptions {
    */
   objPoints?: ArrayLike<number> | null;
   /**
+   * Per-sample unit normals for the obj target (Phase O), flat xyz
+   * triples parallel to objPoints (same sample index). Consumed only
+   * by buildGpgpuMorphTargetDataWithNormals; absent leaves the
+   * normal cloud zero (radial for the shell fallback).
+   */
+  objNormals?: ArrayLike<number> | null;
+  /**
    * Terrain field parameters for the terrain target; absent uses the
    * defaults in DEFAULT_TERRAIN. Ignored by every other target.
    */
@@ -267,12 +274,31 @@ function sampleMediaPoint(
  * world units. Pure and deterministic for a given options set.
  */
 export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions): Float32Array {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, replica, terrain } = options;
+  return buildGpgpuMorphTargetDataWithNormals(options).data;
+}
+
+/**
+ * The morph bake plus its companion normal cloud (Phase O). `data` is
+ * exactly what buildGpgpuMorphTargetData returns (the normal path
+ * consumes no RNG draws, so the points stay bit-identical).
+ * `normalData` is a parallel RGBA float array whose xyz is the
+ * per-particle target normal as a pure direction: replica Y-rotation
+ * is applied (normals rotate with their copy) but neither the world
+ * scale nor the jitter is — the velocity shader scales it by the
+ * normal-speed key itself. Non-obj targets get zero normals, except
+ * the obj shell fallback, whose normals are the radial direction.
+ */
+export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBuildOptions): {
+  data: Float32Array;
+  normalData: Float32Array;
+} {
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain } = options;
   const count = texSize * texSize;
   const replicaCount = replica ? Math.max(1, Math.min(8, Math.floor(replica.count) || 1)) : 1;
   const replicaActive = replicaCount > 1 && replica != null;
   const DEG_TO_RAD = Math.PI / 180;
   const data = new Float32Array(count * 4);
+  const normalData = new Float32Array(count * 4);
   const targetIndex = GPGPU_MORPH_TARGETS.indexOf(target);
   const rng = createSeededRng(((seed * 1000003 + targetIndex * 7919 + 12345) >>> 0) || 1);
   const isMedia = target === 'text' || target === 'image';
@@ -295,6 +321,10 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
     let tx = 0;
     let ty = 0;
     let tz = 0;
+    // Companion normal (Phase O): only the obj target defines one.
+    let nnx = 0;
+    let nny = 0;
+    let nnz = 0;
 
     if (objPointCount > 0 && objPoints) {
       // Imported OBJ surface cloud (Phase J): the samples are already
@@ -306,12 +336,24 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
       tx = objPoints[pick] ?? 0;
       ty = objPoints[pick + 1] ?? 0;
       tz = objPoints[pick + 2] ?? 0;
+      if (objNormals) {
+        nnx = objNormals[pick] ?? 0;
+        nny = objNormals[pick + 1] ?? 0;
+        nnz = objNormals[pick + 2] ?? 0;
+      }
     } else if (target === 'obj') {
       // obj requested but no usable cloud: shell fallback (as media).
       const phi = Math.acos(2 * s - 1);
       tx = 0.9 * Math.sin(phi) * Math.cos(h1 * TAU);
       ty = 0.9 * Math.sin(phi) * Math.sin(h1 * TAU);
       tz = 0.9 * Math.cos(phi);
+      // Shell fallback normal: the radial direction of the point.
+      const shellLen = Math.hypot(tx, ty, tz);
+      if (shellLen > 1e-9) {
+        nnx = tx / shellLen;
+        nny = ty / shellLen;
+        nnz = tz / shellLen;
+      }
     } else if (svgPointCount > 0 && svgPoints) {
       // Imported SVG outline cloud (Pro-2): the samples are already
       // arc-length uniform, so a seeded uniform pick distributes
@@ -593,6 +635,11 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
           const nz = tx * sa + tz * ca;
           tx = nx;
           tz = nz;
+          // Normals rotate with their copy (no scale / translation).
+          const gnx = nnx * ca - nnz * sa;
+          const gnz = nnx * sa + nnz * ca;
+          nnx = gnx;
+          nnz = gnz;
         }
         if (replica.axis === 'x') tx += replica.spacing * r;
         else if (replica.axis === 'y') ty += replica.spacing * r;
@@ -609,6 +656,10 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
     data[o + 1] = (ty + jy) * worldScale;
     data[o + 2] = (tz + jz) * worldScale;
     data[o + 3] = alpha;
+    normalData[o] = nnx;
+    normalData[o + 1] = nny;
+    normalData[o + 2] = nnz;
+    normalData[o + 3] = 0;
   }
-  return data;
+  return { data, normalData };
 }

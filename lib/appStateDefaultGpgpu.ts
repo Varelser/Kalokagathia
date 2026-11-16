@@ -125,6 +125,9 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphOrbitSpeed: 0.3,
   gpgpuMorphSvgSource: '',
   gpgpuMorphObjSource: '',
+  // OBJ modes (Phase O): surface / 0 reproduce Phase J bit-for-bit.
+  gpgpuMorphObjSampleMode: 'surface' as const,
+  gpgpuMorphObjNormalSpeed: 0,
   gpgpuMorphReplicaCount: 1,
   gpgpuMorphReplicaSpacing: 0.6,
   gpgpuMorphReplicaAxis: 'x' as const,

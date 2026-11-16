@@ -156,6 +156,17 @@ export interface ParticleConfigGpgpu {
   // surface point cloud is re-sampled from it deterministically at
   // bake time (lib/objMorph.ts).
   gpgpuMorphObjSource: string;
+  // OBJ sampling mode (Phase O): 'surface' (default) is the Phase J
+  // area-weighted surface distribution, bit-identical to before;
+  // 'vertices' places samples on the mesh vertices themselves;
+  // 'volume' fills the interior of a closed mesh (a non-closed mesh
+  // falls back to 'surface', which the UI states explicitly).
+  gpgpuMorphObjSampleMode: 'surface' | 'vertices' | 'volume';
+  // OBJ normal initial speed (Phase O): at (re)placement — the
+  // simulation-start envelope and the age-respawn frame — particles
+  // receive this velocity along their baked sample normal. 0
+  // (default) disables the kick entirely (bit-identical legacy).
+  gpgpuMorphObjNormalSpeed: number;
   gpgpuMorphStrength: number;
   gpgpuMorphScale: number;
   gpgpuMorphJitter: number;
