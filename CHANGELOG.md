@@ -4,6 +4,49 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.18.0] — 2026-11-16
+
+Mir terrain mesh (second-period plan Phase P): the Phase L point
+terrain gains its polygon counterpart — a dedicated mesh system
+that shares the same seeded height field, closing the audit's
+Mir row (polygon terrain + normal shading), the tunnel, texture
+mapping, and surface display switching in one system.
+
+### Added
+- **Terrain Mesh system** (`gpgpuTerrainMeshEnabled`, default
+  off): a 128x128 grid displaced by `terrainHeightAt` with the
+  bake's exact field-seed mixing (extracted as
+  `terrainFieldSeedFor`, so the mesh landscape and the 'terrain'
+  point terrain are the same landscape — ridges line up, proven
+  by unit test), vertex normals from `computeVertexNormals`, and
+  MeshStandardMaterial shading under lights that mount with the
+  system. Off mounts nothing at all: the legacy render is
+  bit-identical.
+- **Display switching** (`gpgpuTerrainMeshDisplay`): 'shaded'
+  (default) / 'wireframe' / 'points' over the same geometry.
+- **Tunnel mode** (`gpgpuTerrainMeshTunnel`): the field wraps a
+  cylinder interior (x = circumference, z = depth, height =
+  radial relief). The field is cross-fade tiled on both wrapped
+  axes, so the circumference closes seamlessly and the depth
+  repeats every length — spatial repetition inside one static
+  length; there is no scrolling.
+- **Texture mapping** (`gpgpuTerrainMeshTexture`): 'none'
+  (default, plain shading) / 'gradient' (monochrome ramp +
+  contour bands) / 'grid' (survey grid) procedural canvas
+  textures, or 'image' reusing the Horizon background image
+  source as the surface map (plain shading until one is set,
+  which the UI states explicitly).
+- **Size / opacity / brightness** (`gpgpuTerrainMeshScale`,
+  `gpgpuTerrainMeshOpacity`, `gpgpuTerrainMeshBrightness`).
+- Config keys 947 → 954. Starters +2 (499): a shaded mesh range
+  synced with the point terrain, and a grid-textured tunnel,
+  both monochrome.
+
+### Notes
+- The terrain field parameters stay the shared
+  `gpgpuMorphTerrain*` keys; the Terrain Mesh UI section edits
+  the same keys, so point and mesh terrains can never drift apart.
+
 ## [1.17.0] — 2026-11-16
 
 OBJ emission modes + normal initial velocity (second-period plan

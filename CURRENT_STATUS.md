@@ -1483,3 +1483,6 @@ v1.16.0（2026-11-16、第2期計画 Phase N）: Horizon 360° equirect 背景�
 
 
 v1.17.0（2026-11-16、第2期計画 Phase O）: OBJ モーフの残り2点を実装。(1) サンプリングモードキー gpgpuMorphObjSampleMode（'surface' 既定＝Phase J とビット同一 / 'vertices'＝頂点そのもの / 'volume'＝閉メッシュ内部の一様充填。閉性は「全辺がちょうど2三角形で共有」で判定し、非閉時は surface へフォールバックして UI に明示。レイ偶奇判定＋試行上限付きで決定的）。(2) 法線初速キー gpgpuMorphObjNormalSpeed（既定0＝従来同一）: サンプラが法線（vn 優先、なければ面積重み面法線平均。volume は最近傍面法線）も返し、モーフ目標テクスチャの伴走テクスチャにベイク。速度シェーダで配置時（開始エンベロープ＋年齢リスポーン帧）にだけ法線方向の初速を与え、常時力にはしない。新規 config キー2件（総数 945→947）。スターター2件追加（内蔵 495→497: volume 充填球／法線バースト球、どちらもモノクロ）。
+
+
+v1.18.0（2026-11-16、第2期計画 Phase P）: Mir メッシュ系を新設。Phase L の点地形が共有する高度場（terrainHeightAt、ベイクと同じシード混合を terrainFieldSeedFor として切り出し共有）を 128×128 グリッドのポリゴンメッシュで変位させ、computeVertexNormals の頂点法線＋MeshStandardMaterial で陰影を付ける（ライトはシステムと一緒にマウント）。新規キー7件（総数 947→954）: gpgpuTerrainMeshEnabled（既定OFF＝マウント自体せず従来とビット同一）/ Display（shaded/wireframe/points、同一ジオメトリの表示切替）/ Tunnel（円筒内面への巻き付け。高度場を両軸でクロスフェード周期化し継ぎ目なし）/ Texture（none/gradient/grid の手続きモノクロテクスチャ、image は Horizon 背景画像を流用）/ Scale / Opacity / Brightness。スターター2件追加（内蔵 497→499: メッシュ山脈（点地形と同期）／トンネル、どちらもモノクロ）。
