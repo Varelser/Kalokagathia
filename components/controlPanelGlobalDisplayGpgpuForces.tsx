@@ -369,10 +369,14 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
               <Slider label="Scale Step （等比）" value={config.gpgpuMorphReplicaScaleStep} min={0.5} max={1.6} step={0.02} onChange={(v) => updateConfig('gpgpuMorphReplicaScaleStep', v)} />
               <Slider label="Phase Step （位相ずらし°）" value={config.gpgpuMorphReplicaPhaseStep} min={0} max={360} step={5} onChange={(v) => updateConfig('gpgpuMorphReplicaPhaseStep', v)} />
               <Slider label="Age Step （年齢位相・周期比）" value={config.gpgpuMorphReplicaAgeStep} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphReplicaAgeStep', v)} />
+              <Toggle label="Independent Sim （独立シム）" value={config.gpgpuMorphReplicaIndependent} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphReplicaIndependent', v)} />
+              {config.gpgpuMorphReplicaIndependent && (
+                <Slider label="Divergence （分岐度）" value={config.gpgpuMorphReplicaDivergence} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphReplicaDivergence', v)} />
+              )}
             </>
           )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            形状点群を複製して、間隔・回転・拡縮を累積させた連鎖にします。総点数は増えず、複製へ割り当てます。Phase Step は複製ごとの公転位相をずらす時間オフセット（Echospace 的な「遅れて追う連鎖」）です。Count 1 のときは従来と完全に同一です。
+            形状点群を複製して、間隔・回転・拡縮を累積させた連鎖にします。総点数は増えず、複製へ割り当てます。Phase Step は複製ごとの公転位相をずらす時間オフセット（Echospace 的な「遅れて追う連鎖」）です。Count 1 のときは従来と完全に同一です。Independent Sim を On にすると、各複製が独立したシミュレーション状態を持ち、力の場も複製ごとに分岐します（WebGL 経路のみ）。
           </div>
         </>
       )}
