@@ -82,6 +82,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform sampler2D uMorphTex;
   uniform float uMorphStrength;
   uniform float uMorphOrbitSpeed;
+  uniform float uMorphReplicaPhaseGain;
   uniform float uSpeed;
   uniform bool  uSdfEnabled;
   uniform int   uSdfShape;
@@ -581,8 +582,14 @@ export const SIM_VEL_FRAG = /* glsl */ `
     // frame-rate independent and stable for any dt, and mf reduces to
     // ~strength * dt * 3 for small steps, i.e. Kinetix's spring rate.
     if (uMorphEnabled) {
-      vec3 mTarget = texture2D(uMorphTex, vUv).xyz;
-      float mAng = uTime * uMorphOrbitSpeed;
+      vec4 mTexel = texture2D(uMorphTex, vUv);
+      vec3 mTarget = mTexel.xyz;
+      // Replica grammar (Phase K): the texel alpha carries the
+      // per-copy orbit phase offset in radians (baked); the gain is
+      // 1 only when replicas are active and 0 otherwise, so the
+      // legacy alpha (= 1) leaves the angle untouched and existing
+      // configs render bit-identically.
+      float mAng = uTime * uMorphOrbitSpeed + mTexel.w * uMorphReplicaPhaseGain;
       float mCos = cos(mAng);
       float mSin = sin(mAng);
       mTarget = vec3(

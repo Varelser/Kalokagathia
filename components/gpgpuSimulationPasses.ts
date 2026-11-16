@@ -267,6 +267,10 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uMorphTex.value = morphTex;
   velSimMat.uniforms.uMorphStrength.value = config.gpgpuMorphStrength;
   velSimMat.uniforms.uMorphOrbitSpeed.value = config.gpgpuMorphOrbitSpeed;
+  // Replica phase offsets (baked into the morph texel alpha) apply
+  // only when the replica grammar is active; gain 0 keeps the legacy
+  // alpha (= 1) from shifting the orbit angle of existing configs.
+  velSimMat.uniforms.uMorphReplicaPhaseGain.value = config.gpgpuMorphReplicaCount > 1 ? 1 : 0;
   velSimMat.uniforms.uSpeed.value = config.gpgpuSpeed;
   velSimMat.uniforms.uSdfEnabled.value = config.gpgpuSdfEnabled;
   velSimMat.uniforms.uSdfShape.value = SDF_SHAPE_IDS[config.gpgpuSdfShape] ?? 0;

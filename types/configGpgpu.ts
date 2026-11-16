@@ -160,6 +160,20 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphScale: number;
   gpgpuMorphJitter: number;
   gpgpuMorphOrbitSpeed: number;
+  // Replica grammar (Phase K): the baked morph cloud is split into
+  // chained copies with cumulative translation / Y-rotation /
+  // geometric-scale steps, plus a per-copy orbit phase offset — an
+  // Echospace-style offset chain (lib/gpgpuMorphTargets.ts). Count 1
+  // (the default) reproduces the legacy bake bit-for-bit. This is a
+  // static bake-time grammar over one shared simulation: it does NOT
+  // model Parent/Child dynamic child emitters (each copy would need
+  // its own force/lifetime state).
+  gpgpuMorphReplicaCount: number;
+  gpgpuMorphReplicaSpacing: number;
+  gpgpuMorphReplicaAxis: 'x' | 'y' | 'z';
+  gpgpuMorphReplicaRotation: number;
+  gpgpuMorphReplicaScaleStep: number;
+  gpgpuMorphReplicaPhaseStep: number;
   // Verlet Integration
   gpgpuVerletEnabled: boolean;
   // SDF Collider ('gyroid' added by Kinetix integration B3: the TPMS

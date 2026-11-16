@@ -4,6 +4,43 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.13.0] — 2026-11-16
+
+Replica grammar (leftover plan Phase K): the GPGPU morph bake gains
+an offset-replication grammar — the shape point cloud is chained
+into copies with cumulative translation / rotation / scale steps,
+plus a per-copy orbit phase offset (an Echospace-style time-offset
+chain). The morph-off default path and replica count 1 reproduce the
+legacy bake bit-for-bit; existing presets render identically.
+
+### Added
+- **Replica grammar** for every morph target (built-ins, text /
+  image, SVG, OBJ): six new config keys — `gpgpuMorphReplicaCount`
+  (1–8, default 1), `gpgpuMorphReplicaSpacing` (per-step translation,
+  normalized units), `gpgpuMorphReplicaAxis` (`x` / `y` / `z`),
+  `gpgpuMorphReplicaRotation` (per-step Y rotation, degrees),
+  `gpgpuMorphReplicaScaleStep` (per-step geometric ratio) and
+  `gpgpuMorphReplicaPhaseStep` (per-step orbit phase offset,
+  degrees). The bake (`lib/gpgpuMorphTargets.ts`) splits the fixed
+  texSize² point budget into contiguous blocks — one per copy — so
+  the total particle count never grows; each copy's phase offset is
+  baked into the morph texel alpha and applied by the velocity
+  shader as a time shift of the orbit angle, so copies follow the
+  leader's motion with a constant delay. Deterministic: same config,
+  same chain.
+- **UI** in the Morph section: a Replicas block (count slider, and
+  spacing / axis / rotation / scale / phase controls when count > 1).
+- **Starters**: `starter-gpgpu-morph-replica-knot-chain` (trefoil ×4
+  with rotation + phase steps) and
+  `starter-gpgpu-morph-replica-sphere-scale` (geodesic ×5 geometric
+  scale series) — built-in starters 489 → 491.
+
+### Notes
+- The grammar is a static bake over one shared simulation. It does
+  not model Particular-style Parent/Child emitters: a copy has no
+  forces, lifetime or emission of its own — dynamic child emission
+  would need per-copy simulation state and stays out of scope.
+
 ## [1.12.0] — 2026-11-16
 
 OBJ input (leftover plan Phase J): the GPGPU morph system gains an

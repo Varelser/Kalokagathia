@@ -321,6 +321,20 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             各粒子に割り当てた形状点群へバネ引力で集めます（Kinetix モーフの GPGPU 再実装）。Text はレイヤー2のテキスト設定、Image はレイヤー2に読み込んだ画像マップ、SVG は取り込んだ SVG の輪郭、OBJ は取り込んだ OBJ メッシュの表面を使います。
           </div>
+          <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Replicas （複製文法）</div>
+          <Slider label="Replica Count" value={config.gpgpuMorphReplicaCount} min={1} max={8} step={1} onChange={(v) => updateConfig('gpgpuMorphReplicaCount', Math.round(v))} />
+          {config.gpgpuMorphReplicaCount > 1 && (
+            <>
+              <Slider label="Spacing （間隔）" value={config.gpgpuMorphReplicaSpacing} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphReplicaSpacing', v)} />
+              <Toggle label="Axis （並べる軸）" value={config.gpgpuMorphReplicaAxis} options={[{ label: 'X', val: 'x' as const }, { label: 'Y', val: 'y' as const }, { label: 'Z', val: 'z' as const }]} onChange={(v) => updateConfig('gpgpuMorphReplicaAxis', v)} />
+              <Slider label="Rotation Step （回転増分°）" value={config.gpgpuMorphReplicaRotation} min={-180} max={180} step={5} onChange={(v) => updateConfig('gpgpuMorphReplicaRotation', v)} />
+              <Slider label="Scale Step （等比）" value={config.gpgpuMorphReplicaScaleStep} min={0.5} max={1.6} step={0.02} onChange={(v) => updateConfig('gpgpuMorphReplicaScaleStep', v)} />
+              <Slider label="Phase Step （位相ずらし°）" value={config.gpgpuMorphReplicaPhaseStep} min={0} max={360} step={5} onChange={(v) => updateConfig('gpgpuMorphReplicaPhaseStep', v)} />
+            </>
+          )}
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            形状点群を複製して、間隔・回転・拡縮を累積させた連鎖にします。総点数は増えず、複製へ割り当てます。Phase Step は複製ごとの公転位相をずらす時間オフセット（Echospace 的な「遅れて追う連鎖」）です。Count 1 のときは従来と完全に同一です。
+          </div>
         </>
       )}
     </div>

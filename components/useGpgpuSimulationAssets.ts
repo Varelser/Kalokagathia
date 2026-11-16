@@ -90,6 +90,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uMorphTex:        { value: null },
       uMorphStrength:   { value: 3.0 },
       uMorphOrbitSpeed: { value: 0.3 },
+      uMorphReplicaPhaseGain: { value: 0.0 },
       uSpeed:           { value: 1.0 },
       uSdfEnabled:      { value: false },
       uSdfShape:        { value: 0 },

@@ -338,6 +338,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphMediaHeight = config.layer2MediaMapHeight;
   const morphSvgSource = config.gpgpuMorphSvgSource;
   const morphObjSource = config.gpgpuMorphObjSource;
+  const morphReplicaCount = config.gpgpuMorphReplicaCount;
+  const morphReplicaSpacing = config.gpgpuMorphReplicaSpacing;
+  const morphReplicaAxis = config.gpgpuMorphReplicaAxis;
+  const morphReplicaRotation = config.gpgpuMorphReplicaRotation;
+  const morphReplicaScaleStep = config.gpgpuMorphReplicaScaleStep;
+  const morphReplicaPhaseStep = config.gpgpuMorphReplicaPhaseStep;
   useEffect(() => {
     morphTexRef.current?.dispose();
     morphTexRef.current = null;
@@ -375,6 +381,17 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       mediaMap,
       svgPoints,
       objPoints,
+      // Replica grammar (Phase K): count 1 reproduces the legacy
+      // bake exactly; higher counts split the same point budget into
+      // offset copies (see lib/gpgpuMorphTargets.ts).
+      replica: {
+        count: morphReplicaCount,
+        spacing: morphReplicaSpacing,
+        axis: morphReplicaAxis,
+        rotationDeg: morphReplicaRotation,
+        scaleStep: morphReplicaScaleStep,
+        phaseStepDeg: morphReplicaPhaseStep,
+      },
     });
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
@@ -402,6 +419,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphMediaHeight,
     morphSvgSource,
     morphObjSource,
+    morphReplicaCount,
+    morphReplicaSpacing,
+    morphReplicaAxis,
+    morphReplicaRotation,
+    morphReplicaScaleStep,
+    morphReplicaPhaseStep,
   ]);
 
   return {

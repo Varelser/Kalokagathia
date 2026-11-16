@@ -68,6 +68,35 @@ export interface MorphMediaMap {
   height: number;
 }
 
+/**
+ * Replica grammar (Phase K): the baked cloud is split into `count`
+ * contiguous blocks; block r (0-based) is a copy of the base cloud
+ * transformed by the r-th cumulative step — geometric scale
+ * (scaleStep^r), Y rotation (rotationDeg * r, same convention as the
+ * shader's orbit), and a translation of spacing * r along `axis`.
+ * The per-copy orbit phase offset (phaseStepDeg * r) is stored in the
+ * texel alpha as radians; the velocity shader adds it to the orbit
+ * angle (gated by uMorphReplicaPhaseGain), which makes each copy run
+ * the same orbit motion time-shifted — an Echospace-style offset
+ * chain. Total point count is unchanged (the copies share the fixed
+ * texSize^2 budget). With count <= 1 (or no replica options) the bake
+ * is byte-identical to the pre-Phase-K output, alpha = 1 included.
+ */
+export interface GpgpuMorphReplicaOptions {
+  /** Number of chained copies (clamped to 1..8; <= 1 disables). */
+  count: number;
+  /** Per-step translation along `axis`, normalized cloud units. */
+  spacing: number;
+  /** Translation axis of the chain. */
+  axis: 'x' | 'y' | 'z';
+  /** Per-step rotation increment around Y, degrees. */
+  rotationDeg: number;
+  /** Per-step geometric scale ratio (applied as scaleStep^r). */
+  scaleStep: number;
+  /** Per-step orbit phase offset, degrees (time-offset chain). */
+  phaseStepDeg: number;
+}
+
 export interface GpgpuMorphTargetBuildOptions {
   texSize: number;
   target: GpgpuMorphTargetKind;
@@ -77,6 +106,8 @@ export interface GpgpuMorphTargetBuildOptions {
   jitter: number;
   /** Base seed (config gpgpuSeed); mixed with the target index. */
   seed: number;
+  /** Replica grammar (Phase K); null/absent = single copy (legacy). */
+  replica?: GpgpuMorphReplicaOptions | null;
   /** Luma map for the text/image targets; null falls back to a shell. */
   mediaMap?: MorphMediaMap | null;
   /**
@@ -141,8 +172,11 @@ function sampleMediaPoint(
  * world units. Pure and deterministic for a given options set.
  */
 export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions): Float32Array {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, replica } = options;
   const count = texSize * texSize;
+  const replicaCount = replica ? Math.max(1, Math.min(8, Math.floor(replica.count) || 1)) : 1;
+  const replicaActive = replicaCount > 1 && replica != null;
+  const DEG_TO_RAD = Math.PI / 180;
   const data = new Float32Array(count * 4);
   const targetIndex = GPGPU_MORPH_TARGETS.indexOf(target);
   const rng = createSeededRng(((seed * 1000003 + targetIndex * 7919 + 12345) >>> 0) || 1);
@@ -419,6 +453,36 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
       }
     }
 
+    // Replica grammar (Phase K): contiguous blocks of the particle
+    // range form the copies, so i-patterned targets (galaxy arms,
+    // DNA strands) keep every sub-pattern inside each copy. The base
+    // point of particle i is untouched — only its copy's cumulative
+    // transform is applied — and the copy's orbit phase offset rides
+    // in the alpha channel for the velocity shader.
+    let alpha = 1;
+    if (replicaActive && replica) {
+      const r = Math.min(replicaCount - 1, Math.floor((i * replicaCount) / count));
+      if (r > 0) {
+        const sc = Math.pow(replica.scaleStep, r);
+        tx *= sc;
+        ty *= sc;
+        tz *= sc;
+        const ang = replica.rotationDeg * r * DEG_TO_RAD;
+        if (ang !== 0) {
+          const ca = Math.cos(ang);
+          const sa = Math.sin(ang);
+          const nx = tx * ca - tz * sa;
+          const nz = tx * sa + tz * ca;
+          tx = nx;
+          tz = nz;
+        }
+        if (replica.axis === 'x') tx += replica.spacing * r;
+        else if (replica.axis === 'y') ty += replica.spacing * r;
+        else tz += replica.spacing * r;
+      }
+      alpha = replica.phaseStepDeg * r * DEG_TO_RAD;
+    }
+
     const jx = (h1 - 0.5) * jitter;
     const jy = (h2 - 0.5) * jitter;
     const jz = (((h1 + h2) % 1) - 0.5) * jitter;
@@ -426,7 +490,7 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
     data[o] = (tx + jx) * worldScale;
     data[o + 1] = (ty + jy) * worldScale;
     data[o + 2] = (tz + jz) * worldScale;
-    data[o + 3] = 1;
+    data[o + 3] = alpha;
   }
   return data;
 }
