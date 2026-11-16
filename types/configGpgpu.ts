@@ -203,6 +203,21 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphTerrainFrequency: number;
   gpgpuMorphTerrainOctaves: number;
   gpgpuMorphTerrainSeed: number;
+  // Authored path placement (Phase S): the svg morph target viewed
+  // as an ordered path (lib/pathGeometry.ts) instead of an unordered
+  // cloud. 'off' (default) keeps the legacy seeded random pick over
+  // the resampled outline, byte-identical to v1.20.0. 'along' assigns
+  // particle i to path position s in order; 'writeOn' assigns inside
+  // the [WriteOnStart, WriteOnEnd] window (3D-Stroke style). Taper
+  // widens the placement band along the path normal (0 = on-path).
+  // SubpathMode distributes s across multiple subpaths. Only the svg
+  // target reads these keys; every other target ignores them.
+  gpgpuMorphPathMode: 'off' | 'along' | 'writeOn';
+  gpgpuMorphPathWriteOnStart: number;
+  gpgpuMorphPathWriteOnEnd: number;
+  gpgpuMorphPathTaper: number;
+  gpgpuMorphPathTaperShape: 'linear' | 'smooth' | 'bell';
+  gpgpuMorphPathSubpathMode: 'proportional' | 'even' | 'first';
   // Terrain Mesh (Phase P, Mir-style): a polygon mesh system that
   // shares the terrain height field above (terrainHeightAt with the
   // same field-seed mixing as the morph bake, so the mesh landscape

@@ -141,6 +141,14 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphTerrainFrequency: 1.6,
   gpgpuMorphTerrainOctaves: 4,
   gpgpuMorphTerrainSeed: 0,
+  // Path placement (Phase S): 'off' default = legacy random pick.
+  // Only read when the morph target is 'svg'.
+  gpgpuMorphPathMode: 'off' as const,
+  gpgpuMorphPathWriteOnStart: 0,
+  gpgpuMorphPathWriteOnEnd: 1,
+  gpgpuMorphPathTaper: 0,
+  gpgpuMorphPathTaperShape: 'linear' as const,
+  gpgpuMorphPathSubpathMode: 'proportional' as const,
   // Terrain Mesh (Phase P): disabled by default — mounts nothing.
   gpgpuTerrainMeshEnabled: false,
   gpgpuTerrainMeshDisplay: 'shaded' as const,
