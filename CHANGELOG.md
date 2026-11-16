@@ -4,6 +4,41 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.17.0] — 2026-11-16
+
+OBJ emission modes + normal initial velocity (second-period plan
+Phase O): the Phase J OBJ morph target gains the two pieces the
+Maxon audit named as missing — sampling-mode switching and a
+normal-direction initial velocity — completing the OBJ emitter.
+
+### Added
+- **OBJ sample mode** (`gpgpuMorphObjSampleMode`, 'surface'
+  default / 'vertices' / 'volume'): 'surface' is the Phase J
+  area-weighted surface distribution, bit-identical (the new
+  sampler reproduces the Phase J cloud draw-for-draw, proven by
+  unit test). 'vertices' places samples on the mesh vertices
+  themselves. 'volume' fills the interior of a closed mesh by
+  seeded rejection sampling with a ray-parity inside test
+  (attempt-capped; a non-closed mesh falls back to 'surface' and
+  both the sampler result and the UI state that explicitly).
+- **OBJ normal speed** (`gpgpuMorphObjNormalSpeed`, default 0):
+  the sampler now also returns per-sample normals (authored `vn`
+  wins per-vertex, else the area-weighted face-normal average;
+  volume samples take the nearest face's normal), baked into a
+  companion normal texture alongside the morph target texture.
+  The velocity shader applies the normal velocity ONLY at
+  (re)placement — the simulation-start envelope and the
+  age-respawn frame — never as a continuous force, so the morph
+  spring re-forms the shape afterwards. 0 disables the kick
+  entirely and keeps the legacy path bit-identical.
+- Config keys 945 → 947. Starters +2 (497): a volume-filled
+  sphere and a normal-burst sphere, both monochrome.
+
+### Notes
+- The Phase J surface path (`sampleObjPointCloud`) is untouched;
+  existing OBJ presets render bit-identically (unit test + iMac
+  real-GPU gate).
+
 ## [1.16.0] — 2026-11-16
 
 Horizon 360° (second-period plan Phase N): the Horizon image
