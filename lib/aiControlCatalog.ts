@@ -343,6 +343,8 @@ const NUMS: NumDef[] = [
   ['gpgpuMorphPathWriteOnStart', 'GPGPUモーフのパス write-on 窓の開始位置（割合 0..1）'],
   ['gpgpuMorphPathWriteOnEnd', 'GPGPUモーフのパス write-on 窓の終了位置（割合 0..1）'],
   ['gpgpuMorphPathTaper', 'GPGPUモーフのパス テーパー強度（法線方向の配置帯幅、0で無効）'],
+  ['gpgpuMapSizeAmount', 'GPGPU Layer Map のサイズ変調の強さ（グラデーション画像の輝度を粒子位置でサンプリング、0で無効）'],
+  ['gpgpuMapOpacityAmount', 'GPGPU Layer Map の不透明度変調の強さ（グラデーション画像の輝度を粒子位置でサンプリング、0で無効）'],
   ['gpgpuMorphPathTaperShape', 'GPGPUモーフのパス テーパー形状（linear / smooth / bell）'],
   ['gpgpuMorphPathSubpathMode', 'GPGPUモーフのパス サブパス配分（proportional / even / first）'],
   ['gpgpuMorphObjNormalSpeed', 'GPGPUモーフOBJの法線初速（配置時に法線方向へ与える速度、0で無効）'],
@@ -457,6 +459,8 @@ const BOOLS: BoolDef[] = [
   ['gpgpuRibbonEnabled', 'GPGPUリボン描画'],
   ['gpgpuStreakEnabled', 'GPGPUストリーク（速度線）描画'],
   ['gpgpuAgeEnabled', 'GPGPU粒子の寿命（エイジ）'],
+  ['gpgpuAgeCurveSizeEnabled', 'GPGPU年齢カーブ（サイズ、5点）の有効化'],
+  ['gpgpuAgeCurveOpacityEnabled', 'GPGPU年齢カーブ（不透明度、5点）の有効化'],
   ['gpgpuFloorEnabled', 'GPGPUの床バウンス'],
 ];
 

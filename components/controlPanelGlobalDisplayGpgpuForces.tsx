@@ -5,6 +5,7 @@ import { CUSTOM_FORCE_EXAMPLE, useCustomForceStatus } from '../lib/gpgpuCustomFo
 import { VEX_PRESETS } from '../lib/gpgpuVexPresets';
 import { KINETIX_COLOR_GRADIENTS, getKinetixGradientPreset } from '../lib/kinetixGradients';
 import { SAMPLE_SVG_STAR, sampleSvgPointCloud } from '../lib/svgMorph';
+import { AGE_CURVE_POINT_MAX, AGE_CURVE_PRESETS, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT, parseObjGeometry, isObjClosedMesh } from '../lib/objMorph';
 import { setModulationSetup, useModulationSetup } from '../lib/modulation';
 import type { ParticleConfig } from '../types';
@@ -625,6 +626,43 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
       )}
     </div>
 
+    {/* Age Curves (Phase U): fixed-position 5-point curves over the
+        normalised age. Each curve multiplies the legacy age path, so
+        a flat curve changes nothing. */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-white/70">Age Curves（年齢カーブ・5点）</div>
+      <AgeCurveBlock
+        title="Size Curve（サイズ）"
+        enabled={config.gpgpuAgeCurveSizeEnabled}
+        points={config.gpgpuAgeCurveSizePoints}
+        onToggle={(v) => updateConfig('gpgpuAgeCurveSizeEnabled', v)}
+        onPoints={(v) => updateConfig('gpgpuAgeCurveSizePoints', v)}
+      />
+      <AgeCurveBlock
+        title="Opacity Curve（不透明度）"
+        enabled={config.gpgpuAgeCurveOpacityEnabled}
+        points={config.gpgpuAgeCurveOpacityPoints}
+        onToggle={(v) => updateConfig('gpgpuAgeCurveOpacityEnabled', v)}
+        onPoints={(v) => updateConfig('gpgpuAgeCurveOpacityPoints', v)}
+      />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        年齢比 t = 0 / 0.25 / 0.5 / 0.75 / 1 の5点に倍率を持ち、間を線形補間します。カーブは従来の年齢系（Size over Lifetime、フェードイン／アウト）に乗算されるため、全点 1.0 のままでは見た目は変わりません。
+      </div>
+    </div>
+
+    {/* Layer Maps (Phase U): the gradient image modulates size /
+        opacity per property, sampled by particle position. */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-white/70">Layer Maps（画像マップ）</div>
+      <Slider label="Map Size Amount" value={config.gpgpuMapSizeAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMapSizeAmount', v)} />
+      <Slider label="Map Opacity Amount" value={config.gpgpuMapOpacityAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMapOpacityAmount', v)} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {config.gpgpuGradImageSource
+          ? 'マップ画像は Color Gradient の Image ドライバと同じ画像（設定済み）を使います。粒子は自分の位置（XY 平面、バウンス範囲全体）で画像の輝度を引き、Amount 1 で輝度がそのまま倍率になります。'
+          : '画像が未設定のため、Amount を上げても変調は効きません。Color Gradient の Driver を Image にして画像を設定すると、その画像がマップとして使われます。'}
+      </div>
+    </div>
+
     {/* Mouse Force */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Mouse Force" value={config.gpgpuMouseEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMouseEnabled', v)} />
@@ -680,6 +718,58 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
     <SimpleLfoBlock />
   </>
 );
+
+/**
+ * One age curve (Phase U): an enable toggle, five sliders at the
+ * fixed age positions t = 0 / .25 / .5 / .75 / 1, and preset chips
+ * that write a whole point list at once. Deliberately NOT a curve
+ * editor — the five sliders are the whole surface.
+ */
+const AgeCurveBlock: React.FC<{
+  title: string;
+  enabled: boolean;
+  points: number[];
+  onToggle: (v: boolean) => void;
+  onPoints: (v: number[]) => void;
+}> = ({ title, enabled, points, onToggle, onPoints }) => {
+  const clean = normalizeAgeCurvePoints(points);
+  const labels = ['t=0', 't=0.25', 't=0.5', 't=0.75', 't=1'];
+  return (
+    <div className="mb-3">
+      <Toggle label={title} value={enabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={onToggle} />
+      {enabled && (
+        <>
+          <div className="mb-2 mt-1 flex flex-wrap gap-1.5">
+            {AGE_CURVE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => onPoints([...preset.points])}
+                className="rounded-full border border-white/15 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          {clean.map((value, i) => (
+            <Slider
+              key={labels[i]}
+              label={labels[i]}
+              value={value}
+              min={0}
+              max={AGE_CURVE_POINT_MAX}
+              step={0.05}
+              onChange={(v) => {
+                const next = [...clean];
+                next[i] = v;
+                onPoints(next);
+              }}
+            />
+          ))}
+        </>
+      )}
+    </div>
+  );
+};
 
 /**
  * Image source controls for the gradient 'image' driver (Phase A).

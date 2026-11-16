@@ -37,6 +37,7 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
             <option value="iris">Iris</option>
             <option value="lightning">Lightning</option>
           </select>
+          <SpriteImageBlock config={config} updateConfig={updateConfig} />
         </>
       )}
       {config.gpgpuGeomMode !== 'point' && (
@@ -84,6 +85,7 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
     </div>
 
     {/* Volumetric Ray Marching */}
+
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Volumetric (Ray March)" value={config.gpgpuVolumetricEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuVolumetricEnabled', v)} />
       {config.gpgpuVolumetricEnabled && (
@@ -109,3 +111,76 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
     </div>
   </>
 );
+
+/**
+ * Sprite image controls (Phase U). Same placement manners as the
+ * gradient image block: the picked image is downscaled to <=256px
+ * and stored in the config as a data URL (gpgpuSpriteImage), so it
+ * persists with presets / projects. PNG is used (not JPEG) so an
+ * alpha channel survives — the sprite's shape is the image's
+ * luminance times its alpha. While a sprite image is set it takes
+ * priority over the Point Shape above; the status line says so
+ * explicitly instead of switching silently.
+ */
+const SpriteImageBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const source = config.gpgpuSpriteImage;
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error('image load failed'));
+        el.src = url;
+      });
+      const scale = Math.min(1, 256 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+      canvas.height = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      updateConfig('gpgpuSpriteImage', canvas.toDataURL('image/png'));
+    } catch {
+      // Unreadable file: keep the previous source untouched.
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+  return (
+    <div className="mb-3 rounded border border-white/10 bg-white/5 p-2">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Sprite Image（スプライト画像）</div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label className="cursor-pointer rounded border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10">
+          画像を開く
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        {source && (
+          <>
+            <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />
+            <button
+              onClick={() => updateConfig('gpgpuSpriteImage', '')}
+              className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+            >
+              クリア
+            </button>
+          </>
+        )}
+      </div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {source
+          ? 'スプライト画像を設定済み: 粒子の形は Point Shape より優先され、画像の輝度（×透明度）がそのまま粒子の濃淡になります（モノクロ）。画像は 256px 以下に縮小され、config に保持されます。'
+          : 'スプライト画像が未設定のため、粒子の形は上の Point Shape の手続き形状です。画像を設定すると、画像そのものが粒子の形になります。'}
+      </div>
+    </div>
+  );
+};
