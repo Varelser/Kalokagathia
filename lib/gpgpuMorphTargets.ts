@@ -42,6 +42,13 @@
 
 import type { ParticleConfig } from '../types';
 import { createSeededRng } from './seededRng';
+import {
+  PATH_TAPER_MAX_WIDTH,
+  resolvePathPoint,
+  taperWidthAt,
+  type MorphPathOptions,
+  type PathGeometry,
+} from './pathGeometry';
 
 export type GpgpuMorphTargetKind = ParticleConfig['gpgpuMorphTarget'];
 
@@ -161,6 +168,23 @@ export interface GpgpuMorphTargetBuildOptions {
    * defaults in DEFAULT_TERRAIN. Ignored by every other target.
    */
   terrain?: GpgpuMorphTerrainOptions | null;
+  /**
+   * Path geometry for the svg target (Phase S, lib/pathGeometry.ts):
+   * the same SVG document viewed as ordered subpaths with true
+   * arc-length tables. Only consulted when `path` is also given and
+   * its mode is not 'off'; null keeps the legacy random pick.
+   */
+  pathGeometry?: PathGeometry | null;
+  /**
+   * Path placement options for the svg target (Phase S). Absent /
+   * null / mode 'off' = the legacy seeded random pick over
+   * `svgPoints`, byte-identical to v1.20.0: the path branch is
+   * entered only when this and `pathGeometry` are both present, and
+   * it consumes no RNG draws of its own (the taper offset reuses the
+   * per-particle h2 draw), so the RNG consumption order never
+   * changes.
+   */
+  path?: MorphPathOptions | null;
 }
 
 /**
@@ -304,7 +328,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   data: Float32Array;
   normalData: Float32Array;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path } = options;
   const count = texSize * texSize;
   const replicaCount = replica ? Math.max(1, Math.min(8, Math.floor(replica.count) || 1)) : 1;
   const replicaActive = replicaCount > 1 && replica != null;
@@ -325,6 +349,20 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
     ? terrainFieldSeedFor(seed, terrainOpts.seed)
     : 0;
   const mediaPoint = { x: 0, y: 0, z: 0 };
+  // Path placement (Phase S): active only for the svg target with a
+  // usable path geometry and a non-'off' mode. Window validation
+  // follows S-1 §4.2: clamp to [0, 1]; start > end collapses to
+  // end = start (a zero-width window gathers every particle at the
+  // window start — a defined behaviour, never a fallback). The taper
+  // strength is clamped to [0, 1] as well.
+  const pathActive =
+    target === 'svg' && path != null && pathGeometry != null && path.mode !== 'off' && pathGeometry.totalLength > 0;
+  const pathMode = pathActive && path ? path.mode : 'off';
+  const pathWinStart = path ? Math.max(0, Math.min(1, path.writeOnStart)) : 0;
+  const pathWinEnd = path ? Math.max(pathWinStart, Math.max(0, Math.min(1, path.writeOnEnd))) : 1;
+  const pathTaper = path ? Math.max(0, Math.min(1, path.taper)) : 0;
+  const pathTaperShape = path ? path.taperShape : 'linear';
+  const pathSubpathMode = path ? path.subpathMode : 'proportional';
 
   for (let i = 0; i < count; i++) {
     const s = rng();
@@ -365,6 +403,36 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
         nnx = tx / shellLen;
         nny = ty / shellLen;
         nnz = tz / shellLen;
+      }
+    } else if (pathActive && pathGeometry) {
+      // Authored path placement (Phase S): particle i owns the path
+      // position p = (r + f) / replicaCount, where r is its replica
+      // block (the same contiguous block mapping the replica grammar
+      // below applies) and f its position inside the block — so each
+      // replica copy receives one contiguous segment of the path
+      // (brief §0-3), never a repetition of the whole path. 'along'
+      // maps p onto the full path; 'writeOn' maps it into the
+      // [writeOnStart, writeOnEnd] window. The taper offsets the
+      // point along the path normal by (h2 - 0.5) * w(u), reusing
+      // the existing h2 draw — this branch consumes no RNG draws, so
+      // 'off' keeps the legacy consumption order exactly.
+      const r = Math.min(replicaCount - 1, Math.floor((i * replicaCount) / count));
+      const blockStart = Math.ceil((r * count) / replicaCount);
+      const blockEnd = Math.ceil(((r + 1) * count) / replicaCount);
+      const f = (i - blockStart + 0.5) / Math.max(1, blockEnd - blockStart);
+      const p = (r + f) / replicaCount;
+      const s01 = pathMode === 'writeOn' ? pathWinStart + (pathWinEnd - pathWinStart) * p : p;
+      const resolved = resolvePathPoint(pathGeometry, s01, pathSubpathMode);
+      tx = resolved.x;
+      ty = resolved.y;
+      tz = 0;
+      if (pathTaper > 0) {
+        const w = taperWidthAt(p, pathTaper, pathTaperShape) * PATH_TAPER_MAX_WIDTH;
+        if (w > 0) {
+          const off = (h2 - 0.5) * w;
+          tx += -resolved.tangentY * off;
+          ty += resolved.tangentX * off;
+        }
       }
     } else if (svgPointCount > 0 && svgPoints) {
       // Imported SVG outline cloud (Pro-2): the samples are already

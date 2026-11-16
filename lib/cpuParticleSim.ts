@@ -18,6 +18,7 @@
 import type { ParticleConfig } from '../types';
 import { buildGpgpuMorphTargetData } from './gpgpuMorphTargets';
 import type { MorphMediaMap } from './gpgpuMorphTargets';
+import type { PathGeometry } from './pathGeometry';
 
 export const CPU_PARTICLE_CAP = 4000;
 const CPU_PARTICLE_MIN = 240;
@@ -81,6 +82,7 @@ export function isCpuMorphActive(config: ParticleConfig): boolean {
 export interface CpuMorphBakeExtras {
   mediaMap?: MorphMediaMap | null;
   svgPoints?: ArrayLike<number> | null;
+  pathGeometry?: PathGeometry | null;
   objPoints?: ArrayLike<number> | null;
 }
 
@@ -105,6 +107,15 @@ export function buildCpuMorphTargets(
     seed: config.gpgpuSeed,
     mediaMap: extras.mediaMap ?? null,
     svgPoints: extras.svgPoints ?? null,
+    pathGeometry: extras.pathGeometry ?? null,
+    path: {
+      mode: config.gpgpuMorphPathMode,
+      writeOnStart: config.gpgpuMorphPathWriteOnStart,
+      writeOnEnd: config.gpgpuMorphPathWriteOnEnd,
+      taper: config.gpgpuMorphPathTaper,
+      taperShape: config.gpgpuMorphPathTaperShape,
+      subpathMode: config.gpgpuMorphPathSubpathMode,
+    },
     objPoints: extras.objPoints ?? null,
     replica: {
       count: config.gpgpuMorphReplicaCount,
@@ -167,6 +178,9 @@ export function cpuShapeSignature(config: ParticleConfig): string {
     config.gpgpuMorphReplicaScaleStep, config.gpgpuMorphReplicaPhaseStep,
     config.gpgpuMorphTerrainAmplitude, config.gpgpuMorphTerrainFrequency,
     config.gpgpuMorphTerrainOctaves, config.gpgpuMorphTerrainSeed,
+    config.gpgpuMorphPathMode, config.gpgpuMorphPathWriteOnStart,
+    config.gpgpuMorphPathWriteOnEnd, config.gpgpuMorphPathTaper,
+    config.gpgpuMorphPathTaperShape, config.gpgpuMorphPathSubpathMode,
     cpuSourceHash(config.gpgpuMorphSvgSource),
     cpuSourceHash(config.gpgpuMorphObjSource), config.gpgpuMorphObjSampleMode,
     config.layer2TextMapText, config.layer2TextMapFontFamily,

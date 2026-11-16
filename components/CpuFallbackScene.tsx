@@ -14,6 +14,7 @@ import {
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
+import { parseSvgPathGeometry } from '../lib/pathGeometry';
 import { sampleObjPointCloudWithNormals } from '../lib/objMorph';
 import { reportCpuRendererStats, type CpuFallbackReason } from '../lib/cpuFallback';
 import { scaleFrameDelta } from '../lib/playbackTime';
@@ -97,10 +98,15 @@ function computeMorphBakeExtras(config: ParticleConfig): CpuMorphBakeExtras {
   const svgPoints = config.gpgpuMorphTarget === 'svg'
     ? sampleSvgPointCloud(config.gpgpuMorphSvgSource)
     : null;
+  // Path geometry (Phase S): parsed only when a path mode is on,
+  // mirroring useGpgpuRuntime.
+  const pathGeometry = config.gpgpuMorphTarget === 'svg' && config.gpgpuMorphPathMode !== 'off'
+    ? parseSvgPathGeometry(config.gpgpuMorphSvgSource)
+    : null;
   const objSample = config.gpgpuMorphTarget === 'obj'
     ? sampleObjPointCloudWithNormals(config.gpgpuMorphObjSource, config.gpgpuMorphObjSampleMode)
     : null;
-  return { mediaMap, svgPoints, objPoints: objSample ? objSample.points : null };
+  return { mediaMap, svgPoints, pathGeometry, objPoints: objSample ? objSample.points : null };
 }
 
 export const CpuFallbackScene: React.FC<CpuFallbackSceneProps> = ({

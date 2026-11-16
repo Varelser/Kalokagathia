@@ -7,6 +7,7 @@ import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
+import { parseSvgPathGeometry } from '../lib/pathGeometry';
 import { sampleObjPointCloudWithNormals } from '../lib/objMorph';
 import { getSceneGeneration, noteGpgpuBackendSettled } from '../lib/sceneGeneration';
 import {
@@ -132,6 +133,12 @@ export function buildMorphBakeData(
   const svgPoints = config.gpgpuMorphTarget === 'svg'
     ? sampleSvgPointCloud(config.gpgpuMorphSvgSource)
     : null;
+  // Path geometry (Phase S): parsed only when a path mode is on —
+  // with mode 'off' the bake never consults it, and skipping the
+  // parse keeps the legacy bake path exactly as fast as before.
+  const pathGeometry = config.gpgpuMorphTarget === 'svg' && config.gpgpuMorphPathMode !== 'off'
+    ? parseSvgPathGeometry(config.gpgpuMorphSvgSource)
+    : null;
   const objSample = config.gpgpuMorphTarget === 'obj'
     ? sampleObjPointCloudWithNormals(config.gpgpuMorphObjSource, config.gpgpuMorphObjSampleMode)
     : null;
@@ -143,6 +150,15 @@ export function buildMorphBakeData(
     seed: config.gpgpuSeed,
     mediaMap,
     svgPoints,
+    pathGeometry,
+    path: {
+      mode: config.gpgpuMorphPathMode,
+      writeOnStart: config.gpgpuMorphPathWriteOnStart,
+      writeOnEnd: config.gpgpuMorphPathWriteOnEnd,
+      taper: config.gpgpuMorphPathTaper,
+      taperShape: config.gpgpuMorphPathTaperShape,
+      subpathMode: config.gpgpuMorphPathSubpathMode,
+    },
     objPoints: objSample ? objSample.points : null,
     objNormals: objSample ? objSample.normals : null,
     replica: {
@@ -436,6 +452,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphTerrainFrequency = config.gpgpuMorphTerrainFrequency;
   const morphTerrainOctaves = config.gpgpuMorphTerrainOctaves;
   const morphTerrainSeed = config.gpgpuMorphTerrainSeed;
+  const morphPathMode = config.gpgpuMorphPathMode;
+  const morphPathWriteOnStart = config.gpgpuMorphPathWriteOnStart;
+  const morphPathWriteOnEnd = config.gpgpuMorphPathWriteOnEnd;
+  const morphPathTaper = config.gpgpuMorphPathTaper;
+  const morphPathTaperShape = config.gpgpuMorphPathTaperShape;
+  const morphPathSubpathMode = config.gpgpuMorphPathSubpathMode;
   useEffect(() => {
     morphTexRef.current?.dispose();
     morphTexRef.current = null;
@@ -462,6 +484,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // outline point cloud; null (no usable geometry) falls back to the
     // shell inside the bake, exactly like a missing media map.
     const svgPoints = morphTarget === 'svg' ? sampleSvgPointCloud(morphSvgSource) : null;
+    // Path geometry (Phase S): parsed only when a path mode is on;
+    // mode 'off' never reaches the path branch inside the bake.
+    const pathGeometry = morphTarget === 'svg' && morphPathMode !== 'off'
+      ? parseSvgPathGeometry(morphSvgSource)
+      : null;
     // obj (Phase J, modes + normals in Phase O): re-sample the
     // imported OBJ source text in the selected mode; null (no usable
     // geometry) falls back to the shell inside the bake, exactly like
@@ -479,6 +506,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       seed: morphSeed,
       mediaMap,
       svgPoints,
+      pathGeometry,
+      path: {
+        mode: morphPathMode,
+        writeOnStart: morphPathWriteOnStart,
+        writeOnEnd: morphPathWriteOnEnd,
+        taper: morphPathTaper,
+        taperShape: morphPathTaperShape,
+        subpathMode: morphPathSubpathMode,
+      },
       objPoints,
       objNormals,
       // Replica grammar (Phase K): count 1 reproduces the legacy
@@ -551,6 +587,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTerrainFrequency,
     morphTerrainOctaves,
     morphTerrainSeed,
+    morphPathMode,
+    morphPathWriteOnStart,
+    morphPathWriteOnEnd,
+    morphPathTaper,
+    morphPathTaperShape,
+    morphPathSubpathMode,
   ]);
 
   return {
