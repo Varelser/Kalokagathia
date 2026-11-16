@@ -4,6 +4,39 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.25.0] — 2026-11-17
+
+Phase W1 (first half of the user-elected full Phase W): grandchild
+emitters — the Aux event pool chains into a second (and third) aux
+pool, so a child's own events spawn grandchildren.
+
+### Added
+- **Aux chain** (10 new keys, all default-off / identity):
+  `gpgpuAuxDepth` (1..3, default 1 = the legacy single pool) and
+  the shared level->=2 parameter set `gpgpuAux2Mode` ('none'
+  default / 'deathBurst' / 'bounceSplash' / 'sparkTrail'),
+  `gpgpuAux2Intensity`, `gpgpuAux2Life`, `gpgpuAux2Speed`,
+  `gpgpuAux2Size`, `gpgpuAux2GravityScale`, `gpgpuAux2Drag`,
+  `gpgpuAux2Curl`, `gpgpuAux2Color` ('' = inherit the child's
+  resolved colour). Level 3 re-applies the level-2 settings
+  recursively — there is no third key family. Depth is capped at
+  3 by design (each level costs a full 128x128 texture quad plus
+  a draw); the UI states the cap honestly as 最大3段.
+- Each chain level is the same GPU-closed two-pass pool machinery
+  (`components/gpgpuShaderAux.ts` chain shaders) reading the
+  previous level's frame-start textures, with per-level hash salts
+  so sibling levels do not roll identical gates. Because an aux
+  source carries its own life per particle, chain deathBurst
+  fires on the frame the source's age crosses its own life.
+  Chain pools are allocated only while the depth reaches them;
+  at the defaults nothing is allocated, run, or drawn, and the
+  legacy level-1 shaders are byte-untouched, so depth-1 output
+  is bit-identical to v1.24.0. Pure chain resolution (active
+  levels, colour inheritance, event predicates) lives in
+  `lib/auxChain.ts`.
+- Starters +2 (512 -> 514): two-stage death-burst chain and
+  three-stage cascade, both monochrome.
+
 ## [1.24.0] — 2026-11-17
 
 Third-period plan Phase V: the Mir / OBJ mesh side — the imported
