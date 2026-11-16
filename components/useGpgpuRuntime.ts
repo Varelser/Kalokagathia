@@ -14,6 +14,7 @@ import {
   initWebGPUCompute,
   destroyWebGPUCompute,
   updateWebGPUMorphData,
+  updateWebGPUMorphNormalData,
 } from '../lib/webgpuCompute';
 import type { WebGPUComputeState } from '../lib/webgpuCompute';
 import { FLUID_SIZE } from './gpgpuShaders';
@@ -591,7 +592,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // Phase R: the WebGPU velocity pass gets the same baked morph
     // cloud as the WebGL texture path (null when morph is disabled).
     const wgMorph = buildMorphBakeData(config, texSize);
-    initWebGPUCompute(texSize, wgPos, wgVel, wgMorph ? wgMorph.data : null).then((state) => {
+    // Phase X3: the companion normal cloud travels with the target
+    // cloud so the WGSL velocity pass can run the OBJ normal kick.
+    initWebGPUCompute(texSize, wgPos, wgVel, wgMorph ? wgMorph.data : null, wgMorph ? wgMorph.normalData : null).then((state) => {
       noteGpgpuBackendSettled(getSceneGeneration());
       webgpuStateRef.current = state;
       webgpuPingIsARef.current = true;
@@ -856,6 +859,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // the same data itself via buildMorphBakeData.)
     if (webgpuStateRef.current) {
       updateWebGPUMorphData(webgpuStateRef.current, data);
+      // Phase X3: the companion normals are rebuilt by the same
+      // bake, so they are pushed to the WGSL pass alongside.
+      updateWebGPUMorphNormalData(webgpuStateRef.current, normalData);
     }
     // Companion normal texture (Phase O): same texel layout as the
     // morph target texture; xyz is a unit direction (not scaled).
