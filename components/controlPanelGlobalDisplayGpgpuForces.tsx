@@ -5,7 +5,7 @@ import { CUSTOM_FORCE_EXAMPLE, useCustomForceStatus } from '../lib/gpgpuCustomFo
 import { VEX_PRESETS } from '../lib/gpgpuVexPresets';
 import { KINETIX_COLOR_GRADIENTS, getKinetixGradientPreset } from '../lib/kinetixGradients';
 import { SAMPLE_SVG_STAR, sampleSvgPointCloud } from '../lib/svgMorph';
-import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT, parseObjGeometry } from '../lib/objMorph';
+import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT, parseObjGeometry, isObjClosedMesh } from '../lib/objMorph';
 import { setModulationSetup, useModulationSetup } from '../lib/modulation';
 import type { ParticleConfig } from '../types';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
@@ -759,6 +759,11 @@ const MorphSvgImportBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config
 const MorphObjImportBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
   const source = config.gpgpuMorphObjSource;
   const geometry = React.useMemo(() => (source ? parseObjGeometry(source) : null), [source]);
+  const sampleMode = config.gpgpuMorphObjSampleMode;
+  // Volume needs a closed mesh to define an interior; the sampler
+  // falls back to surface otherwise, and this block says so up front
+  // (same verdict function the sampler itself uses).
+  const volumeFallsBack = sampleMode === 'volume' && geometry !== null && !isObjClosedMesh(geometry);
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
     const text = await file.text();
@@ -811,9 +816,30 @@ const MorphObjImportBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         {source
           ? geometry
-            ? `頂点 ${geometry.vertexCount}・面 ${geometry.faceCount}（三角形 ${geometry.triangleCount}）を読み取りました。表面を面積重みで 8,192 点にサンプリングします（決定的）。法線・テクスチャ座標は使いません。`
+            ? `頂点 ${geometry.vertexCount}・面 ${geometry.faceCount}（三角形 ${geometry.triangleCount}）を読み取りました。8,192 点にサンプリングします（決定的）。`
             : '読み取れる頂点/面がありません（v と f の行が必要です）。現在は球シェルで代替しています。'
-          : 'OBJ を取り込むと、その表面点群へ粒子が集まります（3Dモデル・ロゴ立体用）。未設定の間は球シェルで代替しています。ソースは config に保持され、再読み込みでも消えません。'}
+          : 'OBJ を取り込むと、その点群へ粒子が集まります（3Dモデル・ロゴ立体用）。未設定の間は球シェルで代替しています。ソースは config に保持され、再読み込みでも消えません。'}
+      </div>
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Sample Mode （サンプリング方式）</div>
+      <select
+        value={sampleMode}
+        onChange={(e) => updateConfig('gpgpuMorphObjSampleMode', e.target.value as typeof config.gpgpuMorphObjSampleMode)}
+        className="mb-2 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+      >
+        <option value="surface">Surface （表面・面積重み）</option>
+        <option value="vertices">Vertices （頂点そのもの）</option>
+        <option value="volume">Volume （内部を充填・閉メッシュのみ）</option>
+      </select>
+      <Slider label="Normal Speed （法線初速）" value={config.gpgpuMorphObjNormalSpeed} min={0} max={80} step={1} onChange={(v) => updateConfig('gpgpuMorphObjNormalSpeed', v)} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {sampleMode === 'vertices'
+          ? '頂点そのものに粒子を置きます（疎なモデルでは頂点の粗さがそのまま見えます）。'
+          : sampleMode === 'volume'
+            ? volumeFallsBack
+              ? 'このメッシュは閉じていないため（内部を定義できません）、Volume は Surface にフォールバックしています。'
+              : '閉メッシュの内部を一様に充填します（中身のある立体になります）。'
+            : '表面を面積重みで一様にサンプリングします（Phase J からの従来方式）。'}
+        {' '}法線初速は、配置時（開始時とリスポーン時）にサンプル法線の方向へ粒子を放つ初速です。常時かかる力ではないので、膨らんだ粒子はモーフの引力で形に戻ります。0 で無効です。
       </div>
     </div>
   );
