@@ -1480,3 +1480,6 @@ v1.15.0（2026-11-16、第2期計画 Phase M）: 光・色・連鎖の仕上げ�
 
 
 v1.16.0（2026-11-16、第2期計画 Phase N）: Horizon 360° equirect 背景。背景画像に投影方式キー backgroundImageProjection（'flat' 既定＝Phase I の平面 cover/fit と完全同一 / 'equirect'）と水平回転オフセット backgroundEquirectYaw（度、既定0）を追加（config キー 943→945）。equirect 時はソースをネイティブサイズでデコードし THREE.EquirectangularReflectionMapping で scene.background に載せ、scene.backgroundRotation.y にヨーを適用する — three.js の正規経路で球体内面にパノラマが描かれ、カメラ連動になる。2:1 パノラマ推奨（他アスペクトは球面に引き伸ばし、破綻しない）。決定レンダー（transparent は背景落ち・unmult は黒マット・opaque は背景込み）・stream 抑制・静止画の既存意味論は従来どおりで、Phase G のカメラ固定により equirect でも再現性が保たれる。スターター追加なし（背景画像同梱は config 肥大のため）。
+
+
+v1.17.0（2026-11-16、第2期計画 Phase O）: OBJ モーフの残り2点を実装。(1) サンプリングモードキー gpgpuMorphObjSampleMode（'surface' 既定＝Phase J とビット同一 / 'vertices'＝頂点そのもの / 'volume'＝閉メッシュ内部の一様充填。閉性は「全辺がちょうど2三角形で共有」で判定し、非閉時は surface へフォールバックして UI に明示。レイ偶奇判定＋試行上限付きで決定的）。(2) 法線初速キー gpgpuMorphObjNormalSpeed（既定0＝従来同一）: サンプラが法線（vn 優先、なければ面積重み面法線平均。volume は最近傍面法線）も返し、モーフ目標テクスチャの伴走テクスチャにベイク。速度シェーダで配置時（開始エンベロープ＋年齢リスポーン帧）にだけ法線方向の初速を与え、常時力にはしない。新規 config キー2件（総数 945→947）。スターター2件追加（内蔵 495→497: volume 充填球／法線バースト球、どちらもモノクロ）。
