@@ -145,7 +145,7 @@ export interface ParticleConfigGpgpu {
   // baked into a float texture; the velocity shader pulls each particle
   // toward its assigned target with the Kinetix morph spring law.
   gpgpuMorphEnabled: boolean;
-  gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj';
+  gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj' | 'terrain';
   // SVG import (Pro-2): the imported SVG document's source text. Like
   // the TextMap text it lives in the config so it persists with
   // projects / presets; the point cloud is re-sampled from it
@@ -174,6 +174,17 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphReplicaRotation: number;
   gpgpuMorphReplicaScaleStep: number;
   gpgpuMorphReplicaPhaseStep: number;
+  // Terrain (Phase L, Mir-style): the 'terrain' morph target places
+  // particles on a seeded fractal height field (value-noise fBm,
+  // lib/gpgpuMorphTargets.ts). The field is a pure function of
+  // (gpgpuSeed, terrain seed, amplitude, frequency, octaves), so the
+  // bake stays deterministic. Height-driven colour comes from the
+  // gradient 'height' driver below. These keys only take effect when
+  // gpgpuMorphTarget is 'terrain'; every other target ignores them.
+  gpgpuMorphTerrainAmplitude: number;
+  gpgpuMorphTerrainFrequency: number;
+  gpgpuMorphTerrainOctaves: number;
+  gpgpuMorphTerrainSeed: number;
   // Verlet Integration
   gpgpuVerletEnabled: boolean;
   // SDF Collider ('gyroid' added by Kinetix integration B3: the TPMS
@@ -215,14 +226,16 @@ export interface ParticleConfigGpgpu {
   // Kinetix Color gradient (Kinetix integration B2): a 3-stop gradient
   // (start/mid/end) sampled through a 256px LUT in the point shader,
   // driven by life / velocity / spatial position / prism / image /
-  // blackbody. Opt-in only — when disabled the legacy colour paths
+  // blackbody / height (Phase L: world Y, for terrain-style height
+  // shading; reuses gpgpuGradSpatialScale as its scale). Opt-in only
+  // — when disabled the legacy colour paths
   // (single colour, age 2-stop, velocity hue) run exactly as before.
   // The 'image' driver samples a user image (gpgpuGradImageSource)
   // by particle position in the point shader; while no image is set
   // (or it is still loading) it falls back to the life driver, and
   // the UI says so explicitly.
   gpgpuGradEnabled: boolean;
-  gpgpuGradDriver: 'life' | 'velocity' | 'spatial' | 'prism' | 'image' | 'blackbody';
+  gpgpuGradDriver: 'life' | 'velocity' | 'spatial' | 'prism' | 'image' | 'blackbody' | 'height';
   gpgpuGradStart: string;
   gpgpuGradMid: string;
   gpgpuGradEnd: string;

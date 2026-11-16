@@ -108,7 +108,8 @@ export const DRAW_FRAG = /* glsl */ `
   // Kinetix Color gradient (B2): 3-stop LUT + driver. Driver ids:
   // 0 life, 1 velocity, 2 spatial, 3 prism, 4 image (samples the
   // user image by particle position; life LUT fallback while no
-  // image is ready), 5 blackbody.
+  // image is ready), 5 blackbody, 6 height (Phase L: world Y mapped
+  // through the LUT — terrain-style height shading).
   uniform bool      uGradEnabled;
   uniform int       uGradDriver;
   uniform sampler2D uGradLut;
@@ -169,8 +170,9 @@ export const DRAW_FRAG = /* glsl */ `
     // / blackbody procedural ramps). Kinetix driver semantics:
     // life t = age fraction; velocity t = 1 - normalised speed (fast
     // particles take the start colour); spatial t = distance from the
-    // origin scaled; prism = HSL wheel over age + per-particle seed +
-    // time; blackbody = heat ramp above.
+    // origin scaled; height t = world Y centred and scaled; prism =
+    // HSL wheel over age + per-particle seed + time; blackbody = heat
+    // ramp above.
     if (uGradEnabled) {
       if (uGradDriver == 3) {
         float hue = fract(vNormAge * 0.65 + vSeed * 0.35 + uGradTime * 0.06);
@@ -191,6 +193,11 @@ export const DRAW_FRAG = /* glsl */ `
           gt = 1.0 - vSpeed;
         } else if (uGradDriver == 2) {
           gt = clamp(length(vWorldPos) * uGradSpatialScale, 0.0, 1.0);
+        } else if (uGradDriver == 6) {
+          // Height driver (Phase L): world Y centred on 0, scaled by
+          // the same slider the spatial driver uses — valleys take
+          // the start colour, peaks the end colour.
+          gt = clamp(0.5 + vWorldPos.y * uGradSpatialScale, 0.0, 1.0);
         }
         col = texture2D(uGradLut, vec2(gt, 0.5)).rgb;
       }

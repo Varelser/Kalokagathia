@@ -4,6 +4,48 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.14.0] — 2026-11-16
+
+Terrain (leftover plan Phase L, final phase): the GPGPU morph system
+gains a Mir-style fractal terrain target, and the gradient system a
+height driver to shade it. The morph-off default path and every
+existing morph target's bake are bit-identical to v1.13.0 ('terrain'
+is appended to the target list, so existing bake seeds do not move).
+
+### Added
+- **Morph target `terrain`** (`gpgpuMorphTarget`): particles tile
+  the XZ domain on the bake grid and take the height of a seeded
+  fractal field (value-noise fBm, `terrainHeightAt` in
+  `lib/gpgpuMorphTargets.ts` — integer-lattice hash, smoothstep
+  interpolation, gain-normalized octaves) as their Y, forming a
+  landscape surface point cloud. Four new config keys —
+  `gpgpuMorphTerrainAmplitude` (elevation range, default 0.55),
+  `gpgpuMorphTerrainFrequency` (feature scale, default 1.6),
+  `gpgpuMorphTerrainOctaves` (1–6, default 4) and
+  `gpgpuMorphTerrainSeed` (field offset, default 0). The field is a
+  pure function of (gpgpuSeed, terrain seed, parameters), so the
+  same config always grows the same terrain; the Phase K replica
+  grammar applies to terrain like any other target.
+- **Gradient driver `height`** (`gpgpuGradDriver`): the 3-stop LUT
+  is driven by world Y (centred on 0, scaled by the existing
+  `gpgpuGradSpatialScale` slider) — valleys take the start colour,
+  peaks the end colour. This is the terrain's elevation shading and
+  works for any content with vertical structure.
+- **UI** in the Morph section: a Terrain block (amplitude /
+  frequency / octaves / seed sliders) shown for the terrain target,
+  and a Height option in the gradient Driver select.
+- **Starters**: `starter-gpgpu-morph-terrain-range` (mountain range
+  with monochrome elevation shading) and
+  `starter-gpgpu-morph-terrain-valley-mist` (gentle field, bright
+  haze pooled in the valleys) — built-in starters 491 → 493.
+
+### Notes
+- The terrain is a point sampling of the height field, not a
+  polygon mesh: there is no normal-based mesh shading, no tunnel
+  form and no texture mapping onto a surface. In Maxon-audit terms
+  the Mir terrain row therefore lands at △ (fractal height field
+  achieved as a particle surface), not ◎.
+
 ## [1.13.0] — 2026-11-16
 
 Replica grammar (leftover plan Phase K): the GPGPU morph bake gains

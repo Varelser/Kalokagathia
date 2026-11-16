@@ -30,6 +30,14 @@
  * precise solid Mandelbulb remains the layer raymarch system's job;
  * the morph target exists so particles can gather into a bulb-like
  * mass, not to render the fractal surface.
+ *
+ * terrain note (Phase L): the 'terrain' target is a Mir-style
+ * fractal height field (seeded value-noise fBm, terrainHeightAt
+ * below) sampled on the bake grid — particles become the surface of
+ * a landscape instead of a closed shape. It is a point sampling of
+ * the field, not a polygon mesh: the terrain "reads" through point
+ * density and the gradient 'height' driver (world-Y colour), the
+ * same trade the mandelbulb target makes for its fractal.
  */
 
 import type { ParticleConfig } from '../types';
@@ -60,6 +68,8 @@ export const GPGPU_MORPH_TARGETS: readonly GpgpuMorphTargetKind[] = [
   'svg',
   // 'obj' (Phase J) appends after 'svg' for the same reason.
   'obj',
+  // 'terrain' (Phase L) appends after 'obj' for the same reason.
+  'terrain',
 ] as const;
 
 export interface MorphMediaMap {
@@ -97,6 +107,22 @@ export interface GpgpuMorphReplicaOptions {
   phaseStepDeg: number;
 }
 
+/**
+ * Terrain field parameters (Phase L, Mir-style): a seeded value-noise
+ * fBm height field. `amplitude` is the elevation range in normalized
+ * cloud units (heights land roughly within ±amplitude), `frequency`
+ * scales the field's feature size over the cloud domain, `octaves`
+ * (1..6) adds finer detail octaves, and `seed` offsets the field so
+ * the same (amplitude, frequency, octaves) can grow a different
+ * landscape; the bake's main seed is mixed in as well.
+ */
+export interface GpgpuMorphTerrainOptions {
+  amplitude: number;
+  frequency: number;
+  octaves: number;
+  seed: number;
+}
+
 export interface GpgpuMorphTargetBuildOptions {
   texSize: number;
   target: GpgpuMorphTargetKind;
@@ -123,6 +149,75 @@ export interface GpgpuMorphTargetBuildOptions {
    * media map.
    */
   objPoints?: ArrayLike<number> | null;
+  /**
+   * Terrain field parameters for the terrain target; absent uses the
+   * defaults in DEFAULT_TERRAIN. Ignored by every other target.
+   */
+  terrain?: GpgpuMorphTerrainOptions | null;
+}
+
+export const DEFAULT_TERRAIN: GpgpuMorphTerrainOptions = {
+  amplitude: 0.55,
+  frequency: 1.6,
+  octaves: 4,
+  seed: 0,
+};
+
+/**
+ * Integer lattice hash for the terrain value noise: pure integer
+ * math (Math.imul), so the field is identical on every platform and
+ * every run. Returns a value in [-1, 1).
+ */
+function terrainLattice(ix: number, iz: number, seed: number): number {
+  let h = Math.imul(ix | 0, 0x27d4eb2d) ^ Math.imul(iz | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h ^= h >>> 13;
+  return ((h >>> 0) / 4294967296) * 2 - 1;
+}
+
+/**
+ * Height of the terrain field at normalized (x, z) — smoothstep-
+ * interpolated value noise summed over `octaves` fBm octaves
+ * (lacunarity 2, gain 0.5, gain-normalized, so the result stays
+ * within ±amplitude for amplitude >= 0). Pure and deterministic:
+ * same (x, z, params, fieldSeed) always yields the same height.
+ * `fieldSeed` is the already-mixed seed (bake seed + terrain seed).
+ */
+export function terrainHeightAt(
+  x: number,
+  z: number,
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+): number {
+  const octaves = Math.max(1, Math.min(6, Math.floor(terrain.octaves) || 1));
+  const baseFreq = Math.max(0.05, terrain.frequency);
+  const amplitude = Math.max(0, terrain.amplitude);
+  let sum = 0;
+  let norm = 0;
+  let gain = 0.5;
+  let freq = baseFreq;
+  for (let o = 0; o < octaves; o++) {
+    const sx = x * freq;
+    const sz = z * freq;
+    const ix = Math.floor(sx);
+    const iz = Math.floor(sz);
+    const fx = sx - ix;
+    const fz = sz - iz;
+    const ux = fx * fx * (3 - 2 * fx);
+    const uz = fz * fz * (3 - 2 * fz);
+    const s = fieldSeed + o * 101;
+    const v00 = terrainLattice(ix, iz, s);
+    const v10 = terrainLattice(ix + 1, iz, s);
+    const v01 = terrainLattice(ix, iz + 1, s);
+    const v11 = terrainLattice(ix + 1, iz + 1, s);
+    const top = v00 + (v10 - v00) * ux;
+    const bottom = v01 + (v11 - v01) * ux;
+    sum += (top + (bottom - top) * uz) * gain;
+    norm += gain;
+    gain *= 0.5;
+    freq *= 2;
+  }
+  return (sum / norm) * amplitude;
 }
 
 const TAU = Math.PI * 2;
@@ -172,7 +267,7 @@ function sampleMediaPoint(
  * world units. Pure and deterministic for a given options set.
  */
 export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions): Float32Array {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, replica } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, replica, terrain } = options;
   const count = texSize * texSize;
   const replicaCount = replica ? Math.max(1, Math.min(8, Math.floor(replica.count) || 1)) : 1;
   const replicaActive = replicaCount > 1 && replica != null;
@@ -184,6 +279,13 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
   const media = isMedia && mediaMap && mediaMap.map.length > 0 ? mediaMap : null;
   const svgPointCount = target === 'svg' && svgPoints ? Math.floor(svgPoints.length / 2) : 0;
   const objPointCount = target === 'obj' && objPoints ? Math.floor(objPoints.length / 3) : 0;
+  // Terrain (Phase L): the field seed mixes the bake seed with the
+  // terrain seed offset, so gpgpuSeed still reshapes the landscape
+  // while the terrain seed can vary it independently.
+  const terrainOpts = target === 'terrain' ? (terrain ?? DEFAULT_TERRAIN) : null;
+  const terrainFieldSeed = terrainOpts
+    ? ((seed ^ Math.imul((terrainOpts.seed | 0) + 1, 0x9e3779b1)) | 0)
+    : 0;
   const mediaPoint = { x: 0, y: 0, z: 0 };
 
   for (let i = 0; i < count; i++) {
@@ -434,6 +536,22 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
           tx = dx * shellR;
           ty = dy * shellR;
           tz = dz * shellR;
+          break;
+        }
+        case 'terrain': {
+          // Seeded fBm height field (Phase L, Mir-style): particles
+          // tile the XZ domain on the bake grid — one particle per
+          // grid cell, jittered inside the cell by the shared rng
+          // draws (s, h1) — and take the field height as Y. The
+          // field is a pure function (terrainHeightAt), so the same
+          // config always grows the same landscape. Height-driven
+          // colour is the gradient 'height' driver's job.
+          const extent = 1.05;
+          const cellX = i % texSize;
+          const cellZ = Math.floor(i / texSize);
+          tx = (((cellX + s) / texSize) * 2 - 1) * extent;
+          tz = (((cellZ + h1) / texSize) * 2 - 1) * extent;
+          ty = terrainOpts ? terrainHeightAt(tx, tz, terrainOpts, terrainFieldSeed) : 0;
           break;
         }
         case 'shell': {

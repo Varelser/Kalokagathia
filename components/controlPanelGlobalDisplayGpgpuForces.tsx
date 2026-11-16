@@ -307,6 +307,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
             <option value="image">Image (レイヤー2の画像マップ)</option>
             <option value="svg">SVG (取り込んだロゴ/図形)</option>
             <option value="obj">OBJ (取り込んだ3Dメッシュ)</option>
+            <option value="terrain">Terrain (地形・フラクタル高度場)</option>
           </select>
           {config.gpgpuMorphTarget === 'svg' && (
             <MorphSvgImportBlock config={config} updateConfig={updateConfig} />
@@ -314,12 +315,24 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           {config.gpgpuMorphTarget === 'obj' && (
             <MorphObjImportBlock config={config} updateConfig={updateConfig} />
           )}
+          {config.gpgpuMorphTarget === 'terrain' && (
+            <>
+              <div className="mb-1 mt-1 text-[9px] uppercase tracking-widest opacity-60">Terrain （地形）</div>
+              <Slider label="Amplitude （標高の振幅）" value={config.gpgpuMorphTerrainAmplitude} min={0} max={1.5} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainAmplitude', v)} />
+              <Slider label="Frequency （周波数）" value={config.gpgpuMorphTerrainFrequency} min={0.4} max={4} step={0.1} onChange={(v) => updateConfig('gpgpuMorphTerrainFrequency', v)} />
+              <Slider label="Octaves （オクターブ）" value={config.gpgpuMorphTerrainOctaves} min={1} max={6} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainOctaves', Math.round(v))} />
+              <Slider label="Terrain Seed （地形シード）" value={config.gpgpuMorphTerrainSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainSeed', Math.round(v))} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                シード付きフラクタル高度場（fBm）の表面に粒子を敷きます。同じ設定からは常に同じ地形になります。高さで色を変えるには Kinetix Color Gradient の Driver を Height にしてください（谷→山頂でグラデーションが進みます）。
+              </div>
+            </>
+          )}
           <Slider label="Strength" value={config.gpgpuMorphStrength} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuMorphStrength', v)} />
           <Slider label="Scale" value={config.gpgpuMorphScale} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScale', v)} />
           <Slider label="Jitter" value={config.gpgpuMorphJitter} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphJitter', v)} />
           <Slider label="Orbit Speed" value={config.gpgpuMorphOrbitSpeed} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphOrbitSpeed', v)} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            各粒子に割り当てた形状点群へバネ引力で集めます（Kinetix モーフの GPGPU 再実装）。Text はレイヤー2のテキスト設定、Image はレイヤー2に読み込んだ画像マップ、SVG は取り込んだ SVG の輪郭、OBJ は取り込んだ OBJ メッシュの表面を使います。
+            各粒子に割り当てた形状点群へバネ引力で集めます（Kinetix モーフの GPGPU 再実装）。Text はレイヤー2のテキスト設定、Image はレイヤー2に読み込んだ画像マップ、SVG は取り込んだ SVG の輪郭、OBJ は取り込んだ OBJ メッシュの表面、Terrain はシード付きフラクタル高度場の表面を使います。
           </div>
           <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Replicas （複製文法）</div>
           <Slider label="Replica Count" value={config.gpgpuMorphReplicaCount} min={1} max={8} step={1} onChange={(v) => updateConfig('gpgpuMorphReplicaCount', Math.round(v))} />
@@ -441,6 +454,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
             <option value="life">Life（寿命）</option>
             <option value="velocity">Velocity（速度）</option>
             <option value="spatial">Spatial（中心からの距離）</option>
+            <option value="height">Height（高さ・ワールドY）</option>
             <option value="prism">Prism（色相環）</option>
             <option value="blackbody">Blackbody（黒体放射）</option>
             <option value="image">Image（画像から色）</option>
@@ -482,6 +496,14 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           </div>
           {config.gpgpuGradDriver === 'spatial' && (
             <Slider label="Spatial Scale" value={config.gpgpuGradSpatialScale} min={0.001} max={0.05} step={0.001} onChange={(v) => updateConfig('gpgpuGradSpatialScale', v)} />
+          )}
+          {config.gpgpuGradDriver === 'height' && (
+            <>
+              <Slider label="Height Scale" value={config.gpgpuGradSpatialScale} min={0.001} max={0.05} step={0.001} onChange={(v) => updateConfig('gpgpuGradSpatialScale', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                Height は粒子のワールドY（高さ）でグラデーションを引きます。谷（低い所）が Start、山頂（高い所）が End の色になります。Terrain モーフと組み合わせると地形の標高シェーディングになります。
+              </div>
+            </>
           )}
           {config.gpgpuGradDriver === 'prism' && (
             <div className="mt-1 text-[9px] leading-relaxed text-white/40">

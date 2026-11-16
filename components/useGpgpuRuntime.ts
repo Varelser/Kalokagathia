@@ -344,6 +344,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphReplicaRotation = config.gpgpuMorphReplicaRotation;
   const morphReplicaScaleStep = config.gpgpuMorphReplicaScaleStep;
   const morphReplicaPhaseStep = config.gpgpuMorphReplicaPhaseStep;
+  const morphTerrainAmplitude = config.gpgpuMorphTerrainAmplitude;
+  const morphTerrainFrequency = config.gpgpuMorphTerrainFrequency;
+  const morphTerrainOctaves = config.gpgpuMorphTerrainOctaves;
+  const morphTerrainSeed = config.gpgpuMorphTerrainSeed;
   useEffect(() => {
     morphTexRef.current?.dispose();
     morphTexRef.current = null;
@@ -392,6 +396,14 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         scaleStep: morphReplicaScaleStep,
         phaseStepDeg: morphReplicaPhaseStep,
       },
+      // Terrain (Phase L): only read by the bake when the target is
+      // 'terrain'; the field is a pure function of these + the seed.
+      terrain: {
+        amplitude: morphTerrainAmplitude,
+        frequency: morphTerrainFrequency,
+        octaves: morphTerrainOctaves,
+        seed: morphTerrainSeed,
+      },
     });
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
@@ -425,6 +437,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphReplicaRotation,
     morphReplicaScaleStep,
     morphReplicaPhaseStep,
+    morphTerrainAmplitude,
+    morphTerrainFrequency,
+    morphTerrainOctaves,
+    morphTerrainSeed,
   ]);
 
   return {

@@ -14,6 +14,7 @@ const GRAD_DRIVER_IDS: Record<ParticleConfig['gpgpuGradDriver'], number> = {
   prism: 3,
   image: 4,
   blackbody: 5,
+  height: 6,
 };
 
 export function runDepthSortPass(args: {
