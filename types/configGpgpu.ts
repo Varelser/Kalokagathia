@@ -287,8 +287,33 @@ export interface ParticleConfigGpgpu {
   gpgpuAuxDrag: number;
   gpgpuAuxCurl: number;
   gpgpuAuxColor: string;
-  // Emission Shape
-  gpgpuEmitShape: 'sphere' | 'disc' | 'ring' | 'box' | 'shell' | 'cone';
+  // Emission Shape ('light' added by Phase T: particles are emitted
+  // from the 3D light's position — a pure position reference, like
+  // Particular's Light Emitter; it works whether or not the light
+  // itself is enabled).
+  gpgpuEmitShape: 'sphere' | 'disc' | 'ring' | 'box' | 'shell' | 'cone' | 'light';
+  // 3D Light (Phase T): a single monochrome point light / spotlight
+  // that multiplies the DRAWN brightness of GPGPU points (see
+  // lib/gpgpuLight.ts). It never touches the simulation — positions
+  // and velocities are unchanged, only the rendered colour scales.
+  // Disabled by default; intensity 0 is also an exact identity.
+  // This is separate from the PostFx Lux screen-space lights, which
+  // are unchanged.
+  gpgpuLightEnabled: boolean;
+  gpgpuLightPosX: number;
+  gpgpuLightPosY: number;
+  gpgpuLightPosZ: number;
+  /** Brightness added at the light's centre (multiplier 1 + this). */
+  gpgpuLightIntensity: number;
+  /** Falloff radius in world units; outside it the multiplier is 1. */
+  gpgpuLightRadius: number;
+  /** Restrict the light to a cone (spotlight) around the direction. */
+  gpgpuLightConeEnabled: boolean;
+  /** Cone half angle in degrees (feather is a fixed 1.25x band). */
+  gpgpuLightConeAngleDeg: number;
+  gpgpuLightDirX: number;
+  gpgpuLightDirY: number;
+  gpgpuLightDirZ: number;
   // Color over Lifetime
   gpgpuAgeColorEnabled: boolean;
   gpgpuAgeColorYoung: string;

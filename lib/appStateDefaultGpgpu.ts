@@ -186,6 +186,20 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuAuxColor: '',
   // Emission Shape
   gpgpuEmitShape: 'sphere' as const,
+  // 3D Light (Phase T): disabled by default — the draw path is
+  // bit-identical to before until the user opts in (and intensity 0
+  // stays an exact identity even when enabled).
+  gpgpuLightEnabled: false,
+  gpgpuLightPosX: 0,
+  gpgpuLightPosY: 0,
+  gpgpuLightPosZ: 0,
+  gpgpuLightIntensity: 1,
+  gpgpuLightRadius: 3,
+  gpgpuLightConeEnabled: false,
+  gpgpuLightConeAngleDeg: 30,
+  gpgpuLightDirX: 0,
+  gpgpuLightDirY: -1,
+  gpgpuLightDirZ: 0,
   // Color over Lifetime
   gpgpuAgeColorEnabled: false,
   gpgpuAgeColorYoung: '#00aaff',
