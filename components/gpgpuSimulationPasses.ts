@@ -130,6 +130,8 @@ export function runSimulationPasses(args: {
   posSimMat: THREE.ShaderMaterial;
   initPosTex: THREE.Texture | null;
   morphTex: THREE.Texture | null;
+  morphNormalTex: THREE.Texture | null;
+  morphKickStart: number;
   prevPosTex: THREE.Texture | null;
   webgpuState: WebGPUComputeState | null;
   webgpuPosTex: THREE.DataTexture | null;
@@ -155,6 +157,8 @@ export function runSimulationPasses(args: {
     posSimMat,
     initPosTex,
     morphTex,
+    morphNormalTex,
+    morphKickStart,
     prevPosTex,
     webgpuState,
     webgpuPosTex,
@@ -265,6 +269,13 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uInitPosTex.value = initPosTex;
   velSimMat.uniforms.uMorphEnabled.value = config.gpgpuMorphEnabled && !!morphTex;
   velSimMat.uniforms.uMorphTex.value = morphTex;
+  // OBJ normal kick (Phase O): companion normal texture + speed.
+  // The speed is passed verbatim; 0 (default) makes the shader skip
+  // the kick block entirely. The age flag gates the respawn pulse.
+  if (velSimMat.uniforms.uMorphNormalTex) velSimMat.uniforms.uMorphNormalTex.value = morphNormalTex;
+  if (velSimMat.uniforms.uMorphObjNormalSpeed) velSimMat.uniforms.uMorphObjNormalSpeed.value = Math.max(0, config.gpgpuMorphObjNormalSpeed || 0);
+  if (velSimMat.uniforms.uMorphKickStart) velSimMat.uniforms.uMorphKickStart.value = morphKickStart;
+  if (velSimMat.uniforms.uAgeEnabled) velSimMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled;
   velSimMat.uniforms.uMorphStrength.value = config.gpgpuMorphStrength;
   velSimMat.uniforms.uMorphOrbitSpeed.value = config.gpgpuMorphOrbitSpeed;
   // Replica phase offsets (baked into the morph texel alpha) apply

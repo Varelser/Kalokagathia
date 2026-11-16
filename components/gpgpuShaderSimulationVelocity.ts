@@ -80,6 +80,10 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform sampler2D uInitPosTex;
   uniform bool  uMorphEnabled;
   uniform sampler2D uMorphTex;
+  uniform sampler2D uMorphNormalTex;
+  uniform float uMorphObjNormalSpeed;
+  uniform float uMorphKickStart;
+  uniform bool  uAgeEnabled;
   uniform float uMorphStrength;
   uniform float uMorphOrbitSpeed;
   uniform float uMorphReplicaPhaseGain;
@@ -600,6 +604,32 @@ export const SIM_VEL_FRAG = /* glsl */ `
       float mf = 1.0 - exp(-uMorphStrength * uDelta * 3.0);
       vec3 vWant = (mTarget - pos) * (mf / max(uDelta * uSpeed * 60.0, 0.001));
       vel += (vWant - vel) * clamp(mf + uDelta * 6.0, 0.0, 1.0);
+
+      // OBJ normal initial velocity (Phase O): an emission-style
+      // kick along the particle's baked sample normal (companion
+      // texture, rotated by the same orbit angle as the target).
+      // It fires ONLY at (re)placement — the envelope after the
+      // morph bake was (re)built or the speed key changed
+      // (uMorphKickStart, set by the scene when either happens;
+      // preset applies and OBJ edits re-bake, so they re-emit) and
+      // the age-respawn frame (posData.w, the age, has just wrapped
+      // to ~0 while the Life system is on) — never as a continuous
+      // force, so the morph spring above re-forms the shape once
+      // the envelope decays. Speed 0 (the default) skips the whole
+      // block: the legacy path stays bit-identical.
+      if (uMorphObjNormalSpeed > 0.0) {
+        vec3 mNormal = texture2D(uMorphNormalTex, vUv).xyz;
+        mNormal = vec3(
+          mNormal.x * mCos - mNormal.z * mSin,
+          mNormal.y,
+          mNormal.x * mSin + mNormal.z * mCos
+        );
+        float kickEnv = exp(-max(uTime - uMorphKickStart, 0.0) * 4.5);
+        if (uAgeEnabled && posData.w < uDelta * 1.5) kickEnv = 1.0;
+        if (kickEnv > 0.003) {
+          vel = mix(vel, mNormal * uMorphObjNormalSpeed, clamp(kickEnv * 0.45, 0.0, 0.45));
+        }
+      }
     }
 
     // SDF Collider — velocity reflection
