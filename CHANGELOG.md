@@ -4,6 +4,45 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.22.0] — 2026-11-16
+
+Third-period plan Phase U: particle quality — arbitrary sprite
+images, 5-point age curves, and per-property Layer Maps.
+
+### Added
+- **Sprite image particles** (new key `gpgpuSpriteImage`, default
+  ''): while an image is set, GPGPU point sprites take their shape
+  from the image — luminance (times alpha) becomes the sprite alpha,
+  monochrome only — with priority over `gpgpuPointShape`. The image
+  is picked in the Point Shape block (downscaled to <=256px, stored
+  as a data URL like the gradient image, PNG so alpha survives) and
+  decoded by the new `lib/spriteImageTexture.ts`, which mirrors the
+  gradient image's cache and row-flip conventions.
+- **Age curves** (4 new keys): fixed-position 5-point curves over
+  the normalised age (points at t = 0 / .25 / .5 / .75 / 1, linearly
+  interpolated; pure functions in `lib/ageCurve.ts`, GLSL twin in the
+  point shader). `gpgpuAgeCurveSizeEnabled` / `gpgpuAgeCurveSizePoints`
+  (default [1,1,1,1,1]) and `gpgpuAgeCurveOpacityEnabled` /
+  `gpgpuAgeCurveOpacityPoints` (default [1,1,1,1,1]). Each curve is a
+  multiplier layered on the legacy age paths, so an all-ones curve is
+  exactly the legacy behaviour even while enabled; the legacy keys
+  (`gpgpuAgeSizeStart/End`, `gpgpuAgeFadeIn/Out`, `gpgpuAgeSizeCurve`)
+  are unchanged. UI: five sliders plus preset chips （一定 / 右上がり /
+  右下がり / 山 / 谷） per curve — no curve editor.
+- **Layer Maps per property** (2 new keys): `gpgpuMapSizeAmount` and
+  `gpgpuMapOpacityAmount` (both default 0). The gradient image
+  (`gpgpuGradImageSource`, already plumbed into the point shader for
+  the image colour driver) is sampled by particle position and its
+  luminance modulates size and opacity individually:
+  factor = mix(1, luma, amount). With no image set the amounts have
+  no effect, and the UI states that explicitly.
+- **Starters +3** (503 -> 506): a star-faced sprite image sample, a
+  mountain age-curve sample, and a radial-blob Layer Map sample, all
+  monochrome with tiny embedded images.
+- Config keys total 964 -> 971. All new keys default to the legacy
+  behaviour; the deterministic-render identity against v1.21.0 is
+  bit-exact at defaults (iMac real-GPU gate).
+
 ## [1.21.0] — 2026-11-16
 
 Third-period plan Phase S: an authored-path basis for the SVG morph
