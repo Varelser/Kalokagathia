@@ -312,6 +312,30 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           {config.gpgpuMorphTarget === 'svg' && (
             <MorphSvgImportBlock config={config} updateConfig={updateConfig} />
           )}
+          {config.gpgpuMorphTarget === 'svg' && (
+            <>
+              <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Path （パス沿い配置）</div>
+              <Toggle label="Mode" value={config.gpgpuMorphPathMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Along', val: 'along' as const }, { label: 'Write-on', val: 'writeOn' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathMode', v)} />
+              {config.gpgpuMorphPathMode !== 'off' && (
+                <>
+                  <Toggle label="Subpaths （サブパス配分）" value={config.gpgpuMorphPathSubpathMode} options={[{ label: 'Proportional', val: 'proportional' as const }, { label: 'Even', val: 'even' as const }, { label: 'First', val: 'first' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathSubpathMode', v)} />
+                  {config.gpgpuMorphPathMode === 'writeOn' && (
+                    <>
+                      <Slider label="Write-On Start （開始・割合）" value={config.gpgpuMorphPathWriteOnStart} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphPathWriteOnStart', v)} />
+                      <Slider label="Write-On End （終了・割合）" value={config.gpgpuMorphPathWriteOnEnd} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphPathWriteOnEnd', v)} />
+                    </>
+                  )}
+                  <Slider label="Taper （テーパー）" value={config.gpgpuMorphPathTaper} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphPathTaper', v)} />
+                  {config.gpgpuMorphPathTaper > 0 && (
+                    <Toggle label="Taper Shape （形状）" value={config.gpgpuMorphPathTaperShape} options={[{ label: 'Linear', val: 'linear' as const }, { label: 'Smooth', val: 'smooth' as const }, { label: 'Bell', val: 'bell' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathTaperShape', v)} />
+                  )}
+                </>
+              )}
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                Off では従来どおり輪郭点群から無作為に抽出します。Along は粒子をパスの弧長順に割り当て、Write-on は窓［Start, End］の範囲だけを描いた状態にします。Taper はパスの法線方向へ配置帯を広げます（最大幅 0.1 固定、窓の始点基準）。複製（Replicas）と組み合わせると、複製ごとにパスの連続区間が割り当てられます。
+              </div>
+            </>
+          )}
           {config.gpgpuMorphTarget === 'obj' && (
             <MorphObjImportBlock config={config} updateConfig={updateConfig} />
           )}
