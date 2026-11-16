@@ -16,6 +16,8 @@
 // is explicitly NOT a goal — see CPU_FALLBACK_BRIEF.md.
 
 import type { ParticleConfig } from '../types';
+import { buildGpgpuMorphTargetData } from './gpgpuMorphTargets';
+import type { MorphMediaMap } from './gpgpuMorphTargets';
 
 export const CPU_PARTICLE_CAP = 4000;
 const CPU_PARTICLE_MIN = 240;
@@ -54,13 +56,95 @@ export function isCpuAttractorMode(config: ParticleConfig): boolean {
   return Boolean(config.gpgpuEnabled && config.gpgpuAttractorEnabled);
 }
 
+// ---------------------------------------------------------------------
+// Morph attraction (Phase R): the GPGPU morph bake is a pure TS
+// function, so the CPU sim reuses the very same baked cloud. The bake
+// runs at a small fixed texSize (64^2 = 4,096 texels >= the 4,000
+// particle cap) and each CPU particle owns texel i — the same 1:1
+// assignment the velocity shader uses. The bake's world scale is
+// morphScale * bounceRadius * 0.48 in GPGPU world units; the CPU sim
+// lives in normalised space (unit sphere), so the targets are baked
+// directly at morphScale * 0.48 normalised units.
+
+export const CPU_MORPH_TEX_SIZE = 64;
+
+/** Morph is live on the CPU path exactly when it would be on the GPU
+ * path: the GPGPU system on + the morph toggle on. Attractor mode
+ * still takes precedence in the step (see stepCpuParticles). */
+export function isCpuMorphActive(config: ParticleConfig): boolean {
+  return Boolean(config.gpgpuEnabled && config.gpgpuMorphEnabled);
+}
+
+/** Media-dependent bake inputs the sim cannot build itself (they need
+ * canvas / source text sampling); CpuFallbackScene supplies them,
+ * mirroring components/useGpgpuRuntime.ts. */
+export interface CpuMorphBakeExtras {
+  mediaMap?: MorphMediaMap | null;
+  svgPoints?: ArrayLike<number> | null;
+  objPoints?: ArrayLike<number> | null;
+}
+
+/**
+ * Bake the per-particle morph targets for the CPU sim: a Float32Array
+ * of count*4 (xyz = normalised target point, w = replica orbit phase
+ * in radians, as baked). Returns null when morph is inactive, so the
+ * caller can pass the result straight into createCpuParticleState.
+ * Pure and deterministic for a given config + extras.
+ */
+export function buildCpuMorphTargets(
+  config: ParticleConfig,
+  count: number,
+  extras: CpuMorphBakeExtras = {},
+): Float32Array | null {
+  if (!isCpuMorphActive(config)) return null;
+  const data = buildGpgpuMorphTargetData({
+    texSize: CPU_MORPH_TEX_SIZE,
+    target: config.gpgpuMorphTarget,
+    worldScale: (config.gpgpuMorphScale || 1) * 0.48,
+    jitter: config.gpgpuMorphJitter || 0,
+    seed: config.gpgpuSeed,
+    mediaMap: extras.mediaMap ?? null,
+    svgPoints: extras.svgPoints ?? null,
+    objPoints: extras.objPoints ?? null,
+    replica: {
+      count: config.gpgpuMorphReplicaCount,
+      spacing: config.gpgpuMorphReplicaSpacing,
+      axis: config.gpgpuMorphReplicaAxis,
+      rotationDeg: config.gpgpuMorphReplicaRotation,
+      scaleStep: config.gpgpuMorphReplicaScaleStep,
+      phaseStepDeg: config.gpgpuMorphReplicaPhaseStep,
+    },
+    terrain: {
+      amplitude: config.gpgpuMorphTerrainAmplitude,
+      frequency: config.gpgpuMorphTerrainFrequency,
+      octaves: config.gpgpuMorphTerrainOctaves,
+      seed: config.gpgpuMorphTerrainSeed,
+    },
+  });
+  const out = new Float32Array(count * 4);
+  out.set(data.subarray(0, count * 4));
+  return out;
+}
+
+/** Small FNV-1a hash for signature purposes (source texts can be
+ * large; the signature only needs to change when they do). */
+function cpuSourceHash(text: string | undefined): string {
+  const s = text || '';
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${s.length}:${(h >>> 0).toString(36)}`;
+}
+
 /**
  * A cheap signature of the config fields that determine the particle
  * population and its home shape. The renderer rebuilds its state when
  * (and only when) this changes; motion parameters are read live.
  */
 export function cpuShapeSignature(config: ParticleConfig): string {
-  return [
+  const base = [
     resolveCpuParticleCount(config),
     config.layer1Enabled ? 1 : 0, config.layer1Count, config.layer1SourceCount,
     config.layer2Enabled ? 1 : 0, config.layer2Count,
@@ -70,6 +154,27 @@ export function cpuShapeSignature(config: ParticleConfig): string {
     isCpuAttractorMode(config) ? config.gpgpuAttractorType : 'none',
     config.gpgpuAttractorScale,
   ].join('|');
+  // Morph (Phase R): the baked targets are part of the population's
+  // shape, so every bake input joins the signature — but only while
+  // morph is active, keeping the legacy signature string (and thus
+  // rebuild behaviour) untouched for morph-off configs.
+  if (!isCpuMorphActive(config)) return base;
+  return `${base}|morph:${[
+    config.gpgpuMorphTarget,
+    config.gpgpuMorphScale, config.gpgpuMorphJitter,
+    config.gpgpuMorphReplicaCount, config.gpgpuMorphReplicaSpacing,
+    config.gpgpuMorphReplicaAxis, config.gpgpuMorphReplicaRotation,
+    config.gpgpuMorphReplicaScaleStep, config.gpgpuMorphReplicaPhaseStep,
+    config.gpgpuMorphTerrainAmplitude, config.gpgpuMorphTerrainFrequency,
+    config.gpgpuMorphTerrainOctaves, config.gpgpuMorphTerrainSeed,
+    cpuSourceHash(config.gpgpuMorphSvgSource),
+    cpuSourceHash(config.gpgpuMorphObjSource), config.gpgpuMorphObjSampleMode,
+    config.layer2TextMapText, config.layer2TextMapFontFamily,
+    config.layer2TextMapWeight, config.layer2TextMapSize,
+    config.layer2TextMapPadding, config.layer2TextMapInvert ? 1 : 0,
+    config.layer2MediaMapWidth, config.layer2MediaMapHeight,
+    config.layer2MediaLumaMap ? config.layer2MediaLumaMap.length : 0,
+  ].join(',')}`;
 }
 
 export interface CpuParticleState {
@@ -84,6 +189,12 @@ export interface CpuParticleState {
   attractorMode: boolean;
   /** Divisor mapping attractor units back to normalised render space. */
   attractorRenderDivisor: number;
+  /**
+   * Per-particle morph targets (Phase R), count*4: xyz in normalised
+   * space, w = baked replica orbit phase (radians). Null when morph
+   * is inactive — the step then runs the legacy code path exactly.
+   */
+  morphTarget: Float32Array | null;
 }
 
 /** Attractor ODE derivative — same formulas as the GPGPU velocity shader. */
@@ -177,6 +288,7 @@ function attractorExtent(type: ParticleConfig['gpgpuAttractorType']): number {
 export function createCpuParticleState(
   config: ParticleConfig,
   homes: Float32Array | null,
+  morphTargets: Float32Array | null = null,
 ): CpuParticleState {
   const count = resolveCpuParticleCount(config);
   const radius = Math.max(1, config.sphereRadius || 50);
@@ -232,6 +344,7 @@ export function createCpuParticleState(
     phase,
     attractorMode,
     attractorRenderDivisor: attractorExtent(config.gpgpuAttractorType),
+    morphTarget: morphTargets && morphTargets.length >= count * 4 ? morphTargets : null,
   };
 }
 
@@ -293,10 +406,48 @@ export function stepCpuParticles(
   const damping = Math.max(0, 1 - 2.4 * step);
   const t = time;
 
+  // Morph attraction (Phase R): the same force law as the GPGPU
+  // velocity shader — the target cloud orbits around Y by
+  // time * orbitSpeed (+ the baked per-copy phase when replicas are
+  // active), and the velocity is relaxed toward the velocity that
+  // would cover the fraction mf of the remaining distance this step
+  // (mf = 1 - exp(-strength * dt * 3)). The CPU position step is
+  // pos += vel * step (no *60 factor), so vWant divides by step.
+  // When morph is off, morphOn is false and every term below reduces
+  // to the legacy computation, operation for operation.
+  const morphTarget = state.morphTarget;
+  const morphOn = morphTarget !== null && isCpuMorphActive(config);
+  const morphStrength = morphOn ? Math.max(0, config.gpgpuMorphStrength || 0) : 0;
+  const mf = morphOn ? 1 - Math.exp(-morphStrength * step * 3.0) : 0;
+  const morphBlend = morphOn ? Math.min(1, Math.max(0, mf + step * 6.0)) : 0;
+  const morphPhaseGain = morphOn && config.gpgpuMorphReplicaCount > 1 ? 1 : 0;
+  const morphAngBase = morphOn ? t * (config.gpgpuMorphOrbitSpeed || 0) : 0;
+  const morphCosBase = Math.cos(morphAngBase);
+  const morphSinBase = Math.sin(morphAngBase);
+
   for (let i = 0; i < count; i += 1) {
     const i3 = i * 3;
     const x = pos[i3]; const y = pos[i3 + 1]; const z = pos[i3 + 2];
     const ph = phase[i];
+    // Morph target for this particle (orbited), when active. The
+    // home spring below aims at it instead of the layout home.
+    let tx = home[i3]; let ty = home[i3 + 1]; let tz = home[i3 + 2];
+    if (morphOn && morphTarget) {
+      const i4 = i * 4;
+      let gx = morphTarget[i4]; let gy = morphTarget[i4 + 1]; let gz = morphTarget[i4 + 2];
+      if (morphPhaseGain !== 0) {
+        const ang = morphAngBase + morphTarget[i4 + 3] * morphPhaseGain;
+        const ca = Math.cos(ang); const sa = Math.sin(ang);
+        const rx = gx * ca - gz * sa;
+        const rz = gx * sa + gz * ca;
+        gx = rx; gz = rz;
+      } else if (morphAngBase !== 0) {
+        const rx = gx * morphCosBase - gz * morphSinBase;
+        const rz = gx * morphSinBase + gz * morphCosBase;
+        gx = rx; gz = rz;
+      }
+      tx = gx; ty = gy; tz = gz;
+    }
     // Analytic curl-ish flow (cheap sin/cos field, per-particle phase).
     let fx = Math.sin(y * 3.1 + t * 0.7 + ph) + Math.cos(z * 2.3 - t * 0.5 + ph * 0.7);
     let fy = Math.sin(z * 2.7 - t * 0.6 + ph) + Math.cos(x * 3.3 + t * 0.4);
@@ -306,9 +457,9 @@ export function stepCpuParticles(
       fx += -z * vortex * 1.6;
       fz += x * vortex * 1.6;
     }
-    let ax = (home[i3] - x) * springK + fx + windX * 0.4;
-    let ay = (home[i3 + 1] - y) * springK + fy + windY * 0.4 - gravity * 0.55;
-    let az = (home[i3 + 2] - z) * springK + fz;
+    let ax = (tx - x) * springK + fx + windX * 0.4;
+    let ay = (ty - y) * springK + fy + windY * 0.4 - gravity * 0.55;
+    let az = (tz - z) * springK + fz;
     if (jitter > 0) {
       const j = jitter * (Math.sin(t * 13.7 + ph * 40.0) + Math.cos(t * 9.3 + ph * 27.0)) * 0.5;
       ax += j; ay += j * 0.6; az += j * 0.8;
@@ -316,6 +467,16 @@ export function stepCpuParticles(
     vel[i3] = vel[i3] * damping + ax * step * 3.2;
     vel[i3 + 1] = vel[i3 + 1] * damping + ay * step * 3.2;
     vel[i3 + 2] = vel[i3 + 2] * damping + az * step * 3.2;
+    if (morphOn) {
+      // Shader-identical relaxation toward the covering velocity.
+      const inv = mf / Math.max(step, 0.001);
+      const vwx = (tx - x) * inv;
+      const vwy = (ty - y) * inv;
+      const vwz = (tz - z) * inv;
+      vel[i3] += (vwx - vel[i3]) * morphBlend;
+      vel[i3 + 1] += (vwy - vel[i3 + 1]) * morphBlend;
+      vel[i3 + 2] += (vwz - vel[i3 + 2]) * morphBlend;
+    }
     pos[i3] += vel[i3] * step;
     pos[i3 + 1] += vel[i3 + 1] * step;
     pos[i3 + 2] += vel[i3 + 2] * step;

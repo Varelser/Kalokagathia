@@ -2,12 +2,19 @@ import React from 'react';
 import type { ParticleConfig } from '../types';
 import { generateParticleData, getRigidParticlePosition } from './particleData';
 import {
+  buildCpuMorphTargets,
   createCpuParticleState,
   cpuShapeSignature,
+  isCpuMorphActive,
   resolveCpuParticleCount,
   stepCpuParticles,
+  type CpuMorphBakeExtras,
   type CpuParticleState,
 } from '../lib/cpuParticleSim';
+import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
+import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
+import { sampleSvgPointCloud } from '../lib/svgMorph';
+import { sampleObjPointCloudWithNormals } from '../lib/objMorph';
 import { reportCpuRendererStats, type CpuFallbackReason } from '../lib/cpuFallback';
 import { scaleFrameDelta } from '../lib/playbackTime';
 
@@ -15,8 +22,10 @@ import { scaleFrameDelta } from '../lib/playbackTime';
 // current config for machines where WebGL is effectively unusable.
 // Particles integrate on the CPU (lib/cpuParticleSim.ts, capped at
 // 4,000), are projected with a slow global rotation, and are drawn
-// additively over a translucent fade so motion leaves trails. Display
-// only — deterministic export and the WebGL scene are unaffected.
+// additively over a translucent fade so motion leaves trails. Since
+// Phase R the sim also carries the morph attraction (same bake as
+// the GPU path). Deterministic export and the WebGL scene are
+// unaffected.
 
 interface CpuFallbackSceneProps {
   config: ParticleConfig;
@@ -49,6 +58,49 @@ function computeLayoutHomes(config: ParticleConfig, count: number): Float32Array
   } catch {
     return null;
   }
+}
+
+/**
+ * Morph bake extras (Phase R): the media-dependent inputs of the
+ * morph bake, assembled exactly as useGpgpuRuntime does for the GPU
+ * path — text reuses the layer-2 text luma renderer, image reuses
+ * the loaded layer-2 media luma map, svg/obj re-sample their source
+ * texts. Built-in shapes and terrain need no extras (their bake is
+ * pure math), so they work on the CPU path unconditionally.
+ */
+function computeMorphBakeExtras(config: ParticleConfig): CpuMorphBakeExtras {
+  if (!isCpuMorphActive(config)) return {};
+  let mediaMap: MorphMediaMap | null = null;
+  if (config.gpgpuMorphTarget === 'text') {
+    const map = extractTextLumaMap(
+      config.layer2TextMapText,
+      128,
+      128,
+      config.layer2TextMapFontFamily,
+      config.layer2TextMapWeight,
+      config.layer2TextMapSize,
+      config.layer2TextMapPadding,
+      config.layer2TextMapInvert,
+    );
+    mediaMap = { map, width: 128, height: 128 };
+  } else if (
+    config.gpgpuMorphTarget === 'image'
+    && config.layer2MediaLumaMap && config.layer2MediaLumaMap.length > 0
+    && config.layer2MediaMapWidth > 0 && config.layer2MediaMapHeight > 0
+  ) {
+    mediaMap = {
+      map: config.layer2MediaLumaMap,
+      width: config.layer2MediaMapWidth,
+      height: config.layer2MediaMapHeight,
+    };
+  }
+  const svgPoints = config.gpgpuMorphTarget === 'svg'
+    ? sampleSvgPointCloud(config.gpgpuMorphSvgSource)
+    : null;
+  const objSample = config.gpgpuMorphTarget === 'obj'
+    ? sampleObjPointCloudWithNormals(config.gpgpuMorphObjSource, config.gpgpuMorphObjSampleMode)
+    : null;
+  return { mediaMap, svgPoints, objPoints: objSample ? objSample.points : null };
 }
 
 export const CpuFallbackScene: React.FC<CpuFallbackSceneProps> = ({
@@ -105,9 +157,11 @@ export const CpuFallbackScene: React.FC<CpuFallbackSceneProps> = ({
       const sig = signatureRef.current;
       if (state && sig === stateSignature) return;
       stateSignature = sig;
-      const homes = computeLayoutHomes(cfg, resolveCpuParticleCount(cfg));
+      const count = resolveCpuParticleCount(cfg);
+      const homes = computeLayoutHomes(cfg, count);
       setLayoutNote(homes === null);
-      state = createCpuParticleState(cfg, homes);
+      const morphTargets = buildCpuMorphTargets(cfg, count, computeMorphBakeExtras(cfg));
+      state = createCpuParticleState(cfg, homes, morphTargets);
     };
 
     ensureState();
