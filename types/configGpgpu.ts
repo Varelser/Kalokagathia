@@ -330,6 +330,27 @@ export interface ParticleConfigGpgpu {
   gpgpuAuxDrag: number;
   gpgpuAuxCurl: number;
   gpgpuAuxColor: string;
+  // Aux chain (Phase W1, grandchild emitters): the Aux pool's own
+  // events can spawn a SECOND aux pool (level 2 = grandchildren),
+  // and — at depth 3 — a third (level 3), each an identical 128x128
+  // pool running the same two-pass machinery against the previous
+  // level's frame-start textures. Depth is capped at 3 by design
+  // (texture pairs and draw cost grow per level). Levels >= 2 share
+  // ONE parameter set (the gpgpuAux2* keys): level 3 re-applies the
+  // level-2 settings recursively instead of growing a third key
+  // family. 'none' Aux2 mode (default) breaks the chain — no deeper
+  // pool is allocated or run, and depth 1 (default) is exactly the
+  // legacy single-pool behaviour.
+  gpgpuAuxDepth: number;
+  gpgpuAux2Mode: 'none' | 'deathBurst' | 'bounceSplash' | 'sparkTrail';
+  gpgpuAux2Intensity: number;
+  gpgpuAux2Life: number;
+  gpgpuAux2Speed: number;
+  gpgpuAux2Size: number;
+  gpgpuAux2GravityScale: number;
+  gpgpuAux2Drag: number;
+  gpgpuAux2Curl: number;
+  gpgpuAux2Color: string;
   // Emission Shape ('light' added by Phase T: particles are emitted
   // from the 3D light's position — a pure position reference, like
   // Particular's Light Emitter; it works whether or not the light

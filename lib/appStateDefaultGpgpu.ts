@@ -202,6 +202,21 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuAuxDrag: 0,
   gpgpuAuxCurl: 0,
   gpgpuAuxColor: '',
+  // Aux chain (Phase W1): depth 1 + Aux2 'none' = the legacy
+  // single-pool chain. The Aux2 defaults mirror the level-1
+  // defaults (intensity 1, life 0.75, speed 26, size 1.1, gravity
+  // scale 1, drag 0, curl 0, colour inherited) so opting into a
+  // chain starts from the same behaviour one level down.
+  gpgpuAuxDepth: 1,
+  gpgpuAux2Mode: 'none' as const,
+  gpgpuAux2Intensity: 1.0,
+  gpgpuAux2Life: 0.75,
+  gpgpuAux2Speed: 26.0,
+  gpgpuAux2Size: 1.1,
+  gpgpuAux2GravityScale: 1.0,
+  gpgpuAux2Drag: 0,
+  gpgpuAux2Curl: 0,
+  gpgpuAux2Color: '',
   // Emission Shape
   gpgpuEmitShape: 'sphere' as const,
   // 3D Light (Phase T): disabled by default — the draw path is
