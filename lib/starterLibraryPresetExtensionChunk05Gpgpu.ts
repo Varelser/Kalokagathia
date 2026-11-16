@@ -12,6 +12,24 @@ import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT } from './objMorph';
 const SAMPLE_SPRITE_STAR = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAABEElEQVR42u3asRXCMBAEUfXftElICUh8q9s/Deg08wBZ5hwAAIB/eb4wIUCvfBEEEECAYfkiCEC+CAKQL4IAAggwLF8EAcgXQQDyRRBAAAGG5YsgAPkiCCCAAMPyRRCAfBFekFsZ6SmH2M2haAv4lNAX8hVFZcBvA60Bpyh6A46wNAc8P9Ad8PBGe8iTM/GuJNwXNUVwOUd+ZwTX1OR3RvAmjPi+CN4Jk98Zwb8jyBeAfBEEEEAAAcgXQQABBBCAfBEEEEAAAQT4IUmAQfkivBwgaa2qADesuTbAbeuukb9phqsCNMwSG6BtnpgA5hrapBkHN2fOoY2Zd2hD5h7ciNmHNrDlFHcAAAAAAAAA3M0HkhCpiU98DrEAAAAASUVORK5CYII=';
 const SAMPLE_MAP_BLOB = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAPi0lEQVR42u2dWahWVRTH1UobbLBZLUvTRrPMcqhsMoe0slFzSK3E0kwr50rTilRyoESTJtJKooKsEEqFtFCoQEIwoh4CXwKhl956WvHb8L+sb7vPN1y9nmOdhwXfPWfvtdf5/9f+r3XOvfd8rVq1amWl5WrFD7J169bNspKAwwR2mzZtmmVHCSnFAt0DeMwxxxxkxx57bFVLzcki5X9NQAr0FNDHHXfcQda2bdukpcamiCkYGfkAH4MeA+6BbdeuXZMdf/zxVc2PTZETExKT8Z8lIAV8CvQY6BNOOKHJTjzxxLrMz4mJySIjRyLyAT4G3QMuIE866aRg7du3b7KTTz65qvmxmu+J8YTEZORExJEH3kuLB90DLkBPOeWUYKeeemqw0047rappnOZ5YjwhIsNLVU5EtCz49QIv0AW2AO3QoUOw008/PdgZZ5xR1TRO8zwxIkRk1EtEC5Nw+MHPynoushboAluAnnnmmXbWWWc12dlnn13V/FjmemJESDUyvDSldkNhCaiW9T7jY+Bj0AW4AD3nnHPs3HPPDdaxY8dgnTp1SprOazxzPTEixJMRExHviCOwG1oO/FhqsoD3oAtwAd25c+dg5513np1//vlN1qVLlwrz5xireSLGEyIysoiIpamFSTi8khNnveQmBt5newy6wBa4F1xwgV144YXBunbtWtU0jjmeHHzGZPhdERMhWYp3QwtI0qGDX03rlfXobpzxAl6ZLtAFOIB269bNLrroIuvevXuwHj16NNnFF18czB/TOOYwV6SIENbQzoiJ0I4g1ng3VJOkXAjIAt9rvc96aXwMvLJdoHvABfIll1xil156abDLLrss2OWXX15hOq5xzBE5nhCR4XeFJ0I1It4NkqQWIOHwgu8lJ8569DcFvDJdoAtwAX3FFVdYz5497corrwzWq1evpOk8Y5kjYkSIyNDOSBFBjKnd4CXpMJNw6OB7vY8lx2c9+iupEfDKdrJVoHvAr7rqKrv66quD9e7d26655ppgffr0qTAdZ4zGM9cTIjJYS7vCE0FsxOh3Q0qSqhXnFiXAdzupzCdALzmprEeHJTUeeLI1Bl1AX3vttXbddddZ3759g/Xr1y9pOs9Y5oiYmAzW8kRImogtazdIkjwJficcQnfUvOxvBPw461PAIyEedAHev39/GzBggF1//fV2ww03BLvxxhuTpvOMZQ5zRYgng7VSRMS7oRESDmEXtBz4khyf9dJ45CAGnqz1oAvsm266yW6++Wa75ZZbgt16661J03nGMkekeDJYIyaCWFQj/G6QJLUwCY3rvm81VXBrgY/eKuvRY0lNDDzZK9AF9m233Wa33367DR48ONiQIUOCDR06NJh+1nnGMkekiAx8x0RImohJu4FYa5HguyO1qM2sB43rfgw+RSoGX3qvQsuF+aynWCILAp5MHThwYMhegBs0aFAT2MOGDbM77rjDhg8fbiNGjAh25513VpiOM4axzBEp+MInvlmDtUQEMRCL3w0igdhVF2ISfHckEppZDxqTHt/x+G4nlfnSey85ynp0mcKpjBfwZK9AF+B33XWX3X333TZy5Ei755577N57700a5xjDWOaIEJGBbxGhHUEMxKLd4CVJdSG1E3x3FHdGDe6CxqQn1n21mr7gxuBT7Njm6G6c9ciDMl7AC3QBft9999n9999vDz74YLBRo0bZ6NGjK4xjOs9Y5ogQkSEitCNYO94NxEisxJwiQYVZLWqqHjQoRbUJyJIe6T49swdfmp8FPkVRWY9WIxMeeIH+wAMPNIE9ZswYGzt2rI0bN87Gjx8f7OGHHw6mnznHGMaKFHyIDE8Ea7K2dgMxZZEQ1wSulWvOqgexFDWLgGpdT6z73LjQO9O++YLLVo7BZ9ujwxRHMpEiikyg42QrYJHFAh1QAXnChAk2adIke+SRR+zRRx8N9thjjwXTz5xjDGOZw1yRgU98swZrsSZrEwOxEBOxxST4msC1cY1cK9cc14NmdkW1s993PSnpUdGlh6aN8wU3Bb60XlmPZqPhZCtgkcVkNEACKiBPnjzZpkyZYo8//rg98cQTwaZOnRpMP3OOMYxlDnPxgS984ps1WIs1tRtUG1Ik+MLMtXGNvijHUhR3Rc0iIJX99UgPWkkvTTungpsCX5Ljsx65IFsBa+LEiQE8gQ6406ZNs+nTp9tTTz1lM2bMCDZz5sxg+plzjGEsc0QGvvCJb9ZgLb8bJEkpElSYuSauLa4HWVLUwC6oL/vjwpuSHhVdemraOjoLaX4KfHSZgqmsV8YDGtlMdgMo4D799NP27LPP2qxZs2z27Nk2Z86cCuMY5xjDWOYwFx/4EhGsod3A2sSQIkE1gWvgWrgmFeWUFMUFuYFdUJ/2++zXAzYyICU9aCe9Ne0dHQZFDp2V7Ah85OChhx4KWk2GIhtkrYAnuwEUcOfOnWvz58+3BQsW2HPPPWfPP/98hXGMc4xhLHOYiw8RgW/WYC3WZG1i8CQQI7ESM7FzDVyLrwdeirQLwMTvggZqQX2dT7XsV8sZSw89Nm0enQbFLgU+skDhVNY/+eSTIXsBj8yeN29eAPeFF16wRYsW2eLFi23JkiX20ksvVRjHOMcYxjKHufjAFz7xrd3AmqydIoFYiZnYuYZYitSaVtsFDXREBxOQ6vtT2q/sV9dD2+alBy2l16bdo+Og6KG7bP0YfDSbTEU+yF4Bv3DhwgAsIL/yyiv26quv2tKlS23ZsmW2fPnyYHzmGOcYw1jmMFdE4BPfrMFaMQnERGzESKzETOyqB5IirlFdUbwLfC1I3RfUJCB116viW2/20znwnEXSI92n7aPzoPihv0iAwEceKKDPPPNMyFikRMC//PLLAViAfu2112zlypW2atUqW716dYVxjHOMYSxzmCsi8Ilv1mAt1hQJxEJMxEaMxKp6ICnimtQV1bML4vuCKjKULT/+rld9v+98vPbH2Z+SHto/OhCKIDqszBf4aDcZi4yQxQJ+xYoVAeTXX3/d1qxZY2vXrrV169ZVGMc4xxjGMkdE4Auf+GYNkaCdQCzERGzEmJKi1C5QLYg7IrDyd8c1ZKi6/MTFV32/73xS2a+uh1t/SQ9aSxtIJ0IxRI+RBA/+iy++GDIXSSGbAfONN94IAK9fv97eeuste+edd+zdd9+tMI5xjjGMZQ5z8YEvfOLbk8DaxEAsxERsxCgpInZ1RVm7QB2Rvy9IFeMqMtQ8+aEX1vN9dT5e+8kcdT08ApD0oLm0g3QkFEV0GWkQ+Gg4mo6ckM0CHoDfe+8927Bhg33wwQf24YcfVhjHOMcYxooIfOALn/gWCazJ2sRALMREbJIiYlZXxLX4WqCOSL8/AItDkKFsArLkxxdf9f3qfLz2K/vpMHgU4KUHDaYzoTiiz0gEWSrwyWCk5e233w6gbty40T766CP7+OOP7ZNPPrFPP/3UPvvss2B85hjnGMNY5jAXH/gSCazBWqzJ2sSgeiApIlZi9rtAtUAdke4Lsoqxl6GGCMjqfuqRH3pmbmDoHqT9qeyX9NAe0qFQJNFppELgv/nmmyGT33///ZDhgAvYn3/+uX3xxRf25Zdf2ldffRWMzxzjHGMYyxzm4gNfIoE1WIs1WZsYJEVZu4Br4Zq4Nq6xERmKu6GqBNSj/5IfPXaI5YeCxY2MOp9Y+5X93CBJeuhUKJboNZJB1gIckrJp06aQ3YAL0Fu2bLGvv/7atm7datu2bQvGZ45xjjGMZQ5z8YEvfOKbNViLNSVFxKJdENcCdURcky/GXob0eAJsmlEHKgmIn/3E+q/nPr77qSU/dBe0etL+OPuRBToWiia6jXSQvQCIvGzevDmA+80339j27dvt22+/tZ07d9p3330XjM8c4xxjGMsc5uIDX/jEN2uwFmvGu0C1gFiJuZYM+W5Iz4ey6oC/Kz6IgKwC7O9+4/bT67+6H8kPNzGx/PB4mG6D1k/a77OfthGZoHii30gIWSzwyXRA/v7772337t32ww8/2I8//hiMzxzjHGMYKxLwgS984ps1WMvvAtUCYiNGYo1lSDdmXKO6obgO+HY06644UQeqE5AqwFn677sffi/LTQ13mF5+eFJJ90EryCMD9NhnP3JBEUXHkRKBv2PHDtu1a1cAfM+ePfbzzz/b3r17g/GZY5xjDGNFAj7whU98+13A2sRALMREbF6GiJ1r4Fp8N5RVB7IKcbMISHVAqQKsB29Z+q/uhztOLz88NKMboTWU9iv76WQopug5kkJWA+xPP/0UwN63b5/9+uuv9ttvvwXjM8c4xxjGMoe5+MAXPrULVAtYmxiIxcsQsaobyqoDekCXKsQNdkLZd8BZHVA9Bdi3n9J/Og3uQHlsTBso+aE74S6WGymKps9+dB1pIbsB+JdffrHff//d/vjjD9u/f38wPnOMc4xhLHOY63cBvlmDtVhTMkQsxERs6oaI2bej9RTiWp1Qxh1x/S2of/4jAvT4gaeGcQHWowdaO35lGOs/TzBpC3mOI/nhhgrdpq2ksyGT0XckhiwHaED/888/7cCBA8H4zDHOMYaxzGEuPvCFT3xLhliTtYkhrgPESsx6NBEXYq5VjyViAlKdUI1WtDECfAuq5z969OwJ0LMf9f+eAFo/nuGjwdwcocm0iTxSoGDSvSAdtJd0OBRZMhupIdsB/K+//rK///47GJ85xjnGMJY5zMUHvvCJb9ZgLdZkbWIgFmKKCSB2PRuKCeCa9VyoVivaIgT4B3AxATzO9QSoA/L9vwhQAfYEoNncYFFIaTORFIotek+mk/UA/88//wTjM8c4xxjGMoe5+MAXPmMCVIhFgO4HfCckArimLALAoiTg/0ZAKUE5SVBZhFu4CJdtaI5taHkjlvONWPkookCPIsqHcUfwYVz5ODrnx9HlL2QK8guZ8leSOf9KsvylfAF+KV/+WUpOf5ZS/mFWzn+YVf5pYkH+NLH849wc/zi3/PP0nP88vfwHjYL8g0b5L0o5/otS+U96Of+TXvlvqgX4N9XyH7Vz/kft8lUFBXhVQfmyjpxf1lG+rqYAr6spX9iU8wubyleWFeCVZeVL+3J+aV/52soCvLayfHFrAV7cWr66uACvLi5f3p3zy7vL19cX4PX15Rc4FOALHMqvMCnAV5iUX+JTgC/xKb/Gqvwit/KL3MqvMiy/zLP8Ms/y62zLL3Quv9C5/ErzghNQjYgsMrxUxcRkmR/rfaRAzxn4fAiIiUiRkSLEmwc2BbK3GPAU6DkBny8BtciICYmJybLUHO+zIKAXi4AsMlKkNGIpX0W73lYFDKguUuqxo+HaWh0lQf5n7V/j4O28WSsNMwAAAABJRU5ErkJggg==';
 
+// Phase X sample: a 64x64 ring luminance map for the raster-mask
+// starter, computed (not embedded) so the numeric mask map the
+// bake consumes is exact — 1 inside the annulus, 0 elsewhere.
+const SAMPLE_MASK_RING = (() => {
+  const width = 64;
+  const height = 64;
+  const map = new Array<number>(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const nx = ((x + 0.5) / width) * 2 - 1;
+      const ny = ((y + 0.5) / height) * 2 - 1;
+      const r = Math.sqrt(nx * nx + ny * ny);
+      map[y * width + x] = r >= 0.38 && r <= 0.82 ? 1 : 0;
+    }
+  }
+  return { map, width, height };
+})();
+
 export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
   createStarterPreset('starter-gpgpu-boids-flock-array', 'GPGPU Boids Flock Array', {
         renderQuality: 'balanced',
@@ -1331,5 +1349,64 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuTrailEnabled: true,
         gpgpuTrailLength: 8,
         gpgpuTrailFade: 0.74,
+      }),
+  // Phase X: per-property Layer Maps — size reads the radial blob
+  // while opacity reads the star, so the two distributions visibly
+  // disagree (impossible with the Phase U single shared map); a
+  // gentle blob displacement is layered on top.
+  createStarterPreset('starter-gpgpu-layer-maps-per-property', 'GPGPU Layer Maps (Per-Property)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 2.2,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.08,
+        gpgpuGradImageSource: SAMPLE_MAP_BLOB,
+        gpgpuMapSizeSource: SAMPLE_MAP_BLOB,
+        gpgpuMapSizeAmount: 0.9,
+        gpgpuMapOpacitySource: SAMPLE_SPRITE_STAR,
+        gpgpuMapOpacityAmount: 0.85,
+        gpgpuMapDisplaceSource: SAMPLE_MAP_BLOB,
+        gpgpuMapDisplaceAmount: 0.3,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase X: raster mask shape — the morph target is a geodesic
+  // shell, but placement is drawn from the ring mask itself
+  // (seeded acceptance sampling over the numeric luma map below),
+  // so the particles form the ring silhouette instead.
+  createStarterPreset('starter-gpgpu-raster-mask-ring', 'GPGPU Raster Mask (Ring Shape)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 1.8,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.8,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.06,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'geodesic',
+        gpgpuMorphStrength: 2.8,
+        gpgpuMorphScale: 0.66,
+        gpgpuMorphJitter: 0.04,
+        gpgpuMorphOrbitSpeed: 0.25,
+        gpgpuMaskMode: 'shape',
+        gpgpuMaskThreshold: 0.5,
+        gpgpuMaskInvert: false,
+        gpgpuMaskMap: SAMPLE_MASK_RING.map,
+        gpgpuMaskMapWidth: SAMPLE_MASK_RING.width,
+        gpgpuMaskMapHeight: SAMPLE_MASK_RING.height,
+        gpgpuTrailEnabled: false,
       }),
 ];

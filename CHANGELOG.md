@@ -4,6 +4,54 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.27.0] — 2026-11-17
+
+Phase X (fourth period, first phase): Layer Maps go per-property
+and a raster mask grammar is added. Defaults reproduce v1.26.0
+bit-for-bit (identity gate: 0.00000 over all frames).
+
+### Added
+- **Per-property Layer Map sources** (4 new string keys, default
+  ''): `gpgpuMapSizeSource` / `gpgpuMapOpacitySource` /
+  `gpgpuMapColorSource` / `gpgpuMapDisplaceSource`. A set source
+  replaces the common gradient image for that property only; an
+  unset property falls back to the common map, so the Phase U
+  single-map configuration keeps its exact meaning. The colour
+  source becomes the 'image' gradient driver's input. Textures
+  are held in a new multi-source cache (lib/mapImageTexture.ts);
+  unused maps are never bound.
+- **Displacement map** (`gpgpuMapDisplaceAmount`, 0..1, default
+  0): the displacement map's luminance offsets the drawn point
+  radially by (luma - 0.5) * amount * bounceRadius in the draw
+  vertex shader — the map-space twin of the media relief the bake
+  applies to text/image targets.
+- **Raster mask** (`gpgpuMaskSource` string, `gpgpuMaskMode`
+  'off'|'clip'|'shape' default 'off', `gpgpuMaskThreshold` default
+  0.5, `gpgpuMaskInvert` default false, plus the derived numeric
+  luma map `gpgpuMaskMap` / `gpgpuMaskMapWidth` /
+  `gpgpuMaskMapHeight` captured at import time, following the
+  layer2MediaLumaMap precedent). 'shape' draws morph placement
+  from the mask image itself by seeded acceptance sampling
+  (probability = luminance); 'clip' relocates baked points in
+  rejected regions into the mask and the draw fragment shader
+  discards live positions in rejected regions. The same mask
+  filters the layer media placement with the same meaning.
+  Shape baking is deterministic (seeded; re-bakes bit-identical).
+- Starters +2 (516 -> 518): per-property maps (radial blob for
+  size, star for opacity, blob displacement) and a ring raster
+  mask in shape mode.
+
+### Honest limits
+- Maps are consumed as luminance only (monochrome rule); the
+  colour map feeds the image driver's luminance-driven paths via
+  the driver input, it does not tint by hue.
+- The mask's fragment clip needs the mask image itself
+  (gpgpuMaskSource); a preset carrying only the numeric map gets
+  bake + media placement but no fragment clip (the UI says so).
+- Aux pools, streaks, trails and geometry modes draw through
+  their own shaders and do not apply the per-property maps or the
+  mask, as with the Phase U maps before them.
+
 ## [1.26.0] — 2026-11-17
 
 Phase W2 (second half of the user-elected full Phase W): per-replica
