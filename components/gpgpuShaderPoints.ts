@@ -22,6 +22,37 @@ const AGE_CURVE_GLSL = /* glsl */ `
   }
 `;
 
+// 3D light (Phase T): GLSL twins of lib/gpgpuLight.ts — the same
+// falloff ((1-(d/R)^2)^2 inside the radius, 0 outside) and the same
+// cone feather (smoothstep from the half angle out to 1.25x it,
+// clamped at 180 degrees), so the JS reference and the shader agree
+// value for value. The multiplier is 1 + intensity * falloff *
+// cone: exactly 1 at / beyond the radius, so unlit particles are
+// untouched.
+const LIGHT_GLSL = /* glsl */ `
+  float kaloLightFalloff(float d, float radius) {
+    if (radius <= 0.0 || d >= radius) return 0.0;
+    float x = 1.0 - (d / radius) * (d / radius);
+    return x * x;
+  }
+  float kaloLightConeFactor(float cosAngle, float halfAngleDeg) {
+    if (halfAngleDeg <= 0.0) return cosAngle >= 1.0 ? 1.0 : 0.0;
+    if (halfAngleDeg >= 180.0) return 1.0;
+    float inner = cos(radians(halfAngleDeg));
+    float outer = cos(radians(min(halfAngleDeg * 1.25, 180.0)));
+    return smoothstep(outer, inner, cosAngle);
+  }
+  float kaloLightMultiplier(vec3 worldPos, vec3 lightPos, float intensity, float radius, bool coneEnabled, float coneAngleDeg, vec3 coneDir) {
+    vec3 toP = worldPos - lightPos;
+    float d = length(toP);
+    float f = kaloLightFalloff(d, radius);
+    if (coneEnabled && d > 0.0) {
+      f *= kaloLightConeFactor(dot(toP / d, coneDir), coneAngleDeg);
+    }
+    return 1.0 + intensity * f;
+  }
+`;
+
 // ── Draw vertex (main points) ──
 export const DRAW_VERT = /* glsl */ `
   precision highp float;
@@ -47,6 +78,14 @@ export const DRAW_VERT = /* glsl */ `
   uniform bool      uGradImageReady;
   uniform float     uGradImageScale;
   uniform float     uMapSizeAmount;
+  // 3D light (Phase T): brightness multiplier from the light object.
+  uniform bool  uLightEnabled;
+  uniform vec3  uLightPos;
+  uniform float uLightIntensity;
+  uniform float uLightRadius;
+  uniform bool  uLightConeEnabled;
+  uniform float uLightConeAngleDeg;
+  uniform vec3  uLightConeDir;
   uniform bool  uParticleLifeEnabled;
   uniform int   uParticleLifeSpecies;
   uniform float uTexSizeF;
@@ -57,8 +96,11 @@ export const DRAW_VERT = /* glsl */ `
   varying float vPlBright;
   varying float vSeed;
   varying vec3 vWorldPos;
+  varying float vLightMul;
 
   ${AGE_CURVE_GLSL}
+
+  ${LIGHT_GLSL}
 
   // Particle Life species helpers — must match the velocity sim exactly.
   float plHash(float n) {
@@ -90,6 +132,12 @@ export const DRAW_VERT = /* glsl */ `
     vec4 posData  = texture2D(uPosTex, particleUv);
     vec3 worldPos = posData.xyz;
     vWorldPos = worldPos;
+    // 3D light (Phase T): a pure function of the world position —
+    // the simulation is never touched. Disabled means exactly 1.0,
+    // so the fragment's multiply is a bit-exact identity.
+    vLightMul = uLightEnabled
+      ? kaloLightMultiplier(worldPos, uLightPos, uLightIntensity, uLightRadius, uLightConeEnabled, uLightConeAngleDeg, uLightConeDir)
+      : 1.0;
     vec3 vel      = texture2D(uVelTex, particleUv).xyz;
     vSpeed   = clamp(length(vel) / 80.0, 0.0, 1.0);
     vNormAge = uAgeEnabled ? clamp(posData.w / max(uAgeMax, 0.001), 0.0, 1.0) : 0.5;
@@ -179,6 +227,7 @@ export const DRAW_FRAG = /* glsl */ `
   varying float vPlBright;
   varying float vSeed;
   varying vec3 vWorldPos;
+  varying float vLightMul;
 
   ${PARTICLE_SHAPE_GLSL}
 
@@ -263,6 +312,12 @@ export const DRAW_FRAG = /* glsl */ `
     if (uParticleLifeEnabled) {
       col *= vPlBright;
     }
+    // 3D light (Phase T): brightness from the light object, computed
+    // per-particle in the vertex shader from the world position.
+    // vLightMul is exactly 1.0 while the light is disabled (or the
+    // particle sits outside its radius), so this multiply is a
+    // bit-exact identity on the legacy path.
+    col *= vLightMul;
 
     float ageFade = 1.0;
     if (uAgeEnabled) {

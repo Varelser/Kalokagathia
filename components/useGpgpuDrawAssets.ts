@@ -44,6 +44,16 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uMapOpacityAmount:       { value: 0 },
       uSpriteImageTex:         { value: null },
       uSpriteImageReady:       { value: false },
+      // 3D light (Phase T): disabled by default; the vertex shader
+      // then yields exactly 1.0 and the fragment multiply is the
+      // identity, so the legacy draw is bit-identical.
+      uLightEnabled:      { value: false },
+      uLightPos:          { value: new THREE.Vector3(0, 0, 0) },
+      uLightIntensity:    { value: 1 },
+      uLightRadius:       { value: 3 },
+      uLightConeEnabled:  { value: false },
+      uLightConeAngleDeg: { value: 30 },
+      uLightConeDir:      { value: new THREE.Vector3(0, -1, 0) },
       uPointShape:        { value: 0 },
       uGradEnabled:       { value: false },
       uGradDriver:        { value: 0 },

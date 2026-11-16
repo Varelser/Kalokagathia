@@ -8,6 +8,7 @@ import { fillGradientLutData } from '../lib/kinetixGradients';
 import { getGradImageTexture } from '../lib/gradImageTexture';
 import { getSpriteImageTexture } from '../lib/spriteImageTexture';
 import { normalizeAgeCurvePoints } from '../lib/ageCurve';
+import { normalizeLightDir } from '../lib/gpgpuLight';
 
 const GRAD_DRIVER_IDS: Record<ParticleConfig['gpgpuGradDriver'], number> = {
   life: 0,
@@ -220,6 +221,19 @@ export function syncVisualUniforms(args: {
     const spriteState = getSpriteImageTexture(config.gpgpuSpriteImage);
     drawMat.uniforms.uSpriteImageTex.value = spriteState.texture;
     if (drawMat.uniforms.uSpriteImageReady) drawMat.uniforms.uSpriteImageReady.value = spriteState.ready;
+  }
+  // 3D light (Phase T): position / intensity / radius are plain
+  // values; the cone direction is normalised on the way in (a zero
+  // vector falls back to straight down, matching lib/gpgpuLight.ts).
+  if (drawMat.uniforms.uLightEnabled) {
+    drawMat.uniforms.uLightEnabled.value = config.gpgpuLightEnabled;
+    (drawMat.uniforms.uLightPos.value as THREE.Vector3).set(config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ);
+    drawMat.uniforms.uLightIntensity.value = config.gpgpuLightIntensity;
+    drawMat.uniforms.uLightRadius.value = config.gpgpuLightRadius;
+    drawMat.uniforms.uLightConeEnabled.value = config.gpgpuLightConeEnabled;
+    drawMat.uniforms.uLightConeAngleDeg.value = config.gpgpuLightConeAngleDeg;
+    const dir = normalizeLightDir(config.gpgpuLightDirX, config.gpgpuLightDirY, config.gpgpuLightDirZ);
+    (drawMat.uniforms.uLightConeDir.value as THREE.Vector3).set(dir[0], dir[1], dir[2]);
   }
   if (drawMat.uniforms.uPointShape) drawMat.uniforms.uPointShape.value = { soft: 0, sphere: 1, ring: 2, star: 3, hexagon: 4, diamond: 5, flare: 6, cloud: 7, bokeh: 8, crosshair: 9, iris: 10, lightning: 11 }[config.gpgpuPointShape] ?? 0;
   drawMat.uniforms.uSortEnabled.value = config.gpgpuSortEnabled && finalSortTex !== null;
