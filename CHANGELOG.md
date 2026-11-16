@@ -4,6 +4,49 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.24.0] — 2026-11-17
+
+Third-period plan Phase V: the Mir / OBJ mesh side — the imported
+OBJ gains a polygon face, the terrain texture gains a dedicated
+image input and a UV transform, and the terrain tunnel gains
+forward travel.
+
+### Added
+- **OBJ Mesh** (7 new keys `gpgpuObjMesh*`, all default-off /
+  identity): `gpgpuObjMeshEnabled`, `gpgpuObjMeshDisplay`
+  ('wireframe' default / 'solid'), `gpgpuObjMeshRepeat` (1..64
+  copies on a centred cube grid, spacing 2.15 in normalised
+  units), `gpgpuObjMeshScale`, `gpgpuObjMeshPosX/Y/Z`,
+  `gpgpuObjMeshRotY` (degrees), `gpgpuObjMeshOpacity`. The mesh
+  reads the SAME `gpgpuMorphObjSource` text as the morph target
+  (shared `lib/objMorph.ts` parser — no second copy of the data),
+  is normalised exactly like the morph sampler (bbox centre,
+  bounding-sphere radius 1) and scaled by the morph world scale,
+  so mesh and point cloud coincide. Pure geometry builders live
+  in `lib/objMesh.ts`. Enabled with no usable OBJ source draws
+  nothing and the UI states that explicitly. Monochrome only.
+- **Terrain texture detail** (4 new keys): `gpgpuTerrainTextureImage`
+  (dedicated image source, data URL, <=256px via the UI; empty =
+  the legacy Horizon background image is used, bit-identical),
+  `gpgpuTerrainTextureRepeat`, `gpgpuTerrainTextureOffsetX/Y` —
+  the standard UV transform (uv * repeat + offset) applied to
+  whichever terrain map is active, procedural kinds included.
+  Defaults ('' / 1 / 0 / 0) are the identity.
+- **Tunnel cruise** (1 new key `gpgpuTunnelSpeed`, world units
+  per second, 0 default): with the terrain tunnel on, the terrain
+  phase scrolls toward the viewer through a second period-shifted
+  copy of the same geometry, reading as endless forward flight.
+  The camera itself never moves (Phase G export determinism); the
+  scroll offset is a pure function of accumulated scene time
+  (`tunnelScrollOffset` in `lib/terrainMesh.ts`), the component is
+  remounted per deterministic job so exports reproduce the travel
+  frame-for-frame, and speed 0 renders the legacy static tunnel
+  bit-for-bit.
+- Starters +3 (509 → 512): OBJ Mesh Knot Grid (wireframe 2x2x2
+  with the morph cloud on the centre copy), Terrain Texture
+  Repeat (grid x4, offset 0.25), Terrain Tunnel Cruise (speed 24).
+  All monochrome. Config keys 982 → 996.
+
 ## [1.23.0] — 2026-11-16
 
 Third-period plan Phase T: a 3D light object for the GPGPU points —
