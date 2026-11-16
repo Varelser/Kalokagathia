@@ -4,6 +4,43 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.19.0] — 2026-11-16
+
+Parent/Child (second-period plan Phase Q): the B3 Aux pool — a
+second GPU simulation with its own position/velocity textures,
+spawned by parent-particle events (death / bounce / trail) — stops
+sharing the parent's physics and look, and becomes a complete
+child emitter.
+
+### Added
+- **Child gravity scale** (`gpgpuAuxGravityScale`, default 1):
+  multiplies the child's softened gravity. 1 is the legacy shared
+  behaviour, 0 makes children weightless, negative values give
+  anti-gravity (children rise while parents fall).
+- **Child drag** (`gpgpuAuxDrag`, default 0): extra velocity
+  damping for the child pool only. 0 is the legacy drag exactly.
+- **Child curl** (`gpgpuAuxCurl`, default 0): a deterministic,
+  position-only vortex force (Y-axis tangential swirl plus a fixed
+  sinusoidal shear) in the child's velocity pass. No time and no
+  randomness, so the deterministic renderer reproduces it frame
+  for frame; at 0 the term is omitted entirely.
+- **Child colour** (`gpgpuAuxColor`, default '' = inherit): the
+  child pool's draw colour, independent of the parent's
+  `gpgpuColor`. The empty default inherits the parent colour,
+  exactly as before.
+- The Aux UI section is now headed "Child Emitter" (子エミッタ)
+  and labels the four keys as the child's own physics / look.
+  Key names are unchanged (compatibility kept).
+- Config keys 954 → 958. Starters +2 (501), both monochrome:
+  death-born children rising against gravity in light grey, and
+  bounce-born children lingering in a dragged vortex.
+
+### Notes
+- The Phase K replica grammar remains a static bake grammar, and
+  N-level nesting (grandchildren) is out of scope, as recorded in
+  the Phase Q report. The child is a single full second
+  simulation, not a per-replica simulation.
+
 ## [1.18.0] — 2026-11-16
 
 Mir terrain mesh (second-period plan Phase P): the Phase L point
