@@ -436,9 +436,9 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
       )}
     </div>
 
-    {/* Aux Event Emission (B3) */}
+    {/* Aux Event Emission (B3) — Child Emitter (Phase Q) */}
     <div className="mt-4 border-t border-white/10 pt-4">
-      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Aux Event Emission (イベント放出)</div>
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Child Emitter — Aux Event Emission (子エミッタ / イベント放出)</div>
       <select
         value={config.gpgpuAuxMode}
         onChange={(e) => updateConfig('gpgpuAuxMode', e.target.value as typeof config.gpgpuAuxMode)}
@@ -456,8 +456,17 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <Slider label="Aux Life (s)" value={config.gpgpuAuxLife} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAuxLife', v)} />
           <Slider label="Aux Speed" value={config.gpgpuAuxSpeed} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuAuxSpeed', v)} />
           <Slider label="Aux Size" value={config.gpgpuAuxSize} min={0.3} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuAuxSize', v)} />
+          <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Child Physics / Look （子独自の物理・見た目 — Phase Q）</div>
+          <Slider label="Child Gravity Scale （子の重力倍率）" value={config.gpgpuAuxGravityScale} min={-3} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAuxGravityScale', v)} />
+          <Slider label="Child Drag （子の追加ドラッグ）" value={config.gpgpuAuxDrag} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuAuxDrag', v)} />
+          <Slider label="Child Curl （子の渦）" value={config.gpgpuAuxCurl} min={-5} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuAuxCurl', v)} />
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Child Color （子の色）{config.gpgpuAuxColor ? '' : ' — 親と同じ（継承中）'}</div>
+          <div className="flex items-center gap-2">
+            <input type="color" value={config.gpgpuAuxColor || '#ffffff'} onChange={(e) => updateConfig('gpgpuAuxColor', e.target.value)} className="h-8 flex-1 cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
+            <button type="button" onClick={() => updateConfig('gpgpuAuxColor', '')} className="cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90">親を継承</button>
+          </div>
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            主粒子のイベントで二次粒子を放つ専用プールです（Kinetix auxMode の GPU 実装）。Death Burst は Life System が On のときだけ発火します。レイヤー側の Aux/Spark（常時型）とは別系統で併存します。
+            主粒子（親）のイベントで生まれる子エミッタ専用プールです（Kinetix auxMode の GPU 実装が土台）。子は独自のシミュレーションを持ち、上の Child 系キーで親と違う重力（0で無重力・負で反重力）・ドラッグ・渦・色で生きられます。既定（重力倍率1／ドラッグ0／渦0／色は継承）は従来の共有挙動と同一です。Death Burst は Life System が On のときだけ発火します。レイヤー側の Aux/Spark（常時型）とは別系統で併存します。
           </div>
         </>
       )}
