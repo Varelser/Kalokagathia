@@ -12,6 +12,7 @@ import { getSceneGeneration, noteGpgpuBackendSettled } from '../lib/sceneGenerat
 import {
   initWebGPUCompute,
   destroyWebGPUCompute,
+  updateWebGPUMorphData,
 } from '../lib/webgpuCompute';
 import type { WebGPUComputeState } from '../lib/webgpuCompute';
 import { FLUID_SIZE } from './gpgpuShaders';
@@ -89,6 +90,77 @@ type UseGpgpuRuntimeArgs = {
   texSize: number;
   config: ParticleConfig;
 };
+
+/**
+ * The morph bake, shared by the WebGL texture effect below and the
+ * WebGPU state (Phase R: the WGSL velocity pass reads the same baked
+ * cloud from a storage buffer). Pure function of the config's morph
+ * fields + texSize; null when morph is disabled. The media-dependent
+ * inputs are assembled exactly as the texture effect always has:
+ * text reuses the layer TextMap renderer, image reuses the loaded
+ * layer-2 media luma map, svg/obj re-sample their source texts.
+ */
+export function buildMorphBakeData(
+  config: ParticleConfig,
+  texSize: number,
+): { data: Float32Array; normalData: Float32Array } | null {
+  if (!config.gpgpuMorphEnabled) return null;
+  let mediaMap: MorphMediaMap | null = null;
+  if (config.gpgpuMorphTarget === 'text') {
+    const map = extractTextLumaMap(
+      config.layer2TextMapText,
+      128,
+      128,
+      config.layer2TextMapFontFamily,
+      config.layer2TextMapWeight,
+      config.layer2TextMapSize,
+      config.layer2TextMapPadding,
+      config.layer2TextMapInvert,
+    );
+    mediaMap = { map, width: 128, height: 128 };
+  } else if (
+    config.gpgpuMorphTarget === 'image'
+    && config.layer2MediaLumaMap && config.layer2MediaLumaMap.length > 0
+    && config.layer2MediaMapWidth > 0 && config.layer2MediaMapHeight > 0
+  ) {
+    mediaMap = {
+      map: config.layer2MediaLumaMap,
+      width: config.layer2MediaMapWidth,
+      height: config.layer2MediaMapHeight,
+    };
+  }
+  const svgPoints = config.gpgpuMorphTarget === 'svg'
+    ? sampleSvgPointCloud(config.gpgpuMorphSvgSource)
+    : null;
+  const objSample = config.gpgpuMorphTarget === 'obj'
+    ? sampleObjPointCloudWithNormals(config.gpgpuMorphObjSource, config.gpgpuMorphObjSampleMode)
+    : null;
+  return buildGpgpuMorphTargetDataWithNormals({
+    texSize,
+    target: config.gpgpuMorphTarget,
+    worldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,
+    jitter: config.gpgpuMorphJitter,
+    seed: config.gpgpuSeed,
+    mediaMap,
+    svgPoints,
+    objPoints: objSample ? objSample.points : null,
+    objNormals: objSample ? objSample.normals : null,
+    replica: {
+      count: config.gpgpuMorphReplicaCount,
+      spacing: config.gpgpuMorphReplicaSpacing,
+      axis: config.gpgpuMorphReplicaAxis,
+      rotationDeg: config.gpgpuMorphReplicaRotation,
+      scaleStep: config.gpgpuMorphReplicaScaleStep,
+      phaseStepDeg: config.gpgpuMorphReplicaPhaseStep,
+    },
+    terrain: {
+      amplitude: config.gpgpuMorphTerrainAmplitude,
+      frequency: config.gpgpuMorphTerrainFrequency,
+      octaves: config.gpgpuMorphTerrainOctaves,
+      seed: config.gpgpuMorphTerrainSeed,
+    },
+  });
+}
 
 export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): GpgpuRuntimeRefs {
   const rtRef = useRef<{
@@ -277,7 +349,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
 
     const wgPos = posData.slice() as Float32Array;
     const wgVel = velData.slice() as Float32Array;
-    initWebGPUCompute(texSize, wgPos, wgVel).then((state) => {
+    // Phase R: the WebGPU velocity pass gets the same baked morph
+    // cloud as the WebGL texture path (null when morph is disabled).
+    const wgMorph = buildMorphBakeData(config, texSize);
+    initWebGPUCompute(texSize, wgPos, wgVel, wgMorph ? wgMorph.data : null).then((state) => {
       noteGpgpuBackendSettled(getSceneGeneration());
       webgpuStateRef.current = state;
       webgpuPingIsARef.current = true;
@@ -429,6 +504,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
     morphTexRef.current = tex;
+    // Phase R: keep the WebGPU morph buffer in sync with the bake.
+    // (If the WebGPU state does not exist yet, its init path bakes
+    // the same data itself via buildMorphBakeData.)
+    if (webgpuStateRef.current) {
+      updateWebGPUMorphData(webgpuStateRef.current, data);
+    }
     // Companion normal texture (Phase O): same texel layout as the
     // morph target texture; xyz is a unit direction (not scaled).
     const normalTex = new THREE.DataTexture(normalData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);

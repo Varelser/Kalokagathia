@@ -176,6 +176,16 @@ export function runSimulationPasses(args: {
       config.gpgpuBounceRadius,
       config.gpgpuBounce,
       config.gpgpuSpeed,
+      // Morph attraction (Phase R): enabled only when a baked morph
+      // texture exists, mirroring the WebGL branch's uMorphEnabled.
+      // The OBJ normal kick is not part of the WGSL pass (recorded
+      // in the Phase R report).
+      {
+        enabled: Boolean(config.gpgpuMorphEnabled && morphTex),
+        strength: config.gpgpuMorphStrength,
+        orbitSpeed: config.gpgpuMorphOrbitSpeed,
+        replicaPhaseGain: config.gpgpuMorphReplicaCount > 1 ? 1 : 0,
+      },
     );
     webgpuPingIsARef.current = !webgpuPingIsARef.current;
     if (webgpuPosTex) {
