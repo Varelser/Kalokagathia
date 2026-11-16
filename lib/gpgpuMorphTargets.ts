@@ -163,6 +163,18 @@ export interface GpgpuMorphTargetBuildOptions {
   terrain?: GpgpuMorphTerrainOptions | null;
 }
 
+/**
+ * Field-seed mixing shared by the morph bake and the Phase P terrain
+ * mesh: the bake seed (config gpgpuSeed) XOR-mixed with the terrain
+ * seed offset. Extracted as a pure helper so the mesh system
+ * (lib/terrainMesh.ts) grows exactly the same landscape as the point
+ * terrain for the same config. The mixing itself is unchanged from
+ * Phase L, so existing bakes stay bit-identical.
+ */
+export function terrainFieldSeedFor(seed: number, terrainSeed: number): number {
+  return ((seed ^ Math.imul((terrainSeed | 0) + 1, 0x9e3779b1)) | 0);
+}
+
 export const DEFAULT_TERRAIN: GpgpuMorphTerrainOptions = {
   amplitude: 0.55,
   frequency: 1.6,
@@ -310,7 +322,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   // while the terrain seed can vary it independently.
   const terrainOpts = target === 'terrain' ? (terrain ?? DEFAULT_TERRAIN) : null;
   const terrainFieldSeed = terrainOpts
-    ? ((seed ^ Math.imul((terrainOpts.seed | 0) + 1, 0x9e3779b1)) | 0)
+    ? terrainFieldSeedFor(seed, terrainOpts.seed)
     : 0;
   const mediaPoint = { x: 0, y: 0, z: 0 };
 

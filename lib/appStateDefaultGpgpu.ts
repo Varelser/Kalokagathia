@@ -141,6 +141,14 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphTerrainFrequency: 1.6,
   gpgpuMorphTerrainOctaves: 4,
   gpgpuMorphTerrainSeed: 0,
+  // Terrain Mesh (Phase P): disabled by default — mounts nothing.
+  gpgpuTerrainMeshEnabled: false,
+  gpgpuTerrainMeshDisplay: 'shaded' as const,
+  gpgpuTerrainMeshTunnel: false,
+  gpgpuTerrainMeshTexture: 'none' as const,
+  gpgpuTerrainMeshScale: 1,
+  gpgpuTerrainMeshOpacity: 1,
+  gpgpuTerrainMeshBrightness: 1,
   // Verlet Integration
   gpgpuVerletEnabled: false,
   // SDF Collider

@@ -203,6 +203,33 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphTerrainFrequency: number;
   gpgpuMorphTerrainOctaves: number;
   gpgpuMorphTerrainSeed: number;
+  // Terrain Mesh (Phase P, Mir-style): a polygon mesh system that
+  // shares the terrain height field above (terrainHeightAt with the
+  // same field-seed mixing as the morph bake, so the mesh landscape
+  // and the 'terrain' point terrain are the same landscape). The
+  // mesh is a plain scene object displaced on a 128x128 grid with
+  // computeVertexNormals shading; it is NOT part of the GPGPU
+  // simulation and mounts only when enabled. Disabled (default)
+  // mounts nothing and the render is bit-identical to before.
+  gpgpuTerrainMeshEnabled: boolean;
+  /** Display form: shaded polygon mesh / wireframe / points cloud
+   *  over the same displaced geometry. */
+  gpgpuTerrainMeshDisplay: 'shaded' | 'wireframe' | 'points';
+  /** Tunnel mode: wrap the field around a cylinder (x becomes the
+   *  circumference, z the depth, height the radial relief) and view
+   *  it from inside. The field is cross-fade tiled on both wrapped
+   *  axes so the wrap is seamless. */
+  gpgpuTerrainMeshTunnel: boolean;
+  /** Surface texture: 'none' (default, plain shaded colour),
+   *  'gradient' / 'grid' procedural monochrome canvas textures, or
+   *  'image' (the Horizon background image source, reused as map). */
+  gpgpuTerrainMeshTexture: 'none' | 'gradient' | 'grid' | 'image';
+  /** Mesh size multiplier over the morph world scale (the point
+   *  terrain's extent), 1 = same footprint as the point terrain. */
+  gpgpuTerrainMeshScale: number;
+  gpgpuTerrainMeshOpacity: number;
+  /** Shading brightness multiplier (material colour / light gain). */
+  gpgpuTerrainMeshBrightness: number;
   // Verlet Integration
   gpgpuVerletEnabled: boolean;
   // SDF Collider ('gyroid' added by Kinetix integration B3: the TPMS
