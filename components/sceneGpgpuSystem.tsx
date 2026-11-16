@@ -261,7 +261,10 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       auxPingIsA.current = !auxPingIsA.current;
       auxDrawMat.uniforms.uAuxPosTex.value = auxTargets.posOut.texture;
       auxDrawMat.uniforms.uAuxVelTex.value = auxTargets.velOut.texture;
-      auxDrawMat.uniforms.uColor.value.setStyle(config.gpgpuColor);
+      // Child colour (Phase Q): an explicit child colour wins; the
+      // empty default inherits the parent (main pool) colour exactly
+      // as before.
+      auxDrawMat.uniforms.uColor.value.setStyle(config.gpgpuAuxColor ? config.gpgpuAuxColor : config.gpgpuColor);
       auxDrawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
       auxDrawMat.uniforms.uAuxSize.value = config.gpgpuAuxSize;
       auxDrawMat.blending = config.gpgpuBlendMode === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;

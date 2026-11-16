@@ -419,6 +419,9 @@ export function runAuxSimulationPasses(args: {
   velU.uAuxIntensity.value = config.gpgpuAuxIntensity;
   velU.uAuxSpeed.value = config.gpgpuAuxSpeed;
   velU.uAuxLife.value = config.gpgpuAuxLife;
+  velU.uAuxGravityScale.value = config.gpgpuAuxGravityScale;
+  velU.uAuxDrag.value = config.gpgpuAuxDrag;
+  velU.uAuxCurl.value = config.gpgpuAuxCurl;
   velU.uAgeEnabled.value = config.gpgpuAgeEnabled;
   velU.uAgeMax.value = config.gpgpuAgeMax;
   velU.uFloorEnabled.value = config.gpgpuFloorEnabled;

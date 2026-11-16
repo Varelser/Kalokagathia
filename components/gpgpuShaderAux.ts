@@ -121,6 +121,14 @@ export const AUX_VEL_FRAG = /* glsl */ `
   uniform float uBounce;
   uniform float uFloorBounce;
   uniform float uAuxLife;
+  // Child-emitter independence (Phase Q): the child's own gravity
+  // scale / extra drag / curl. Defaults (1 / 0 / 0) reproduce the
+  // legacy shared physics exactly — the curl term is guarded so it
+  // vanishes entirely at 0, and the other two reduce to the legacy
+  // expressions at their defaults.
+  uniform float uAuxGravityScale;
+  uniform float uAuxDrag;
+  uniform float uAuxCurl;
   varying vec2 vUv;
   ${AUX_EVENT_GLSL}
 
@@ -151,8 +159,24 @@ export const AUX_VEL_FRAG = /* glsl */ `
     vec3 vel = auxVel.xyz;
     // Aux physics: softened gravity, drag, floor + sphere bounces —
     // the same boundary vocabulary as the main sim, at decorative scale.
-    vel.y -= uGravity * uDelta * 9.8 * 0.35;
-    vel *= max(0.0, 1.0 - 0.9 * uDelta);
+    // Phase Q: gravity is scaled by the child's own factor (1 =
+    // legacy, 0 = weightless, negative = anti-gravity), the child
+    // may carry extra drag, and a deterministic position-based curl
+    // (Y-axis tangential swirl + a fixed sinusoidal shear — a pure
+    // function of position, no time, no randomness, so the
+    // deterministic renderer reproduces it frame for frame).
+    // NOTE: the scale factor sits at the END of the legacy product
+    // chain on purpose — at 1.0 the chain evaluates bit-identically
+    // to the pre-Phase-Q expression (a mid-chain factor made the
+    // Metal compiler reassociate the products and drift the result).
+    vel.y -= uGravity * uDelta * 9.8 * 0.35 * uAuxGravityScale;
+    if (uAuxCurl != 0.0) {
+      float r = length(auxPos.xz);
+      vec3 tang = r > 1.0 ? vec3(-auxPos.z, 0.0, auxPos.x) / r : vec3(0.0);
+      vec3 shear = vec3(sin(auxPos.y * 0.05 + auxPos.z * 0.03), 0.0, cos(auxPos.x * 0.04 + auxPos.y * 0.03));
+      vel += (tang * 18.0 + shear * 6.0) * uAuxCurl * uDelta;
+    }
+    vel *= max(0.0, 1.0 - (0.9 + uAuxDrag) * uDelta);
     if (uFloorEnabled && auxPos.y < uFloorY + 0.5 && vel.y < 0.0) {
       vel.y = -vel.y * uFloorBounce;
       vel.x *= 0.92;
