@@ -43,6 +43,12 @@
 import type { ParticleConfig } from '../types';
 import { createSeededRng } from './seededRng';
 import {
+  maskAcceptsAt,
+  resolveActiveMask,
+  sampleMaskShapePoint,
+  type GpgpuMaskMode,
+} from './layerMask';
+import {
   PATH_TAPER_MAX_WIDTH,
   resolvePathPoint,
   taperWidthAt,
@@ -185,6 +191,24 @@ export interface GpgpuMorphTargetBuildOptions {
    * changes.
    */
   path?: MorphPathOptions | null;
+  /**
+   * Raster mask (Phase X, lib/layerMask.ts): a luminance map plus
+   * its mode. 'shape' replaces the placement sampling with the
+   * mask's own shape (seeded acceptance sampling, probability =
+   * luminance); 'clip' relocates any baked point whose normalized
+   * XY falls in a rejected region into the mask via the same
+   * sampler (the draw shader additionally discards fragments in
+   * rejected regions, so live positions are clipped too). Absent /
+   * null / mode 'off' / unusable map = the legacy bake exactly:
+   * the mask branches are entered only for an active mask, so the
+   * RNG consumption order of every existing target is unchanged.
+   */
+  mask?: {
+    map: MorphMediaMap | null;
+    mode: GpgpuMaskMode;
+    threshold: number;
+    invert: boolean;
+  } | null;
 }
 
 /**
@@ -328,7 +352,11 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   data: Float32Array;
   normalData: Float32Array;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path, mask } = options;
+  // Raster mask (Phase X): resolved once; null unless the mode is
+  // on and the map is usable, in which case the placement branches
+  // below consult it. Null keeps the legacy bake bit-identical.
+  const activeMask = mask ? resolveActiveMask(mask.map, mask) : null;
   const count = texSize * texSize;
   const replicaCount = replica ? Math.max(1, Math.min(8, Math.floor(replica.count) || 1)) : 1;
   const replicaActive = replicaCount > 1 && replica != null;
@@ -376,7 +404,22 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
     let nny = 0;
     let nnz = 0;
 
-    if (objPointCount > 0 && objPoints) {
+    // Raster mask shape (Phase X): in 'shape' mode the mask image
+    // itself is the placement grammar — points are drawn from the
+    // mask by seeded acceptance sampling, whatever the selected
+    // target would otherwise produce (including the media targets:
+    // the same rule governs morph placement and media placement).
+    // A null sample (blank mask) falls through to the target's own
+    // generation, exactly like a missing media map.
+    const maskShapePoint = activeMask && activeMask.mode === 'shape'
+      ? sampleMaskShapePoint(activeMask, rng)
+      : null;
+
+    if (maskShapePoint) {
+      tx = maskShapePoint.x;
+      ty = maskShapePoint.y;
+      tz = maskShapePoint.z;
+    } else if (objPointCount > 0 && objPoints) {
       // Imported OBJ surface cloud (Phase J): the samples are already
       // area-uniform over the mesh surface, so a seeded uniform pick
       // distributes particles evenly over the model. True 3D (xyz),
@@ -690,6 +733,26 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
         }
         default:
           break;
+      }
+    }
+
+    // Raster mask clip (Phase X): a baked point in a rejected
+    // region is relocated into the mask by the same deterministic
+    // acceptance sampler the 'shape' mode uses, so the target
+    // density survives inside the mask instead of piling up or
+    // vanishing at bake time; the draw shader's fragment clip then
+    // enforces the mask on live positions. If the sampler finds no
+    // accepted pixel the point is kept (the fragment clip still
+    // applies). The obj normal is dropped for relocated points.
+    if (activeMask && activeMask.mode === 'clip' && !maskAcceptsAt(activeMask, tx, ty)) {
+      const relocated = sampleMaskShapePoint(activeMask, rng);
+      if (relocated) {
+        tx = relocated.x;
+        ty = relocated.y;
+        tz = relocated.z;
+        nnx = 0;
+        nny = 0;
+        nnz = 0;
       }
     }
 

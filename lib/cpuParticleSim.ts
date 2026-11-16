@@ -131,6 +131,17 @@ export function buildCpuMorphTargets(
       octaves: config.gpgpuMorphTerrainOctaves,
       seed: config.gpgpuMorphTerrainSeed,
     },
+    // Raster mask (Phase X): the CPU path bakes with the same mask
+    // option as the GPU paths, so clip / shape apply here too.
+    mask: config.gpgpuMaskMode !== 'off' && config.gpgpuMaskMap && config.gpgpuMaskMap.length > 0
+      && config.gpgpuMaskMapWidth > 0 && config.gpgpuMaskMapHeight > 0
+      ? {
+        map: { map: config.gpgpuMaskMap, width: config.gpgpuMaskMapWidth, height: config.gpgpuMaskMapHeight },
+        mode: config.gpgpuMaskMode,
+        threshold: config.gpgpuMaskThreshold,
+        invert: config.gpgpuMaskInvert,
+      }
+      : null,
   });
   const out = new Float32Array(count * 4);
   out.set(data.subarray(0, count * 4));
