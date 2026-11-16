@@ -3,7 +3,8 @@
  *
  * The position/velocity arrays used to seed both the WebGL and the
  * WebGPU backends are built here, as a pure function of
- * (texSize, bounceRadius, emitShape, seed). Before this module
+ * (texSize, bounceRadius, emitShape, seed) — plus, for the 'light'
+ * emit shape only, the light position. Before this module
  * existed the runtime filled the arrays with Math.random(), so the
  * same preset produced a different initial cloud on every load.
  * With a seed stored in the config (gpgpuSeed), the same preset now
@@ -13,7 +14,7 @@
  * only the random source changed (Math.random -> mulberry32).
  */
 
-export type GpgpuEmitShape = 'sphere' | 'disc' | 'ring' | 'box' | 'shell' | 'cone';
+export type GpgpuEmitShape = 'sphere' | 'disc' | 'ring' | 'box' | 'shell' | 'cone' | 'light';
 
 /** mulberry32: small, fast, seedable PRNG with a uniform [0, 1) output.
  * The implementation lives in lib/seededRng.ts (2026-11-14 perf stage-2
@@ -33,6 +34,14 @@ export interface GpgpuAgePhaseOptions {
   step: number;
 }
 
+export interface GpgpuEmitOptions {
+  /** Emitter position for the 'light' shape (Phase T): the 3D
+   *  light's world position. Ignored by every other shape, so the
+   *  legacy shapes' output stays byte-identical whether or not the
+   *  caller passes it. */
+  lightPos?: { x: number; y: number; z: number };
+}
+
 export function buildGpgpuInitialData(
   texSize: number,
   bounceRadius: number,
@@ -40,6 +49,7 @@ export function buildGpgpuInitialData(
   seed: number,
   ageMax = 8,
   agePhase?: GpgpuAgePhaseOptions | null,
+  emitOptions?: GpgpuEmitOptions | null,
 ): GpgpuInitialData {
   // Replica age phase (Phase M): particle i belongs to replica
   // block r = floor(i * count / total) — the same contiguous blocks
@@ -88,6 +98,18 @@ export function buildGpgpuInitialData(
       px = cr * Math.cos(theta);
       py = h - r * 0.5;
       pz = cr * Math.sin(theta);
+    } else if (shape === 'light') {
+      // Light emitter (Phase T): a small ball around the light
+      // position — the same two draws (phi, radius fraction) as the
+      // sphere branch, scaled to 5% of the bounce radius, so the
+      // pool starts as a tight cloud at the light and the RNG draw
+      // count per particle matches the other shapes.
+      const lp = emitOptions?.lightPos ?? { x: 0, y: 0, z: 0 };
+      const phi = Math.acos(2 * random() - 1);
+      const jr = r * 0.05 * (0.1 + random() * 0.9);
+      px = lp.x + jr * Math.sin(phi) * Math.cos(theta);
+      py = lp.y + jr * Math.sin(phi) * Math.sin(theta);
+      pz = lp.z + jr * Math.cos(phi);
     } else {
       const phi = Math.acos(2 * random() - 1);
       const rad = r * (0.1 + random() * 0.9);
