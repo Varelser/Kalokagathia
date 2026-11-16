@@ -335,6 +335,8 @@ const NUMS: NumDef[] = [
   ['gpgpuMorphReplicaScaleStep', 'GPGPUモーフ複製ごとのスケール倍率（等比）'],
   ['gpgpuMorphReplicaPhaseStep', 'GPGPUモーフ複製ごとの公転位相オフセット（度）'],
   ['gpgpuMorphReplicaAgeStep', 'GPGPUモーフ複製ごとの年齢位相オフセット（周期比 0..1）'],
+  ['gpgpuMorphReplicaIndependent', 'GPGPUモーフ複製ごとの独立シム（複製ごとに独立した状態・場シード・時計、Phase W2）'],
+  ['gpgpuMorphReplicaDivergence', 'GPGPUモーフ複製の独立シムの分岐度（0..1、0で共有シムと同等）'],
   ['gpgpuMorphTerrainAmplitude', 'GPGPUモーフ地形（terrain目標）の標高振幅'],
   ['gpgpuMorphTerrainFrequency', 'GPGPUモーフ地形の高度場の周波数'],
   ['gpgpuMorphTerrainOctaves', 'GPGPUモーフ地形のfBmオクターブ数（1〜6）'],

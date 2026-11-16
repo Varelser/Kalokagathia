@@ -161,6 +161,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuMorphReplicaScaleStep: 'モーフ複製文法：複製ごとのスケール倍率（等比）',
   gpgpuMorphReplicaPhaseStep: 'モーフ複製文法：複製ごとの公転位相オフセット（度、Echospace的な時間オフセット連鎖）',
   gpgpuMorphReplicaAgeStep: 'モーフ複製文法：複製ごとの年齢（ライフサイクル）位相オフセット（周期に対する割合 0..1、0で従来同一）',
+  gpgpuMorphReplicaDivergence: 'モーフ複製の独立シム：複製ごとの場シード／時計オフセットの強さ（0..1、0で共有シムと同じ場・時計、1で完全分岐。gpgpuMorphReplicaIndependent が ON のときのみ有効、Phase W2）',
   layer2GradEnabled: 'レイヤー2グラデーション（年齢ドライバで3点LUTを適用）の有効化。既定OFFで従来同一',
   layer2GradPreset: 'レイヤー2グラデーションのプリセット（Kinetixグラデーション）',
   layer3GradEnabled: 'レイヤー3グラデーション（年齢ドライバで3点LUTを適用）の有効化。既定OFFで従来同一',

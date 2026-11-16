@@ -154,6 +154,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuMorphReplicaScaleStep', label: "Replica Scale Step", tab: 'global', min: 0.5, max: 1.6, step: 0.02 },
   { key: 'gpgpuMorphReplicaPhaseStep', label: "Replica Phase Step", tab: 'global', min: 0, max: 360, step: 5 },
   { key: 'gpgpuMorphReplicaAgeStep', label: "Replica Age Step", tab: 'global', min: 0, max: 1, step: 0.01 },
+  { key: 'gpgpuMorphReplicaDivergence', label: "Replica Divergence", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuMorphTerrainAmplitude', label: "Terrain Amplitude", tab: 'global', min: 0, max: 1.5, step: 0.05 },
   { key: 'gpgpuMorphTerrainFrequency', label: "Terrain Frequency", tab: 'global', min: 0.4, max: 4, step: 0.1 },
   { key: 'gpgpuMorphTerrainOctaves', label: "Terrain Octaves", tab: 'global', min: 1, max: 6, step: 1 },
