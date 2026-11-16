@@ -157,6 +157,24 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuTerrainMeshScale: 1,
   gpgpuTerrainMeshOpacity: 1,
   gpgpuTerrainMeshBrightness: 1,
+  // Terrain texture detail (Phase V): '' dedicated image = legacy
+  // background-image reuse; repeat 1 / offsets 0 = identity UV.
+  gpgpuTerrainTextureImage: '',
+  gpgpuTerrainTextureRepeat: 1,
+  gpgpuTerrainTextureOffsetX: 0,
+  gpgpuTerrainTextureOffsetY: 0,
+  // Tunnel cruise (Phase V): 0 = the legacy static tunnel.
+  gpgpuTunnelSpeed: 0,
+  // OBJ Mesh (Phase V): disabled by default — mounts nothing.
+  gpgpuObjMeshEnabled: false,
+  gpgpuObjMeshDisplay: 'wireframe' as const,
+  gpgpuObjMeshRepeat: 1,
+  gpgpuObjMeshScale: 1,
+  gpgpuObjMeshPosX: 0,
+  gpgpuObjMeshPosY: 0,
+  gpgpuObjMeshPosZ: 0,
+  gpgpuObjMeshRotY: 0,
+  gpgpuObjMeshOpacity: 1,
   // Verlet Integration
   gpgpuVerletEnabled: false,
   // SDF Collider

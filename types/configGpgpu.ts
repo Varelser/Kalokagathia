@@ -245,6 +245,49 @@ export interface ParticleConfigGpgpu {
   gpgpuTerrainMeshOpacity: number;
   /** Shading brightness multiplier (material colour / light gain). */
   gpgpuTerrainMeshBrightness: number;
+  // Terrain texture detail (Phase V): the 'image' texture kind
+  // gains a DEDICATED image source. When gpgpuTerrainTextureImage
+  // is empty the Horizon background image is used exactly as
+  // before (bit-identical legacy); a non-empty dedicated source
+  // takes precedence and the UI says so. Repeat / offset apply
+  // the standard UV transform (uv * repeat + offset) to whichever
+  // map is active — procedural kinds included; the defaults
+  // (1 / 0 / 0) are the identity transform.
+  gpgpuTerrainTextureImage: string;
+  gpgpuTerrainTextureRepeat: number;
+  gpgpuTerrainTextureOffsetX: number;
+  gpgpuTerrainTextureOffsetY: number;
+  // Tunnel cruise (Phase V): forward travel through the terrain
+  // tunnel, in world units per second. The terrain phase scrolls
+  // (the camera itself stays pinned — Phase G determinism); the
+  // phase is a deterministic function of accumulated scene time,
+  // and speed 0 renders exactly the legacy static tunnel. Only
+  // read when gpgpuTerrainMeshTunnel is on.
+  gpgpuTunnelSpeed: number;
+  // OBJ Mesh (Phase V, Mir-style mesh side of the OBJ import): the
+  // imported OBJ (the SAME gpgpuMorphObjSource text the morph
+  // target reads — one shared data source, never a second copy)
+  // drawn as an actual polygon mesh next to the particles, with a
+  // grid of repeated copies and a placement transform. The mesh
+  // is normalised exactly like the morph sampler (bbox centre,
+  // bounding-sphere radius 1) and scaled by the morph world scale,
+  // so mesh and point cloud coincide. Disabled (default) mounts
+  // nothing; enabled with no usable OBJ source draws nothing and
+  // the UI states that explicitly.
+  gpgpuObjMeshEnabled: boolean;
+  /** Display form: wireframe lines / solid shaded polygons. */
+  gpgpuObjMeshDisplay: 'wireframe' | 'solid';
+  /** Grid repetition count (1..64, arranged as a centred cube
+   *  grid — see lib/objMesh.ts). */
+  gpgpuObjMeshRepeat: number;
+  /** Size multiplier over the morph world scale. */
+  gpgpuObjMeshScale: number;
+  gpgpuObjMeshPosX: number;
+  gpgpuObjMeshPosY: number;
+  gpgpuObjMeshPosZ: number;
+  /** Y rotation in degrees. */
+  gpgpuObjMeshRotY: number;
+  gpgpuObjMeshOpacity: number;
   // Verlet Integration
   gpgpuVerletEnabled: boolean;
   // SDF Collider ('gyroid' added by Kinetix integration B3: the TPMS
