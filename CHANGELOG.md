@@ -4,6 +4,52 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.26.0] — 2026-11-17
+
+Phase W2 (second half of the user-elected full Phase W): per-replica
+independent simulation. Method **(a) state separation** was adopted
+after a measured micro-benchmark on the iMac's real GPU (see
+PHASE_W2_REPORT.md): with 8 full-size replica stacks the velocity +
+position passes still hold 60 fps under rAF pacing (burst throughput
+~140–216 steps/s at 256² texels per stack), and the extra render-
+target memory is ~32 MB at the default texture size (~128 MB at the
+512² maximum) — both inside the brief's criteria, so the cheaper
+force-only divergence (b) was not needed.
+
+### Added
+- **Replica independent sim** (2 new keys, defaults reproduce the
+  legacy shared simulation bit-for-bit): `gpgpuMorphReplicaIndependent`
+  (boolean, default false) and `gpgpuMorphReplicaDivergence`
+  (0..1, default 1). With the key on (morph on, replica count > 1),
+  each replica block runs its own simulation stack — its own
+  position/velocity state textures, Verlet history, and pass
+  materials — seeded from the same initial data, then merged back
+  into the shared texture layout every frame, so drawing, trails,
+  aux pools (including the W1 chain), depth sort and readback all
+  work unchanged on the merged state.
+- Divergence scales the per-copy field seed offset and clock offset
+  (copy 0 is always exactly zero). At divergence 0 every copy runs
+  the same field realization on the same clock as the shared sim;
+  at 1 the copies fully decorrelate under curl/turbulence/wind.
+- Starters +2 (514 -> 516): three trefoil copies at one anchor
+  drifting apart under curl at full divergence, and a four-copy
+  spaced chain at intermediate divergence (0.45).
+
+### Honest limits of the independent mode
+- Neighbour forces (N-body, boids, SPH, particle life, Kuramoto)
+  sample the copy's own stack while the mode is on: interactions
+  are confined to each copy instead of spanning the whole cloud.
+  This is inherent to state separation, not an approximation.
+- The WebGPU compute path and the CPU fallback do not implement
+  the independent sim (the key is ignored there, the same class of
+  limitation as the Phase R WGSL omissions); while the mode is on,
+  the frame runs on the WebGL path.
+- A custom force shader swapped into the shared velocity material
+  at runtime is not mirrored into the per-copy materials.
+- Divergence changes apply live (no reseed); the per-copy initial
+  data is always the shared initial layout's own block, identical
+  to what the shared sim starts from.
+
 ## [1.25.0] — 2026-11-17
 
 Phase W1 (first half of the user-elected full Phase W): grandchild
