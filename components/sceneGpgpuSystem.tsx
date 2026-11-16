@@ -30,9 +30,12 @@ import {
   runAuxChainSimulationPasses,
   runAuxSimulationPasses,
   runFluidAdvectionPass,
+  runReplicaStackPasses,
   runSimulationPasses,
   updateMouseWorldPosition,
 } from './gpgpuSimulationPasses';
+import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
+import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
 
 type GpgpuSystemProps = {
@@ -88,6 +91,23 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   }, []);
 
   const lodSystem = useMemo(() => new LodSystem(), []);
+  // Replica merge material (Phase W2): relocates each stack's
+  // block into the shared layout targets; NoBlending + discard
+  // outside the block make it a pure relocation.
+  const replicaMergeMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uStackTex: { value: null },
+      uGlobalTexSizeF: { value: 0 },
+      uStackTexSizeF: { value: 0 },
+      uBlockStart: { value: 0 },
+      uBlockSize: { value: 0 },
+    },
+    vertexShader: SIM_VERT,
+    fragmentShader: REPLICA_MERGE_FRAG,
+    blending: THREE.NoBlending,
+    depthTest: false,
+    depthWrite: false,
+  }), []);
   const texSize = useMemo(() => getTexSize(config.gpgpuCount), [config.gpgpuCount]);
   const simScene = useMemo(() => new THREE.Scene(), []);
   const simCamera = useMemo(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), []);
@@ -135,6 +155,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     aux2PingIsA,
     aux3RtRef,
     aux3PingIsA,
+    replicaStacksRef,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,
@@ -207,42 +228,75 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       morphKickInitRef.current = true;
     }
 
+    // Replica independent sim (Phase W2): while the stacks are
+    // allocated, the simulation runs on the WebGL stack path —
+    // the routing is resolved with the WebGPU backend masked out
+    // so every downstream consumer (aux, sort, trails, readback,
+    // draw) sees the merged WebGL layout exactly as in the
+    // shared path.
+    const replicaStacks = replicaStacksRef.current;
+    const stacksActive = !!replicaStacks && replicaStacks.length > 0;
     const routing = resolveGpgpuFrameRouting({
       config,
-      webgpuState: webgpuStateRef.current,
-      webgpuPosTexture: webgpuPosTexRef.current,
+      webgpuState: stacksActive ? null : webgpuStateRef.current,
+      webgpuPosTexture: stacksActive ? null : webgpuPosTexRef.current,
       fallbackPosTexture: posOut.texture,
       posReadbackRef,
     });
     routingSnapshotRef.current = createGpgpuFrameDiagnosticSnapshot(routing);
 
-    runSimulationPasses({
-      useWebGPU: routing.useWebGPU,
-      config,
-      texSize,
-      dt,
-      time: timeRef.current,
-      blast,
-      mouseWorld: mouseWorldRef.current,
-      simMesh: simMeshRef.current,
-      gl: glCtx,
-      simScene,
-      simCamera,
-      posIn,
-      posOut,
-      velIn,
-      velOut,
-      velSimMat,
-      posSimMat,
-      initPosTex: initPosTexRef.current,
-      morphTex: morphTexRef.current,
-      morphNormalTex: morphNormalTexRef.current,
-      morphKickStart: morphKickStartRef.current,
-      prevPosTex: prevPosRTRef.current?.texture ?? null,
-      webgpuState: webgpuStateRef.current,
-      webgpuPosTex: webgpuPosTexRef.current,
-      webgpuPingIsARef,
-    });
+    if (stacksActive) {
+      runReplicaStackPasses({
+        config,
+        dt,
+        time: timeRef.current,
+        blast,
+        mouseWorld: mouseWorldRef.current,
+        simMesh: simMeshRef.current,
+        gl: glCtx,
+        simScene,
+        simCamera,
+        stacks: replicaStacks,
+        mergedPosOut: posOut,
+        mergedVelOut: velOut,
+        mergeMat: replicaMergeMat,
+        blitMat,
+        initPosTex: initPosTexRef.current,
+        morphTex: morphTexRef.current,
+        morphNormalTex: morphNormalTexRef.current,
+        morphKickStart: morphKickStartRef.current,
+        fluidVelMat: velSimMat,
+        globalTexSize: texSize,
+      });
+    } else {
+      runSimulationPasses({
+        useWebGPU: routing.useWebGPU,
+        config,
+        texSize,
+        dt,
+        time: timeRef.current,
+        blast,
+        mouseWorld: mouseWorldRef.current,
+        simMesh: simMeshRef.current,
+        gl: glCtx,
+        simScene,
+        simCamera,
+        posIn,
+        posOut,
+        velIn,
+        velOut,
+        velSimMat,
+        posSimMat,
+        initPosTex: initPosTexRef.current,
+        morphTex: morphTexRef.current,
+        morphNormalTex: morphNormalTexRef.current,
+        morphKickStart: morphKickStartRef.current,
+        prevPosTex: prevPosRTRef.current?.texture ?? null,
+        webgpuState: webgpuStateRef.current,
+        webgpuPosTex: webgpuPosTexRef.current,
+        webgpuPingIsARef,
+      });
+    }
 
     // Aux event emission (B3, WebGL path only — the WebGPU compute
     // backend has no aux pool, and its draw material simply never
