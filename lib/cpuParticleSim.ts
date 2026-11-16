@@ -14,9 +14,17 @@
 // Everything is seeded (mulberry32 over the config's seed/counts), so
 // the degraded picture is stable between reloads. Full config parity
 // is explicitly NOT a goal — see CPU_FALLBACK_BRIEF.md.
+//
+// Phase X2 ports the three leftovers of PHASE_R_REPORT #4 with the
+// WebGL semantics: (a) the OBJ normal initial velocity (Phase O kick),
+// (b) morph attraction inside attractor mode (the velocity shader
+// applies both forces in one pass), and (c) the replica age phase
+// (Phase M), which brings the age lifecycle itself — advance, wrap
+// with per-replica restart offsets, respawn at the layout home, and
+// the fade envelope the scene applies when drawing.
 
 import type { ParticleConfig } from '../types';
-import { buildGpgpuMorphTargetData } from './gpgpuMorphTargets';
+import { buildGpgpuMorphTargetDataWithNormals } from './gpgpuMorphTargets';
 import type { MorphMediaMap } from './gpgpuMorphTargets';
 import type { PathGeometry } from './pathGeometry';
 
@@ -70,10 +78,56 @@ export function isCpuAttractorMode(config: ParticleConfig): boolean {
 export const CPU_MORPH_TEX_SIZE = 64;
 
 /** Morph is live on the CPU path exactly when it would be on the GPU
- * path: the GPGPU system on + the morph toggle on. Attractor mode
- * still takes precedence in the step (see stepCpuParticles). */
+ * path: the GPGPU system on + the morph toggle on. Since Phase X2 the
+ * morph force also applies inside attractor mode, mirroring the
+ * velocity shader, where both forces compose in a single pass. */
 export function isCpuMorphActive(config: ParticleConfig): boolean {
   return Boolean(config.gpgpuEnabled && config.gpgpuMorphEnabled);
+}
+
+/** The age (Particle Life) system is live on the CPU path when the
+ * GPGPU age toggle is on and a positive lifespan is configured. */
+export function isCpuAgeLive(config: ParticleConfig): boolean {
+  return Boolean(config.gpgpuEnabled && config.gpgpuAgeEnabled && (config.gpgpuAgeMax || 0) > 0);
+}
+
+/** Replica count as every consumer clamps it (bake / initial data). */
+export function cpuReplicaCount(config: ParticleConfig): number {
+  return Math.max(1, Math.min(8, Math.floor(config.gpgpuMorphReplicaCount || 1)));
+}
+
+/**
+ * Replica block of bake texel i under the contiguous mapping shared
+ * by the morph bake, the initial data and the position shader:
+ * r = floor(i * count / total), with total the full bake grid
+ * (CPU_MORPH_TEX_SIZE^2) — NOT the CPU particle count, because CPU
+ * particle i owns bake texel i.
+ */
+export function cpuReplicaIndexOf(i: number, replicaCount: number): number {
+  const total = CPU_MORPH_TEX_SIZE * CPU_MORPH_TEX_SIZE;
+  return Math.min(replicaCount - 1, Math.floor((i * replicaCount) / total));
+}
+
+/** Replica age phase (Phase M) gate, mirroring useGpgpuRuntime:
+ * morph on, more than one copy, step > 0. */
+export function isCpuReplicaAgePhaseActive(config: ParticleConfig): boolean {
+  return Boolean(
+    isCpuMorphActive(config)
+    && cpuReplicaCount(config) > 1
+    && (config.gpgpuMorphReplicaAgeStep || 0) > 0,
+  );
+}
+
+/**
+ * The age a particle restarts at when its lifecycle wraps — the
+ * position shader's rule: replicaIdx * step * ageMax while the morph
+ * replica grammar is in play, else exactly 0.
+ */
+export function cpuAgeRestartAge(config: ParticleConfig, i: number): number {
+  if (!isCpuMorphActive(config) || cpuReplicaCount(config) <= 1) return 0;
+  const stepFrac = Math.max(0, Math.min(1, config.gpgpuMorphReplicaAgeStep || 0));
+  if (stepFrac <= 0) return 0;
+  return cpuReplicaIndexOf(i, cpuReplicaCount(config)) * stepFrac * (config.gpgpuAgeMax || 0);
 }
 
 /** Media-dependent bake inputs the sim cannot build itself (they need
@@ -84,22 +138,33 @@ export interface CpuMorphBakeExtras {
   svgPoints?: ArrayLike<number> | null;
   pathGeometry?: PathGeometry | null;
   objPoints?: ArrayLike<number> | null;
+  /** Per-sample unit normals parallel to objPoints (Phase O). */
+  objNormals?: ArrayLike<number> | null;
+}
+
+export interface CpuMorphData {
+  /** Per-particle morph targets, count*4 (xyz normalised, w = phase). */
+  targets: Float32Array;
+  /** Per-particle morph normals, count*3 (pure directions, Phase O). */
+  normals: Float32Array;
 }
 
 /**
- * Bake the per-particle morph targets for the CPU sim: a Float32Array
- * of count*4 (xyz = normalised target point, w = replica orbit phase
- * in radians, as baked). Returns null when morph is inactive, so the
- * caller can pass the result straight into createCpuParticleState.
- * Pure and deterministic for a given config + extras.
+ * Bake the per-particle morph targets AND the companion normal cloud
+ * for the CPU sim. The bake's `data` output is exactly what
+ * buildGpgpuMorphTargetData returns (the normal path consumes no RNG
+ * draws), so the targets are unchanged from the Phase R port; the
+ * normals feed the OBJ normal initial velocity (Phase X2). Returns
+ * null when morph is inactive. Pure and deterministic for a given
+ * config + extras.
  */
-export function buildCpuMorphTargets(
+export function buildCpuMorphData(
   config: ParticleConfig,
   count: number,
   extras: CpuMorphBakeExtras = {},
-): Float32Array | null {
+): CpuMorphData | null {
   if (!isCpuMorphActive(config)) return null;
-  const data = buildGpgpuMorphTargetData({
+  const { data, normalData } = buildGpgpuMorphTargetDataWithNormals({
     texSize: CPU_MORPH_TEX_SIZE,
     target: config.gpgpuMorphTarget,
     worldScale: (config.gpgpuMorphScale || 1) * 0.48,
@@ -117,6 +182,7 @@ export function buildCpuMorphTargets(
       subpathMode: config.gpgpuMorphPathSubpathMode,
     },
     objPoints: extras.objPoints ?? null,
+    objNormals: extras.objNormals ?? null,
     replica: {
       count: config.gpgpuMorphReplicaCount,
       spacing: config.gpgpuMorphReplicaSpacing,
@@ -143,9 +209,31 @@ export function buildCpuMorphTargets(
       }
       : null,
   });
-  const out = new Float32Array(count * 4);
-  out.set(data.subarray(0, count * 4));
-  return out;
+  const targets = new Float32Array(count * 4);
+  targets.set(data.subarray(0, count * 4));
+  const normals = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 1) {
+    normals[i * 3] = normalData[i * 4];
+    normals[i * 3 + 1] = normalData[i * 4 + 1];
+    normals[i * 3 + 2] = normalData[i * 4 + 2];
+  }
+  return { targets, normals };
+}
+
+/**
+ * Bake only the per-particle morph targets (Phase R entry point, kept
+ * for existing callers): a Float32Array of count*4 (xyz = normalised
+ * target point, w = replica orbit phase in radians, as baked).
+ * Returns null when morph is inactive, so the caller can pass the
+ * result straight into createCpuParticleState.
+ */
+export function buildCpuMorphTargets(
+  config: ParticleConfig,
+  count: number,
+  extras: CpuMorphBakeExtras = {},
+): Float32Array | null {
+  const data = buildCpuMorphData(config, count, extras);
+  return data ? data.targets : null;
 }
 
 /** Small FNV-1a hash for signature purposes (source texts can be
@@ -180,8 +268,9 @@ export function cpuShapeSignature(config: ParticleConfig): string {
   // shape, so every bake input joins the signature — but only while
   // morph is active, keeping the legacy signature string (and thus
   // rebuild behaviour) untouched for morph-off configs.
-  if (!isCpuMorphActive(config)) return base;
-  return `${base}|morph:${[
+  let sig = base;
+  if (isCpuMorphActive(config)) {
+    sig = `${base}|morph:${[
     config.gpgpuMorphTarget,
     config.gpgpuMorphScale, config.gpgpuMorphJitter,
     config.gpgpuMorphReplicaCount, config.gpgpuMorphReplicaSpacing,
@@ -199,7 +288,19 @@ export function cpuShapeSignature(config: ParticleConfig): string {
     config.layer2TextMapPadding, config.layer2TextMapInvert ? 1 : 0,
     config.layer2MediaMapWidth, config.layer2MediaMapHeight,
     config.layer2MediaLumaMap ? config.layer2MediaLumaMap.length : 0,
-  ].join(',')}`;
+    ].join(',')}`;
+  }
+  // Age lifecycle (Phase X2): the initial age scatter is part of the
+  // population state, so the age inputs join the signature — but only
+  // while the age system is live, keeping the legacy string (and thus
+  // rebuild behaviour) untouched for age-off configs.
+  if (isCpuAgeLive(config)) {
+    sig += `|age:${[
+      config.gpgpuAgeMax,
+      isCpuMorphActive(config) ? config.gpgpuMorphReplicaAgeStep : 0,
+    ].join(',')}`;
+  }
+  return sig;
 }
 
 export interface CpuParticleState {
@@ -220,6 +321,31 @@ export interface CpuParticleState {
    * is inactive — the step then runs the legacy code path exactly.
    */
   morphTarget: Float32Array | null;
+  /**
+   * Per-particle morph normals (Phase X2), count*3 pure directions
+   * parallel to the morph targets. Null when morph is inactive; the
+   * OBJ normal kick reads it only while the normal-speed key is > 0.
+   */
+  morphNormal: Float32Array | null;
+  /**
+   * Per-particle age in seconds (Phase X2). Advanced by the step only
+   * while the age system is live (ageLive); otherwise left at 0 and
+   * never read. Initialised with the same scatter + replica phase
+   * rule as lib/gpgpuInitialData.ts.
+   */
+  age: Float32Array;
+  /** Whether the age lifecycle runs for this state. */
+  ageLive: boolean;
+  /** Lifespan the ages wrap at (config value at creation time). */
+  ageMax: number;
+  /**
+   * Seconds since the morph (re)placement or the last normal-speed
+   * change — drives the OBJ normal kick envelope, mirroring the
+   * scene's uMorphKickStart on the WebGL path.
+   */
+  morphKickAge: number;
+  /** Last normal-speed key value seen by the step. */
+  morphKickSpeed: number;
 }
 
 /** Attractor ODE derivative — same formulas as the GPGPU velocity shader. */
@@ -314,6 +440,7 @@ export function createCpuParticleState(
   config: ParticleConfig,
   homes: Float32Array | null,
   morphTargets: Float32Array | null = null,
+  morphNormals: Float32Array | null = null,
 ): CpuParticleState {
   const count = resolveCpuParticleCount(config);
   const radius = Math.max(1, config.sphereRadius || 50);
@@ -324,6 +451,12 @@ export function createCpuParticleState(
   const home = new Float32Array(count * 3);
   const sizeMul = new Float32Array(count);
   const phase = new Float32Array(count);
+  const age = new Float32Array(count);
+  const ageLive = isCpuAgeLive(config);
+  const ageMax = ageLive ? config.gpgpuAgeMax : 0;
+  const replicaAgePhase = ageLive && isCpuReplicaAgePhaseActive(config);
+  const replicaCount = cpuReplicaCount(config);
+  const replicaAgeStep = Math.max(0, Math.min(1, config.gpgpuMorphReplicaAgeStep || 0));
 
   for (let i = 0; i < count; i += 1) {
     const i3 = i * 3;
@@ -347,6 +480,17 @@ export function createCpuParticleState(
     home[i3] = hx; home[i3 + 1] = hy; home[i3 + 2] = hz;
     sizeMul[i] = 0.55 + rand() * 0.9;
     phase[i] = rand() * Math.PI * 2;
+    if (ageLive) {
+      // Initial age (Phase X2): the WebGL initial data scatters age
+      // uniformly in [0, ageMax) and, while the replica age phase is
+      // active, shifts each replica block by step * ageMax, wrapping
+      // inside the lifecycle. The draw happens only on this branch,
+      // so age-off state creation consumes the legacy draw sequence.
+      const baseAge = rand() * ageMax;
+      age[i] = replicaAgePhase
+        ? (baseAge + cpuReplicaIndexOf(i, replicaCount) * replicaAgeStep * ageMax) % ageMax
+        : baseAge;
+    }
     if (attractorMode) {
       // Start clustered near the attractor core (in attractor units);
       // the normalised-derivative flow pulls particles onto the
@@ -370,6 +514,12 @@ export function createCpuParticleState(
     attractorMode,
     attractorRenderDivisor: attractorExtent(config.gpgpuAttractorType),
     morphTarget: morphTargets && morphTargets.length >= count * 4 ? morphTargets : null,
+    morphNormal: morphNormals && morphNormals.length >= count * 3 ? morphNormals : null,
+    age,
+    ageLive,
+    ageMax,
+    morphKickAge: 0,
+    morphKickSpeed: Math.max(0, config.gpgpuMorphObjNormalSpeed || 0),
   };
 }
 
@@ -386,6 +536,60 @@ export function stepCpuParticles(
   const step = Math.min(dt, 0.05);
   if (step <= 0) return;
 
+  // Morph parameters shared by both branches (Phase X2): the WebGL
+  // velocity shader composes the attractor force and the morph force
+  // in a single pass, so the CPU step computes the morph terms once,
+  // before the branch split. When morph is off every value below is
+  // inert and both branches run their legacy computations exactly.
+  const morphTarget = state.morphTarget;
+  const morphOn = morphTarget !== null && isCpuMorphActive(config);
+  const morphStrength = morphOn ? Math.max(0, config.gpgpuMorphStrength || 0) : 0;
+  const mf = morphOn ? 1 - Math.exp(-morphStrength * step * 3.0) : 0;
+  const morphBlend = morphOn ? Math.min(1, Math.max(0, mf + step * 6.0)) : 0;
+  const morphPhaseGain = morphOn && config.gpgpuMorphReplicaCount > 1 ? 1 : 0;
+  const morphAngBase = morphOn ? time * (config.gpgpuMorphOrbitSpeed || 0) : 0;
+
+  // OBJ normal kick bookkeeping (Phase X2): the envelope restarts
+  // when the normal-speed key changes, mirroring uMorphKickStart
+  // (set on the WebGL path when the bake is rebuilt — a state rebuild
+  // here — or the speed key changes). The kick velocity converts the
+  // shader's units (world units per 1/60s step, integrated as
+  // pos += vel * dt * speed * 60) into the CPU sim's normalised units
+  // per second: * 60 / bounceRadius.
+  const kickSpeed = morphOn ? Math.max(0, config.gpgpuMorphObjNormalSpeed || 0) : 0;
+  if (kickSpeed !== state.morphKickSpeed) {
+    state.morphKickSpeed = kickSpeed;
+    state.morphKickAge = 0;
+  }
+  if (morphOn) state.morphKickAge += step;
+  const kickNormals = morphOn && state.morphNormal !== null && kickSpeed > 0 ? state.morphNormal : null;
+  const kickEnvBase = kickNormals ? Math.exp(-state.morphKickAge * 4.5) : 0;
+  const kickVelNorm = kickNormals ? (kickSpeed * 60) / Math.max(1, config.gpgpuBounceRadius || 150) : 0;
+
+  // The kick itself, shared by both branches: the particle's baked
+  // normal, rotated by the same orbit angle as its morph target,
+  // mixes the velocity toward normal * speed under the shader's
+  // envelope — exp decay since (re)placement, full strength while
+  // the age has just wrapped (the shader's posData.w < dt * 1.5
+  // test, read here from the age the previous step left behind).
+  // unitScale converts normalised units to the branch's units
+  // (1 free-flight, the attractor render divisor in attractor mode).
+  const applyObjNormalKick = (i: number, i3: number, ca: number, sa: number, unitScale: number): void => {
+    if (!kickNormals) return;
+    let env = kickEnvBase;
+    if (state.ageLive && state.age[i] < step * 1.5) env = 1;
+    if (env <= 0.003) return;
+    const mixF = Math.min(0.45, env * 0.45);
+    const nx0 = kickNormals[i3];
+    const nz0 = kickNormals[i3 + 2];
+    const nx = nx0 * ca - nz0 * sa;
+    const nz = nx0 * sa + nz0 * ca;
+    const kv = kickVelNorm * unitScale;
+    vel[i3] += (nx * kv - vel[i3]) * mixF;
+    vel[i3 + 1] += (kickNormals[i3 + 1] * kv - vel[i3 + 1]) * mixF;
+    vel[i3 + 2] += (nz * kv - vel[i3 + 2]) * mixF;
+  };
+
   if (state.attractorMode) {
     const strength = Math.max(0, config.gpgpuAttractorStrength || 0) || 1;
     // The shader drives world-space positions (ap = pos / scale, so its
@@ -399,6 +603,10 @@ export function stepCpuParticles(
     const bound = extent * 2.6;
     for (let i = 0; i < count; i += 1) {
       const i3 = i * 3;
+      // Start-of-step position: the WebGL velocity pass reads posIn
+      // for every force, so the morph terms below use this, not the
+      // position this iteration is about to integrate.
+      const sx = pos[i3]; const sy = pos[i3 + 1]; const sz = pos[i3 + 2];
       attractorDerivative(config.gpgpuAttractorType, pos[i3], pos[i3 + 1], pos[i3 + 2], dvScratch);
       const dl = Math.hypot(dvScratch[0], dvScratch[1], dvScratch[2]) || 1;
       vel[i3] = vel[i3] * damping + (dvScratch[0] / dl) * pull;
@@ -415,9 +623,27 @@ export function stepCpuParticles(
         pos[i3] *= s; pos[i3 + 1] *= s; pos[i3 + 2] *= s;
         vel[i3] *= 0.4; vel[i3 + 1] *= 0.4; vel[i3 + 2] *= 0.4;
       }
+      // Morph inside attractor mode (Phase X2): the same relaxation
+      // as the free-flight branch, evaluated in attractor units (the
+      // normalised target scaled by the render divisor) against the
+      // start-of-step position, then the OBJ normal kick — the order
+      // the velocity shader applies them in.
+      if (morphOn && morphTarget) {
+        const i4 = i * 4;
+        const ang = morphAngBase + morphTarget[i4 + 3] * morphPhaseGain;
+        const ca = Math.cos(ang); const sa = Math.sin(ang);
+        const gx0 = morphTarget[i4]; const gz0 = morphTarget[i4 + 2];
+        const inv = mf / Math.max(step, 0.001);
+        const vwx = ((gx0 * ca - gz0 * sa) * extent - sx) * inv;
+        const vwy = (morphTarget[i4 + 1] * extent - sy) * inv;
+        const vwz = ((gx0 * sa + gz0 * ca) * extent - sz) * inv;
+        vel[i3] += (vwx - vel[i3]) * morphBlend;
+        vel[i3 + 1] += (vwy - vel[i3 + 1]) * morphBlend;
+        vel[i3 + 2] += (vwz - vel[i3 + 2]) * morphBlend;
+        applyObjNormalKick(i, i3, ca, sa, extent);
+      }
     }
-    return;
-  }
+  } else {
 
   const turbulence = Math.max(0, config.gpgpuTurbulence || 0);
   const curlStrength = config.gpgpuCurlEnabled ? Math.max(0, config.gpgpuCurlStrength || 0) : 0.45;
@@ -438,17 +664,10 @@ export function stepCpuParticles(
   // would cover the fraction mf of the remaining distance this step
   // (mf = 1 - exp(-strength * dt * 3)). The CPU position step is
   // pos += vel * step (no *60 factor), so vWant divides by step.
-  // When morph is off, morphOn is false and every term below reduces
-  // to the legacy computation, operation for operation.
-  const morphTarget = state.morphTarget;
-  const morphOn = morphTarget !== null && isCpuMorphActive(config);
-  const morphStrength = morphOn ? Math.max(0, config.gpgpuMorphStrength || 0) : 0;
-  const mf = morphOn ? 1 - Math.exp(-morphStrength * step * 3.0) : 0;
-  const morphBlend = morphOn ? Math.min(1, Math.max(0, mf + step * 6.0)) : 0;
-  const morphPhaseGain = morphOn && config.gpgpuMorphReplicaCount > 1 ? 1 : 0;
-  const morphAngBase = morphOn ? t * (config.gpgpuMorphOrbitSpeed || 0) : 0;
-  const morphCosBase = Math.cos(morphAngBase);
-  const morphSinBase = Math.sin(morphAngBase);
+  // The shared morph parameters (morphOn / mf / morphBlend / …) are
+  // computed once above the branch split (Phase X2); when morph is
+  // off, every term below reduces to the legacy computation,
+  // operation for operation.
 
   for (let i = 0; i < count; i += 1) {
     const i3 = i * 3;
@@ -457,21 +676,20 @@ export function stepCpuParticles(
     // Morph target for this particle (orbited), when active. The
     // home spring below aims at it instead of the layout home.
     let tx = home[i3]; let ty = home[i3 + 1]; let tz = home[i3 + 2];
+    let morphCa = 1; let morphSa = 0;
     if (morphOn && morphTarget) {
       const i4 = i * 4;
-      let gx = morphTarget[i4]; let gy = morphTarget[i4 + 1]; let gz = morphTarget[i4 + 2];
-      if (morphPhaseGain !== 0) {
-        const ang = morphAngBase + morphTarget[i4 + 3] * morphPhaseGain;
-        const ca = Math.cos(ang); const sa = Math.sin(ang);
-        const rx = gx * ca - gz * sa;
-        const rz = gx * sa + gz * ca;
-        gx = rx; gz = rz;
-      } else if (morphAngBase !== 0) {
-        const rx = gx * morphCosBase - gz * morphSinBase;
-        const rz = gx * morphSinBase + gz * morphCosBase;
-        gx = rx; gz = rz;
-      }
-      tx = gx; ty = gy; tz = gz;
+      // One rotation for the target and the kick normal alike
+      // (Phase X2): the angle is the orbit base plus the baked
+      // per-copy phase. With gain 0 and base 0 the angle is 0 and
+      // the rotation is the exact identity (cos = 1, sin = 0), so
+      // the legacy target values stay bit-identical.
+      const ang = morphAngBase + morphTarget[i4 + 3] * morphPhaseGain;
+      morphCa = Math.cos(ang); morphSa = Math.sin(ang);
+      const gx = morphTarget[i4]; const gz = morphTarget[i4 + 2];
+      tx = gx * morphCa - gz * morphSa;
+      ty = morphTarget[i4 + 1];
+      tz = gx * morphSa + gz * morphCa;
     }
     // Analytic curl-ish flow (cheap sin/cos field, per-particle phase).
     let fx = Math.sin(y * 3.1 + t * 0.7 + ph) + Math.cos(z * 2.3 - t * 0.5 + ph * 0.7);
@@ -501,6 +719,9 @@ export function stepCpuParticles(
       vel[i3] += (vwx - vel[i3]) * morphBlend;
       vel[i3 + 1] += (vwy - vel[i3 + 1]) * morphBlend;
       vel[i3 + 2] += (vwz - vel[i3 + 2]) * morphBlend;
+      // OBJ normal kick (Phase X2): after the spring, as in the
+      // shader; a no-op unless normals are baked and speed > 0.
+      applyObjNormalKick(i, i3, morphCa, morphSa, 1);
     }
     pos[i3] += vel[i3] * step;
     pos[i3 + 1] += vel[i3 + 1] * step;
@@ -512,6 +733,41 @@ export function stepCpuParticles(
       const s = 1.3 / d;
       pos[i3] *= s; pos[i3 + 1] *= s; pos[i3 + 2] *= s;
       vel[i3] *= -0.35; vel[i3 + 1] *= -0.35; vel[i3 + 2] *= -0.35;
+    }
+  }
+  }
+
+  // Age lifecycle (Phase X2): runs after both branches, the way the
+  // WebGL position pass runs after the velocity pass. Age advances
+  // by the (already speed-scaled) step; on wrap the particle
+  // restarts at its replica offset (cpuAgeRestartAge) and respawns
+  // at the CPU emitter analogue — the layout home, or in attractor
+  // mode the same core cluster the state was seeded with. Velocity
+  // is left untouched: the WebGL respawn rewrites only the position
+  // texel. With the age system off this block never runs and the
+  // step is the legacy computation exactly.
+  if (state.ageLive) {
+    const ageMax = state.ageMax;
+    const ageArr = state.age;
+    for (let i = 0; i < count; i += 1) {
+      const next = ageArr[i] + step;
+      if (next <= ageMax) {
+        ageArr[i] = next;
+        continue;
+      }
+      ageArr[i] = cpuAgeRestartAge(config, i);
+      const i3 = i * 3;
+      if (state.attractorMode) {
+        const extent = state.attractorRenderDivisor;
+        pos[i3] = home[i3] * extent * 0.35;
+        pos[i3 + 1] = home[i3 + 1] * extent * 0.35;
+        pos[i3 + 2] = home[i3 + 2] * extent * 0.35
+          + (config.gpgpuAttractorType === 'lorenz' || config.gpgpuAttractorType === 'chen' || config.gpgpuAttractorType === 'lu' ? extent * 0.9 : 0);
+      } else {
+        pos[i3] = home[i3];
+        pos[i3 + 1] = home[i3 + 1];
+        pos[i3 + 2] = home[i3 + 2];
+      }
     }
   }
 }

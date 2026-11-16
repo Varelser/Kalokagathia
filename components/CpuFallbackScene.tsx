@@ -2,7 +2,7 @@ import React from 'react';
 import type { ParticleConfig } from '../types';
 import { generateParticleData, getRigidParticlePosition } from './particleData';
 import {
-  buildCpuMorphTargets,
+  buildCpuMorphData,
   createCpuParticleState,
   cpuShapeSignature,
   isCpuMorphActive,
@@ -106,7 +106,21 @@ function computeMorphBakeExtras(config: ParticleConfig): CpuMorphBakeExtras {
   const objSample = config.gpgpuMorphTarget === 'obj'
     ? sampleObjPointCloudWithNormals(config.gpgpuMorphObjSource, config.gpgpuMorphObjSampleMode)
     : null;
-  return { mediaMap, svgPoints, pathGeometry, objPoints: objSample ? objSample.points : null };
+  return {
+    mediaMap,
+    svgPoints,
+    pathGeometry,
+    objPoints: objSample ? objSample.points : null,
+    // Phase X2: the sample's normals feed the OBJ normal kick.
+    objNormals: objSample ? objSample.normals : null,
+  };
+}
+
+/** GLSL-style smoothstep for the CPU age fade envelope. */
+function smoothstepCpu(e0: number, e1: number, x: number): number {
+  if (e1 === e0) return x >= e0 ? 1 : 0;
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
 }
 
 export const CpuFallbackScene: React.FC<CpuFallbackSceneProps> = ({
@@ -166,8 +180,13 @@ export const CpuFallbackScene: React.FC<CpuFallbackSceneProps> = ({
       const count = resolveCpuParticleCount(cfg);
       const homes = computeLayoutHomes(cfg, count);
       setLayoutNote(homes === null);
-      const morphTargets = buildCpuMorphTargets(cfg, count, computeMorphBakeExtras(cfg));
-      state = createCpuParticleState(cfg, homes, morphTargets);
+      const morphData = buildCpuMorphData(cfg, count, computeMorphBakeExtras(cfg));
+      state = createCpuParticleState(
+        cfg,
+        homes,
+        morphData ? morphData.targets : null,
+        morphData ? morphData.normals : null,
+      );
     };
 
     ensureState();
@@ -262,6 +281,16 @@ export const CpuFallbackScene: React.FC<CpuFallbackSceneProps> = ({
       ctx.globalCompositeOperation = whiteBg ? 'source-over' : 'lighter';
       ctx.fillStyle = `rgb(${particleColor})`;
       const { pos, sizeMul, count } = state;
+      // Age fade envelope (Phase X2): the same smoothstep pair the
+      // points shader applies to the normalised age, so the replica
+      // age phase reads on the CPU path as staggered per-copy
+      // pulsing. Only while the age system is live; otherwise the
+      // per-particle alpha below is exactly the legacy depth alpha.
+      const ageFadeLive = state.ageLive;
+      const ageMaxInv = ageFadeLive ? 1 / Math.max(0.001, state.ageMax) : 0;
+      const ageFadeIn = Math.max(0, Math.min(1, cfg.gpgpuAgeFadeIn || 0));
+      const ageFadeOut = Math.max(0, Math.min(1, cfg.gpgpuAgeFadeOut || 0));
+      const ageArr = state.age;
       for (let i = 0; i < count; i += 1) {
         const i3 = i * 3;
         let x = pos[i3] / divisor;
@@ -279,12 +308,19 @@ export const CpuFallbackScene: React.FC<CpuFallbackSceneProps> = ({
         if (sx < -8 || sx > width + 8 || sy < -8 || sy > height + 8) continue;
         const size = Math.max(0.5, baseSize * sizeMul[i] * perspective);
         const depthAlpha = Math.max(0.12, Math.min(1, 0.85 - z * 0.3));
+        let alphaMul = depthAlpha;
+        if (ageFadeLive) {
+          const na = Math.max(0, Math.min(1, ageArr[i] * ageMaxInv));
+          const fi = ageFadeIn <= 0 ? (na > 0 ? 1 : 0) : smoothstepCpu(0, ageFadeIn, na);
+          const fo = ageFadeOut <= 0 ? 1 : smoothstepCpu(1, 1 - ageFadeOut, na);
+          alphaMul = depthAlpha * fi * fo;
+        }
         // Soft halo + core: the WebGL points have a glow falloff that a
         // single hard square lacks; two rects approximate it cheaply.
-        ctx.globalAlpha = opacity * depthAlpha * 0.16;
+        ctx.globalAlpha = opacity * alphaMul * 0.16;
         const halo = size * 2.8;
         ctx.fillRect(sx - halo / 2, sy - halo / 2, halo, halo);
-        ctx.globalAlpha = opacity * depthAlpha;
+        ctx.globalAlpha = opacity * alphaMul;
         ctx.fillRect(sx - size / 2, sy - size / 2, size, size);
       }
       ctx.globalAlpha = 1;

@@ -11,6 +11,7 @@ import {
 } from '../lib/deterministicRender';
 import { applyUnmultToImageData } from '../lib/unmult';
 import { setCameraDeterminismLocked } from '../lib/cameraDeterminism';
+import { setDeterministicJobActive, setDeterministicRotationFrame } from '../lib/sceneRotationDeterminism';
 import { setPositionFeedbackSuppressed } from '../lib/positionFeedback';
 import { setTimeScaleLocked } from '../lib/playbackTime';
 import {
@@ -108,6 +109,7 @@ export const DeterministicRenderManager: React.FC = () => {
     () =>
       registerDeterministicRenderHandler(
         async (job: DeterministicRenderJob, onProgress: DeterministicRenderProgress) => {
+          setDeterministicJobActive(true);
           setFrameloop('never');
           setPositionFeedbackSuppressed(true);
           // Time scale lock (B3): a job always steps the legacy fixed
@@ -273,6 +275,7 @@ export const DeterministicRenderManager: React.FC = () => {
                 });
               }
               applyUnmultBlack();
+              setDeterministicRotationFrame(warm + 1);
               advance((warm + 1) * dt);
               await new Promise((resolve) => {
                 setTimeout(resolve, 0);
@@ -289,6 +292,7 @@ export const DeterministicRenderManager: React.FC = () => {
                 });
               }
               applyUnmultBlack();
+              setDeterministicRotationFrame(step);
               advance(step * dt);
               // Same-task copy: the drawing buffer still holds the frame
               // that advance() just rendered.
@@ -339,6 +343,7 @@ export const DeterministicRenderManager: React.FC = () => {
                 });
               }
               applyUnmultBlack();
+              setDeterministicRotationFrame(probeStep);
               advance(probeStep * dt);
               context.drawImage(source, 0, 0);
               if (backgroundMode === 'transparent') {
@@ -385,6 +390,8 @@ export const DeterministicRenderManager: React.FC = () => {
             setPositionFeedbackSuppressed(false);
             setTimeScaleLocked(false);
             setCameraDeterminismLocked(false);
+            setDeterministicRotationFrame(null);
+            setDeterministicJobActive(false);
             setFrameloop('always');
           }
         },

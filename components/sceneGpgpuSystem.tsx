@@ -37,6 +37,7 @@ import {
 import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
+import { getDeterministicRotationFrame, isDeterministicJobActive } from '../lib/sceneRotationDeterminism';
 
 type GpgpuSystemProps = {
   audioRef: MutableRefObject<{ bass: number; treble: number; pulse: number }>;
@@ -163,6 +164,13 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
 
   useFrame(({ gl: glCtx }, delta) => {
     if (!isPlaying || !rtRef.current || !simMeshRef.current) return;
+
+    // Phase X1: while a deterministic job is active the manager feeds
+    // a step index before every legitimate advance; a null feed means
+    // this call is a stray live frame of the freshly remounted system
+    // during job setup, whose (clamped) step would shift the whole
+    // export by one step. Skip it - the job's own advances follow.
+    if (isDeterministicJobActive() && getDeterministicRotationFrame() === null) return;
 
     // Global time scale (B3): scales the sim step (and the accumulated
     // sim clock) in realtime playback; the deterministic renderer locks
@@ -481,6 +489,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       texSize,
       time: timeRef.current,
     });
+
   });
 
   return <GpgpuRenderOutputs config={config} assets={assets} />;
