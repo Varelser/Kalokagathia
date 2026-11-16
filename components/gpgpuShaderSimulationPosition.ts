@@ -11,6 +11,12 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform float uAgeMax;
   uniform float uAgeReplicaStep;
   uniform float uAgeReplicaCount;
+  // Replica independent simulation (Phase W2): inside a replica
+  // stack every texel belongs to the same copy, so the copy's
+  // Phase M restart age arrives as this constant base (the pass
+  // runner zeroes uAgeReplicaStep for stacks and supplies
+  // index * step * ageMax here). 0 in the shared path.
+  uniform float uReplicaAgeBase;
   uniform float uTexSizeF;
   uniform bool  uVerletEnabled;
   uniform sampler2D uPrevPosTex;
@@ -159,6 +165,10 @@ export const SIM_POS_FRAG = /* glsl */ `
           ? floor(texIdx * uAgeReplicaCount / max(uTexSizeF * uTexSizeF, 1.0))
           : 0.0;
         age = replicaIdx * uAgeReplicaStep * uAgeMax;
+        // Phase W2 stack mode: the copy's constant restart age
+        // (exactly 0.0 in the shared path, so this is a no-op
+        // there beyond the per-texel term above).
+        age += uReplicaAgeBase;
       }
     }
 

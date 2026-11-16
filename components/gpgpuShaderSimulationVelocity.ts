@@ -87,6 +87,16 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uMorphStrength;
   uniform float uMorphOrbitSpeed;
   uniform float uMorphReplicaPhaseGain;
+  // Replica independent simulation (Phase W2): per-stack field
+  // seed / clock offsets (zero in the shared path, where they are
+  // exact neutrals) and the stack-mode remap of this stack's
+  // texels onto the global layout for the textures that live
+  // there (morph targets / normals / initial positions).
+  uniform vec3  uReplicaSeedOffset;
+  uniform float uReplicaTimeOffset;
+  uniform float uStackMode;
+  uniform float uStackGlobalStart;
+  uniform float uStackGlobalTexSizeF;
   uniform float uSpeed;
   uniform bool  uSdfEnabled;
   uniform int   uSdfShape;
@@ -241,11 +251,30 @@ export const SIM_VEL_FRAG = /* glsl */ `
     vec3 vel = velData.xyz;
     float phaseState = velData.w;
 
+    // Replica independent simulation (Phase W2): in stack mode
+    // this pass simulates ONE replica block inside its own
+    // textures. replicaSeed / replicaTime shift the stochastic
+    // field sampling (turbulence / curl / wind gust / Levy gate)
+    // so the copy evolves on its own field realization and clock
+    // phase; in the shared path both are exact zeros and every
+    // expression below reduces to its legacy form. globalUv
+    // remaps this stack's texels onto the global layout for the
+    // textures that live there (morph / normals / initial data);
+    // in the shared path it is vUv itself.
+    vec3 replicaSeed = uReplicaSeedOffset;
+    float replicaTime = uTime + uReplicaTimeOffset;
+    vec2 globalUv = vUv;
+    if (uStackMode > 0.5) {
+      float localIdx = floor(vUv.y * uTexSizeF) * uTexSizeF + floor(vUv.x * uTexSizeF);
+      float globalIdx = uStackGlobalStart + localIdx;
+      globalUv = (vec2(mod(globalIdx, uStackGlobalTexSizeF), floor(globalIdx / uStackGlobalTexSizeF)) + 0.5) / uStackGlobalTexSizeF;
+    }
+
     vel.y -= uGravity * uDelta * 9.8;
 
     if (uTurbulence > 0.001) {
-      float t = uTime * 0.25;
-      vec3 np = pos * 0.007;
+      float t = replicaTime * 0.25;
+      vec3 np = pos * 0.007 + replicaSeed;
       vel += vec3(vnoise(np+vec3(t,0,0)),vnoise(np+vec3(0,t+13.7,0)),vnoise(np+vec3(0,0,t+27.4)))
              * uTurbulence * 18.0 * uDelta;
     }
@@ -286,9 +315,9 @@ export const SIM_VEL_FRAG = /* glsl */ `
     if (uCurlEnabled) {
       vec3 curl = (uCurlMode == 0 && uCurlOctaves <= 1)
         ? (uCurlSymmetry == 0
-          ? curlNoise(pos * uCurlScale + vec3(uTime * 0.15))
-          : symmetricCurl(pos * uCurlScale, vec3(uTime * 0.15)))
-        : curlField(pos * uCurlScale, vec3(uTime * 0.15));
+          ? curlNoise(pos * uCurlScale + vec3(replicaTime * 0.15) + replicaSeed)
+          : symmetricCurl(pos * uCurlScale + replicaSeed, vec3(replicaTime * 0.15)))
+        : curlField(pos * uCurlScale + replicaSeed, vec3(replicaTime * 0.15));
       vel += curl * uCurlStrength * 20.0 * uDelta;
     }
 
@@ -423,7 +452,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
     // (floor(uTime * rate)) so jump frequency is frame-rate independent; the
     // magnitude follows a power law in the hash (clamped for stability).
     if (uLevyEnabled) {
-      float tick = floor(uTime * uLevyRate);
+      float tick = floor(replicaTime * uLevyRate);
       vec3 h = hash3(vec3(vUv * 913.7, tick * 17.31 + 4.7));
       if (h.x > 0.96) {
         vec3 dir = h - 0.5;
@@ -446,9 +475,9 @@ export const SIM_VEL_FRAG = /* glsl */ `
     // Wind
     if (uWindEnabled) {
       vec3 gust = vec3(
-        vnoise(pos * 0.01 + vec3(uTime * 0.3, 0.0, 0.0)),
-        vnoise(pos * 0.01 + vec3(1.7, uTime * 0.25, 0.0)),
-        vnoise(pos * 0.01 + vec3(0.0, 3.1, uTime * 0.2))
+        vnoise(pos * 0.01 + replicaSeed + vec3(replicaTime * 0.3, 0.0, 0.0)),
+        vnoise(pos * 0.01 + replicaSeed + vec3(1.7, replicaTime * 0.25, 0.0)),
+        vnoise(pos * 0.01 + replicaSeed + vec3(0.0, 3.1, replicaTime * 0.2))
       ) * uWindGust;
       vel += (normalize(vec3(uWindX, uWindY, uWindZ) + vec3(0.0001)) * uWindStrength + gust) * uDelta * 30.0;
     }
@@ -563,7 +592,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
 
     // Spring to Spawn Position
     if (uSpringEnabled) {
-      vec3 spawnPos = texture2D(uInitPosTex, vUv).xyz;
+      vec3 spawnPos = texture2D(uInitPosTex, globalUv).xyz;
       vel += (spawnPos - pos) * uSpringStrength * uDelta * 3.0;
     }
 
@@ -586,7 +615,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
     // frame-rate independent and stable for any dt, and mf reduces to
     // ~strength * dt * 3 for small steps, i.e. Kinetix's spring rate.
     if (uMorphEnabled) {
-      vec4 mTexel = texture2D(uMorphTex, vUv);
+      vec4 mTexel = texture2D(uMorphTex, globalUv);
       vec3 mTarget = mTexel.xyz;
       // Replica grammar (Phase K): the texel alpha carries the
       // per-copy orbit phase offset in radians (baked); the gain is
@@ -618,7 +647,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
       // the envelope decays. Speed 0 (the default) skips the whole
       // block: the legacy path stays bit-identical.
       if (uMorphObjNormalSpeed > 0.0) {
-        vec3 mNormal = texture2D(uMorphNormalTex, vUv).xyz;
+        vec3 mNormal = texture2D(uMorphNormalTex, globalUv).xyz;
         mNormal = vec3(
           mNormal.x * mCos - mNormal.z * mSin,
           mNormal.y,
