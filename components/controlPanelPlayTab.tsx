@@ -116,6 +116,7 @@ import {
   renderDeterministicSequence,
   renderDeterministicVideo,
   type DeterministicBackgroundMode,
+  type DeterministicLoopMeasurement,
   type DeterministicSequencePart,
 } from '../lib/deterministicRender';
 import { VideoEncodeUnsupportedError, type VideoFormat } from '../lib/videoEncode';
@@ -4490,7 +4491,20 @@ const KeyboardShortcutsSection: React.FC = () => (
 // App version handed to the deterministic renderer for its render.json
 // manifest. Keep in sync with package.json "version" (the renderer must
 // not import package.json, so the UI supplies it — see PRO1_BRIEF.md).
-const KALOKAGATHIA_APP_VERSION = '1.7.1';
+const KALOKAGATHIA_APP_VERSION = '1.8.0';
+
+// Phase C resolution presets for the deterministic renderer. 'canvas'
+// captures at the canvas's current size (the pre-Phase-C behaviour);
+// the others resize the renderer for the duration of the job.
+const DETERMINISTIC_RESOLUTION_PRESETS = [
+  { id: 'canvas', label: '現在のキャンバス', width: 0, height: 0 },
+  { id: '1920x1080', label: '1920×1080 (16:9)', width: 1920, height: 1080 },
+  { id: '3840x2160', label: '3840×2160 (4K)', width: 3840, height: 2160 },
+  { id: '1080x1920', label: '1080×1920 (9:16)', width: 1080, height: 1920 },
+  { id: '1080x1080', label: '1080×1080 (1:1)', width: 1080, height: 1080 },
+] as const;
+
+type DeterministicResolutionPresetId = (typeof DETERMINISTIC_RESOLUTION_PRESETS)[number]['id'];
 
 const DeterministicRenderControls: React.FC<{
   config: ParticleConfig;
@@ -4499,8 +4513,13 @@ const DeterministicRenderControls: React.FC<{
   const [seconds, setSeconds] = React.useState(3);
   const [fps, setFps] = React.useState(24);
   const [format, setFormat] = React.useState<'zip' | VideoFormat>('zip');
+  const [resolution, setResolution] = React.useState<DeterministicResolutionPresetId>('canvas');
+  const [loopMode, setLoopMode] = React.useState(false);
+  const [loopReport, setLoopReport] = React.useState<DeterministicLoopMeasurement | null>(null);
   const [renderStatus, setRenderStatus] = React.useState('');
   const [rendering, setRendering] = React.useState(false);
+  const resolutionPreset = DETERMINISTIC_RESOLUTION_PRESETS.find((preset) => preset.id === resolution)
+    ?? DETERMINISTIC_RESOLUTION_PRESETS[0];
   const requestedFrames = Math.max(1, Math.round(seconds * fps));
   const isVideo = format !== 'zip';
   // Pro-1.1: the background mode is the deterministicBackgroundMode
@@ -4538,6 +4557,25 @@ const DeterministicRenderControls: React.FC<{
       return;
     }
     setRendering(true);
+    setLoopReport(null);
+    // Phase C: resolution preset + loop measurement ride along with
+    // the job. measuredLoop is kept in a local (not only in state) so
+    // the completion message below can quote the figures in the same
+    // tick the render finishes.
+    let measuredLoop: DeterministicLoopMeasurement | null = null;
+    const onLoopMeasured = (measurement: DeterministicLoopMeasurement) => {
+      measuredLoop = measurement;
+      setLoopReport(measurement);
+    };
+    const jobExtras = {
+      ...(resolutionPreset.width > 0
+        ? { width: resolutionPreset.width, height: resolutionPreset.height, resolutionLabel: resolutionPreset.id }
+        : {}),
+      loopMode,
+    };
+    const loopStatusText = () => (measuredLoop
+      ? ` ループ継ぎ目（1周期後のプローブ vs 先頭）: 平均差分 ${measuredLoop.seamDriftMeanAbsDiff.toFixed(2)} / 不一致ピクセル ${(measuredLoop.seamDriftMismatchRatio * 100).toFixed(2)}% / 最大 ${measuredLoop.seamMaxAbsDiff}。`
+      : '');
     setRenderStatus('決定的レンダリングを開始します…');
     try {
       if (format === 'zip') {
@@ -4555,28 +4593,30 @@ const DeterministicRenderControls: React.FC<{
           );
         };
         await renderDeterministicSequence(
-          { fps, frames, warmupFrames: DEFAULT_WARMUP_FRAMES, appVersion: KALOKAGATHIA_APP_VERSION, backgroundMode },
+          { fps, frames, warmupFrames: DEFAULT_WARMUP_FRAMES, appVersion: KALOKAGATHIA_APP_VERSION, backgroundMode, ...jobExtras },
           (done, total) => {
             setRenderStatus(`レンダリング中… ${done} / ${total} フレーム`);
           },
           downloadPart,
+          onLoopMeasured,
         );
         setRenderStatus(
           partTotal > 1
-            ? `${frames} フレームを ${partTotal} 個の ZIP パートに分けて書き出しました（${fps}fps 固定ステップ・ウォームアップ ${DEFAULT_WARMUP_FRAMES} フレーム）。各パートのフレーム番号は通し番号なので、同じフォルダに展開すれば1本の連番になります。ffmpeg -framerate ${fps} -i frame-%04d.png などで動画化できます。`
-            : `${frames} フレームを ZIP に書き出しました（${fps}fps 固定ステップ・ウォームアップ ${DEFAULT_WARMUP_FRAMES} フレーム）。ffmpeg -framerate ${fps} -i frame-%04d.png などで動画化できます。`,
+            ? `${frames} フレームを ${partTotal} 個の ZIP パートに分けて書き出しました（${fps}fps 固定ステップ・ウォームアップ ${DEFAULT_WARMUP_FRAMES} フレーム）。各パートのフレーム番号は通し番号なので、同じフォルダに展開すれば1本の連番になります。ffmpeg -framerate ${fps} -i frame-%04d.png などで動画化できます。${loopStatusText()}`
+            : `${frames} フレームを ZIP に書き出しました（${fps}fps 固定ステップ・ウォームアップ ${DEFAULT_WARMUP_FRAMES} フレーム）。ffmpeg -framerate ${fps} -i frame-%04d.png などで動画化できます。${loopStatusText()}`,
         );
       } else {
         const video = await renderDeterministicVideo(
-          { fps, frames, warmupFrames: DEFAULT_WARMUP_FRAMES, appVersion: KALOKAGATHIA_APP_VERSION, backgroundMode },
+          { fps, frames, warmupFrames: DEFAULT_WARMUP_FRAMES, appVersion: KALOKAGATHIA_APP_VERSION, backgroundMode, ...jobExtras },
           format,
           (done, total) => {
             setRenderStatus(`レンダリング／エンコード中… ${done} / ${total} フレーム`);
           },
+          onLoopMeasured,
         );
         download(video, `monosphere-render.${format}`);
         setRenderStatus(
-          `${frames} フレームを ${format.toUpperCase()} 動画に書き出しました（${fps}fps 固定ステップ・フレーム時刻ちょうど・ウォームアップ ${DEFAULT_WARMUP_FRAMES} フレーム）。`,
+          `${frames} フレームを ${format.toUpperCase()} 動画に書き出しました（${fps}fps 固定ステップ・フレーム時刻ちょうど・ウォームアップ ${DEFAULT_WARMUP_FRAMES} フレーム）。${loopStatusText()}`,
         );
       }
     } catch (error) {
@@ -4597,7 +4637,7 @@ const DeterministicRenderControls: React.FC<{
         シーンを初期状態に組み直し、時計を 0 に戻して、1フレーム = 1/{fps} 秒の固定ステップで進めながら PNG 連番を書き出します。機械の速さに依存せず、フレーム i は常にシミュレーション時刻 (i+1)/{fps} 秒の絵になります（通常の動画書き出しは実時間録画のため再現しません）。GPGPU の初期状態はシードで決まります。時間で動くオーバーレイ（テンポラルプロファイル／モジュレーション／音反応）は再現の範囲外なので、厳密な再現が必要なときは切ってください。GPUシミュレーションの粒子単位の完全一致は GPU の浮動小数点の決定性にも依存します（ソフトウェアGL環境では形状・個数・タイミングが一致しても粒子単位で数%ずれることを確認済み）。
       </p>
       <p className="text-[11px] leading-relaxed text-white/45">
-        書き出しは現在のキャンバス解像度で行われます（解像度プリセットは未対応。実解像度は各 ZIP の render.json に記録されます）。撮影前に点火直後の過渡をやり過ごすため、最初の {DEFAULT_WARMUP_FRAMES} フレームは撮影せずにステップだけ進めます（ウォームアップ。フレーム i のシミュレーション時刻は ({DEFAULT_WARMUP_FRAMES}+i+1)/{fps} 秒になります）。PNG連番（ZIP）は最大 {MAX_DETERMINISTIC_FRAMES} フレームまで、600フレームごとにパート分割して順次ダウンロードします。動画（WebM／MP4）は全フレームをメモリに保持するため最大 {MAX_DETERMINISTIC_VIDEO_FRAMES} フレームまでです{capped ? `（現在の設定は上限で ${frames} フレームに制限されています）` : ''}。
+        解像度は「現在のキャンバス」かプリセット（1920×1080 / 3840×2160 / 1080×1920 / 1080×1080）から選べます。プリセット選択時はレンダリング中だけその解像度に切り替わり、実解像度とプリセット名は各 ZIP の render.json に記録されます。撮影前に点火直後の過渡をやり過ごすため、最初の {DEFAULT_WARMUP_FRAMES} フレームは撮影せずにステップだけ進めます（ウォームアップ。フレーム i のシミュレーション時刻は ({DEFAULT_WARMUP_FRAMES}+i+1)/{fps} 秒になります）。PNG連番（ZIP）は最大 {MAX_DETERMINISTIC_FRAMES} フレームまで、600フレームごとにパート分割して順次ダウンロードします。動画（WebM／MP4）は全フレームをメモリに保持するため最大 {MAX_DETERMINISTIC_VIDEO_FRAMES} フレームまでです{capped ? `（現在の設定は上限で ${frames} フレームに制限されています）` : ''}。
       </p>
       <Slider label="Seconds · 長さ（秒）" value={seconds} min={1} max={30} step={1} onChange={setSeconds} />
       <div className="flex items-center gap-2">
@@ -4613,6 +4653,23 @@ const DeterministicRenderControls: React.FC<{
         ))}
         <span className="ml-auto font-mono text-[10px] text-white/40">{frames} frames</span>
       </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] text-white/50">解像度</span>
+        {DETERMINISTIC_RESOLUTION_PRESETS.map((option) => (
+          <button
+            key={option.id}
+            onClick={() => setResolution(option.id)}
+            className={`px-3 py-1 rounded-full text-[10px] font-bold ${resolution === option.id ? 'bg-white text-black' : 'bg-white/10 text-white/60'}`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {resolution === '3840x2160' && isVideo && (
+        <p className="text-[11px] leading-relaxed text-amber-200/80">
+          4K 動画は全フレームをメモリに保持するため非常に重くなります。長尺では PNG連番 ZIP を推奨します。
+        </p>
+      )}
       <div className="flex items-center gap-2">
         <span className="text-[11px] text-white/50">形式</span>
         {([
@@ -4664,6 +4721,18 @@ const DeterministicRenderControls: React.FC<{
           現在は透過系の背景モードと動画形式が組み合わさっています（プリセット読込等で変わった場合）。動画は alpha を持てないため、この組合せでは書き出せません。
         </p>
       )}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] text-white/50">ループ</span>
+        <button
+          onClick={() => setLoopMode((prev) => !prev)}
+          className={`px-3 py-1 rounded-full text-[10px] font-bold ${loopMode ? 'bg-white text-black' : 'bg-white/10 text-white/60'}`}
+        >
+          {loopMode ? '継ぎ目計測 ON' : '継ぎ目計測 OFF'}
+        </button>
+        <span className="text-[10px] leading-relaxed text-white/40">
+          ON では最終フレームの後に1周期分進めたプローブを描き、先頭フレームとの差分（ドリフト）を計測して結果と render.json に記録します。時間駆動の要素は周期が一致すれば差分≈0 になりますが、状態を持つシミュレーション（GPGPU 等）は蓄積するため、これは保証ではなく計測値です。シーン全体の回転速度（表示設定）も動きの一部です — ループさせる場合は、書き出し長でちょうど整数周する速度にするか 0 にしてください（既定の 0.001 rad/frame のままだと継ぎ目がずれます）。
+        </span>
+      </div>
       <button
         onClick={startRender}
         disabled={rendering || videoBlockedByBackground}
@@ -4672,6 +4741,16 @@ const DeterministicRenderControls: React.FC<{
         {rendering ? 'レンダリング中…' : format === 'zip' ? 'PNG連番を書き出す（ZIP）' : `${format.toUpperCase()} 動画を書き出す`}
       </button>
       {renderStatus && <p className="text-[11px] text-white/55">{renderStatus}</p>}
+      {loopReport && (
+        <p className="text-[11px] leading-relaxed text-white/55">
+          ループ継ぎ目計測（{loopReport.periodFrames} フレーム = {loopReport.periodSeconds.toFixed(2)} 秒周期）:
+          ドリフト（1周期後 vs 先頭）平均 {loopReport.seamDriftMeanAbsDiff.toFixed(2)} / 不一致 {(loopReport.seamDriftMismatchRatio * 100).toFixed(2)}% / 最大 {loopReport.seamMaxAbsDiff}、
+          ジャンプ（末尾 vs 先頭）平均 {loopReport.seamJumpMeanAbsDiff.toFixed(2)} / 不一致 {(loopReport.seamJumpMismatchRatio * 100).toFixed(2)}%。
+          {loopReport.seamDriftMeanAbsDiff < 0.5
+            ? 'ドリフトはほぼ 0 で、この長さでは継ぎ目なくループします。'
+            : 'ドリフトが残っています（状態を持つシミュレーションの蓄積）。継ぎ目が目立つ場合は編集側のクロスフェードが対処になります。'}
+        </p>
+      )}
     </div>
   );
 };

@@ -4,6 +4,34 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.8.0] — 2026-11-16
+
+Pro-1 completion (improvement plan Phase C): the deterministic
+renderer gains delivery resolution presets and a measured loop seam,
+and the UnMult path is verified at long-render scale.
+
+### Added
+- **Resolution presets for deterministic renders** — alongside the
+  legacy "current canvas size", the Play tab now offers 1920×1080
+  (16:9), 3840×2160 (4K), 1080×1920 (9:16) and 1080×1080 (1:1). The
+  renderer is resized with the pixel ratio pinned to 1 for the
+  duration of the job (the canvas's on-screen CSS size is unchanged)
+  and restored afterwards; the size actually captured and the preset
+  label are recorded in every render.json.
+- **Loop seam measurement** — with the loop option on, the renderer
+  steps one probe frame at exactly one period after frame 0 and
+  records the pixel difference in render.json and in the UI: drift
+  (probe vs frame 0) and jump (last frame vs frame 0). This is a
+  measurement, not a guarantee — time-driven content whose period
+  divides the loop length measures ~0 drift, while stateful
+  simulations accumulate and report their real seam.
+
+### Verified
+- **UnMult long render** — a 660-frame UnMult export with the brand
+  single-colour mode enabled was completed end to end on a real GPU
+  (600 + 60 ZIP parts, manifest backgroundMode / unmult fields,
+  memory behaviour and duration recorded in the Phase C gate report).
+
 ## [1.7.1] — 2026-11-16
 
 Correctness fixes from the v1.7.0 audit (improvement plan Phase A):

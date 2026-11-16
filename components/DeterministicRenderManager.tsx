@@ -5,6 +5,7 @@ import {
   registerDeterministicRenderHandler,
   resolveDeterministicBackgroundMode,
   resolveWarmupFrames,
+  type DeterministicLoopMeasurement,
   type DeterministicRenderJob,
   type DeterministicRenderProgress,
 } from '../lib/deterministicRender';
@@ -38,6 +39,23 @@ import {
 // and not retained, keeping long renders at one-part memory; without it the
 // frames are collected and returned as before (the video encoder path).
 //
+// Phase C resolution presets (job.width / job.height): when a job
+// requests a capture size, the renderer is resized through R3F's
+// setSize with the pixel ratio pinned to 1 — so the drawing buffer is
+// exactly the requested pixel size and the camera aspect and the
+// PostFx composer's targets follow through the normal size state —
+// and the previous size / ratio are restored in the finally block.
+// Without a requested size nothing is touched and capture proceeds at
+// the canvas's current size, exactly as before.
+//
+// Phase C loop measurement (job.loopMode): frame 0 and the last
+// frame's pixels are snapshotted after background processing; after
+// the capture loop one probe frame is stepped at exactly one period
+// after frame 0 (step warmup + frames + 1) and captured the same way.
+// The probe is diffed against frame 0 (drift: did the scene return to
+// its start?) and the last frame is diffed against frame 0 (jump: the
+// visible wrap discontinuity). The probe is never emitted as a frame.
+//
 // Pro-1.1 background modes (job.backgroundMode, default 'opaque'):
 // 'opaque' runs the exact sequence above and captures the canvas as-is.
 // 'unmult' forces a black scene background / fog tint / clear colour for
@@ -49,9 +67,37 @@ import {
 // the EffectComposer never participates in that render, so no PostFx is
 // applied and the target's alpha is the scene's own. The PostFx code
 // itself is untouched by all three modes.
+function diffLoopPixels(
+  first: Uint8ClampedArray,
+  other: Uint8ClampedArray,
+): { meanAbsDiff: number; mismatchRatio: number; maxAbsDiff: number } {
+  const pixelCount = Math.floor(first.length / 4);
+  let sum = 0;
+  let mismatched = 0;
+  let maxAbsDiff = 0;
+  for (let p = 0; p < pixelCount; p += 1) {
+    const o = p * 4;
+    let pixelMax = 0;
+    for (let c = 0; c < 4; c += 1) {
+      const d = Math.abs(first[o + c] - other[o + c]);
+      sum += d;
+      if (d > pixelMax) pixelMax = d;
+    }
+    if (pixelMax > 8) mismatched += 1;
+    if (pixelMax > maxAbsDiff) maxAbsDiff = pixelMax;
+  }
+  return {
+    meanAbsDiff: pixelCount > 0 ? sum / (pixelCount * 4) : 0,
+    mismatchRatio: pixelCount > 0 ? mismatched / pixelCount : 0,
+    maxAbsDiff,
+  };
+}
+
 export const DeterministicRenderManager: React.FC = () => {
   const advance = useThree((state) => state.advance);
   const setFrameloop = useThree((state) => state.setFrameloop);
+  const setSize = useThree((state) => state.setSize);
+  const setDpr = useThree((state) => state.setDpr);
   const gl = useThree((state) => state.gl);
   const clock = useThree((state) => state.clock);
   const scene = useThree((state) => state.scene);
@@ -84,6 +130,50 @@ export const DeterministicRenderManager: React.FC = () => {
             if (scene.fog) scene.fog.color.copy(black);
             gl.setClearColor(black, 1);
           };
+          // Phase C resolution preset: resize before the scene remount
+          // so every stepped frame (warmup included) renders at the
+          // requested size. The restore runs in the finally block.
+          let restoreSize: (() => void) | null = null;
+          const wantWidth = job.width !== undefined && Number.isFinite(job.width) ? Math.floor(job.width) : 0;
+          const wantHeight = job.height !== undefined && Number.isFinite(job.height) ? Math.floor(job.height) : 0;
+          if (wantWidth > 0 && wantHeight > 0 && (gl.domElement.width !== wantWidth || gl.domElement.height !== wantHeight)) {
+            const prevSize = new THREE.Vector2();
+            gl.getSize(prevSize);
+            const prevDpr = gl.getPixelRatio();
+            const prevStyleWidth = gl.domElement.style.width;
+            const prevStyleHeight = gl.domElement.style.height;
+            setDpr(1);
+            setSize(wantWidth, wantHeight);
+            const sizeDeadline = Date.now() + 5000;
+            while ((gl.domElement.width !== wantWidth || gl.domElement.height !== wantHeight) && Date.now() < sizeDeadline) {
+              await new Promise((resolve) => {
+                setTimeout(resolve, 50);
+              });
+            }
+            if (gl.domElement.width !== wantWidth || gl.domElement.height !== wantHeight) {
+              throw new Error(`resolution resize to ${wantWidth}x${wantHeight} did not apply`);
+            }
+            // R3F's size subscription also rewrites the canvas CSS
+            // size; pin it back to the on-screen size so the page
+            // layout does not jump while the buffer is at the preset
+            // resolution. Only the drawing buffer changes.
+            gl.domElement.style.width = prevStyleWidth;
+            gl.domElement.style.height = prevStyleHeight;
+            // Let the size-driven effects (camera aspect, PostFx
+            // composer targets) commit before the first stepped frame.
+            await new Promise((resolve) => {
+              setTimeout(resolve, 120);
+            });
+            restoreSize = () => {
+              setSize(prevSize.x, prevSize.y);
+              setDpr(prevDpr);
+              gl.domElement.style.width = prevStyleWidth;
+              gl.domElement.style.height = prevStyleHeight;
+            };
+          }
+          const loopEnabled = job.loopMode === true;
+          let firstFramePixels: Uint8ClampedArray | null = null;
+          let lastFramePixels: Uint8ClampedArray | null = null;
           let transparentTarget: THREE.WebGLRenderTarget | null = null;
           let transparentPixels: Uint8Array | null = null;
           try {
@@ -204,6 +294,13 @@ export const DeterministicRenderManager: React.FC = () => {
                 applyUnmultToImageData(imageData);
                 context.putImageData(imageData, 0, 0);
               }
+              if (loopEnabled && (index === 0 || index === job.frames - 1)) {
+                // Snapshot the exact pixels about to be encoded
+                // (getImageData returns a fresh buffer per call).
+                const snapshot = context.getImageData(0, 0, copy.width, copy.height).data;
+                if (index === 0) firstFramePixels = snapshot;
+                if (index === job.frames - 1) lastFramePixels = snapshot;
+              }
               const blob = await new Promise<Blob | null>((resolve) => {
                 copy.toBlob(resolve, 'image/png');
               });
@@ -222,11 +319,48 @@ export const DeterministicRenderManager: React.FC = () => {
                 setTimeout(resolve, 0);
               });
             }
+            // Phase C loop probe: step the frame that would play
+            // immediately after the last captured frame in a loop —
+            // exactly one period after frame 0 — and diff it against
+            // frame 0. The probe is measured only, never captured.
+            let loop: DeterministicLoopMeasurement | null = null;
+            if (loopEnabled && firstFramePixels && lastFramePixels) {
+              const probeStep = warmupFrames + job.frames + 1;
+              if (job.applyAt) {
+                job.applyAt(probeStep * dt);
+                await new Promise((resolve) => {
+                  setTimeout(resolve, 30);
+                });
+              }
+              applyUnmultBlack();
+              advance(probeStep * dt);
+              context.drawImage(source, 0, 0);
+              if (backgroundMode === 'transparent') {
+                captureTransparentFrame();
+              } else if (backgroundMode === 'unmult') {
+                const imageData = context.getImageData(0, 0, copy.width, copy.height);
+                applyUnmultToImageData(imageData);
+                context.putImageData(imageData, 0, 0);
+              }
+              const probePixels = context.getImageData(0, 0, copy.width, copy.height).data;
+              const drift = diffLoopPixels(firstFramePixels, probePixels);
+              const jump = diffLoopPixels(firstFramePixels, lastFramePixels);
+              loop = {
+                periodFrames: job.frames,
+                periodSeconds: job.frames / job.fps,
+                seamDriftMeanAbsDiff: drift.meanAbsDiff,
+                seamDriftMismatchRatio: drift.mismatchRatio,
+                seamJumpMeanAbsDiff: jump.meanAbsDiff,
+                seamJumpMismatchRatio: jump.mismatchRatio,
+                seamMaxAbsDiff: drift.maxAbsDiff,
+              };
+            }
             return {
               frames: blobs,
               width: copy.width,
               height: copy.height,
               warmupFrames,
+              loop,
             };
           } finally {
             if (transparentTarget) {
@@ -239,13 +373,16 @@ export const DeterministicRenderManager: React.FC = () => {
               if (scene.fog && prevFogColor) scene.fog.color.copy(prevFogColor);
               gl.setClearColor(prevClearColor, prevClearAlpha);
             }
+            if (restoreSize) {
+              restoreSize();
+            }
             setPositionFeedbackSuppressed(false);
             setTimeScaleLocked(false);
             setFrameloop('always');
           }
         },
       ),
-    [advance, camera, clock, gl, scene, setFrameloop],
+    [advance, camera, clock, gl, scene, setDpr, setFrameloop, setSize],
   );
 
   return null;

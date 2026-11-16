@@ -34,6 +34,19 @@
 // fresh and keep those off for a byte-identical take. Warmup reduces the
 // ignition-transient jitter inside that envelope; it does not widen it.
 
+// Phase C (2026-11-16): a job may also request a capture resolution
+// (width/height in pixels; the manager resizes the renderer with the
+// pixel ratio pinned to 1 for the duration of the job and restores it
+// afterwards) and a loop measurement (loopMode). The loop measurement
+// is deliberately a measurement, not a guarantee: after the last
+// captured frame the manager steps one probe frame at exactly one
+// period after frame 0 and diffs it pixel by pixel against frame 0
+// (the drift) and against the last captured frame (the visible jump
+// when the sequence wraps). Time-driven elements whose period divides
+// the loop length measure ~0 drift; stateful simulations (GPGPU etc.)
+// accumulate, so their seam is reported numerically in the manifest
+// and the UI instead of being promised away. See LOOP_BOUNDARY_NOTE.
+//
 // Pro-1.1 (2026-11-16): a job may also choose its background mode.
 // 'opaque' is the legacy behaviour exactly (the scene as configured,
 // PostFx included, alpha untouched). 'transparent' is the conventional
@@ -72,6 +85,29 @@ export function resolveDeterministicBackgroundMode(
 export interface DeterministicRenderJob {
   fps: number;
   frames: number;
+  /**
+   * Capture size in pixels (Phase C resolution presets). Both must be
+   * present and positive for the manager to resize; omitted means the
+   * canvas is captured at its current size — the exact legacy
+   * behaviour. The frames (and the manifest) always record the size
+   * actually captured.
+   */
+  width?: number;
+  height?: number;
+  /**
+   * Label of the UI resolution preset the size came from (e.g.
+   * '3840x2160'), recorded in the manifest as resolutionPreset. Null /
+   * omitted means the canvas size was used.
+   */
+  resolutionLabel?: string;
+  /**
+   * Loop measurement (Phase C). When true, the manager keeps frame 0
+   * and the last frame's pixels, steps one probe frame at exactly one
+   * period after frame 0, and reports the seam differences (see
+   * DeterministicLoopMeasurement). The probe is measured, never
+   * emitted as a frame. Default false = no probe, no extra step.
+   */
+  loopMode?: boolean;
   /**
    * Background mode for the captured frames. Omitted (or an unknown
    * value) means 'opaque', the exact legacy behaviour. Transparent
@@ -118,6 +154,44 @@ export interface DeterministicCapturedFrame {
   height: number;
 }
 
+/**
+ * Seam measurement for a loopMode job (Phase C). All differences are
+ * computed over the captured RGBA pixels after background processing,
+ * so they describe the frames actually delivered.
+ */
+export interface DeterministicLoopMeasurement {
+  /** Captured frames in one loop period. */
+  periodFrames: number;
+  /** Loop duration in seconds (periodFrames / fps). */
+  periodSeconds: number;
+  /**
+   * Mean absolute per-channel difference (0–255) between the probe
+   * frame — stepped at exactly one period after frame 0 — and frame 0.
+   * ~0 means the scene returned to its starting state after one
+   * period, i.e. the loop is seamless for this take.
+   */
+  seamDriftMeanAbsDiff: number;
+  /** Fraction of pixels whose largest channel drift exceeds 8/255. */
+  seamDriftMismatchRatio: number;
+  /**
+   * Mean absolute per-channel difference between the last captured
+   * frame and frame 0 — the visible jump when playback wraps. This
+   * includes one frame of ordinary motion, so it is ~0 only for
+   * near-still endings; the drift figure above is the periodicity
+   * measure.
+   */
+  seamJumpMeanAbsDiff: number;
+  /** Fraction of pixels whose largest channel jump exceeds 8/255. */
+  seamJumpMismatchRatio: number;
+  /** Largest single-channel drift observed anywhere in the frame. */
+  seamMaxAbsDiff: number;
+}
+
+export const LOOP_BOUNDARY_NOTE =
+  'Loop seam is measured, not guaranteed: the probe frame one period after frame 0 is diffed against frame 0 (drift) and the last frame against frame 0 (jump). '
+  + 'Time-driven elements whose motion period divides the loop length return to the same phase and measure ~0 drift. '
+  + 'Stateful simulations (GPGPU, feedback, accumulated phases) do not repeat exactly; their seam is the measured value, and a crossfade in an editor is the remedy when it is visible.';
+
 export interface DeterministicRenderResult {
   /** Captured frames; empty when the job streamed them via onFrame. */
   frames: Blob[];
@@ -127,6 +201,8 @@ export interface DeterministicRenderResult {
   height: number;
   /** Warmup frames actually stepped (after defaulting / clamping). */
   warmupFrames: number;
+  /** Loop seam measurement; null unless the job set loopMode. */
+  loop?: DeterministicLoopMeasurement | null;
 }
 
 export type DeterministicRenderProgress = (done: number, total: number) => void;
@@ -166,6 +242,26 @@ export const DETERMINISM_BOUNDARY_NOTE =
   + 'Outside the envelope: state accumulated by the GPGPU simulation while running live before the export, and wall-clock-driven overlays (temporal profiles, modulation, live audio reactivity). '
   + 'GPU floating-point determinism also applies: on software-GL environments particle-level results can differ by a few percent even when shape, count and timing match.';
 
+/** Loop block recorded in render.json (Phase C). */
+export interface DeterministicLoopManifest {
+  enabled: true;
+  periodFrames: number;
+  periodSeconds: number;
+  /**
+   * True only in the final part's manifest: parts are streamed out
+   * while the render is still running, but the seam can only be
+   * measured once the probe frame has been stepped at the very end.
+   * Earlier parts carry measured: false and null figures.
+   */
+  measured: boolean;
+  seamDriftMeanAbsDiff: number | null;
+  seamDriftMismatchRatio: number | null;
+  seamJumpMeanAbsDiff: number | null;
+  seamJumpMismatchRatio: number | null;
+  seamMaxAbsDiff: number | null;
+  boundary: string;
+}
+
 export interface DeterministicRenderManifest {
   app: 'Kalokagathia';
   appVersion: string;
@@ -175,7 +271,13 @@ export interface DeterministicRenderManifest {
   timestepSeconds: number;
   width: number;
   height: number;
+  /** UI resolution preset label the job requested, or null when the
+   *  canvas size was captured as-is (Phase C). width/height above are
+   *  always the size actually captured. */
+  resolutionPreset: string | null;
   warmupFrames: number;
+  /** Loop measurement block, or null for a non-loop job (Phase C). */
+  loop: DeterministicLoopManifest | null;
   /** Background mode the frames were captured with (Pro-1.1). */
   backgroundMode: DeterministicBackgroundMode;
   /** True only for the UnMult mode; kept alongside backgroundMode so
@@ -194,6 +296,25 @@ export interface DeterministicRenderManifest {
   determinismBoundary: string;
 }
 
+export function buildDeterministicLoopManifest(
+  job: DeterministicRenderJob,
+  measurement: DeterministicLoopMeasurement | null,
+): DeterministicLoopManifest | null {
+  if (job.loopMode !== true) return null;
+  return {
+    enabled: true,
+    periodFrames: job.frames,
+    periodSeconds: job.frames / job.fps,
+    measured: measurement !== null,
+    seamDriftMeanAbsDiff: measurement ? measurement.seamDriftMeanAbsDiff : null,
+    seamDriftMismatchRatio: measurement ? measurement.seamDriftMismatchRatio : null,
+    seamJumpMeanAbsDiff: measurement ? measurement.seamJumpMeanAbsDiff : null,
+    seamJumpMismatchRatio: measurement ? measurement.seamJumpMismatchRatio : null,
+    seamMaxAbsDiff: measurement ? measurement.seamMaxAbsDiff : null,
+    boundary: LOOP_BOUNDARY_NOTE,
+  };
+}
+
 export function buildDeterministicRenderManifest(args: {
   job: DeterministicRenderJob;
   format: string;
@@ -206,6 +327,9 @@ export function buildDeterministicRenderManifest(args: {
   partCount: number;
   partFirstFrame: number;
   partFrames: number;
+  /** Loop measurement, available only once the handler has finished
+   *  (i.e. for the final part); omit for parts flushed mid-render. */
+  loopMeasurement?: DeterministicLoopMeasurement | null;
 }): DeterministicRenderManifest {
   const backgroundMode = resolveDeterministicBackgroundMode(args.job);
   return {
@@ -217,6 +341,8 @@ export function buildDeterministicRenderManifest(args: {
     timestepSeconds: 1 / args.job.fps,
     width: args.width,
     height: args.height,
+    resolutionPreset: args.job.resolutionLabel ?? null,
+    loop: buildDeterministicLoopManifest(args.job, args.loopMeasurement ?? null),
     warmupFrames: args.warmupFrames,
     backgroundMode,
     unmult: backgroundMode === 'unmult',
@@ -259,10 +385,15 @@ export type DeterministicSequencePartHandler = (
  * takes, but callers rendering long sequences should pass onPart and
  * download each part as it arrives.
  */
+export type DeterministicLoopMeasuredHandler = (
+  measurement: DeterministicLoopMeasurement,
+) => void;
+
 export async function renderDeterministicSequence(
   job: DeterministicRenderJob,
   onProgress: DeterministicRenderProgress,
   onPart?: DeterministicSequencePartHandler,
+  onLoopMeasured?: DeterministicLoopMeasuredHandler,
 ): Promise<DeterministicSequencePart[]> {
   if (!handler) {
     throw new Error('deterministic renderer is not ready');
@@ -275,6 +406,11 @@ export async function renderDeterministicSequence(
   const parts: DeterministicSequencePart[] = [];
   let width = 0;
   let height = 0;
+  // The loop seam is measured by the manager after the last frame, so
+  // it only exists once the handler resolves; the final part's flush
+  // is deferred until then (see the onFrame flush condition) so its
+  // manifest can carry the figures.
+  let loopMeasurement: DeterministicLoopMeasurement | null = null;
 
   let zip: InstanceType<typeof JSZip> | null = null;
   let partFirstFrame = 0;
@@ -295,6 +431,7 @@ export async function renderDeterministicSequence(
       partCount,
       partFirstFrame,
       partFrames: partFrameCount,
+      loopMeasurement,
     });
     zip.file('render.json', JSON.stringify(manifest, null, 2));
     const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
@@ -333,19 +470,25 @@ export async function renderDeterministicSequence(
         // parts concatenate into one sequence.
         zip.file(`frame-${String(frame.index).padStart(4, '0')}.png`, frame.blob, { compression: 'STORE' });
         partFrameCount += 1;
-        if (partFrameCount >= ZIP_PART_FRAMES) {
+        // The final part is flushed after the handler resolves (below)
+        // even when it fills exactly on the last frame, so its
+        // manifest can carry the loop measurement.
+        if (partFrameCount >= ZIP_PART_FRAMES && frame.index < job.frames - 1) {
           await flushPart();
         }
       },
     },
     onProgress,
   );
+  loopMeasurement = result.loop ?? null;
+  if (onLoopMeasured && loopMeasurement) {
+    onLoopMeasured(loopMeasurement);
+  }
   await flushPart();
   // When onPart consumed the parts they were not retained, so this
   // resolves to an empty array; callers that need the blobs afterwards
   // must omit onPart. `result` itself carries no frames on this path
   // because the manager streamed them into the callback above.
-  void result;
   return parts;
 }
 
@@ -362,6 +505,7 @@ export async function renderDeterministicVideo(
   job: DeterministicRenderJob,
   format: VideoFormat,
   onProgress: DeterministicRenderProgress,
+  onLoopMeasured?: DeterministicLoopMeasuredHandler,
 ): Promise<Blob> {
   if (!handler) {
     throw new Error('deterministic renderer is not ready');
@@ -381,5 +525,8 @@ export async function renderDeterministicVideo(
     );
   }
   const result = await handler({ ...job, warmupFrames: resolveWarmupFrames(job) }, onProgress);
+  if (onLoopMeasured && result.loop) {
+    onLoopMeasured(result.loop);
+  }
   return encodeFramesToVideo(result.frames, job.fps, format, onProgress);
 }
