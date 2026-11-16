@@ -386,6 +386,9 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Display （表示形態）</div>
           <Toggle label="Display" value={config.gpgpuTerrainMeshDisplay} options={[{ label: 'Shaded', val: 'shaded' as const }, { label: 'Wireframe', val: 'wireframe' as const }, { label: 'Points', val: 'points' as const }]} onChange={(v) => updateConfig('gpgpuTerrainMeshDisplay', v)} />
           <Toggle label="Tunnel （トンネル）" value={config.gpgpuTerrainMeshTunnel} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuTerrainMeshTunnel', v)} />
+          {config.gpgpuTerrainMeshTunnel && (
+            <Slider label="Tunnel Speed （前進速度）" value={config.gpgpuTunnelSpeed} min={0} max={60} step={1} onChange={(v) => updateConfig('gpgpuTunnelSpeed', v)} />
+          )}
           <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Texture （表面テクスチャ）</div>
           <select
             value={config.gpgpuTerrainMeshTexture}
@@ -395,12 +398,17 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
             <option value="none">None (単色陰影)</option>
             <option value="gradient">Gradient (モノクロ+等高線)</option>
             <option value="grid">Grid (測量グリッド)</option>
-            <option value="image">Image (Horizon 背景画像を流用)</option>
+            <option value="image">Image (地形専用画像／背景画像)</option>
           </select>
-          {config.gpgpuTerrainMeshTexture === 'image' && !config.backgroundImageSource && (
-            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-              背景画像が未設定のため、設定されるまでは単色陰影で表示します（Global の Horizon で画像背景を設定してください）。
-            </div>
+          {config.gpgpuTerrainMeshTexture === 'image' && (
+            <TerrainTextureImageBlock config={config} updateConfig={updateConfig} />
+          )}
+          {config.gpgpuTerrainMeshTexture !== 'none' && (
+            <>
+              <Slider label="Texture Repeat （繰り返し）" value={config.gpgpuTerrainTextureRepeat} min={0.25} max={8} step={0.25} onChange={(v) => updateConfig('gpgpuTerrainTextureRepeat', v)} />
+              <Slider label="Texture Offset X" value={config.gpgpuTerrainTextureOffsetX} min={-1} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuTerrainTextureOffsetX', v)} />
+              <Slider label="Texture Offset Y" value={config.gpgpuTerrainTextureOffsetY} min={-1} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuTerrainTextureOffsetY', v)} />
+            </>
           )}
           <Slider label="Scale （大きさ）" value={config.gpgpuTerrainMeshScale} min={0.25} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainMeshScale', v)} />
           <Slider label="Opacity （不透明度）" value={config.gpgpuTerrainMeshOpacity} min={0.05} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainMeshOpacity', v)} />
@@ -411,11 +419,14 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <Slider label="Octaves （オクターブ）" value={config.gpgpuMorphTerrainOctaves} min={1} max={6} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainOctaves', Math.round(v))} />
           <Slider label="Terrain Seed （地形シード）" value={config.gpgpuMorphTerrainSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainSeed', Math.round(v))} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は Horizon 背景画像（backgroundImageSource）を面の map として流用します。
+            高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は地形専用画像が優先され、未設定時は Horizon 背景画像を流用します。Repeat / Offset は全テクスチャ種に効く UV 変換です。Tunnel Speed は地形の位相スクロールによる前進表現で、カメラ自体は動きません。速度 0 では従来の静止トンネルと完全に同一です。
           </div>
         </>
       )}
     </div>
+
+    {/* OBJ Mesh (Phase V, Mir-style mesh side of the OBJ import) */}
+    <ObjMeshBlock config={config} updateConfig={updateConfig} />
 
     {/* Verlet Integration */}
     <div className="mt-4 border-t border-white/10 pt-4">
@@ -1003,6 +1014,127 @@ const MorphObjImportBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config
             : '表面を面積重みで一様にサンプリングします（Phase J からの従来方式）。'}
         {' '}法線初速は、配置時（開始時とリスポーン時）にサンプル法線の方向へ粒子を放つ初速です。常時かかる力ではないので、膨らんだ粒子はモーフの引力で形に戻ります。0 で無効です。
       </div>
+    </div>
+  );
+};
+
+/**
+ * Dedicated terrain texture image controls (Phase V). Same
+ * placement manners as the sprite image block: the picked image is
+ * downscaled to <=256px and stored in the config as a data URL
+ * (gpgpuTerrainTextureImage), so it persists with presets. While a
+ * dedicated image is set it takes precedence over the Horizon
+ * background image; while it is empty the background image is used
+ * exactly as before Phase V — the status line says which source is
+ * live instead of switching silently.
+ */
+const TerrainTextureImageBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const source = config.gpgpuTerrainTextureImage;
+  const fallback = config.backgroundImageSource;
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error('image load failed'));
+        el.src = url;
+      });
+      const scale = Math.min(1, 256 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+      canvas.height = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      updateConfig('gpgpuTerrainTextureImage', canvas.toDataURL('image/png'));
+    } catch {
+      // Unreadable file: keep the previous source untouched.
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+  return (
+    <div className="mb-3 rounded border border-white/10 bg-white/5 p-2">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Terrain Texture Image（地形専用画像）</div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label className="cursor-pointer rounded border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10">
+          画像を開く
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        {source && (
+          <>
+            <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />
+            <button
+              onClick={() => updateConfig('gpgpuTerrainTextureImage', '')}
+              className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+            >
+              クリア
+            </button>
+          </>
+        )}
+      </div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {source
+          ? '地形専用画像を設定済み: 背景画像より優先して面の map になります。画像は 256px 以下に縮小され、config に保持されます。'
+          : fallback
+            ? '専用画像は未設定のため、Horizon 背景画像を流用しています。専用画像を設定するとそちらが優先されます。'
+            : '専用画像も背景画像も未設定のため、設定されるまでは単色陰影で表示します。'}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * OBJ Mesh controls (Phase V): the polygon face of the imported
+ * OBJ. The data source is the morph import's gpgpuMorphObjSource —
+ * shared, never duplicated — so this block carries only the mesh
+ * system's own keys. With no usable source the scene component
+ * draws nothing; the status line here says so explicitly, using
+ * the same parser verdict as the renderer.
+ */
+const ObjMeshBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const source = config.gpgpuMorphObjSource;
+  const geometry = React.useMemo(() => (source ? parseObjGeometry(source) : null), [source]);
+  const enabled = config.gpgpuObjMeshEnabled;
+  return (
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="OBJ Mesh （OBJメッシュ描画）" value={enabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuObjMeshEnabled', v)} />
+      {enabled && (
+        <>
+          {!geometry && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              OBJ が未設定（または読み取れる頂点/面がない）ため、何も描きません。Morph の OBJ 取り込みで OBJ を設定してください（データ源はモーフと共有です）。
+            </div>
+          )}
+          {geometry && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              {`頂点 ${geometry.vertexCount}・三角形 ${geometry.triangleCount} のメッシュを描きます。`}
+            </div>
+          )}
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Display （表示形態）</div>
+          <Toggle label="Display" value={config.gpgpuObjMeshDisplay} options={[{ label: 'Wireframe', val: 'wireframe' as const }, { label: 'Solid', val: 'solid' as const }]} onChange={(v) => updateConfig('gpgpuObjMeshDisplay', v)} />
+          <Slider label="Repeat （反復）" value={config.gpgpuObjMeshRepeat} min={1} max={64} step={1} onChange={(v) => updateConfig('gpgpuObjMeshRepeat', Math.round(v))} />
+          <Slider label="Scale （大きさ）" value={config.gpgpuObjMeshScale} min={0.25} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuObjMeshScale', v)} />
+          <Slider label="Position X" value={config.gpgpuObjMeshPosX} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuObjMeshPosX', v)} />
+          <Slider label="Position Y" value={config.gpgpuObjMeshPosY} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuObjMeshPosY', v)} />
+          <Slider label="Position Z" value={config.gpgpuObjMeshPosZ} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuObjMeshPosZ', v)} />
+          <Slider label="Rotation Y （回転°）" value={config.gpgpuObjMeshRotY} min={-180} max={180} step={5} onChange={(v) => updateConfig('gpgpuObjMeshRotY', v)} />
+          <Slider label="Opacity （不透明度）" value={config.gpgpuObjMeshOpacity} min={0.05} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuObjMeshOpacity', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            取り込み済み OBJ をポリゴンメッシュとして描きます（Trapcode Mir 型）。正規化と寸法はモーフ点群と一致するため、点群と重ねて表示できます。Repeat は格子状の複製で、モーフの複製文法（Replicas）とは独立です。
+          </div>
+        </>
+      )}
     </div>
   );
 };
