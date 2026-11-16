@@ -4,6 +4,24 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.9.1] — 2026-11-16
+
+Internal refactoring only — **no behavior changes**. The Play tab's
+5,482-line `controlPanelPlayTab.tsx` (258 KB) was split verbatim into
+responsibility-based sibling modules (shared / shelf / generation /
+tools / I/O / stage / graph / render); every moved line is
+byte-identical to v1.9.0, verified by a full line-multiset audit and
+an iMac real-GPU deterministic-render comparison against the v1.9.0
+bundle (max per-frame mean absolute difference 0.002, raster noise;
+render manifests identical).
+
+### Changed
+- Split `components/controlPanelPlayTab.tsx` into
+  `controlPanelPlayTab{Shared,Shelf,Generation,Tools,Io,Stage,Graph,Render}.tsx`;
+  the original file now only hosts the tab composition (`PlayTabContent`,
+  `DeferredMount`) and re-exports `PresetShelf` for existing importers.
+  No UI text, behavior, or export output changes.
+
 ## [1.9.0] — 2026-11-16
 
 LightFX (improvement plan Phase D): the Trapcode Shine / Starglow /
