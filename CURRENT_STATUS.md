@@ -1486,3 +1486,6 @@ v1.17.0（2026-11-16、第2期計画 Phase O）: OBJ モーフの残り2点を�
 
 
 v1.18.0（2026-11-16、第2期計画 Phase P）: Mir メッシュ系を新設。Phase L の点地形が共有する高度場（terrainHeightAt、ベイクと同じシード混合を terrainFieldSeedFor として切り出し共有）を 128×128 グリッドのポリゴンメッシュで変位させ、computeVertexNormals の頂点法線＋MeshStandardMaterial で陰影を付ける（ライトはシステムと一緒にマウント）。新規キー7件（総数 947→954）: gpgpuTerrainMeshEnabled（既定OFF＝マウント自体せず従来とビット同一）/ Display（shaded/wireframe/points、同一ジオメトリの表示切替）/ Tunnel（円筒内面への巻き付け。高度場を両軸でクロスフェード周期化し継ぎ目なし）/ Texture（none/gradient/grid の手続きモノクロテクスチャ、image は Horizon 背景画像を流用）/ Scale / Opacity / Brightness。スターター2件追加（内蔵 497→499: メッシュ山脈（点地形と同期）／トンネル、どちらもモノクロ）。
+
+
+v1.19.0（2026-11-16、第2期計画 Phase Q）: Parent/Child — Aux 子プールの独立化。B3 の Aux プール（親粒子の死亡/バウンス/トレイルイベントでスポーンする、独自の position/velocity テクスチャを持つ第2シミュレーション）に子独自の物理と見た目を与え、完全な子エミッタとして成立させた。新規キー4件（総数 954→958）: gpgpuAuxGravityScale（既定1＝従来同一、0で無重力、負で反重力）/ gpgpuAuxDrag（既定0）/ gpgpuAuxCurl（既定0、位置ベースの決定的な渦で 0 では項自体が消える）/ gpgpuAuxColor（既定は空＝親の色を継承）。UI は Aux セクションを「Child Emitter（子エミッタ）」と明示。スターター2件追加（内蔵 499→501: 反重力で昇る子／ドラッグ+渦で滞留する子、どちらもモノクロ）。
