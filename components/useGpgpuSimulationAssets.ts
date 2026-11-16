@@ -5,9 +5,18 @@ import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG } fr
 import { useThree } from "@react-three/fiber";
 import { buildCustomForceHarness, compileCheckShader, setCustomForceStatus, validateCustomForceCode } from "../lib/gpgpuCustomForce";
 import type { UseGpgpuAssetsArgs } from "./gpgpuAssetShared";
+import type { ParticleConfig } from "../types";
 
-export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: UseGpgpuAssetsArgs) {
-  const velSimMat = useMemo(() => new THREE.ShaderMaterial({
+// Material factories (Phase W2): the per-replica simulation
+// stacks need their own velocity/position materials with exactly
+// the same shader + uniform structure as the shared pair; the
+// runtime creates them through these factories (the shared pair
+// below is built the same way). Note the factories always start
+// from the base SIM_VEL_FRAG — a user custom force swapped into
+// the shared material at runtime is not mirrored into stacks
+// (documented Phase W2 limitation).
+export function createVelSimMaterial(texSize: number, config: ParticleConfig): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
     uniforms: {
       uPosTex:         { value: null },
       uVelTex:         { value: null },
@@ -95,6 +104,15 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uMorphStrength:   { value: 3.0 },
       uMorphOrbitSpeed: { value: 0.3 },
       uMorphReplicaPhaseGain: { value: 0.0 },
+      // Replica independent simulation (Phase W2): per-stack
+      // field seed / clock offsets and the global-layout remap.
+      // All zero for the shared pair, where they are exact
+      // neutrals; the stack runner sets them per stack.
+      uReplicaSeedOffset:   { value: new THREE.Vector3(0, 0, 0) },
+      uReplicaTimeOffset:   { value: 0.0 },
+      uStackMode:           { value: 0.0 },
+      uStackGlobalStart:    { value: 0.0 },
+      uStackGlobalTexSizeF: { value: 0.0 },
       uSpeed:           { value: 1.0 },
       uSdfEnabled:      { value: false },
       uSdfShape:        { value: 0 },
@@ -118,10 +136,11 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uFluidScale:      { value: 1.5 },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_VEL_FRAG,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), []);
+  });
+}
 
-  const posSimMat = useMemo(() => new THREE.ShaderMaterial({
+export function createPosSimMaterial(texSize: number, config: ParticleConfig): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
     uniforms: {
       uPosTex:        { value: null },
       uVelTex:        { value: null },
@@ -132,6 +151,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uAgeMax:        { value: 8.0 },
       uAgeReplicaStep: { value: 0 },
       uAgeReplicaCount: { value: 1 },
+      uReplicaAgeBase: { value: 0 },
       uTexSizeF:      { value: texSize },
       uVerletEnabled: { value: false },
       uPrevPosTex:    { value: null },
@@ -157,8 +177,14 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uEmitLightPos:  { value: new THREE.Vector3(0, 0, 0) },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_POS_FRAG,
+  });
+}
+
+export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: UseGpgpuAssetsArgs) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), []);
+  const velSimMat = useMemo(() => createVelSimMaterial(texSize, config), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const posSimMat = useMemo(() => createPosSimMaterial(texSize, config), []);
 
   // Aux event emission materials (B3): the shared event uniforms are
   // declared in gpgpuShaderAux's AUX_EVENT_GLSL chunk; the passes in

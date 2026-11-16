@@ -26,6 +26,8 @@ function resolveParticleLifeMatrix(config: ParticleConfig): Float32Array {
 import type { WebGPUComputeState } from '../lib/webgpuCompute';
 import { AUX_TEX_SIZE } from './gpgpuShaderAux';
 import type { AuxLevelParams } from '../lib/auxChain';
+import { resolvePingPongTargets } from './gpgpuExecutionRouting';
+import { replicaAgeBase, replicaSeedOffset, replicaTimeOffset } from '../lib/replicaIndependent';
 
 export function updateMouseWorldPosition(args: {
   mouseNDC: THREE.Vector2;
@@ -577,4 +579,178 @@ export function runAuxChainSimulationPasses(args: {
   simMesh.material = auxChainPosMat;
   gl.setRenderTarget(auxPosOut);
   gl.render(simScene, simCamera);
+}
+
+// ── Replica independent simulation (Phase W2, method (a)) ──────
+//
+// One simulation stack per replica block: its own position /
+// velocity ping-pong pair (seeded from the shared initial data),
+// its own prev-position target for Verlet, and its own velocity /
+// position materials (factory-built with the shared shaders).
+// Each frame every stack steps with replica-private field seed /
+// clock offsets, then its block is merged into the shared layout
+// targets (the main pool's outputs for this frame) that all
+// downstream consumers read. The shared runSimulationPasses above
+// does the per-stack stepping unchanged — the stack-only uniforms
+// (stack mode / global remap / seed / time / age base) are set
+// here because the shared assignment code never touches them,
+// and the per-stack config masks the Phase M age step to 0 (the
+// stack supplies the same restart age as a constant base).
+export type ReplicaStackPassTarget = {
+  index: number;
+  start: number;
+  size: number;
+  side: number;
+  targets: {
+    posA: THREE.WebGLRenderTarget;
+    posB: THREE.WebGLRenderTarget;
+    velA: THREE.WebGLRenderTarget;
+    velB: THREE.WebGLRenderTarget;
+  };
+  prevPos: THREE.WebGLRenderTarget;
+  pingIsA: boolean;
+  velMat: THREE.ShaderMaterial;
+  posMat: THREE.ShaderMaterial;
+};
+
+const STACK_WEBGPU_PING_REF: MutableRefObject<boolean> = { current: true };
+
+export function runReplicaStackPasses(args: {
+  config: ParticleConfig;
+  dt: number;
+  time: number;
+  blast: number;
+  mouseWorld: THREE.Vector3;
+  simMesh: THREE.Mesh;
+  gl: THREE.WebGLRenderer;
+  simScene: THREE.Scene;
+  simCamera: THREE.Camera;
+  stacks: ReplicaStackPassTarget[];
+  mergedPosOut: THREE.WebGLRenderTarget;
+  mergedVelOut: THREE.WebGLRenderTarget;
+  mergeMat: THREE.ShaderMaterial;
+  blitMat: THREE.ShaderMaterial;
+  initPosTex: THREE.Texture | null;
+  morphTex: THREE.Texture | null;
+  morphNormalTex: THREE.Texture | null;
+  morphKickStart: number;
+  fluidVelMat: THREE.ShaderMaterial;
+  globalTexSize: number;
+}): void {
+  const {
+    config,
+    dt,
+    time,
+    blast,
+    mouseWorld,
+    simMesh,
+    gl,
+    simScene,
+    simCamera,
+    stacks,
+    mergedPosOut,
+    mergedVelOut,
+    mergeMat,
+    blitMat,
+    initPosTex,
+    morphTex,
+    morphNormalTex,
+    morphKickStart,
+    fluidVelMat,
+    globalTexSize,
+  } = args;
+
+  // The Phase M respawn age step is a per-texel derivation in the
+  // shared layout; inside a stack it is replaced by the constant
+  // per-copy base set below, so the age step is masked out of the
+  // config the shared assignment code sees.
+  const stackConfig: ParticleConfig = { ...config, gpgpuMorphReplicaAgeStep: 0 };
+  const divergence = config.gpgpuMorphReplicaDivergence;
+
+  for (const stack of stacks) {
+    const s = resolvePingPongTargets(stack.targets, stack.pingIsA);
+
+    // Verlet previous-position copy for this stack (mirrors the
+    // main pool's blitPreviousPositionPass).
+    if (config.gpgpuVerletEnabled) {
+      blitMat.uniforms.uTex.value = s.posIn.texture;
+      simMesh.material = blitMat;
+      gl.setRenderTarget(stack.prevPos);
+      gl.render(simScene, simCamera);
+    }
+
+    // Stack-only uniforms: the shared assignment code in
+    // runSimulationPasses never writes these, so they survive
+    // into the stack's passes.
+    const velU = stack.velMat.uniforms;
+    velU.uStackMode.value = 1;
+    velU.uStackGlobalStart.value = stack.start;
+    velU.uStackGlobalTexSizeF.value = globalTexSize;
+    const seed = replicaSeedOffset(stack.index, divergence);
+    (velU.uReplicaSeedOffset.value as THREE.Vector3).set(seed[0], seed[1], seed[2]);
+    velU.uReplicaTimeOffset.value = replicaTimeOffset(stack.index, divergence);
+    // Fluid advection uniforms are owned by runFluidAdvectionPass
+    // on the shared material; mirror its resolved state.
+    velU.uFluidEnabled.value = fluidVelMat.uniforms.uFluidEnabled.value;
+    velU.uFluidTex.value = fluidVelMat.uniforms.uFluidTex.value;
+    velU.uFluidInfluence.value = fluidVelMat.uniforms.uFluidInfluence.value;
+    velU.uFluidScale.value = fluidVelMat.uniforms.uFluidScale.value;
+    stack.posMat.uniforms.uReplicaAgeBase.value = replicaAgeBase(
+      stack.index,
+      config.gpgpuMorphReplicaAgeStep,
+      config.gpgpuAgeMax,
+    );
+
+    runSimulationPasses({
+      useWebGPU: false,
+      config: stackConfig,
+      texSize: stack.side,
+      dt,
+      time,
+      blast,
+      mouseWorld,
+      simMesh,
+      gl,
+      simScene,
+      simCamera,
+      posIn: s.posIn,
+      posOut: s.posOut,
+      velIn: s.velIn,
+      velOut: s.velOut,
+      velSimMat: stack.velMat,
+      posSimMat: stack.posMat,
+      initPosTex,
+      morphTex,
+      morphNormalTex,
+      morphKickStart,
+      prevPosTex: stack.prevPos.texture,
+      webgpuState: null,
+      webgpuPosTex: null,
+      webgpuPingIsARef: STACK_WEBGPU_PING_REF,
+    });
+
+    // Merge this stack's block into the shared layout outputs.
+    // The merge is a PARTIAL write (fragments outside the block
+    // discard), so the renderer's autoClear must be off: with the
+    // default autoClear every merge render would first erase the
+    // blocks merged before it, leaving only the last stack's
+    // block in the shared targets.
+    const mergeU = mergeMat.uniforms;
+    mergeU.uGlobalTexSizeF.value = globalTexSize;
+    mergeU.uStackTexSizeF.value = stack.side;
+    mergeU.uBlockStart.value = stack.start;
+    mergeU.uBlockSize.value = stack.size;
+    simMesh.material = mergeMat;
+    const prevAutoClear = gl.autoClear;
+    gl.autoClear = false;
+    mergeU.uStackTex.value = s.posOut.texture;
+    gl.setRenderTarget(mergedPosOut);
+    gl.render(simScene, simCamera);
+    mergeU.uStackTex.value = s.velOut.texture;
+    gl.setRenderTarget(mergedVelOut);
+    gl.render(simScene, simCamera);
+    gl.autoClear = prevAutoClear;
+
+    stack.pingIsA = !stack.pingIsA;
+  }
 }
