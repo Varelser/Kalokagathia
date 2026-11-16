@@ -135,8 +135,18 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     prevPosRTRef.current = prevPos;
     pingIsA.current = true;
 
-    const { posData, velData } = buildGpgpuInitialData(texSize, config.gpgpuBounceRadius, config.gpgpuEmitShape, config.gpgpuSeed, config.gpgpuAgeMax);
-
+    const { posData, velData } = buildGpgpuInitialData(
+      texSize,
+      config.gpgpuBounceRadius,
+      config.gpgpuEmitShape,
+      config.gpgpuSeed,
+      config.gpgpuAgeMax,
+      // Replica age phase (Phase M): only while the morph replica
+      // grammar is actually in play; otherwise null = legacy data.
+      config.gpgpuMorphEnabled && config.gpgpuMorphReplicaCount > 1 && config.gpgpuMorphReplicaAgeStep > 0
+        ? { count: config.gpgpuMorphReplicaCount, step: config.gpgpuMorphReplicaAgeStep }
+        : null,
+    );
     const initTex = new THREE.DataTexture(posData.slice(), texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     initTex.needsUpdate = true;
     initPosTexRef.current = initTex;
@@ -312,7 +322,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       webgpuPosTexRef.current?.dispose();
       webgpuPosTexRef.current = null;
     };
-  }, [texSize, gl, config.gpgpuEmitShape, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax]);
+  }, [texSize, gl, config.gpgpuEmitShape, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax, config.gpgpuMorphEnabled, config.gpgpuMorphReplicaCount, config.gpgpuMorphReplicaAgeStep]);
 
   // Morph target texture (Kinetix integration B1a): the per-particle
   // target cloud is baked on the CPU (deterministic, seeded) and rebuilt

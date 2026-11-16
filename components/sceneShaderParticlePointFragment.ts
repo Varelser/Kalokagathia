@@ -26,6 +26,9 @@ export const FRAGMENT_SHADER = `
   uniform float uSdfSpecular;
   uniform float uSdfShininess;
   uniform float uSdfAmbient;
+  // Layer gradient (Phase M): age-driven LUT, layer 2/3 only.
+  uniform float uLayerGradEnabled;
+  uniform sampler2D uLayerGradLut;
 
   // SDF shape functions (uv in [0,1] x [0,1], return signed dist; negative = inside)
   float sdfCircle(vec2 p, float r) {
@@ -109,6 +112,15 @@ export const FRAGMENT_SHADER = `
     float inkAlpha = clamp(vAlpha * (0.45 + core * 1.15 + body * 0.9 + halo * glow * 0.35 + spriteAlpha * 0.45) * max(1.0, contrast * 0.9) * velocityAlpha * flicker, 0.0, 1.0);
     float alpha = mix(baseAlpha, inkAlpha, uInkMode);
     vec3 finalColor = uColor;
+    // Layer gradient (Phase M): when enabled, the point colour is
+    // the 3-stop LUT at the particle's normalised age (vLife, the
+    // life progress the vertex shader already computes). This sits
+    // where uColor enters, so hue shift / ink inversion / SDF
+    // lighting below treat gradient colours exactly like the
+    // single colour. Disabled = this branch never runs.
+    if (uLayerGradEnabled > 0.5) {
+      finalColor = texture2D(uLayerGradLut, vec2(clamp(vLife, 0.0, 1.0), 0.5)).rgb;
+    }
     if (abs(uHueShift) > 0.001) {
       vec3 hsv = rgb2hsv(finalColor);
       hsv.x = fract(hsv.x + uHueShift);

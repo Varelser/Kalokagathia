@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { scaleFrameDelta } from '../lib/playbackTime';
 import type { UpdateParticleSystemFrameArgs } from './sceneParticleSystemRuntimeTypes';
 import { getLayerRuntimeParticleVisualSnapshot } from '../lib/sceneRenderRouting';
+import { fillGradientLutData, getKinetixGradientPreset } from '../lib/kinetixGradients';
 import { applyParticleAudioUniforms } from './sceneParticleSystemRuntimeAudio';
 import { applyParticleCollisionUniforms, applyParticleGhostUniforms, applyParticleSdfUniforms } from './sceneParticleSystemRuntimeFx';
 import { applyParticleLayerUniforms, buildParticleLayerKey, resolveParticleLayerUniformState } from './sceneParticleSystemRuntimeLayer';
@@ -86,6 +87,29 @@ export const updateParticleSystemFrame = ({
   if (layerKey !== prevLayerKeyRef.current) {
     prevLayerKeyRef.current = layerKey;
     applyParticleLayerUniforms(mat, config, uniformState, contactAmount, isAux);
+  }
+
+  // Layer gradient (Phase M): layer 2/3 points only (layer 1 and
+  // ambient keep the flag at 0). The LUT is rebaked only when the
+  // preset actually changes (key cached on the material), mirroring
+  // the GPGPU gradient's per-frame sync.
+  if (mat.uniforms.uLayerGradEnabled) {
+    const gradOn = !isAux && (layerIndex === 2 || layerIndex === 3)
+      ? (layerIndex === 2 ? config.layer2GradEnabled : config.layer3GradEnabled)
+      : false;
+    mat.uniforms.uLayerGradEnabled.value = gradOn ? 1 : 0;
+    if (gradOn && mat.uniforms.uLayerGradLut) {
+      const presetId = layerIndex === 2 ? config.layer2GradPreset : config.layer3GradPreset;
+      const preset = getKinetixGradientPreset(presetId) ?? getKinetixGradientPreset('sumie');
+      if (preset && mat.userData.layerGradKey !== preset.id) {
+        mat.userData.layerGradKey = preset.id;
+        const lut = mat.uniforms.uLayerGradLut.value as THREE.DataTexture | null;
+        if (lut) {
+          fillGradientLutData(lut.image.data as Uint8Array, preset.start, preset.mid, preset.end);
+          lut.needsUpdate = true;
+        }
+      }
+    }
   }
 
   applyParticleCollisionUniforms(mat, config, audioRef, layerIndex, isAux, interLayerColliders, activeInterLayerColliderCount);

@@ -5,6 +5,8 @@ export const APP_STATE_DEFAULT_LAYER_3: Partial<ParticleConfig> = {
   // Layer 3
   layer3Enabled: false,
   layer3Color: '#ffffff',
+  layer3GradEnabled: false,
+  layer3GradPreset: 'sumie',
   layer3Source: 'sphere',
   layer3ExecutionEngineOverride: 'auto',
   layer3SourceCount: 1,

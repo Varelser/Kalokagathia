@@ -26,13 +26,32 @@ export interface GpgpuInitialData {
   velData: Float32Array;
 }
 
+export interface GpgpuAgePhaseOptions {
+  /** Replica count the age phase is keyed to (<= 1 disables). */
+  count: number;
+  /** Per-copy lifecycle phase offset, as a fraction of ageMax. */
+  step: number;
+}
+
 export function buildGpgpuInitialData(
   texSize: number,
   bounceRadius: number,
   emitShape: GpgpuEmitShape,
   seed: number,
   ageMax = 8,
+  agePhase?: GpgpuAgePhaseOptions | null,
 ): GpgpuInitialData {
+  // Replica age phase (Phase M): particle i belongs to replica
+  // block r = floor(i * count / total) — the same contiguous blocks
+  // the morph bake uses (lib/gpgpuMorphTargets.ts) — and its
+  // initial age is shifted by r * step of the lifecycle, wrapping
+  // inside [0, ageMax). The shift is a pure function of the index:
+  // it consumes NO random draws, so with step 0 / count <= 1 (or no
+  // options at all) every array is bit-identical to the legacy
+  // output, positions and velocities included.
+  const agePhaseCount = agePhase ? Math.max(1, Math.min(8, Math.floor(agePhase.count) || 1)) : 1;
+  const agePhaseStep = agePhase ? Math.max(0, Math.min(1, agePhase.step)) : 0;
+  const agePhaseActive = agePhaseCount > 1 && agePhaseStep > 0;
   const random = createSeededRng(seed);
   const count = texSize * texSize;
   const posData = new Float32Array(count * 4);
@@ -86,8 +105,10 @@ export function buildGpgpuInitialData(
     // in sync with period ageMax. Seeding age uniformly in [0, ageMax)
     // gives each particle its own lifecycle phase while staying a pure
     // function of the seed, so determinism is preserved.
-    posData[i * 4 + 3] = random() * ageMax;
-    velData[i * 4] = (random() - 0.5) * 4;
+    const baseAge = random() * ageMax;
+    posData[i * 4 + 3] = agePhaseActive
+      ? (baseAge + Math.floor((i * agePhaseCount) / count) * agePhaseStep * ageMax) % ageMax
+      : baseAge;    velData[i * 4] = (random() - 0.5) * 4;
     velData[i * 4 + 1] = (random() - 0.5) * 4;
     velData[i * 4 + 2] = (random() - 0.5) * 4;
   }

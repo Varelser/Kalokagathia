@@ -4,6 +4,55 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.15.0] — 2026-11-16
+
+Light, colour and chain finishing (second-period plan Phase M):
+Starglow gains a deterministic shimmer, layer 2/3 points gain an
+age-driven gradient, and the replica grammar gains an age phase.
+Every new key defaults to the legacy behaviour.
+
+### Added
+- **Starglow shimmer** (`postStarglowShimmer`, amount 0–1, default
+  0; `postStarglowShimmerSpeed`, default 1): the glint streaks are
+  modulated per direction (horizontal / vertical / diagonal groups
+  phase-shifted by thirds of a cycle) and per screen cell (a
+  position hash), so glints twinkle independently instead of the
+  whole frame blinking. The time base is a frame counter inside
+  the LightFX pass — no wall clock — so deterministic renders are
+  reproducible frame-for-frame. Amount 0 keeps the legacy
+  accumulation formula exactly (the shimmer factors are 1.0 and the
+  weight sum is the legacy one).
+- **Layer gradients** (`layer2GradEnabled` / `layer3GradEnabled`,
+  default OFF; `layer2GradPreset` / `layer3GradPreset`, default
+  'sumie'): layer 2/3 points can take their colour from the
+  existing 3-stop gradient LUT (Kinetix gradient presets), driven
+  by normalised age (the layer life progress, vLife). The LUT
+  machinery is the same as the GPGPU gradient's
+  (`lib/kinetixGradients.ts`); OFF keeps the single layer colour +
+  opacity exactly. Layer 1 is out of scope: it does not run the
+  layer life system this driver reads, and its colour path is the
+  pulse system's own.
+- **Replica age phase** (`gpgpuMorphReplicaAgeStep`, 0–1 fraction
+  of the lifecycle, default 0): each morph replica copy's
+  particles start their lifecycle offset by r × step of
+  `gpgpuAgeMax` — applied both to the initial age scatter
+  (`lib/gpgpuInitialData.ts`, index-pure, no extra RNG draws) and
+  to the respawn restart age in the position pass, keyed by the
+  same contiguous replica blocks as the bake. With step 0 or a
+  single copy, initial data and respawn behaviour are
+  bit-identical to v1.14.0.
+- **Starters**: `starter-post-lightfx-starglow-shimmer` (monochrome
+  Starglow field with shimmer) and `starter-layer2-age-gradient-sumie`
+  (monochrome layer-2 sphere ageing through the Sumi Ink ramp) —
+  built-in starters 493 → 495. Config keys 936 → 943.
+
+### Notes
+- The layer gradient's age is the layer Life progress: with a
+  layer's Life at 0 the age does not advance and the gradient sits
+  at its start stop (the UI states this). Per-layer custom stops
+  were not added; the preset list is the selection mechanism, as
+  with the GPGPU gradient's preset-first flow.
+
 ## [1.14.0] — 2026-11-16
 
 Terrain (leftover plan Phase L, final phase): the GPGPU morph system

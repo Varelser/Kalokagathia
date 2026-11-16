@@ -203,6 +203,8 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             <Slider label="Starglow Intensity" value={config.postStarglowIntensity} min={0} max={3} step={0.05} onChange={(v) => updateConfig('postStarglowIntensity', v)} />
             <Slider label="Starglow Length" value={config.postStarglowLength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postStarglowLength', v)} />
             <Slider label="Starglow Threshold" value={config.postStarglowThreshold} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postStarglowThreshold', v)} />
+            <Slider label="Starglow Shimmer (きらめき)" value={config.postStarglowShimmer} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postStarglowShimmer', v)} />
+            <Slider label="Starglow Shimmer Speed" value={config.postStarglowShimmerSpeed} min={0.1} max={4} step={0.05} onChange={(v) => updateConfig('postStarglowShimmerSpeed', v)} />
             <Toggle
               label="Starglow Diagonal (8方向)"
               value={config.postStarglowDiagonal}

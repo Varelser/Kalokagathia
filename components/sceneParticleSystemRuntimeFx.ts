@@ -94,6 +94,13 @@ export function applyParticleGhostUniforms(
       if (gm.uniforms.uEmitterOrbitPath && mat.uniforms.uEmitterOrbitPath) {
         gm.uniforms.uEmitterOrbitPath.value = mat.uniforms.uEmitterOrbitPath.value;
       }
+      // Ghost copies share the layer gradient look (Phase M): the
+      // LUT texture object is shared from creation; only the
+      // enable flag needs following (their vLife is time-offset,
+      // which is exactly the ghost effect applied to the gradient).
+      if (gm.uniforms.uLayerGradEnabled && mat.uniforms.uLayerGradEnabled) {
+        gm.uniforms.uLayerGradEnabled.value = mat.uniforms.uLayerGradEnabled.value;
+      }
     } else {
       gm.uniforms.uOpacity.value = 0;
     }

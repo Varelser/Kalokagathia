@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { MAX_INTER_LAYER_COLLIDERS } from '../lib/appState';
+import { createGradientLutTexture, getKinetixGradientPreset } from '../lib/kinetixGradients';
 
 export function createParticleUniforms(config: ParticleConfig, isAux: boolean) {
   return {
@@ -140,5 +141,15 @@ export function createParticleUniforms(config: ParticleConfig, isAux: boolean) {
     uMediaGlyphDepthBoost: { value: 0 },
     uMediaGlyphTwist: { value: 0 },
     uMediaGlyphQuantize: { value: 0 },
+    // Layer gradient (Phase M): opt-in age-driven 3-stop LUT for
+    // layer 2/3 points. Disabled (0) by default — the fragment
+    // shader then never samples the LUT and the colour is the
+    // legacy single layer colour exactly.
+    uLayerGradEnabled: { value: 0 },
+    uLayerGradLut: { value: createGradientLutTexture(
+      getKinetixGradientPreset('sumie')?.start ?? '#0f172a',
+      getKinetixGradientPreset('sumie')?.mid ?? '#334155',
+      getKinetixGradientPreset('sumie')?.end ?? '#94a3b8',
+    ) },
   };
 }

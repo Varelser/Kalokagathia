@@ -9,6 +9,9 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform float uBounceRadius;
   uniform bool  uAgeEnabled;
   uniform float uAgeMax;
+  uniform float uAgeReplicaStep;
+  uniform float uAgeReplicaCount;
+  uniform float uTexSizeF;
   uniform bool  uVerletEnabled;
   uniform sampler2D uPrevPosTex;
   uniform bool  uSdfEnabled;
@@ -128,7 +131,19 @@ export const SIM_POS_FRAG = /* glsl */ `
         float th  = hash1(vUv + vec2(1.3)) * 6.2832;
         float phi = acos(2.0 * hash1(vUv + vec2(2.7)) - 1.0);
         pos = vec3(r * sin(phi) * cos(th), r * sin(phi) * sin(th), r * cos(phi));
-        age = 0.0;
+        // Replica age phase (Phase M): the respawn restarts the
+        // lifecycle at this particle's replica-block offset instead
+        // of 0, so the copies keep their phase separation forever
+        // (not just in the initial scatter). The block index uses
+        // the same contiguous mapping as the bake / initial data:
+        // index = texel index, r = floor(index * count / total).
+        // With step 0 (or count <= 1) the offset term is exactly
+        // 0.0 and age restarts at 0.0 as before.
+        float texIdx = floor(vUv.y * uTexSizeF) * uTexSizeF + floor(vUv.x * uTexSizeF);
+        float replicaIdx = uAgeReplicaCount > 1.5
+          ? floor(texIdx * uAgeReplicaCount / max(uTexSizeF * uTexSizeF, 1.0))
+          : 0.0;
+        age = replicaIdx * uAgeReplicaStep * uAgeMax;
       }
     }
 

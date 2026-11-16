@@ -29,6 +29,17 @@
 // global centroid needs a reduction pass, against the
 // minimal-new-passes principle.
 //
+// Shimmer (Phase M): the Starglow glints can twinkle over time.
+// The time base is a FRAME COUNTER incremented once per render()
+// call of this pass — never a wall clock (no Date.now, no
+// THREE.Clock). Deterministic renders step frames one by one, so a
+// given frame number always produces the same shimmer phase, and
+// two renders of the same job agree bit-for-bit in this pass; live
+// playback simply advances one phase step per rAF frame. The
+// modulation is per-direction and per-position-hash, so glints
+// twinkle independently instead of the whole frame blinking, and
+// at amount 0 the factor is exactly 1 (legacy output).
+//
 // Colour discipline: streaks and glints are extracted from the
 // frame itself, so they inherit whatever colour the existing paths
 // produced (monochrome stays monochrome; gradient / brand colour
@@ -62,6 +73,8 @@ uniform float uStarIntensity;
 uniform float uStarLength;
 uniform float uStarThreshold;
 uniform float uStarDiagonal;
+uniform float uStarShimmer;
+uniform float uStarShimmerPhase;
 uniform float uLuxEnabled;
 uniform float uLuxIntensity;
 uniform float uLuxSize;
@@ -69,6 +82,13 @@ uniform float uLuxConeLength;
 uniform float uLuxConeAngle;
 uniform float uLuxConeSpread;
 varying vec2 vUv;
+
+// Deterministic 2D hash for the shimmer phase field (position ->
+// pseudo-random phase in [0,1)); pure function of the UV cell, so
+// every frame and every machine agrees.
+float shimmerHash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
 
 vec3 highlightAt(vec2 uv, float threshold) {
   vec3 c = texture2D(tDiffuse, clamp(uv, 0.001, 0.999)).rgb;
@@ -107,28 +127,53 @@ void main() {
   }
 
   if (uStarEnabled > 0.5) {
+    // Shimmer (Phase M): one twinkle factor per streak direction,
+    // phase-shifted by a position hash of the glint centre so
+    // neighbouring glints are out of phase. shimmerFactor is
+    // exactly 1.0 when the amount is 0 (the sin term is multiplied
+    // by the amount before the mix), keeping the legacy sum
+    // bit-identical. The streak accumulation below is unchanged;
+    // the factors are applied per direction group after the loop.
+    float shimPh = shimmerHash(floor(vUv * vec2(48.0, 27.0))) * 6.2831853;
+    float shimBase = uStarShimmerPhase + shimPh;
+    float shimH = mix(1.0, 0.55 + 0.45 * sin(shimBase), uStarShimmer);
+    float shimV = mix(1.0, 0.55 + 0.45 * sin(shimBase + 2.094), uStarShimmer);
+    float shimD = mix(1.0, 0.55 + 0.45 * sin(shimBase + 4.189), uStarShimmer);
     float stepLen = uStarLength * 0.30 / 8.0;
-    vec3 acc = vec3(0.0);
-    float wSum = 0.0;
+    vec3 accH = vec3(0.0);
+    vec3 accV = vec3(0.0);
+    vec3 accD = vec3(0.0);
+    float wSumH = 0.0;
+    float wSumV = 0.0;
+    float wSumD = 0.0;
     for (int k = -8; k <= 8; k++) {
       float fk = float(k);
       float w = exp(-abs(fk) * 0.45);
       vec2 offH = vec2(fk * stepLen / uAspect, 0.0);
-      acc += highlightAt(vUv + offH, uStarThreshold) * w;
-      wSum += w;
+      accH += highlightAt(vUv + offH, uStarThreshold) * w;
+      wSumH += w;
       if (k != 0) {
         vec2 offV = vec2(0.0, fk * stepLen);
-        acc += highlightAt(vUv + offV, uStarThreshold) * w;
-        wSum += w;
+        accV += highlightAt(vUv + offV, uStarThreshold) * w;
+        wSumV += w;
         if (uStarDiagonal > 0.5) {
           vec2 offD1 = vec2(fk * stepLen / uAspect, fk * stepLen);
           vec2 offD2 = vec2(fk * stepLen / uAspect, -fk * stepLen);
-          acc += highlightAt(vUv + offD1, uStarThreshold) * w;
-          acc += highlightAt(vUv + offD2, uStarThreshold) * w;
-          wSum += w * 2.0;
+          accD += highlightAt(vUv + offD1, uStarThreshold) * w;
+          accD += highlightAt(vUv + offD2, uStarThreshold) * w;
+          wSumD += w * 2.0;
         }
       }
     }
+    // The denominator stays the LEGACY weight sum (unmodulated):
+    // modulating it too would cancel the twinkle whenever the
+    // directional streak averages are similar. With shimmer amount
+    // 0 every factor is 1.0 and this is the legacy
+    // (accH + accV + accD) / (wSumH + wSumV + wSumD) exactly — the
+    // centre tap (k = 0) belongs to the horizontal group, as it did
+    // to the single legacy accumulator.
+    vec3 acc = accH * shimH + accV * shimV + accD * shimD;
+    float wSum = wSumH + wSumV + wSumD;
     add += (acc / max(wSum, 0.001)) * uStarIntensity;
   }
 
@@ -180,6 +225,14 @@ export class LightFxPass extends Pass {
 
   starglowDiagonal = false;
 
+  starglowShimmer = 0;
+
+  starglowShimmerSpeed = 1;
+
+  // Deterministic time base (Phase M): frames rendered by this
+  // pass instance. Incremented once per render() call.
+  private frameCount = 0;
+
   luxEnabled = false;
 
   luxIntensity = 1.0;
@@ -212,6 +265,8 @@ export class LightFxPass extends Pass {
         uStarLength: { value: 0.35 },
         uStarThreshold: { value: 0.6 },
         uStarDiagonal: { value: 0 },
+        uStarShimmer: { value: 0 },
+        uStarShimmerPhase: { value: 0 },
         uLuxEnabled: { value: 0 },
         uLuxIntensity: { value: 1 },
         uLuxSize: { value: 0.35 },
@@ -245,7 +300,13 @@ export class LightFxPass extends Pass {
     u.uStarLength.value = this.starglowLength;
     u.uStarThreshold.value = this.starglowThreshold;
     u.uStarDiagonal.value = this.starglowDiagonal ? 1 : 0;
-    u.uLuxEnabled.value = this.luxEnabled ? 1 : 0;
+    u.uStarShimmer.value = this.starglowShimmer;
+    // Phase advances by speed * (2pi / 48) per rendered frame: a
+    // full twinkle cycle every 48 frames at speed 1 (0.8 s at the
+    // deterministic renderer's 60 fps), purely a function of the
+    // frame count.
+    u.uStarShimmerPhase.value = this.frameCount * this.starglowShimmerSpeed * 0.1308997;
+    this.frameCount += 1;    u.uLuxEnabled.value = this.luxEnabled ? 1 : 0;
     u.uLuxIntensity.value = this.luxIntensity;
     u.uLuxSize.value = this.luxSize;
     u.uLuxConeLength.value = this.luxConeLength;

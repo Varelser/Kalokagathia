@@ -174,6 +174,13 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphReplicaRotation: number;
   gpgpuMorphReplicaScaleStep: number;
   gpgpuMorphReplicaPhaseStep: number;
+  // Replica age phase (Phase M): per-copy offset of the particle
+  // lifecycle phase, as a fraction (0..1) of gpgpuAgeMax. Applied
+  // to the initial age scatter and to the respawn restart age in
+  // the position pass, keyed by the same contiguous replica blocks
+  // as the bake. 0 (default) / count 1 reproduces the legacy
+  // initial data and respawn behaviour bit-for-bit.
+  gpgpuMorphReplicaAgeStep: number;
   // Terrain (Phase L, Mir-style): the 'terrain' morph target places
   // particles on a seeded fractal height field (value-noise fBm,
   // lib/gpgpuMorphTargets.ts). The field is a pure function of

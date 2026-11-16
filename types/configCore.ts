@@ -188,6 +188,10 @@ export interface ParticleConfigCore {
   postStarglowLength: number;
   postStarglowThreshold: number;
   postStarglowDiagonal: boolean;
+  // Shimmer (Phase M): deterministic (frame-count) glint twinkle.
+  // Amount 0 (default) reproduces the legacy Starglow exactly.
+  postStarglowShimmer: number;
+  postStarglowShimmerSpeed: number;
   postLuxEnabled: boolean;
   postLuxIntensity: number;
   postLuxSize: number;

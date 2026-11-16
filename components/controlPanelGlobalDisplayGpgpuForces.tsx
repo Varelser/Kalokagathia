@@ -343,6 +343,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
               <Slider label="Rotation Step （回転増分°）" value={config.gpgpuMorphReplicaRotation} min={-180} max={180} step={5} onChange={(v) => updateConfig('gpgpuMorphReplicaRotation', v)} />
               <Slider label="Scale Step （等比）" value={config.gpgpuMorphReplicaScaleStep} min={0.5} max={1.6} step={0.02} onChange={(v) => updateConfig('gpgpuMorphReplicaScaleStep', v)} />
               <Slider label="Phase Step （位相ずらし°）" value={config.gpgpuMorphReplicaPhaseStep} min={0} max={360} step={5} onChange={(v) => updateConfig('gpgpuMorphReplicaPhaseStep', v)} />
+              <Slider label="Age Step （年齢位相・周期比）" value={config.gpgpuMorphReplicaAgeStep} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphReplicaAgeStep', v)} />
             </>
           )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">

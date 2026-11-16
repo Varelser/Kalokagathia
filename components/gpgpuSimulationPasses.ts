@@ -300,7 +300,16 @@ export function runSimulationPasses(args: {
   posSimMat.uniforms.uBounceRadius.value = config.gpgpuBounceRadius;
   posSimMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled;
   posSimMat.uniforms.uAgeMax.value = config.gpgpuAgeMax;
-  posSimMat.uniforms.uVerletEnabled.value = config.gpgpuVerletEnabled;
+  // Replica age phase (Phase M): gated exactly like the initial
+  // data — morph on, more than one copy, step > 0 — else 0, which
+  // restarts respawned particles at age 0 as before.
+  if (posSimMat.uniforms.uAgeReplicaStep) {
+    posSimMat.uniforms.uAgeReplicaStep.value = config.gpgpuMorphEnabled && config.gpgpuMorphReplicaCount > 1
+      ? Math.max(0, Math.min(1, config.gpgpuMorphReplicaAgeStep))
+      : 0;
+  }
+  if (posSimMat.uniforms.uAgeReplicaCount) posSimMat.uniforms.uAgeReplicaCount.value = Math.max(1, Math.min(8, Math.round(config.gpgpuMorphReplicaCount)));
+  if (posSimMat.uniforms.uTexSizeF) posSimMat.uniforms.uTexSizeF.value = texSize;  posSimMat.uniforms.uVerletEnabled.value = config.gpgpuVerletEnabled;
   posSimMat.uniforms.uPrevPosTex.value = prevPosTex;
   posSimMat.uniforms.uSdfEnabled.value = config.gpgpuSdfEnabled;
   posSimMat.uniforms.uSdfShape.value = SDF_SHAPE_IDS[config.gpgpuSdfShape] ?? 0;

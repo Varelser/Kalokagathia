@@ -5,6 +5,8 @@ export const APP_STATE_DEFAULT_LAYER_2: Partial<ParticleConfig> = {
   // Layer 2
   layer2Enabled: false,
   layer2Color: '#ffffff',
+  layer2GradEnabled: false,
+  layer2GradPreset: 'sumie',
   layer2Source: 'sphere',
   layer2ExecutionEngineOverride: 'auto',
   layer2SourceCount: 1,

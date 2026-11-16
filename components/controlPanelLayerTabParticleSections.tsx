@@ -2,6 +2,7 @@ import React from 'react';
 import { Gauge, GitCommit, Minimize2, Network, Share2, Sliders } from 'lucide-react';
 import { Slider, Toggle } from './controlPanelParts';
 import { ProceduralModeSettings } from './controlPanelProceduralModeSettings';
+import { KINETIX_COLOR_GRADIENTS } from '../lib/kinetixGradients';
 import type { SharedLayerParticleSectionsProps } from './controlPanelLayerTabSharedTypes';
 
 export const SharedLayerTabParticleSections: React.FC<SharedLayerParticleSectionsProps> = ({
@@ -156,6 +157,26 @@ export const SharedLayerTabParticleSections: React.FC<SharedLayerParticleSection
           />
           <span className="text-sm font-mono">{read('Color')}</span>
         </div>
+      </div>
+      <div className="mb-4">
+        <Toggle label="Age Gradient (年齢グラデーション)" value={read('GradEnabled') || false} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => write('GradEnabled', v)} />
+        {read('GradEnabled') && (
+          <>
+            <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Gradient Preset</div>
+            <select
+              value={read('GradPreset') || 'sumie'}
+              onChange={(e) => write('GradPreset', e.target.value)}
+              className="mb-2 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+            >
+              {KINETIX_COLOR_GRADIENTS.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+            <div className="text-[9px] leading-relaxed text-white/40">
+              粒の年齢（Life の進行度）で3点グラデーションを引きます。Life が 0 のときは年齢が進まないため色は始点で固定されます。
+            </div>
+          </>
+        )}
       </div>
       <Slider label="Particle Count" value={read('Count')} min={1} max={2000000} step={1} onChange={(v) => write('Count', v)} />
       <Slider label="Particle Size" value={read('BaseSize')} min={0.1} max={100} step={0.1} onChange={(v) => write('BaseSize', v)} />

@@ -3,6 +3,9 @@ import type { ConnectionRenderStyle, Layer2Type, MotionDagNode, MotionGraphStep,
 export interface ParticleConfigLayer3 {
   layer3Enabled: boolean;
   layer3Color: string;
+  // Layer gradient (Phase M): see configLayer2.ts.
+  layer3GradEnabled: boolean;
+  layer3GradPreset: string;
   layer3Source: Layer3Source;
   layer3ExecutionEngineOverride: 'auto' | 'cpu-geometry' | 'webgl-particle' | 'webgl-procedural-surface' | 'webgl-gpgpu' | 'webgpu-compute' | 'hybrid-runtime';
   layer3SourceCount: number;

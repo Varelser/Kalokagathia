@@ -3,6 +3,12 @@ import type { ConnectionRenderStyle, Layer2Type, MotionDagNode, MotionGraphStep,
 export interface ParticleConfigLayer2 {
   layer2Enabled: boolean;
   layer2Color: string;
+  // Layer gradient (Phase M): opt-in 3-stop LUT (Kinetix gradient
+  // presets, lib/kinetixGradients.ts) driven by normalised age
+  // (the layer life progress). OFF (default) keeps the single
+  // layer2Color + opacity look bit-identical.
+  layer2GradEnabled: boolean;
+  layer2GradPreset: string;
   layer2Source: Layer3Source;
   layer2ExecutionEngineOverride: 'auto' | 'cpu-geometry' | 'webgl-particle' | 'webgl-procedural-surface' | 'webgl-gpgpu' | 'webgpu-compute' | 'hybrid-runtime';
   layer2SourceCount: number;
