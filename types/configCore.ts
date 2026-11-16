@@ -69,6 +69,37 @@ export interface ParticleConfigCore {
   // logic (contrast normalisation, blend selection) keeps following
   // backgroundColor.
   backgroundHex: string;
+  // Horizon background (Phase I): the background surface is one of
+  // three modes. 'solid' (default) is the legacy behaviour exactly —
+  // backgroundColor tone / backgroundHex as before, and every system
+  // that reads the background (scene background sync, captures,
+  // stream modes) behaves as it always has. 'gradient' renders a
+  // two-colour gradient (linear at an angle, or radial from the
+  // centre) baked into a scene-background texture; 'image' shows a
+  // user image (data URL in backgroundImageSource, downscaled by the
+  // UI) as the background. The texture travels through
+  // scene.background, so the existing transparent / UnMult handling
+  // (which nulls or forces the scene background at capture time)
+  // applies unchanged: transparent exports and the stream
+  // transparent variant never see the Horizon background, and UnMult
+  // still derives its matte from a forced black background. Stream
+  // solid overrides (chroma key / black) also win over Horizon.
+  backgroundMode: 'solid' | 'gradient' | 'image';
+  backgroundGradientColorA: string;
+  backgroundGradientColorB: string;
+  backgroundGradientType: 'linear' | 'radial';
+  /** Linear gradient direction in degrees, screen space: 0 points
+   *  right (A at the left, B at the right), 90 points up (A at the
+   *  bottom, B at the top). Ignored for the radial type. */
+  backgroundGradientAngle: number;
+  /** Background image source (data URL); empty means image mode has
+   *  no image yet and the solid background shows instead (the UI
+   *  states this explicitly — no silent substitution). */
+  backgroundImageSource: string;
+  /** 'cover' fills the frame (cropping the overflow, the default);
+   *  'fit' shows the whole image with the solid background in the
+   *  letterbox area. */
+  backgroundImageFit: 'cover' | 'fit';
   depthFogEnabled: boolean;
   depthFogNear: number;
   depthFogFar: number;

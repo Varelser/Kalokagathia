@@ -43,7 +43,13 @@ export const SceneBackgroundSync: React.FC<{
   /** Stream chroma variants: solid background colour in place of the
    *  config tone. */
   backgroundOverrideColor?: string;
-}> = ({ backgroundColor, transparentBackground = false, backgroundOverrideColor }) => {
+  /** Horizon background (Phase I): while a gradient / image
+   *  background is active, components/HorizonBackground.tsx owns
+   *  scene.background; this sync then only keeps the renderer's
+   *  clear colour on the legacy colour (the fallback seen before
+   *  the background texture is ready, and the letterbox base). */
+  horizonActive?: boolean;
+}> = ({ backgroundColor, transparentBackground = false, backgroundOverrideColor, horizonActive = false }) => {
   const { gl, scene } = useThree();
 
   React.useEffect(() => {
@@ -54,8 +60,10 @@ export const SceneBackgroundSync: React.FC<{
     }
     const color = new THREE.Color(backgroundOverrideColor ?? backgroundColor);
     gl.setClearColor(color, 1);
-    scene.background = color;
-  }, [backgroundColor, backgroundOverrideColor, gl, scene, transparentBackground]);
+    if (!horizonActive) {
+      scene.background = color;
+    }
+  }, [backgroundColor, backgroundOverrideColor, gl, horizonActive, scene, transparentBackground]);
 
   return null;
 };

@@ -27,6 +27,16 @@ export const APP_STATE_DEFAULT_VIEW_DISPLAY: Partial<ParticleConfig> = {
   particleColor: 'white',
   backgroundColor: 'black',
   backgroundHex: '',
+  // Horizon background (Phase I): 'solid' is the legacy background
+  // exactly. The gradient defaults are a monochrome black -> dark
+  // grey vertical fade (angle 90 = A at the bottom, B at the top).
+  backgroundMode: 'solid',
+  backgroundGradientColorA: '#000000',
+  backgroundGradientColorB: '#232830',
+  backgroundGradientType: 'linear',
+  backgroundGradientAngle: 90,
+  backgroundImageSource: '',
+  backgroundImageFit: 'cover',
 
   // Screen FX
   screenScanlineIntensity: 0.0,

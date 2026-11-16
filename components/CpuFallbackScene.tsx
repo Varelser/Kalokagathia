@@ -76,6 +76,7 @@ export const CpuFallbackScene: React.FC<CpuFallbackSceneProps> = ({
     if (!ctx) return undefined;
 
     let state: CpuParticleState | null = null;
+    let gradientCache: { key: string; grad: CanvasGradient | null } = { key: '', grad: null };
     let stateSignature = '';
     let width = 0;
     let height = 0;
@@ -150,8 +151,37 @@ export const CpuFallbackScene: React.FC<CpuFallbackSceneProps> = ({
         ? `${parseInt(hexBg.slice(1, 3), 16)},${parseInt(hexBg.slice(3, 5), 16)},${parseInt(hexBg.slice(5, 7), 16)}`
         : whiteBg ? '255,255,255' : '0,0,0';
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = `rgba(${bgRgb},${fadeAlpha})`;
-      ctx.fillRect(0, 0, width, height);
+      // Horizon background (Phase I): gradient mode paints the fade
+      // fill as the same linear / radial gradient (cached per size +
+      // colours). Image mode keeps the solid fade — the CPU view is
+      // a degraded display path and does not decode the image.
+      if (cfg.backgroundMode === 'gradient') {
+        const cacheKey = `${width}x${height}|${cfg.backgroundGradientColorA}|${cfg.backgroundGradientColorB}|${cfg.backgroundGradientType}|${cfg.backgroundGradientAngle}`;
+        if (gradientCache.key !== cacheKey) {
+          let grad: CanvasGradient;
+          if (cfg.backgroundGradientType === 'radial') {
+            grad = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, Math.hypot(width, height) / 2);
+          } else {
+            const rad = ((cfg.backgroundGradientAngle || 0) * Math.PI) / 180;
+            const dx = Math.cos(rad);
+            const dy = -Math.sin(rad);
+            grad = ctx.createLinearGradient(
+              width / 2 - (dx * width) / 2, height / 2 - (dy * height) / 2,
+              width / 2 + (dx * width) / 2, height / 2 + (dy * height) / 2,
+            );
+          }
+          grad.addColorStop(0, cfg.backgroundGradientColorA || '#000000');
+          grad.addColorStop(1, cfg.backgroundGradientColorB || '#232830');
+          gradientCache = { key: cacheKey, grad };
+        }
+        ctx.globalAlpha = fadeAlpha;
+        if (gradientCache.grad) ctx.fillStyle = gradientCache.grad;
+        ctx.fillRect(0, 0, width, height);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = `rgba(${bgRgb},${fadeAlpha})`;
+        ctx.fillRect(0, 0, width, height);
+      }
 
       // Slow global rotation (config rotation speeds + a gentle idle
       // turn), applied as a 2D projection of the 3D state.

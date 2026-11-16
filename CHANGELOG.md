@@ -4,6 +4,44 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.11.0] — 2026-11-16
+
+Horizon background (leftover plan Phase I): the background surface
+gains gradient and image modes, closing the weakest remaining △ in
+the Maxon coverage audit (Trapcode Horizon). Everything defaults to
+the legacy solid background; existing presets render identically.
+
+### Added
+- **Background modes** (`backgroundMode`): `solid` (default — the
+  legacy `backgroundColor` tone / `backgroundHex` behaviour,
+  unchanged), `gradient`, and `image`. The Horizon background
+  travels as a texture in `scene.background`, so PostFx applies over
+  it and every existing background consumer keeps its semantics:
+  deterministic transparent exports and the stream transparent
+  variant never show it (their mattes stay clean), UnMult still
+  derives alpha from a forced black background, and the stream
+  chroma / black overrides win over Horizon.
+- **Gradient mode**: two-colour gradient baked from
+  `backgroundGradientColorA` / `backgroundGradientColorB`, as a
+  linear gradient at `backgroundGradientAngle` (degrees, screen
+  space; 0 = left→right, 90 = bottom→top) or a radial gradient
+  (centre → edge), selected by `backgroundGradientType`. Five
+  monochrome presets (Obsidian Fade, Ash Fall, Paper Fade, Mist
+  Radial, Halo Radial) ship in the Display panel; arbitrary colours
+  remain available through the two colour pickers.
+- **Image mode**: a user image stored in the config as a data URL
+  (`backgroundImageSource`, downscaled to ≤1024 px by the UI) is
+  shown as the background, baked at the frame's aspect with
+  `backgroundImageFit` — `cover` (fill, cropping the overflow) or
+  `fit` (whole image, letterboxed over the solid colour). With no
+  image set, the solid background shows and the UI states the
+  fallback explicitly. 360° panorama mapping is out of scope.
+- The CPU fallback view paints the gradient mode as well (image
+  mode keeps the solid fade there — that path is display-only).
+- Two starter presets: `starter-post-horizon-obsidian-fade`,
+  `starter-post-horizon-mist-radial`. Config keys: 918 → 925;
+  starter shelf: 485 → 487.
+
 ## [1.10.0] — 2026-11-16
 
 Deterministic-export reproducibility (leftover plan Phase G): exports

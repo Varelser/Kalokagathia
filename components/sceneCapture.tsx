@@ -32,6 +32,12 @@ export const ScreenshotManager: React.FC<{ config: ParticleConfig; saveTrigger: 
     if (cfg.exportTransparent) {
       scene.background = null;
       gl.setClearColor(0x000000, 0);
+    } else if (cfg.backgroundMode !== 'solid' && prevSceneBackground instanceof THREE.Texture) {
+      // Horizon background (Phase I): the gradient / image texture
+      // IS the background — keep it for the opaque capture instead
+      // of flattening the shot to the legacy solid colour.
+      scene.background = prevSceneBackground;
+      gl.setClearColor(prevClearColor, 1);
     } else {
       const bgColor = new THREE.Color(cfg.backgroundHex || cfg.backgroundColor);
       scene.background = bgColor;

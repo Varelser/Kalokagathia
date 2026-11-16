@@ -7,6 +7,8 @@ import { ScreenOverlay, ScreenshotManager } from './scenePrimitives';
 import { DeterministicRenderManager } from './DeterministicRenderManager';
 import { noteSceneGenerationMounted, useSceneGeneration } from '../lib/sceneGeneration';
 import { CameraImpulseRig, getAdaptiveDprRange, SceneBackgroundSync, shouldUseAntialias } from './AppSceneCameraRig';
+import { HorizonBackground } from './HorizonBackground';
+import { isHorizonActive, isHorizonSuppressed } from '../lib/horizonBackground';
 import { AppSceneLayerContent } from './AppSceneLayerContent';
 import { AppScenePostFx } from './AppScenePostFx';
 import { useAppSceneTemporalConfig } from './useAppSceneTemporalConfig';
@@ -83,6 +85,13 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
   // for the rendered surface only; tone logic elsewhere (contrast
   // normalisation, blend selection) still follows backgroundColor.
   const sceneBackgroundColor = backgroundOverrideColor ?? (effectiveConfig.backgroundHex || effectiveConfig.backgroundColor);
+  // Horizon background (Phase I): gradient / image backgrounds own
+  // scene.background (as a texture) while active. Stream surfaces
+  // suppress Horizon entirely — the transparent variant must stay a
+  // clean matte and the solid variants key against their override
+  // colour. With the default 'solid' mode this is always false and
+  // the background wiring below is the legacy path exactly.
+  const horizonActive = !isHorizonSuppressed(transparentBackground, backgroundOverrideColor) && isHorizonActive(effectiveConfig);
 
   return (
     <Canvas
@@ -101,8 +110,15 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
         backgroundColor={effectiveConfig.backgroundColor}
         transparentBackground={transparentBackground}
         backgroundOverrideColor={backgroundOverrideColor ?? (effectiveConfig.backgroundHex || undefined)}
+        horizonActive={horizonActive}
       />
-      {!transparentBackground && <color attach="background" args={[sceneBackgroundColor]} />}
+      {!transparentBackground && !horizonActive && <color attach="background" args={[sceneBackgroundColor]} />}
+      <HorizonBackground
+        config={effectiveConfig}
+        legacyColor={sceneBackgroundColor}
+        transparentBackground={transparentBackground}
+        backgroundOverrideColor={backgroundOverrideColor}
+      />
       {effectiveConfig.depthFogEnabled && (
         <fog attach="fog" args={[sceneBackgroundColor, config.depthFogNear, config.depthFogFar]} />
       )}

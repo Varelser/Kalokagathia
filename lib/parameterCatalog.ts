@@ -140,6 +140,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'screenPulseSpeed', label: "Pulse Speed", tab: 'global', min: 0.1, max: 4, step: 0.01 },
   { key: 'interLayerCollisionStrength', label: "Push Strength", tab: 'global', min: 0, max: 200, step: 1 },
   { key: 'postRadialBlurStrength', label: "Radial Blur Strength", tab: 'global', min: 0, max: 1, step: 0.01 },
+  { key: 'backgroundGradientAngle', label: "Horizon Gradient Angle", tab: 'global', min: 0, max: 360, step: 1 },
   { key: 'postLightX', label: "LightFX Light X", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'postLightY', label: "LightFX Light Y", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'postShineIntensity', label: "Shine Intensity", tab: 'global', min: 0, max: 3, step: 0.05 },

@@ -4,6 +4,7 @@ import { Camera, Layers3, Monitor, Move3d } from 'lucide-react';
 import { getConfigPerformanceScore, getConfigPerformanceTier, getRenderQualityDescription } from '../lib/performanceHints';
 import { getActiveRenderModes, getRenderCategorySummary, getRenderSupportSummary } from '../lib/renderModeRegistry';
 import { KINETIX_STAGE_BACKGROUNDS } from '../lib/kinetixGradients';
+import { HORIZON_GRADIENT_PRESETS } from '../lib/horizonBackground';
 import { Slider, Toggle } from './controlPanelParts';
 import { ControlPanelContentProps } from './controlPanelTabsShared';
 import { GlobalDisplayEffectsSection } from './controlPanelGlobalDisplayEffects';
@@ -169,6 +170,87 @@ export const GlobalDisplaySection: React.FC<ControlPanelContentProps> = ({
             <button onClick={() => updateConfig('backgroundHex', '')} className="rounded border border-white/15 px-2 py-1 text-[10px] text-white/70 hover:bg-white/5">Clear</button>
           )}
         </div>
+        <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Horizon Background</div>
+        <Toggle
+          label="Background Mode"
+          value={config.backgroundMode}
+          options={[
+            { label: 'Solid', val: 'solid' },
+            { label: 'Gradient', val: 'gradient' },
+            { label: 'Image', val: 'image' },
+          ]}
+          onChange={(value) => updateConfig('backgroundMode', value)}
+        />
+        {config.backgroundMode === 'gradient' && (
+          <div className="mb-2 rounded border border-white/10 bg-white/5 p-2">
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {HORIZON_GRADIENT_PRESETS.map((preset) => {
+                const active = config.backgroundGradientColorA === preset.colorA
+                  && config.backgroundGradientColorB === preset.colorB
+                  && config.backgroundGradientType === preset.type;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => {
+                      updateConfig('backgroundGradientColorA', preset.colorA);
+                      updateConfig('backgroundGradientColorB', preset.colorB);
+                      updateConfig('backgroundGradientType', preset.type);
+                      updateConfig('backgroundGradientAngle', preset.angle);
+                      updateConfig('backgroundColor', preset.tone);
+                      updateConfig('particleColor', preset.tone === 'white' ? 'black' : 'white');
+                    }}
+                    className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] transition-colors ${active ? 'border-cyan-300/40 bg-cyan-400/10 text-cyan-100' : 'border-white/10 bg-black/10 text-white/70 hover:bg-white/5'}`}
+                  >
+                    <span
+                      className="inline-block h-3 w-3 rounded-sm border border-white/30"
+                      style={{ background: preset.type === 'radial' ? `radial-gradient(circle, ${preset.colorA}, ${preset.colorB})` : `linear-gradient(0deg, ${preset.colorA}, ${preset.colorB})` }}
+                    />
+                    {preset.name}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mb-2 flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-[10px] text-white/60">
+                A
+                <input
+                  type="color"
+                  value={/^#[0-9a-fA-F]{6}$/.test(config.backgroundGradientColorA) ? config.backgroundGradientColorA : '#000000'}
+                  onChange={(e) => updateConfig('backgroundGradientColorA', e.target.value)}
+                  className="h-8 w-12 cursor-pointer rounded border border-white/20 bg-transparent p-0.5"
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-[10px] text-white/60">
+                B
+                <input
+                  type="color"
+                  value={/^#[0-9a-fA-F]{6}$/.test(config.backgroundGradientColorB) ? config.backgroundGradientColorB : '#232830'}
+                  onChange={(e) => updateConfig('backgroundGradientColorB', e.target.value)}
+                  className="h-8 w-12 cursor-pointer rounded border border-white/20 bg-transparent p-0.5"
+                />
+              </label>
+              <div className="flex-1 text-[10px] text-white/50">2色グラデーション（A → B）</div>
+            </div>
+            <Toggle
+              label="Gradient Type"
+              value={config.backgroundGradientType}
+              options={[
+                { label: 'Linear', val: 'linear' },
+                { label: 'Radial', val: 'radial' },
+              ]}
+              onChange={(value) => updateConfig('backgroundGradientType', value)}
+            />
+            {config.backgroundGradientType === 'linear' && (
+              <Slider label="Gradient Angle" value={config.backgroundGradientAngle} min={0} max={360} step={1} onChange={(value) => updateConfig('backgroundGradientAngle', value)} />
+            )}
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              角度は画面空間（0=左→右、90=下→上）。放射は中心（A）→ 外周（B）。透過書き出し・配信の透過面では背景は従来どおり無効になります。
+            </div>
+          </div>
+        )}
+        {config.backgroundMode === 'image' && (
+          <HorizonImageBlock config={config} updateConfig={updateConfig} />
+        )}
         <Toggle label="Particles" value={config.particleColor} options={[{ label: 'White', val: 'white' }, { label: 'Black', val: 'black' }]} onChange={(value) => updateConfig('particleColor', value)} />
         <Slider label="Base Opacity" value={config.opacity} min={0.1} max={1} step={0.01} onChange={(value) => updateConfig('opacity', value)} />
         <Slider label="Contrast / Intensity" value={config.contrast} min={0.5} max={5.0} step={0.1} onChange={(value) => updateConfig('contrast', value)} />
@@ -362,5 +444,86 @@ export const GlobalDisplaySection: React.FC<ControlPanelContentProps> = ({
         <Slider label="Auto Speed Y" value={config.rotationSpeedY} min={-0.2} max={0.2} step={0.001} onChange={(value) => updateConfig('rotationSpeedY', value)} />
       </div>
     </>
+  );
+};
+
+/**
+ * Image source controls for the Horizon 'image' background mode
+ * (Phase I). The picked image is downscaled to <=1024px and stored
+ * in the config as a data URL (backgroundImageSource), so — like the
+ * gradient-driver image — it persists with presets / projects. The
+ * texture is baked at the frame's aspect by lib/horizonBackground.ts
+ * (cover crops the overflow, fit letterboxes over the solid
+ * background colour). While no image is set the solid background
+ * shows; the status line states that explicitly.
+ */
+const HorizonImageBlock: React.FC<Pick<ControlPanelContentProps, 'config' | 'updateConfig'>> = ({ config, updateConfig }) => {
+  const source = config.backgroundImageSource;
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error('image load failed'));
+        el.src = url;
+      });
+      const scale = Math.min(1, 1024 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+      canvas.height = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      updateConfig('backgroundImageSource', canvas.toDataURL('image/jpeg', 0.87));
+    } catch {
+      // Unreadable file: keep the previous source untouched.
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+  return (
+    <div className="mb-2 rounded border border-white/10 bg-white/5 p-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label className="cursor-pointer rounded border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10">
+          画像を開く
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        {source && (
+          <>
+            <img src={source} alt="" className="h-8 w-12 rounded border border-white/20 object-cover" />
+            <button
+              onClick={() => updateConfig('backgroundImageSource', '')}
+              className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+            >
+              クリア
+            </button>
+          </>
+        )}
+      </div>
+      <Toggle
+        label="Image Fit"
+        value={config.backgroundImageFit}
+        options={[
+          { label: 'Cover', val: 'cover' },
+          { label: 'Fit', val: 'fit' },
+        ]}
+        onChange={(value) => updateConfig('backgroundImageFit', value)}
+      />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {source
+          ? '画像を設定済み: 背景として表示されます（Cover=画面いっぱいに拡大して余りを切り取り、Fit=全体を表示して余白は単色背景）。画像は 1024px 以下に縮小され、config に保持されます。透過書き出し・配信の透過面では背景は従来どおり無効になります。'
+          : '画像が未設定のため、いまは従来の単色背景が表示されています。画像を設定すると背景として表示されます。'}
+      </div>
+    </div>
   );
 };
