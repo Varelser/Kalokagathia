@@ -316,6 +316,13 @@ export interface ParticleConfigGpgpu {
   // with presets / projects like the SVG morph source does. Empty
   // string = no image (the driver falls back to life).
   gpgpuGradImageSource: string;
+  // Sprite image (Phase U): when non-empty, GPGPU point sprites take
+  // their shape from this image — luminance (times alpha) modulates
+  // the sprite alpha, monochrome only. While set it takes priority
+  // over gpgpuPointShape; empty string = procedural shapes as before.
+  // Held as a data URL (downscaled to <=256px by the UI) so it
+  // persists with presets / projects like the gradient image does.
+  gpgpuSpriteImage: string;
   // Point material blending (Kinetix integration B2): 'additive' is the
   // legacy default; 'normal' is the Kinetix Normal blend. The sort-based
   // transparency path still forces Normal while sorting is on.
@@ -328,6 +335,23 @@ export interface ParticleConfigGpgpu {
   // start->end interpolation; 'bell' rises end->start->end over the life
   // (sin(pi * t)), matching Kinetix's bell SizeCurve.
   gpgpuAgeSizeCurve: 'linear' | 'bell';
+  // Age curves (Phase U): fixed-position 5-point curves over the
+  // normalised age (points at t = 0 / .25 / .5 / .75 / 1, linearly
+  // interpolated; see lib/ageCurve.ts). Each curve is a multiplier
+  // layered on the legacy age paths, so an all-ones curve (the
+  // default) is exactly the legacy behaviour even while enabled.
+  gpgpuAgeCurveSizeEnabled: boolean;
+  gpgpuAgeCurveSizePoints: number[];
+  gpgpuAgeCurveOpacityEnabled: boolean;
+  gpgpuAgeCurveOpacityPoints: number[];
+  // Layer Maps per property (Phase U): the gradient image
+  // (gpgpuGradImageSource, sampled by particle position through the
+  // existing MediaLumaMap-style plumbing) modulates size / opacity
+  // individually. factor = mix(1, luma, amount), so 0 (the default)
+  // is identity and 1 makes luminance the multiplier itself. With no
+  // image set the amounts have no effect (the UI says so explicitly).
+  gpgpuMapSizeAmount: number;
+  gpgpuMapOpacityAmount: number;
   // Mouse Force ('paint' added by Kinetix integration B3: particles
   // are continuously re-emitted at the pointer position — a
   // deterministic per-tick hash gate in the velocity/position passes

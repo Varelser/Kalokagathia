@@ -201,12 +201,23 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGradPreset: 'nebula',
   gpgpuGradSpatialScale: 0.008,
   gpgpuGradImageSource: '',
+  // Sprite image (Phase U): empty = procedural point shapes as before.
+  gpgpuSpriteImage: '',
   gpgpuBlendMode: 'additive' as const,
   // Size over Lifetime
   gpgpuAgeSizeEnabled: false,
   gpgpuAgeSizeStart: 2.0,
   gpgpuAgeSizeEnd: 0.2,
   gpgpuAgeSizeCurve: 'linear' as const,
+  // Age curves (Phase U): disabled by default; the all-ones point
+  // lists are the identity multiplier even when enabled.
+  gpgpuAgeCurveSizeEnabled: false,
+  gpgpuAgeCurveSizePoints: [1, 1, 1, 1, 1],
+  gpgpuAgeCurveOpacityEnabled: false,
+  gpgpuAgeCurveOpacityPoints: [1, 1, 1, 1, 1],
+  // Layer Maps per property (Phase U): 0 = no modulation.
+  gpgpuMapSizeAmount: 0,
+  gpgpuMapOpacityAmount: 0,
   // Mouse Force
   gpgpuMouseEnabled: false,
   gpgpuMouseStrength: 2.0,
