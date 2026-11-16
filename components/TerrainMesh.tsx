@@ -1,9 +1,12 @@
 import React from 'react';
 import * as THREE from 'three';
+import { useFrame } from '@react-three/fiber';
 import type { ParticleConfig } from '../types';
 import {
+  TERRAIN_MESH_EXTENT,
   buildTerrainMeshGeometryData,
   getTerrainMeshProceduralCanvas,
+  tunnelScrollOffset,
 } from '../lib/terrainMesh';
 
 // Terrain Mesh (Phase P, Mir-style): a polygon counterpart to the
@@ -23,8 +26,21 @@ import {
 // and the render is bit-identical to the pre-Phase-P scene. The
 // geometry is a pure function of the config, so deterministic
 // renders reproduce it exactly.
+//
+// Phase V additions: the 'image' texture kind resolves its source
+// from the dedicated gpgpuTerrainTextureImage first and falls back
+// to the Horizon background image (the legacy source) when empty;
+// repeat / offset apply the standard UV transform to whichever map
+// is active (identity at the defaults). Tunnel cruise
+// (gpgpuTunnelSpeed) scrolls the terrain phase toward the viewer
+// through a second, period-shifted copy of the same geometry — the
+// camera itself never moves (Phase G pins it during exports), and
+// the offset is a pure function of accumulated scene time
+// (lib/terrainMesh.ts tunnelScrollOffset), so a deterministic
+// render reproduces the travel frame-for-frame and speed 0 renders
+// exactly the legacy single static mesh.
 
-export const TerrainMesh: React.FC<{ config: ParticleConfig }> = ({ config }) => {
+export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean }> = ({ config, isPlaying = true }) => {
   const enabled = config.gpgpuTerrainMeshEnabled;
   const display = config.gpgpuTerrainMeshDisplay;
   const tunnel = config.gpgpuTerrainMeshTunnel;
@@ -39,14 +55,22 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig }> = ({ config }) =>
   const seed = config.gpgpuSeed;
   const morphScale = config.gpgpuMorphScale;
   const bounceRadius = config.gpgpuBounceRadius;
-  const imageSource = config.backgroundImageSource;
+  // Dedicated terrain texture image (Phase V) wins when set; the
+  // Horizon background image remains the source otherwise, exactly
+  // as before Phase V.
+  const imageSource = config.gpgpuTerrainTextureImage || config.backgroundImageSource;
+  const texRepeat = config.gpgpuTerrainTextureRepeat;
+  const texOffsetX = config.gpgpuTerrainTextureOffsetX;
+  const texOffsetY = config.gpgpuTerrainTextureOffsetY;
+  const tunnelSpeed = config.gpgpuTunnelSpeed;
 
+  const worldScale = morphScale * bounceRadius * 0.48 * meshScale;
   const geometry = React.useMemo(() => {
     if (!enabled) return null;
     const data = buildTerrainMeshGeometryData({
       terrain: { amplitude: amp, frequency: freq, octaves, seed: terrainSeed },
       seed,
-      worldScale: morphScale * bounceRadius * 0.48 * meshScale,
+      worldScale,
       tunnel,
     });
     const geo = new THREE.BufferGeometry();
@@ -109,6 +133,36 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig }> = ({ config }) =>
     };
   }, [proceduralTexture]);
 
+  // UV transform (Phase V): repeat / offset apply to whichever map
+  // is active (uv' = uv * repeat + offset — lib/terrainMesh.ts
+  // terrainTextureUvTransform documents the formula; three.js
+  // derives the shader transform from these fields every frame).
+  // The defaults (1 / 0 / 0) are the identity transform.
+  React.useEffect(() => {
+    for (const tex of [imageTexture, proceduralTexture]) {
+      if (!tex) continue;
+      tex.repeat.set(texRepeat, texRepeat);
+      tex.offset.set(texOffsetX, texOffsetY);
+    }
+  }, [imageTexture, proceduralTexture, texRepeat, texOffsetX, texOffsetY]);
+
+  // Tunnel cruise (Phase V): accumulate scene time while playing
+  // (delta clamped like the GPGPU sim's raw step) and fold it into
+  // a scroll offset over one tunnel length. AppScene keys this
+  // component by scene generation, so a deterministic render job
+  // remounts it and the travel restarts from phase 0 — the offset
+  // at stepped frame i is a pure function of (i, fps, speed).
+  const tunnelLength = TERRAIN_MESH_EXTENT * 2 * worldScale;
+  const scrolling = enabled && tunnel && tunnelSpeed !== 0;
+  const scrollGroupRef = React.useRef<THREE.Group>(null);
+  const scrollTimeRef = React.useRef(0);
+  useFrame((_, delta) => {
+    if (!scrolling || !isPlaying) return;
+    scrollTimeRef.current += Math.min(delta, 0.05);
+    const dz = tunnelScrollOffset(scrollTimeRef.current, tunnelSpeed, tunnelLength);
+    if (scrollGroupRef.current) scrollGroupRef.current.position.z = dz;
+  });
+
   if (!enabled || !geometry) return null;
 
   const map = textureKind === 'image' ? imageTexture : proceduralTexture;
@@ -116,16 +170,18 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig }> = ({ config }) =>
   const color = new THREE.Color(grey, grey, grey * 1.03);
   const transparent = opacity < 0.999;
 
-  return (
-    <group>
-      {/* Lights mount with the system only: the rest of the scene is
-          shader-driven, and with the mesh off nothing here exists. */}
-      <ambientLight intensity={0.5 + 0.3 * brightness} />
-      <directionalLight position={[90, 160, 70]} intensity={1.7 * brightness} />
-      <directionalLight position={[-110, 40, -90]} intensity={0.35 * brightness} />
-      {display === 'shaded' && (
-        <mesh geometry={geometry}>
+  const formElement = (key: string, zOffset: number) => {
+    if (display === 'shaded') {
+      return (
+        <mesh key={key} geometry={geometry} position={[0, 0, zOffset]}>
           <meshStandardMaterial
+            // Keyed on map presence: the 'image' map arrives
+            // asynchronously, and a material first rendered without
+            // a map never recompiles with USE_MAP when the texture
+            // lands — the remount on presence flip is what makes
+            // the image texture visible at all (found in the
+            // Phase V gate; the no-map form is byte-identical).
+            key={map ? 'with-map' : 'no-map'}
             color={color}
             roughness={0.92}
             metalness={0.0}
@@ -135,9 +191,11 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig }> = ({ config }) =>
             side={THREE.DoubleSide}
           />
         </mesh>
-      )}
-      {display === 'wireframe' && (
-        <mesh geometry={geometry}>
+      );
+    }
+    if (display === 'wireframe') {
+      return (
+        <mesh key={key} geometry={geometry} position={[0, 0, zOffset]}>
           <meshBasicMaterial
             color={color}
             wireframe
@@ -146,17 +204,41 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig }> = ({ config }) =>
             side={THREE.DoubleSide}
           />
         </mesh>
-      )}
-      {display === 'points' && (
-        <points geometry={geometry}>
-          <pointsMaterial
-            color={color}
-            size={2.4}
-            sizeAttenuation
-            transparent={transparent}
-            opacity={opacity}
-          />
-        </points>
+      );
+    }
+    return (
+      <points key={key} geometry={geometry} position={[0, 0, zOffset]}>
+        <pointsMaterial
+          color={color}
+          size={2.4}
+          sizeAttenuation
+          transparent={transparent}
+          opacity={opacity}
+        />
+      </points>
+    );
+  };
+
+  return (
+    <group>
+      {/* Lights mount with the system only: the rest of the scene is
+          shader-driven, and with the mesh off nothing here exists. */}
+      <ambientLight intensity={0.5 + 0.3 * brightness} />
+      <directionalLight position={[90, 160, 70]} intensity={1.7 * brightness} />
+      <directionalLight position={[-110, 40, -90]} intensity={0.35 * brightness} />
+      {scrolling ? (
+        // Two period-shifted copies inside one scrolled group: as
+        // the group travels +z by up to one tunnel length, the
+        // trailing copy covers the far end, and because the field
+        // is periodic over exactly that length the wrap is
+        // invisible. The lights stay outside the scrolled group so
+        // the illumination field is stable while the terrain flows.
+        <group ref={scrollGroupRef}>
+          {formElement('near', 0)}
+          {formElement('far', -tunnelLength)}
+        </group>
+      ) : (
+        formElement('single', 0)
       )}
     </group>
   );
