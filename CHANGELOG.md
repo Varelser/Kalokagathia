@@ -4,6 +4,133 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.29.0] — 2026-11-17
+
+Phase X3 (fourth period, leftover #3): the WebGPU compute path
+gains the WebGL force set it was missing. Every port is a verbatim
+force law from the WebGL velocity/position shaders, gated exactly
+like the WebGL branch, and closed inside the WebGPU path — the
+WebGL path is untouched (its frozen deterministic renders stay
+bit-identical). Configs whose features remain WebGL-only now route
+to WebGL through the capability registry instead of silently
+losing the effect.
+
+### Added
+- **OBJ normal initial velocity on the WebGPU path** (Phase O
+  parity, the mandatory item of leftover #3): the WGSL velocity
+  pass reads the baked companion normal cloud (a storage buffer
+  fed by the same bake as the target cloud, refreshed on every
+  re-bake) and applies the same emission-style kick — velocity
+  mixed toward the sample normal (rotated by the morph orbit
+  angle) under an exp(-t · 4.5) envelope from the last (re)bake or
+  speed-key change. The WebGL shader's second trigger (full
+  strength on the age-respawn frame) cannot fire here because the
+  age lifecycle itself stays WebGL-only; with age off — the only
+  configs that reach this path — the semantics are identical.
+- **The remaining WebGL forces on the WebGPU path**: audio blast,
+  N-body, curl (field symmetry, octaves, ridged/vortex modes),
+  boids, strange attractors (all 12 types), Lévy flight, vortex,
+  wind, gravity wells (single + ring), elastic, magnetic, SPH,
+  vector fields (all 7 types), spring to spawn position (backed
+  by an initial-position buffer), SDF collider (velocity
+  reflection + position push-out, all 5 shapes), floor bounce,
+  mouse force including pointer paint (velocity re-seed +
+  position teleport under the shared paint gate), Kuramoto phase
+  synchronisation (the phase now travels in the velocity buffer's
+  w channel, as in WebGL), Particle Life (species matrix as a
+  storage buffer), and the Verlet integrator (frame-start
+  positions snapshotted into a previous-position buffer before
+  the position pass, mirroring the WebGL blit pass).
+
+### Fixed
+- **Capability registry inventory** (silent-drop class of bug):
+  Kuramoto, Particle Life, Lévy flight, floor bounce, user custom
+  forces and the Aux event pools exist in the WebGL shaders but
+  were never listed as requested features, so WebGPU-preferred
+  configs using them lost the effect without any fallback or
+  notice. They are now declared: the four portable ones are
+  implemented (above), while custom force (user GLSL cannot be
+  compiled to WGSL) and Aux (WebGL FBO passes) are declared
+  unsupported and route to WebGL.
+
+### Remaining WebGL-only (declared, not silent)
+- Age lifecycle (advance + respawn re-emission), the fluid field
+  (its solver is a WebGL FBO advection pass), user GLSL custom
+  forces, the Aux event pools, and the Phase W2 replica
+  independent simulation. The capability registry reports each of
+  these as unsupported, so such configs run on WebGL with the
+  effect intact.
+
+## [1.28.0] — 2026-11-17
+
+Phase X2 (fourth period, leftover #4): the CPU fallback renderer
+gains the three GPGPU behaviours Phase R left unported, each with
+the WebGL path's semantics. The WebGL path is untouched (its frozen
+deterministic renders stay bit-identical), and every addition is
+inert unless the corresponding feature is enabled.
+
+### Added
+- **OBJ normal initial velocity on the CPU path** (Phase O parity):
+  the CPU morph bake now also produces the companion normal cloud,
+  and the CPU step applies the same emission-style kick as the
+  velocity shader — velocity mixed toward the particle's baked
+  sample normal (rotated by the morph orbit angle) under an
+  exp(-t · 4.5) envelope from (re)placement or the last speed-key
+  change, at full strength on the age-respawn frame. Speed 0 (the
+  default) skips the kick entirely.
+- **Morph attraction inside attractor mode on the CPU path**: the
+  attractor branch of the CPU step now composes the morph
+  relaxation (and the normal kick) after the attractor force, in
+  attractor units, against the start-of-step position — the same
+  composition the velocity shader performs in one pass. Previously
+  the CPU attractor mode ignored morph entirely.
+- **Age lifecycle and replica age phase on the CPU path** (Phase M
+  parity): the CPU sim now tracks per-particle age while the Life
+  system is on — seeded scatter identical in form to the WebGL
+  initial data, replica-block phase offsets applied both at seed
+  time and at every lifecycle wrap, respawn at the layout home
+  (the CPU emitter analogue), and the points shader's fade-in/out
+  envelope applied to the CPU scene's per-particle alpha, so
+  replicas pulse with their phase separation on the fallback path
+  too. With the age system off, the CPU step is operation-for-
+  operation the legacy computation.
+
+## [1.27.1] — 2026-11-17
+
+Phase X1 (fourth period, leftover #7): deterministic renders of
+free-flight GPGPU subjects (notably with Aux deathBurst) could
+diverge slightly between independent sessions of the same bundle.
+Two setup races at the start of a deterministic job caused it, and
+both are now closed to the job path; live playback is untouched.
+
+### Fixed
+- **One-step-ahead simulation**: the freshly remounted GPGPU system
+  could receive one stray live frame during job setup (a pending
+  RAF / the frameloop change landing after it subscribed). Its
+  delta, seconds long after the setup stall, clamps to 0.05 — exactly
+  one job step — so the whole export ran one step ahead in roughly
+  one session in six. While a job is active, the render manager now
+  marks job activity and feeds a step index before every legitimate
+  advance (`lib/sceneRotationDeterminism.ts`); the GPGPU system
+  skips any frame that arrives while a job is active but no step is
+  fed.
+- **One-frame rotation shift**: SceneGroup accumulates the auto
+  rotation per useFrame call, and whether the remounted group fired
+  on the first stepped frame raced the remount, shifting some
+  exports by exactly one frame of rotationSpeed. During a job the
+  group now derives the accumulated rotation from the fed step index
+  (speed x (step + 1); the +1 is the group's mount frame, matching
+  the unshifted exports bit-for-bit).
+
+### Verification
+- AUX identity subject (free flight + deathBurst): 12 independent
+  sessions now render bit-identical on all frames (was: divergence
+  classes at 0.00513 / 0.02582 mean-abs-diff). The fixed output is
+  bit-identical to the pre-fix unshifted class, so Aux statistics
+  are unchanged by construction. FROZEN identity vs v1.26.0 stays
+  0.00000; aux chain (W1) and replica independent sim (W2) subjects
+  stay bit-identical across sessions. No config keys added.
+
 ## [1.27.0] — 2026-11-17
 
 Phase X (fourth period, first phase): Layer Maps go per-property
