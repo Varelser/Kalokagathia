@@ -464,7 +464,7 @@ const ENUMS: { key: keyof ParticleConfig; gloss: string; values: readonly string
     values: ['sphere', 'ring', 'grid', 'cube', 'cylinder', 'torus', 'spiral', 'helix', 'plane', 'text', 'image', 'video'],
   },
   { key: 'gpgpuAttractorType', gloss: 'GPGPUアトラクタの種類', values: ['lorenz', 'thomas', 'rossler', 'halvorsen', 'chen', 'lu', 'aizawa', 'sprott', 'rabinovich', 'dejong', 'ikeda', 'chua'] },
-  { key: 'gpgpuMorphTarget', gloss: 'GPGPUモーフの目標形状', values: ['trefoil', 'torusKnot', 'galaxy', 'mobius', 'geodesic', 'crown', 'blackhole', 'klein', 'cymatic', 'gyroid', 'dnaRibbon', 'hypercube', 'mandelbulb', 'shell', 'text', 'image', 'svg'] },
+  { key: 'gpgpuMorphTarget', gloss: 'GPGPUモーフの目標形状', values: ['trefoil', 'torusKnot', 'galaxy', 'mobius', 'geodesic', 'crown', 'blackhole', 'klein', 'cymatic', 'gyroid', 'dnaRibbon', 'hypercube', 'mandelbulb', 'shell', 'text', 'image', 'svg', 'obj'] },
   { key: 'gpgpuCurlSymmetry', gloss: 'GPGPUカール場の対称サンプリング', values: ['none', 'mirrorX', 'radial4', 'radial6', 'octahedral'] },
   { key: 'gpgpuCurlMode', gloss: 'GPGPUカール場の型', values: ['curl', 'ridged', 'vortex'] },
   { key: 'gpgpuAuxMode', gloss: 'GPGPU Aux イベント放出の方式', values: ['none', 'deathBurst', 'bounceSplash', 'sparkTrail'] },

@@ -145,12 +145,17 @@ export interface ParticleConfigGpgpu {
   // baked into a float texture; the velocity shader pulls each particle
   // toward its assigned target with the Kinetix morph spring law.
   gpgpuMorphEnabled: boolean;
-  gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg';
+  gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj';
   // SVG import (Pro-2): the imported SVG document's source text. Like
   // the TextMap text it lives in the config so it persists with
   // projects / presets; the point cloud is re-sampled from it
   // deterministically at bake time (lib/svgMorph.ts).
   gpgpuMorphSvgSource: string;
+  // OBJ import (Phase J): the imported Wavefront OBJ document's
+  // source text, held in the config exactly like the SVG source; the
+  // surface point cloud is re-sampled from it deterministically at
+  // bake time (lib/objMorph.ts).
+  gpgpuMorphObjSource: string;
   gpgpuMorphStrength: number;
   gpgpuMorphScale: number;
   gpgpuMorphJitter: number;

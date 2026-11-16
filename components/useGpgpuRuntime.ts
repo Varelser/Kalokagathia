@@ -7,6 +7,7 @@ import { buildGpgpuMorphTargetData } from '../lib/gpgpuMorphTargets';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
+import { sampleObjPointCloud } from '../lib/objMorph';
 import { getSceneGeneration, noteGpgpuBackendSettled } from '../lib/sceneGeneration';
 import {
   initWebGPUCompute,
@@ -336,6 +337,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphMediaWidth = config.layer2MediaMapWidth;
   const morphMediaHeight = config.layer2MediaMapHeight;
   const morphSvgSource = config.gpgpuMorphSvgSource;
+  const morphObjSource = config.gpgpuMorphObjSource;
   useEffect(() => {
     morphTexRef.current?.dispose();
     morphTexRef.current = null;
@@ -360,6 +362,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // outline point cloud; null (no usable geometry) falls back to the
     // shell inside the bake, exactly like a missing media map.
     const svgPoints = morphTarget === 'svg' ? sampleSvgPointCloud(morphSvgSource) : null;
+    // obj (Phase J): re-sample the imported OBJ source text into its
+    // surface point cloud; null (no usable geometry) falls back to
+    // the shell inside the bake, exactly like a missing media map.
+    const objPoints = morphTarget === 'obj' ? sampleObjPointCloud(morphObjSource) : null;
     const data = buildGpgpuMorphTargetData({
       texSize,
       target: morphTarget,
@@ -368,6 +374,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       seed: morphSeed,
       mediaMap,
       svgPoints,
+      objPoints,
     });
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
@@ -394,6 +401,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphMediaWidth,
     morphMediaHeight,
     morphSvgSource,
+    morphObjSource,
   ]);
 
   return {

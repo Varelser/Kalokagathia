@@ -4,6 +4,45 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.12.0] — 2026-11-16
+
+OBJ input (leftover plan Phase J): the GPGPU morph system gains an
+imported-mesh target, closing the OBJ-emitter gap shared by
+Particular, Form and Mir in the Maxon coverage audit. The morph-off
+default path is unchanged; existing presets render identically.
+
+### Added
+- **Morph target `obj`** (`gpgpuMorphTarget`): a Wavefront OBJ
+  document's surface becomes the morph point cloud, reusing the B1a
+  morph plumbing (baked target texture, exponential approach). The
+  OBJ source text is stored in the config (`gpgpuMorphObjSource`),
+  exactly like the SVG morph source, so it persists with projects
+  and travels with presets; the cloud is re-sampled deterministically
+  at bake time — same source, same cloud.
+- **OBJ parser** (`lib/objMorph.ts`, dependency-free): `v` / `f`
+  lines with every common face index form (`v`, `v/vt`, `v//vn`,
+  `v/vt/vn`, negative relative indices); polygon faces are
+  fan-triangulated; normals / texture coordinates / materials are
+  skipped and malformed lines ignored. Sampling is uniform over the
+  surface (area-weighted triangle pick, seeded RNG — deterministic),
+  8,192 points, normalised to bounding-sphere radius 1 around the
+  bounding-box centre, matching the built-in targets' sizing.
+- **Import UI** in the Morph section: file open (.obj), paste field,
+  and a status line reporting vertex / face / triangle counts. With
+  no usable OBJ the bake falls back to a sphere shell and the UI
+  states the fallback explicitly (no silent substitution).
+- **Samples & starters**: two procedurally authored sample meshes
+  ship as constants — an icosphere (42 v / 80 f) and a torus-knot
+  tube (420 v / 420 quad faces) — with starters
+  `starter-gpgpu-morph-obj-sphere` and `starter-gpgpu-morph-obj-knot`
+  (built-in starters 487 → 489).
+
+### Notes
+- OBJ vertex sampling as an emitter/base-form is the same cloud;
+  mesh *rendering* (shaded geometry) remains the mesh export /
+  geometry modes' job. Mir's OBJ repeat/transform grammar is out of
+  scope here (replication grammar is Phase K).
+
 ## [1.11.0] — 2026-11-16
 
 Horizon background (leftover plan Phase I): the background surface

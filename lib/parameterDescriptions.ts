@@ -147,6 +147,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuMorphJitter: 'モーフ目標点のばらつき（ジッター）',
   gpgpuMorphOrbitSpeed: 'モーフ目標形状の周回速度',
   gpgpuMorphSvgSource: 'モーフ目標SVGのソーステキスト（輪郭を弧長サンプリングして点群化）',
+  gpgpuMorphObjSource: 'モーフ目標OBJのソーステキスト（表面を面積重みサンプリングして点群化）',
   gpgpuCurlMode: 'カール場の型（curl=従来 / ridged=稜線状 / vortex=渦巻き追加）',
   gpgpuCurlOctaves: 'カール場のオクターブ合成数（2.13倍・4.27倍の場を重ねる）',
   gpgpuWellCount: '重力井戸の数（2〜4で回転リング上に配置、1が従来の中心ウェル）',

@@ -1,6 +1,7 @@
 import type { PresetRecord } from '../types';
 import { createStarterPreset } from './starterLibraryCore';
 import { SAMPLE_SVG_STAR } from './svgMorph';
+import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT } from './objMorph';
 
 export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
   createStarterPreset('starter-gpgpu-boids-flock-array', 'GPGPU Boids Flock Array', {
@@ -284,6 +285,59 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuMorphEnabled: true,
         gpgpuMorphTarget: 'svg',
         gpgpuMorphSvgSource: SAMPLE_SVG_STAR,
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.05,
+        gpgpuMorphOrbitSpeed: 0.15,
+        gpgpuTrailEnabled: true,
+        gpgpuTrailLength: 8,
+        gpgpuTrailFade: 0.74,
+      }),
+  // Phase J OBJ samples: imported-mesh morph targets. The OBJ source
+  // text rides inside the preset (gpgpuMorphObjSource), so applying
+  // the preset rebuilds the same surface cloud deterministically.
+  createStarterPreset('starter-gpgpu-morph-obj-sphere', 'GPGPU Morph OBJ Sphere (Mesh)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.12,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'obj',
+        gpgpuMorphObjSource: SAMPLE_OBJ_SPHERE,
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.05,
+        gpgpuMorphOrbitSpeed: 0.15,
+        gpgpuTrailEnabled: true,
+        gpgpuTrailLength: 8,
+        gpgpuTrailFade: 0.74,
+      }),
+  createStarterPreset('starter-gpgpu-morph-obj-knot', 'GPGPU Morph OBJ Torus Knot (Mesh)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.12,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'obj',
+        gpgpuMorphObjSource: SAMPLE_OBJ_TORUS_KNOT,
         gpgpuMorphStrength: 3.0,
         gpgpuMorphScale: 1.0,
         gpgpuMorphJitter: 0.05,

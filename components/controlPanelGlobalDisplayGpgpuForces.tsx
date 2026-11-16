@@ -5,6 +5,7 @@ import { CUSTOM_FORCE_EXAMPLE, useCustomForceStatus } from '../lib/gpgpuCustomFo
 import { VEX_PRESETS } from '../lib/gpgpuVexPresets';
 import { KINETIX_COLOR_GRADIENTS, getKinetixGradientPreset } from '../lib/kinetixGradients';
 import { SAMPLE_SVG_STAR, sampleSvgPointCloud } from '../lib/svgMorph';
+import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT, parseObjGeometry } from '../lib/objMorph';
 import { setModulationSetup, useModulationSetup } from '../lib/modulation';
 import type { ParticleConfig } from '../types';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
@@ -305,16 +306,20 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
             <option value="text">Text (レイヤー2のテキストマップ)</option>
             <option value="image">Image (レイヤー2の画像マップ)</option>
             <option value="svg">SVG (取り込んだロゴ/図形)</option>
+            <option value="obj">OBJ (取り込んだ3Dメッシュ)</option>
           </select>
           {config.gpgpuMorphTarget === 'svg' && (
             <MorphSvgImportBlock config={config} updateConfig={updateConfig} />
+          )}
+          {config.gpgpuMorphTarget === 'obj' && (
+            <MorphObjImportBlock config={config} updateConfig={updateConfig} />
           )}
           <Slider label="Strength" value={config.gpgpuMorphStrength} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuMorphStrength', v)} />
           <Slider label="Scale" value={config.gpgpuMorphScale} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScale', v)} />
           <Slider label="Jitter" value={config.gpgpuMorphJitter} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphJitter', v)} />
           <Slider label="Orbit Speed" value={config.gpgpuMorphOrbitSpeed} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphOrbitSpeed', v)} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            各粒子に割り当てた形状点群へバネ引力で集めます（Kinetix モーフの GPGPU 再実装）。Text はレイヤー2のテキスト設定、Image はレイヤー2に読み込んだ画像マップ、SVG は取り込んだ SVG の輪郭を使います。
+            各粒子に割り当てた形状点群へバネ引力で集めます（Kinetix モーフの GPGPU 再実装）。Text はレイヤー2のテキスト設定、Image はレイヤー2に読み込んだ画像マップ、SVG は取り込んだ SVG の輪郭、OBJ は取り込んだ OBJ メッシュの表面を使います。
           </div>
         </>
       )}
@@ -699,6 +704,79 @@ const MorphSvgImportBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config
             ? `輪郭を ${cloud.length / 2} 点にサンプリングしました（弧長均等）。パス基本コマンド M/L/H/V/C/S/Q/T/A/Z と基本図形に対応。塗りつぶしは輪郭として扱います。`
             : '読み取れる図形がありません（path 等の図形要素が必要です）。'
           : 'SVG を取り込むと、その輪郭点群へ粒子が集まります（ロゴ・リビール用）。ソースは config に保持され、再読み込みでも消えません。'}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * OBJ import controls for the morph 'obj' target (Phase J). Like the
+ * SVG source, the OBJ source text is stored in the config itself
+ * (gpgpuMorphObjSource), so it survives reloads with the project and
+ * travels with presets. The surface cloud is re-sampled from the
+ * source at bake time; the status line below runs the same parser so
+ * what it reports is what the bake will use. When the source is empty
+ * or unusable the bake falls back to a sphere shell — the status line
+ * states that explicitly instead of failing silently.
+ */
+const MorphObjImportBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const source = config.gpgpuMorphObjSource;
+  const geometry = React.useMemo(() => (source ? parseObjGeometry(source) : null), [source]);
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    const text = await file.text();
+    updateConfig('gpgpuMorphObjSource', text.slice(0, 200_000));
+  };
+  return (
+    <div className="mb-3 rounded border border-white/10 bg-white/5 p-2">
+      <div className="mb-2 flex flex-wrap gap-2">
+        <label className="cursor-pointer rounded border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10">
+          OBJ ファイルを開く
+          <input
+            type="file"
+            accept=".obj,text/plain"
+            className="hidden"
+            onChange={(event) => {
+              void handleFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        <button
+          onClick={() => updateConfig('gpgpuMorphObjSource', SAMPLE_OBJ_SPHERE)}
+          className="rounded-full border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10"
+        >
+          サンプル (球)
+        </button>
+        <button
+          onClick={() => updateConfig('gpgpuMorphObjSource', SAMPLE_OBJ_TORUS_KNOT)}
+          className="rounded-full border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10"
+        >
+          サンプル (結び目)
+        </button>
+        {source && (
+          <button
+            onClick={() => updateConfig('gpgpuMorphObjSource', '')}
+            className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+          >
+            クリア
+          </button>
+        )}
+      </div>
+      <textarea
+        value={source}
+        onChange={(event) => updateConfig('gpgpuMorphObjSource', event.target.value.slice(0, 200_000))}
+        spellCheck={false}
+        rows={4}
+        className="w-full rounded border border-white/15 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40"
+        placeholder={'v 0 0 0 / f 1 2 3 ... の OBJ テキストを貼り付け'}
+      />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {source
+          ? geometry
+            ? `頂点 ${geometry.vertexCount}・面 ${geometry.faceCount}（三角形 ${geometry.triangleCount}）を読み取りました。表面を面積重みで 8,192 点にサンプリングします（決定的）。法線・テクスチャ座標は使いません。`
+            : '読み取れる頂点/面がありません（v と f の行が必要です）。現在は球シェルで代替しています。'
+          : 'OBJ を取り込むと、その表面点群へ粒子が集まります（3Dモデル・ロゴ立体用）。未設定の間は球シェルで代替しています。ソースは config に保持され、再読み込みでも消えません。'}
       </div>
     </div>
   );

@@ -54,9 +54,12 @@ export const GPGPU_MORPH_TARGETS: readonly GpgpuMorphTargetKind[] = [
   'shell',
   'text',
   'image',
-  // 'svg' (Pro-2) stays last: the target index feeds the bake seed,
-  // so appending keeps every existing target's cloud bit-identical.
+  // 'svg' (Pro-2) stays after the built-ins: the target index feeds
+  // the bake seed, so appending keeps every existing target's cloud
+  // bit-identical.
   'svg',
+  // 'obj' (Phase J) appends after 'svg' for the same reason.
+  'obj',
 ] as const;
 
 export interface MorphMediaMap {
@@ -82,6 +85,13 @@ export interface GpgpuMorphTargetBuildOptions {
    * shell, like a missing media map.
    */
   svgPoints?: ArrayLike<number> | null;
+  /**
+   * Normalised surface point cloud for the obj target (flat xyz
+   * triples, centred with bounding-sphere radius 1, from
+   * lib/objMorph.ts); null falls back to a shell, like a missing
+   * media map.
+   */
+  objPoints?: ArrayLike<number> | null;
 }
 
 const TAU = Math.PI * 2;
@@ -131,7 +141,7 @@ function sampleMediaPoint(
  * world units. Pure and deterministic for a given options set.
  */
 export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions): Float32Array {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints } = options;
   const count = texSize * texSize;
   const data = new Float32Array(count * 4);
   const targetIndex = GPGPU_MORPH_TARGETS.indexOf(target);
@@ -139,6 +149,7 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
   const isMedia = target === 'text' || target === 'image';
   const media = isMedia && mediaMap && mediaMap.map.length > 0 ? mediaMap : null;
   const svgPointCount = target === 'svg' && svgPoints ? Math.floor(svgPoints.length / 2) : 0;
+  const objPointCount = target === 'obj' && objPoints ? Math.floor(objPoints.length / 3) : 0;
   const mediaPoint = { x: 0, y: 0, z: 0 };
 
   for (let i = 0; i < count; i++) {
@@ -149,7 +160,23 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
     let ty = 0;
     let tz = 0;
 
-    if (svgPointCount > 0 && svgPoints) {
+    if (objPointCount > 0 && objPoints) {
+      // Imported OBJ surface cloud (Phase J): the samples are already
+      // area-uniform over the mesh surface, so a seeded uniform pick
+      // distributes particles evenly over the model. True 3D (xyz),
+      // unlike the flat svg cloud; the shader's Y orbit supplies the
+      // motion.
+      const pick = Math.floor(rng() * objPointCount) * 3;
+      tx = objPoints[pick] ?? 0;
+      ty = objPoints[pick + 1] ?? 0;
+      tz = objPoints[pick + 2] ?? 0;
+    } else if (target === 'obj') {
+      // obj requested but no usable cloud: shell fallback (as media).
+      const phi = Math.acos(2 * s - 1);
+      tx = 0.9 * Math.sin(phi) * Math.cos(h1 * TAU);
+      ty = 0.9 * Math.sin(phi) * Math.sin(h1 * TAU);
+      tz = 0.9 * Math.cos(phi);
+    } else if (svgPointCount > 0 && svgPoints) {
       // Imported SVG outline cloud (Pro-2): the samples are already
       // arc-length uniform, so a seeded uniform pick distributes
       // particles evenly over the logo outline. Flat in Z, like the
