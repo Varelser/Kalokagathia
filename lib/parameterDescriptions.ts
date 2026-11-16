@@ -152,6 +152,8 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuMorphOrbitSpeed: 'モーフ目標形状の周回速度',
   gpgpuMorphSvgSource: 'モーフ目標SVGのソーステキスト（輪郭を弧長サンプリングして点群化）',
   gpgpuMorphObjSource: 'モーフ目標OBJのソーステキスト（表面を面積重みサンプリングして点群化）',
+  gpgpuMorphObjSampleMode: 'モーフ目標OBJのサンプリング方式（surface=表面・従来同一 / vertices=頂点そのもの / volume=閉メッシュ内部の充填、非閉時は surface にフォールバック）',
+  gpgpuMorphObjNormalSpeed: 'モーフ目標OBJの法線初速（配置/リスポーン時にサンプル法線方向へ与える初速。0で無効・従来同一）',
   gpgpuMorphReplicaCount: 'モーフ複製文法：複製の数（1 = 複製なし・従来同一。総点数は不変で複製へ割り当て）',
   gpgpuMorphReplicaSpacing: 'モーフ複製文法：複製ごとの平行移動間隔（正規化単位）',
   gpgpuMorphReplicaAxis: 'モーフ複製文法：複製を並べる軸',

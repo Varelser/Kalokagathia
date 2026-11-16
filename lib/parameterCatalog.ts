@@ -138,6 +138,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuMorphTerrainFrequency', label: "Terrain Frequency", tab: 'global', min: 0.4, max: 4, step: 0.1 },
   { key: 'gpgpuMorphTerrainOctaves', label: "Terrain Octaves", tab: 'global', min: 1, max: 6, step: 1 },
   { key: 'gpgpuMorphTerrainSeed', label: "Terrain Seed", tab: 'global', min: 0, max: 999, step: 1 },
+  { key: 'gpgpuMorphObjNormalSpeed', label: "OBJ Normal Speed", tab: 'global', min: 0, max: 80, step: 1 },
   { key: 'gpgpuMorphJitter', label: "Jitter", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuCount', label: "Particle Count", tab: 'global', min: 1024, max: 1.04858e+06, step: 1024 },
   { key: 'gpgpuSmoothTubeCount', label: "Particle Count", tab: 'global', min: 4, max: 128, step: 4 },
