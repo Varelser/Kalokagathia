@@ -8,6 +8,11 @@ export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   'ribbon',
   'tube',
   'trail',
+  // Morph attraction joined the WGSL velocity pass in Phase R
+  // (baked target cloud as a storage buffer, same force law as
+  // WebGL). Before Phase R morph was not even listed as a requested
+  // feature, so morph configs silently lost the force on this path.
+  'morph',
 ] as const;
 
 export type WebgpuComputeFeature = typeof WEBGPU_COMPUTE_SUPPORTED_FEATURES[number];
@@ -40,6 +45,7 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   if (config.gpgpuSdfEnabled) features.push('sdf-collider');
   if (config.gpgpuMouseEnabled) features.push('mouse-force');
   if (config.gpgpuFluidEnabled) features.push('fluid-field');
+  if (config.gpgpuMorphEnabled) features.push('morph');
   return features;
 }
 

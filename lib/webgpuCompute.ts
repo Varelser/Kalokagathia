@@ -13,12 +13,17 @@ struct Uniforms {
   bounceRadius : f32,
   bounce : f32,
   speed  : f32,
+  morphEnabled : f32,
+  morphStrength : f32,
+  morphOrbitSpeed : f32,
+  morphReplicaPhaseGain : f32,
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
 @group(0) @binding(1) var<storage, read>       posIn  : array<vec4f>;
 @group(0) @binding(2) var<storage, read>       velIn  : array<vec4f>;
 @group(0) @binding(3) var<storage, read_write> velOut : array<vec4f>;
+@group(0) @binding(4) var<storage, read>       morphIn : array<vec4f>;
 
 fn hash3(p: vec3f) -> vec3f {
   var q = vec3f(dot(p, vec3f(127.1, 311.7, 74.7)),
@@ -54,6 +59,28 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     vel += vec3f(vnoise(np+vec3f(t,0,0)),
                  vnoise(np+vec3f(0,t+13.7,0)),
                  vnoise(np+vec3f(0,0,t+27.4))) * u.turbulence * 18.0 * u.delta;
+  }
+
+  // Morph target attraction (Phase R): the same force law as the
+  // WebGL velocity shader — each particle owns one baked target
+  // point (morphIn, same index layout as posIn; xyz in world units,
+  // w = baked replica orbit phase in radians). The cloud orbits
+  // around Y by time * orbitSpeed (+ phase * gain), and the velocity
+  // is relaxed toward the velocity covering the fraction mf of the
+  // remaining distance this step. morphEnabled = 0 skips the block
+  // entirely, leaving the legacy step untouched.
+  if (u.morphEnabled > 0.5) {
+    let mTexel = morphIn[idx];
+    var mTarget = mTexel.xyz;
+    let mAng = u.time * u.morphOrbitSpeed + mTexel.w * u.morphReplicaPhaseGain;
+    let mCos = cos(mAng);
+    let mSin = sin(mAng);
+    mTarget = vec3f(mTarget.x * mCos - mTarget.z * mSin,
+                    mTarget.y,
+                    mTarget.x * mSin + mTarget.z * mCos);
+    let mf = 1.0 - exp(-u.morphStrength * u.delta * 3.0);
+    let vWant = (mTarget - pos) * (mf / max(u.delta * u.speed * 60.0, 0.001));
+    vel += (vWant - vel) * clamp(mf + u.delta * 6.0, 0.0, 1.0);
   }
 
   let spd = length(vel);
@@ -104,6 +131,8 @@ export type WebGPUComputeState = {
   posBBuf: GPUBuffer;
   velABuf: GPUBuffer;
   velBBuf: GPUBuffer;
+  /** Baked morph target cloud (Phase R), same layout as pos buffers. */
+  morphBuf: GPUBuffer;
   velUBuf: GPUBuffer;
   posUBuf: GPUBuffer;
   stagingBuf: GPUBuffer;
@@ -119,6 +148,7 @@ export async function initWebGPUCompute(
   texSize: number,
   initialPos: Float32Array,
   initialVel: Float32Array,
+  morphData?: Float32Array | null,
 ): Promise<WebGPUComputeState | null> {
   if (!navigator.gpu) return null;
   let adapter: GPUAdapter | null;
@@ -143,13 +173,22 @@ export async function initWebGPUCompute(
   device.queue.writeBuffer(posABuf, 0, initialPos.buffer as ArrayBuffer, initialPos.byteOffset, initialPos.byteLength);
   device.queue.writeBuffer(velABuf, 0, initialVel.buffer as ArrayBuffer, initialVel.byteOffset, initialVel.byteLength);
 
+  // Morph target buffer (Phase R): always allocated (the velocity
+  // bind group references it unconditionally); filled with the baked
+  // cloud when one is supplied, zeros otherwise (never read while
+  // morphEnabled = 0).
+  const morphBuf = device.createBuffer(bufOpts);
+  if (morphData && morphData.byteLength === byteSize) {
+    device.queue.writeBuffer(morphBuf, 0, morphData.buffer as ArrayBuffer, morphData.byteOffset, morphData.byteLength);
+  }
+
   const stagingBuf = device.createBuffer({
     size: byteSize,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
   });
 
-  // Uniform buffers (2×32 bytes)
-  const velUBuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  // Uniform buffers (vel 48 bytes incl. the Phase R morph fields, pos 16 bytes)
+  const velUBuf = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const posUBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
   const velModule = device.createShaderModule({ code: VEL_WGSL });
@@ -161,6 +200,7 @@ export async function initWebGPUCompute(
       { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
       { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
       { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+      { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
     ],
   });
   const posBGL = device.createBindGroupLayout({
@@ -181,10 +221,27 @@ export async function initWebGPUCompute(
     compute: { module: posModule, entryPoint: 'main' },
   });
 
-  const velUData = new Float32Array(new ArrayBuffer(32)); // [texSize, delta, time, gravity, turbulence, bounceRadius, bounce, speed]
+  const velUData = new Float32Array(new ArrayBuffer(48)); // [texSize, delta, time, gravity, turbulence, bounceRadius, bounce, speed, morphEnabled, morphStrength, morphOrbitSpeed, morphReplicaPhaseGain]
   const posUData = new Float32Array(new ArrayBuffer(16)); // [texSize, delta, speed, bounceRadius]
 
-  return { device, velPipeline, posPipeline, posABuf, posBBuf, velABuf, velBBuf, velUBuf, posUBuf, stagingBuf, texSize, velUData, posUData, readbackPending: false };
+  return { device, velPipeline, posPipeline, posABuf, posBBuf, velABuf, velBBuf, morphBuf, velUBuf, posUBuf, stagingBuf, texSize, velUData, posUData, readbackPending: false };
+}
+
+/** Replace the baked morph cloud of a live state (Phase R): called
+ * when the morph bake is rebuilt (target / scale / seed / … change)
+ * after the state was created. */
+export function updateWebGPUMorphData(state: WebGPUComputeState, morphData: Float32Array): void {
+  const byteSize = state.texSize * state.texSize * 16;
+  if (morphData.byteLength !== byteSize) return;
+  state.device.queue.writeBuffer(state.morphBuf, 0, morphData.buffer as ArrayBuffer, morphData.byteOffset, morphData.byteLength);
+}
+
+/** Per-frame morph parameters for stepWebGPUCompute (Phase R). */
+export interface WebGPUMorphParams {
+  enabled: boolean;
+  strength: number;
+  orbitSpeed: number;
+  replicaPhaseGain: number;
 }
 
 export function stepWebGPUCompute(
@@ -197,8 +254,9 @@ export function stepWebGPUCompute(
   bounceRadius: number,
   bounce: number,
   speed: number,
+  morph?: WebGPUMorphParams | null,
 ): void {
-  const { device, velPipeline, posPipeline, posABuf, posBBuf, velABuf, velBBuf, velUBuf, posUBuf, texSize } = state;
+  const { device, velPipeline, posPipeline, posABuf, posBBuf, velABuf, velBBuf, morphBuf, velUBuf, posUBuf, texSize } = state;
   const N = texSize * texSize;
 
   const posIn  = pingIsA ? posABuf : posBBuf;
@@ -210,6 +268,10 @@ export function stepWebGPUCompute(
   const velU = state.velUData;
   velU[1] = delta; velU[2] = time; velU[3] = gravity;
   velU[4] = turbulence; velU[5] = bounceRadius; velU[6] = bounce; velU[7] = speed;
+  velU[8] = morph && morph.enabled ? 1 : 0;
+  velU[9] = morph ? morph.strength : 0;
+  velU[10] = morph ? morph.orbitSpeed : 0;
+  velU[11] = morph ? morph.replicaPhaseGain : 0;
   new Uint32Array(velU.buffer)[0] = texSize; // texSizeはu32なのでUint32Arrayビューで書く
   device.queue.writeBuffer(velUBuf, 0, velU);
 
@@ -229,6 +291,7 @@ export function stepWebGPUCompute(
       { binding: 1, resource: { buffer: posIn } },
       { binding: 2, resource: { buffer: velIn } },
       { binding: 3, resource: { buffer: velOut } },
+      { binding: 4, resource: { buffer: morphBuf } },
     ],
   });
   const velPass = enc.beginComputePass();
@@ -317,6 +380,7 @@ export function destroyWebGPUCompute(state: WebGPUComputeState): void {
   state.posBBuf.destroy();
   state.velABuf.destroy();
   state.velBBuf.destroy();
+  state.morphBuf.destroy();
   state.velUBuf.destroy();
   state.posUBuf.destroy();
   state.stagingBuf.destroy();
