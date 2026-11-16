@@ -452,6 +452,29 @@ export interface ParticleConfigGpgpu {
   // image set the amounts have no effect (the UI says so explicitly).
   gpgpuMapSizeAmount: number;
   gpgpuMapOpacityAmount: number;
+  // Per-property Layer Map sources + raster mask (Phase X): each
+  // source is a data URL like gpgpuGradImageSource; '' falls back
+  // to the common map (gpgpuGradImageSource) for that property, so
+  // the Phase U single-map configuration keeps its exact meaning.
+  // The colour source, when set, replaces the common image as the
+  // 'image' gradient driver's input. Displacement offsets baked
+  // points radially by (luma - 0.5) * amount * bounceRadius in the
+  // draw vertex shader (0 = identity). The mask's numeric luma map
+  // (gpgpuMaskMap + width/height) is captured at import time by the
+  // UI, following the layer2MediaLumaMap precedent; the bake and
+  // the layer media placement consume it deterministically.
+  gpgpuMapSizeSource: string;
+  gpgpuMapOpacitySource: string;
+  gpgpuMapColorSource: string;
+  gpgpuMapDisplaceSource: string;
+  gpgpuMapDisplaceAmount: number;
+  gpgpuMaskSource: string;
+  gpgpuMaskMode: 'off' | 'clip' | 'shape';
+  gpgpuMaskThreshold: number;
+  gpgpuMaskInvert: boolean;
+  gpgpuMaskMap: number[];
+  gpgpuMaskMapWidth: number;
+  gpgpuMaskMapHeight: number;
   // Mouse Force ('paint' added by Kinetix integration B3: particles
   // are continuously re-emitted at the pointer position — a
   // deterministic per-tick hash gate in the velocity/position passes

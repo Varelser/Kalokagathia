@@ -232,6 +232,8 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuAgeSizeEnd', label: "Size at Death", tab: 'global', min: 0, max: 5, step: 0.05 },
   { key: 'gpgpuMapSizeAmount', label: "Map Size Amount", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuMapOpacityAmount', label: "Map Opacity Amount", tab: 'global', min: 0, max: 1, step: 0.01 },
+  { key: 'gpgpuMapDisplaceAmount', label: "Map Displace Amount", tab: 'global', min: 0, max: 1, step: 0.01 },
+  { key: 'gpgpuMaskThreshold', label: "Mask Threshold", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuNBodySoftening', label: "Softening", tab: 'global', min: 0.1, max: 20, step: 0.1 },
   { key: 'gpgpuWellSoftening', label: "Softening", tab: 'global', min: 1, max: 100, step: 1 },
   { key: 'sdfSpecularIntensity', label: "Specular Intensity", tab: 'global', min: 0, max: 3, step: 0.05 },

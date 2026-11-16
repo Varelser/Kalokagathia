@@ -2,6 +2,7 @@ import type { ParticleConfig, SequenceDriveMode, SequenceDriveStrengthMode, Sequ
 import { DEFAULT_CONFIG } from './appStateConfigDefaults';
 
 const CONFIG_ARRAY_KEYS = [
+  'gpgpuMaskMap',
   'gpgpuAgeCurveSizePoints',
   'gpgpuAgeCurveOpacityPoints',
   'synthPattern',

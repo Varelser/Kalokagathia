@@ -269,6 +269,21 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // Layer Maps per property (Phase U): 0 = no modulation.
   gpgpuMapSizeAmount: 0,
   gpgpuMapOpacityAmount: 0,
+  // Per-property Layer Map sources + raster mask (Phase X): every
+  // source '' (common-map fallback), displacement 0 and mask 'off'
+  // reproduce the Phase W2 behaviour bit-for-bit.
+  gpgpuMapSizeSource: '',
+  gpgpuMapOpacitySource: '',
+  gpgpuMapColorSource: '',
+  gpgpuMapDisplaceSource: '',
+  gpgpuMapDisplaceAmount: 0,
+  gpgpuMaskSource: '',
+  gpgpuMaskMode: 'off' as const,
+  gpgpuMaskThreshold: 0.5,
+  gpgpuMaskInvert: false,
+  gpgpuMaskMap: [],
+  gpgpuMaskMapWidth: 0,
+  gpgpuMaskMapHeight: 0,
   // Mouse Force
   gpgpuMouseEnabled: false,
   gpgpuMouseStrength: 2.0,
