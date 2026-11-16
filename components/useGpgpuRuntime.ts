@@ -20,6 +20,12 @@ import { FLUID_SIZE } from './gpgpuShaders';
 import { AUX_TEX_SIZE } from './gpgpuShaderAux';
 import { clampAuxDepth } from '../lib/auxChain';
 import { getMaxGpgpuTexSize } from '../lib/gpuTier';
+import {
+  replicaBlockRange,
+  replicaStackSide,
+  resolveReplicaIndependentActive,
+} from '../lib/replicaIndependent';
+import { createPosSimMaterial, createVelSimMaterial } from './useGpgpuSimulationAssets';
 
 // The GPGPU tex-size caps (MAX_GPGPU_TEX_SIZE / GPGPU_TEX_SIZE_CAPS /
 // getMaxGpgpuTexSize) live in lib/gpuTier.ts since the 2026-11-14 perf
@@ -122,6 +128,114 @@ function disposeAuxPool(pool: AuxPoolTargets | null): void {
   pool.velB.dispose();
 }
 
+/**
+ * One replica simulation stack (Phase W2, method (a)): the
+ * state-separated sim for a single morph-replica block — its own
+ * ping-pong targets and Verlet previous-position target, seeded
+ * from the shared initial data, plus its own velocity/position
+ * materials (factory-built with the shared shaders).
+ */
+export type ReplicaStack = {
+  index: number;
+  start: number;
+  size: number;
+  side: number;
+  targets: AuxPoolTargets;
+  prevPos: THREE.WebGLRenderTarget;
+  pingIsA: boolean;
+  velMat: THREE.ShaderMaterial;
+  posMat: THREE.ShaderMaterial;
+};
+
+function createReplicaStacks(
+  gl: THREE.WebGLRenderer,
+  texSize: number,
+  config: ParticleConfig,
+  initPosData: Float32Array,
+  initVelData: Float32Array,
+): ReplicaStack[] {
+  const count = Math.max(1, Math.min(8, Math.round(config.gpgpuMorphReplicaCount)));
+  const total = texSize * texSize;
+  const copyScene = new THREE.Scene();
+  const copyCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const copyGeo = new THREE.PlaneGeometry(2, 2);
+  const copyMat = new THREE.MeshBasicMaterial({ map: null });
+  copyMat.blending = THREE.NoBlending;
+  const copyMesh = new THREE.Mesh(copyGeo, copyMat);
+  copyScene.add(copyMesh);
+  const stacks: ReplicaStack[] = [];
+  for (let r = 0; r < count; r++) {
+    const { start, size } = replicaBlockRange(total, count, r);
+    const side = replicaStackSide(size);
+    const targets: AuxPoolTargets = {
+      posA: makeRT(side),
+      posB: makeRT(side),
+      velA: makeRT(side),
+      velB: makeRT(side),
+    };
+    const prevPos = makeRT(side);
+    // Seed from the shared initial arrays: stack-local texel j is
+    // global texel start + j. Padding texels (j >= size) stay
+    // zeroed — inert, never merged or drawn.
+    const texelCount = side * side;
+    const stackPos = new Float32Array(texelCount * 4);
+    const stackVel = new Float32Array(texelCount * 4);
+    for (let j = 0; j < size; j++) {
+      const g = (start + j) * 4;
+      const l = j * 4;
+      stackPos[l] = initPosData[g];
+      stackPos[l + 1] = initPosData[g + 1];
+      stackPos[l + 2] = initPosData[g + 2];
+      stackPos[l + 3] = initPosData[g + 3];
+      stackVel[l] = initVelData[g];
+      stackVel[l + 1] = initVelData[g + 1];
+      stackVel[l + 2] = initVelData[g + 2];
+      stackVel[l + 3] = initVelData[g + 3];
+    }
+    const posTex = new THREE.DataTexture(stackPos, side, side, THREE.RGBAFormat, THREE.FloatType);
+    const velTex = new THREE.DataTexture(stackVel, side, side, THREE.RGBAFormat, THREE.FloatType);
+    posTex.needsUpdate = true;
+    velTex.needsUpdate = true;
+    copyMat.map = posTex;
+    copyMat.needsUpdate = true;
+    gl.setRenderTarget(targets.posA);
+    gl.render(copyScene, copyCam);
+    gl.setRenderTarget(prevPos);
+    gl.render(copyScene, copyCam);
+    copyMat.map = velTex;
+    copyMat.needsUpdate = true;
+    gl.setRenderTarget(targets.velA);
+    gl.render(copyScene, copyCam);
+    posTex.dispose();
+    velTex.dispose();
+    stacks.push({
+      index: r,
+      start,
+      size,
+      side,
+      targets,
+      prevPos,
+      pingIsA: true,
+      velMat: createVelSimMaterial(side, config),
+      posMat: createPosSimMaterial(side, config),
+    });
+  }
+  gl.setRenderTarget(null);
+  copyMat.dispose();
+  copyGeo.dispose();
+  return stacks;
+}
+
+function disposeReplicaStacks(stacks: ReplicaStack[] | null): void {
+  if (!stacks) return;
+  for (const stack of stacks) {
+    disposeAuxPool(stack.targets);
+    stack.prevPos.dispose();
+    stack.velMat.dispose();
+    stack.posMat.dispose();
+  }
+}
+
 export type GpgpuRuntimeRefs = {
   rtRef: MutableRefObject<{
     posA: THREE.WebGLRenderTarget;
@@ -150,6 +264,7 @@ export type GpgpuRuntimeRefs = {
   aux2PingIsA: MutableRefObject<boolean>;
   aux3RtRef: MutableRefObject<AuxPoolTargets | null>;
   aux3PingIsA: MutableRefObject<boolean>;
+  replicaStacksRef: MutableRefObject<ReplicaStack[] | null>;
   webgpuStateRef: MutableRefObject<WebGPUComputeState | null>;
   webgpuPosTexRef: MutableRefObject<THREE.DataTexture | null>;
   webgpuPingIsARef: MutableRefObject<boolean>;
@@ -275,6 +390,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const aux2PingIsA = useRef(true);
   const aux3RtRef = useRef<AuxPoolTargets | null>(null);
   const aux3PingIsA = useRef(true);
+  const replicaStacksRef = useRef<ReplicaStack[] | null>(null);
+  // Latest shared initial arrays (Phase W2): the main effect
+  // rebuilds them on every reseed; the replica-stack effect seeds
+  // the stacks from them, including when only the independent
+  // toggle changed and the main effect did not rerun.
+  const initDataRef = useRef<{ posData: Float32Array; velData: Float32Array } | null>(null);
   const webgpuStateRef = useRef<WebGPUComputeState | null>(null);
   const webgpuPosTexRef = useRef<THREE.DataTexture | null>(null);
   const webgpuPingIsARef = useRef(true);
@@ -316,6 +437,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         ? { lightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ } }
         : null,
     );
+    initDataRef.current = { posData, velData };
     const initTex = new THREE.DataTexture(posData.slice(), texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     initTex.needsUpdate = true;
     initPosTexRef.current = initTex;
@@ -523,6 +645,51 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     };
   }, [gl, auxDepth]);
 
+  // Replica simulation stacks (Phase W2): allocated only while
+  // the independent sim is active (key on + morph on + count > 1),
+  // in a dedicated effect — exactly like the aux chain pools — so
+  // toggling the key never reseeds the main pool. The stacks seed
+  // from the latest shared initial arrays; when a main-pool
+  // reseed input changes, this effect reruns after the main
+  // effect (declaration order) and reseeds the stacks from the
+  // fresh arrays. While the stacks run, the main pool's targets
+  // hold the merged layout the consumers read, so toggling the
+  // key off resumes the shared sim from the merged state.
+  const replicaStacksActive = resolveReplicaIndependentActive(config);
+  const replicaStackCount = replicaStacksActive
+    ? Math.max(1, Math.min(8, Math.round(config.gpgpuMorphReplicaCount)))
+    : 0;
+  useEffect(() => {
+    disposeReplicaStacks(replicaStacksRef.current);
+    replicaStacksRef.current = null;
+    if (!replicaStacksActive || !initDataRef.current) return;
+    replicaStacksRef.current = createReplicaStacks(
+      gl,
+      texSize,
+      config,
+      initDataRef.current.posData,
+      initDataRef.current.velData,
+    );
+    return () => {
+      disposeReplicaStacks(replicaStacksRef.current);
+      replicaStacksRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    gl,
+    texSize,
+    replicaStacksActive,
+    replicaStackCount,
+    config.gpgpuEmitShape,
+    config.gpgpuBounceRadius,
+    config.gpgpuSeed,
+    config.gpgpuAgeMax,
+    config.gpgpuMorphReplicaAgeStep,
+    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0,
+    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0,
+    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0,
+  ]);
+
   // Morph target texture (Kinetix integration B1a): the per-particle
   // target cloud is baked on the CPU (deterministic, seeded) and rebuilt
   // only when its inputs change. text reuses the layer TextMap renderer
@@ -719,6 +886,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     aux2PingIsA,
     aux3RtRef,
     aux3PingIsA,
+    replicaStacksRef,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,
