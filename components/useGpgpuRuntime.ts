@@ -18,6 +18,7 @@ import {
 import type { WebGPUComputeState } from '../lib/webgpuCompute';
 import { FLUID_SIZE } from './gpgpuShaders';
 import { AUX_TEX_SIZE } from './gpgpuShaderAux';
+import { clampAuxDepth } from '../lib/auxChain';
 import { getMaxGpgpuTexSize } from '../lib/gpuTier';
 
 // The GPGPU tex-size caps (MAX_GPGPU_TEX_SIZE / GPGPU_TEX_SIZE_CAPS /
@@ -57,6 +58,70 @@ function makeFluidRT(size: number): THREE.WebGLRenderTarget {
   return rt;
 }
 
+export type AuxPoolTargets = {
+  posA: THREE.WebGLRenderTarget;
+  posB: THREE.WebGLRenderTarget;
+  velA: THREE.WebGLRenderTarget;
+  velB: THREE.WebGLRenderTarget;
+};
+
+/**
+ * One initialized aux-chain pool (Phase W1): a 128x128 ping-pong
+ * pair seeded with the inactive state (age 10 >= life 0), using the
+ * same DataTexture copy path as the level-1 pool in the main effect.
+ * Chain pools are allocated ONLY while the configured depth reaches
+ * them (see the depth effect in useGpgpuRuntime), so depth 1 costs
+ * no extra targets at all.
+ */
+function createInitializedAuxPool(gl: THREE.WebGLRenderer): AuxPoolTargets {
+  const posA = makeRT(AUX_TEX_SIZE);
+  const posB = makeRT(AUX_TEX_SIZE);
+  const velA = makeRT(AUX_TEX_SIZE);
+  const velB = makeRT(AUX_TEX_SIZE);
+  const count = AUX_TEX_SIZE * AUX_TEX_SIZE;
+  const posData = new Float32Array(count * 4);
+  const velData = new Float32Array(count * 4);
+  for (let i = 0; i < count; i++) {
+    posData[i * 4 + 3] = 10; // age: past any life → inactive
+    velData[i * 4 + 3] = 0; // life: 0 → inactive
+  }
+  const posTex = new THREE.DataTexture(posData, AUX_TEX_SIZE, AUX_TEX_SIZE, THREE.RGBAFormat, THREE.FloatType);
+  const velTex = new THREE.DataTexture(velData, AUX_TEX_SIZE, AUX_TEX_SIZE, THREE.RGBAFormat, THREE.FloatType);
+  posTex.needsUpdate = true;
+  velTex.needsUpdate = true;
+  const copyScene = new THREE.Scene();
+  const copyCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const copyGeo = new THREE.PlaneGeometry(2, 2);
+  const copyMat = new THREE.MeshBasicMaterial({ map: posTex });
+  copyMat.blending = THREE.NoBlending;
+  const copyMesh = new THREE.Mesh(copyGeo, copyMat);
+  copyScene.add(copyMesh);
+  gl.setRenderTarget(posA);
+  gl.render(copyScene, copyCam);
+  gl.setRenderTarget(posB);
+  gl.render(copyScene, copyCam);
+  copyMat.map = velTex;
+  copyMat.needsUpdate = true;
+  gl.setRenderTarget(velA);
+  gl.render(copyScene, copyCam);
+  gl.setRenderTarget(velB);
+  gl.render(copyScene, copyCam);
+  gl.setRenderTarget(null);
+  posTex.dispose();
+  velTex.dispose();
+  copyMat.dispose();
+  copyGeo.dispose();
+  return { posA, posB, velA, velB };
+}
+
+function disposeAuxPool(pool: AuxPoolTargets | null): void {
+  if (!pool) return;
+  pool.posA.dispose();
+  pool.posB.dispose();
+  pool.velA.dispose();
+  pool.velB.dispose();
+}
+
 export type GpgpuRuntimeRefs = {
   rtRef: MutableRefObject<{
     posA: THREE.WebGLRenderTarget;
@@ -81,6 +146,10 @@ export type GpgpuRuntimeRefs = {
     velB: THREE.WebGLRenderTarget;
   } | null>;
   auxPingIsA: MutableRefObject<boolean>;
+  aux2RtRef: MutableRefObject<AuxPoolTargets | null>;
+  aux2PingIsA: MutableRefObject<boolean>;
+  aux3RtRef: MutableRefObject<AuxPoolTargets | null>;
+  aux3PingIsA: MutableRefObject<boolean>;
   webgpuStateRef: MutableRefObject<WebGPUComputeState | null>;
   webgpuPosTexRef: MutableRefObject<THREE.DataTexture | null>;
   webgpuPingIsARef: MutableRefObject<boolean>;
@@ -202,6 +271,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     velB: THREE.WebGLRenderTarget;
   } | null>(null);
   const auxPingIsA = useRef(true);
+  const aux2RtRef = useRef<AuxPoolTargets | null>(null);
+  const aux2PingIsA = useRef(true);
+  const aux3RtRef = useRef<AuxPoolTargets | null>(null);
+  const aux3PingIsA = useRef(true);
   const webgpuStateRef = useRef<WebGPUComputeState | null>(null);
   const webgpuPosTexRef = useRef<THREE.DataTexture | null>(null);
   const webgpuPingIsARef = useRef(true);
@@ -429,6 +502,27 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0,
     config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0]);
 
+  // Aux chain pools (Phase W1): allocated only while the configured
+  // chain depth reaches them — depth 1 (the default) allocates
+  // nothing, depth 2 adds one pool, depth 3 two. Kept out of the
+  // main runtime effect so raising the depth never reseeds the main
+  // pool; a fresh chain pool simply starts fully inactive.
+  const auxDepth = clampAuxDepth(config.gpgpuAuxDepth);
+  useEffect(() => {
+    disposeAuxPool(aux2RtRef.current);
+    disposeAuxPool(aux3RtRef.current);
+    aux2RtRef.current = auxDepth >= 2 ? createInitializedAuxPool(gl) : null;
+    aux3RtRef.current = auxDepth >= 3 ? createInitializedAuxPool(gl) : null;
+    aux2PingIsA.current = true;
+    aux3PingIsA.current = true;
+    return () => {
+      disposeAuxPool(aux2RtRef.current);
+      aux2RtRef.current = null;
+      disposeAuxPool(aux3RtRef.current);
+      aux3RtRef.current = null;
+    };
+  }, [gl, auxDepth]);
+
   // Morph target texture (Kinetix integration B1a): the per-particle
   // target cloud is baked on the CPU (deterministic, seeded) and rebuilt
   // only when its inputs change. text reuses the layer TextMap renderer
@@ -621,6 +715,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     sortRTBRef,
     auxRtRef,
     auxPingIsA,
+    aux2RtRef,
+    aux2PingIsA,
+    aux3RtRef,
+    aux3PingIsA,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,

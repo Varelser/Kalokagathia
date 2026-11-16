@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { BLIT_FRAG, FLUID_ADVECT_FRAG, SIM_POS_FRAG, SIM_VERT, SIM_VEL_FRAG, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildVelocityFragment } from "./gpgpuShaders";
-import { AUX_POS_FRAG, AUX_VEL_FRAG } from "./gpgpuShaderAux";
+import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG } from "./gpgpuShaderAux";
 import { useThree } from "@react-three/fiber";
 import { buildCustomForceHarness, compileCheckShader, setCustomForceStatus, validateCustomForceCode } from "../lib/gpgpuCustomForce";
 import type { UseGpgpuAssetsArgs } from "./gpgpuAssetShared";
@@ -217,6 +217,64 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
+  // Aux chain materials (Phase W1): one shared pair for levels 2
+  // and 3 — the passes run sequentially per level with that level's
+  // uniforms and salt, so a single material pair serves both. The
+  // event uniforms are declared in AUX_CHAIN_EVENT_GLSL.
+  const auxChainVelMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uAuxPosTex:    { value: null },
+      uAuxVelTex:    { value: null },
+      uMainPosTex:   { value: null },
+      uMainVelTex:   { value: null },
+      uMainTexSizeF: { value: 128 },
+      uSrcCount:     { value: 4096 },
+      uAuxCount:     { value: 4096 },
+      uAuxMode:      { value: 0 },
+      uAuxIntensity: { value: 1.0 },
+      uAuxSpeed:     { value: 26.0 },
+      uAuxLife:      { value: 0.75 },
+      uAuxGravityScale: { value: 1.0 },
+      uAuxDrag:      { value: 0 },
+      uAuxCurl:      { value: 0 },
+      uChainSalt:    { value: 0 },
+      uFloorEnabled: { value: false },
+      uFloorY:       { value: -110.0 },
+      uFloorBounce:  { value: 0.62 },
+      uBounceRadius: { value: 150.0 },
+      uBounce:       { value: 0.65 },
+      uGravity:      { value: 0.2 },
+      uDelta:        { value: 0.016 },
+      uTime:         { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: AUX_CHAIN_VEL_FRAG,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  const auxChainPosMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uAuxPosTex:    { value: null },
+      uAuxVelTex:    { value: null },
+      uAuxVelOutTex: { value: null },
+      uMainPosTex:   { value: null },
+      uMainVelTex:   { value: null },
+      uMainTexSizeF: { value: 128 },
+      uSrcCount:     { value: 4096 },
+      uAuxCount:     { value: 4096 },
+      uAuxMode:      { value: 0 },
+      uAuxIntensity: { value: 1.0 },
+      uAuxSpeed:     { value: 26.0 },
+      uChainSalt:    { value: 0 },
+      uFloorEnabled: { value: false },
+      uFloorY:       { value: -110.0 },
+      uBounceRadius: { value: 150.0 },
+      uDelta:        { value: 0.016 },
+      uTime:         { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: AUX_CHAIN_POS_FRAG,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
   const blitMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: { uTex: { value: null } },
     vertexShader: SIM_VERT, fragmentShader: BLIT_FRAG,
@@ -303,6 +361,8 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     posSimMat,
     auxVelMat,
     auxPosMat,
+    auxChainVelMat,
+    auxChainPosMat,
     blitMat,
     sortDepthMat,
     bitonicMat,

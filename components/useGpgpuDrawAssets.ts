@@ -136,6 +136,37 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
+  // Aux chain draw (Phase W1): levels 2 and 3 share the level-1
+  // draw shaders and geometry; each level gets its own material so
+  // its colour / size / textures resolve independently. Uniforms are
+  // pointed at the chain ping-pong outputs by the scene loop on the
+  // frames the chain passes run.
+  const aux2DrawMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uAuxPosTex: { value: null },
+      uAuxVelTex: { value: null },
+      uColor:     { value: new THREE.Color(config.gpgpuColor) },
+      uOpacity:   { value: config.gpgpuOpacity },
+      uAuxSize:   { value: config.gpgpuAux2Size },
+    },
+    vertexShader: AUX_DRAW_VERT, fragmentShader: AUX_DRAW_FRAG,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  const aux3DrawMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uAuxPosTex: { value: null },
+      uAuxVelTex: { value: null },
+      uColor:     { value: new THREE.Color(config.gpgpuColor) },
+      uOpacity:   { value: config.gpgpuOpacity },
+      uAuxSize:   { value: config.gpgpuAux2Size },
+    },
+    vertexShader: AUX_DRAW_VERT, fragmentShader: AUX_DRAW_FRAG,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
   const auxDrawGeo = useMemo(() => {
     const count = AUX_TEX_SIZE * AUX_TEX_SIZE;
     const geo = new THREE.BufferGeometry();
@@ -167,6 +198,8 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
     streakGeo,
     streakMat,
     auxDrawMat,
+    aux2DrawMat,
+    aux3DrawMat,
     auxDrawGeo,
   };
 }
