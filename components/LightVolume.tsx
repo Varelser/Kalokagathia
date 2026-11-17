@@ -13,6 +13,7 @@ import {
   buildLightTrailRibbon,
   type TrailVec3,
 } from '../lib/lightTrail';
+import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
 
 // Visible light volume + light trail (Phase Y).
 //
@@ -40,11 +41,27 @@ const VOLUME_VERTEX = /* glsl */ `
   varying vec3 vLocal;
   varying vec3 vWorld;
   varying vec3 vNormal;
+  varying vec3 vScene;
+  uniform vec3 uSceneOrigin;
+  uniform vec4 uSceneQuat;
+  uniform vec3 uMeshOffset;
+  uniform float uMeshFlip;
+  vec3 quatRotate(vec4 q, vec3 v) {
+    return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+  }
   void main() {
     vLocal = position;
     vec4 wp = modelMatrix * vec4(position, 1.0);
     vWorld = wp.xyz;
     vNormal = normalize(mat3(modelMatrix) * normal);
+    // Scene-local position (the frame the shadow bake lives in):
+    // mesh flip/offset first, then the light group's quaternion,
+    // then the light position. vWorld includes the scene group's
+    // own rotation and cannot be used for the bake sample.
+    vec3 lp = position;
+    if (uMeshFlip > 0.5) lp = vec3(lp.x, -lp.y, -lp.z);
+    lp += uMeshOffset;
+    vScene = uSceneOrigin + quatRotate(uSceneQuat, lp);
     gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
@@ -60,6 +77,13 @@ const VOLUME_FRAGMENT = /* glsl */ `
   uniform float uLength;
   uniform float uRadius;
   uniform float uShape; // 0 = cone, 1 = sphere
+  // Occlusion-map shadow (Phase Z): the volume dims where the
+  // baked occlusion says the light is blocked.
+  uniform sampler2D uShadowMap;
+  uniform float uShadowReady;
+  uniform float uShadowExtent;
+  uniform float uShadowStrength;
+  varying vec3 vScene;
 
   float edgeExp() { return mix(0.8, 2.2, uSoftness); }
 
@@ -95,6 +119,11 @@ const VOLUME_FRAGMENT = /* glsl */ `
       acc *= pow(chord, edgeExp()) * 1.4;
     }
     float a = clamp(uIntensity * acc, 0.0, 1.0);
+    if (uShadowReady > 0.5 && uShadowStrength > 0.0) {
+      vec2 suv = clamp(vScene.xz / (2.0 * uShadowExtent) + 0.5, 0.0, 1.0);
+      float occ = texture2D(uShadowMap, suv).r;
+      a *= 1.0 - uShadowStrength * occ * 0.8;
+    }
     if (a <= 0.001) discard;
     gl_FragColor = vec4(vec3(1.0), a);
   }
@@ -174,9 +203,31 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
     };
   }, [volumeGeometry]);
 
+  const shadowBake = React.useMemo(() => {
+    if (!config.gpgpuShadowEnabled || !(config.gpgpuShadowStrength > 0)) return null;
+    const bake = bakeShadowOcclusionMap(buildShadowScene(config), 64);
+    const tex = new THREE.DataTexture(bake.data, bake.resolution, bake.resolution, THREE.RGBAFormat);
+    tex.needsUpdate = true;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    return { tex, extent: bake.extent };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.gpgpuShadowEnabled, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuMorphTerrainAmplitude, config.gpgpuMorphTerrainFrequency, config.gpgpuMorphTerrainOctaves, config.gpgpuMorphTerrainSeed, config.gpgpuSeed, config.gpgpuMorphScale, config.gpgpuBounceRadius, config.gpgpuTerrainMeshScale, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
+
+  React.useEffect(() => {
+    return () => {
+      shadowBake?.tex.dispose();
+    };
+  }, [shadowBake]);
+
   const volumeMaterial = React.useMemo(() => {
     if (!volumeDraws) return null;
     const radius = Math.tan((Math.max(1, Math.min(89, volumeParams.angleDeg)) * Math.PI) / 180) * volumeParams.length;
+    const dir0 = normalizeLightDir(config.gpgpuLightDirX, config.gpgpuLightDirY, config.gpgpuLightDirZ);
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dir0[0], dir0[1], dir0[2]));
+    const isCone = volumeParams.shape === 'cone';
     return new THREE.ShaderMaterial({
       vertexShader: VOLUME_VERTEX,
       fragmentShader: VOLUME_FRAGMENT,
@@ -186,14 +237,22 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
         uSoftness: { value: volumeParams.softness },
         uLength: { value: volumeParams.length },
         uRadius: { value: radius },
-        uShape: { value: volumeParams.shape === 'sphere' ? 1 : 0 },
+        uShape: { value: isCone ? 0 : 1 },
+        uSceneOrigin: { value: new THREE.Vector3(lightPos.x, lightPos.y, lightPos.z) },
+        uSceneQuat: { value: new THREE.Vector4(quat.x, quat.y, quat.z, quat.w) },
+        uMeshOffset: { value: isCone ? new THREE.Vector3(0, volumeParams.length / 2, 0) : new THREE.Vector3(0, 0, 0) },
+        uMeshFlip: { value: isCone ? 1 : 0 },
+        uShadowMap: { value: shadowBake ? shadowBake.tex : null },
+        uShadowReady: { value: shadowBake ? 1 : 0 },
+        uShadowExtent: { value: shadowBake ? shadowBake.extent : 1 },
+        uShadowStrength: { value: config.gpgpuShadowStrength },
       },
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-  }, [volumeDraws, volumeParams.intensity, volumeParams.steps, volumeParams.softness, volumeParams.length, volumeParams.angleDeg, volumeParams.shape]);
+  }, [volumeDraws, volumeParams.intensity, volumeParams.steps, volumeParams.softness, volumeParams.length, volumeParams.angleDeg, volumeParams.shape, shadowBake, config.gpgpuShadowStrength, config.gpgpuLightDirX, config.gpgpuLightDirY, config.gpgpuLightDirZ, lightPos]);
 
   React.useEffect(() => {
     return () => {

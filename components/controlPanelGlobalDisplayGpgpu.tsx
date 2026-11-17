@@ -202,6 +202,43 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
                 </>
               )}
             </div>
+            <div className="mt-3 border-t border-white/10 pt-3">
+              <div className="mb-2 text-[10px] uppercase tracking-widest font-medium opacity-70">Shadow / Fog Self-Shadow (Phase Z)</div>
+              <Toggle
+                label="Shadow Enabled (シャドウ（遮蔽マップ近似）)"
+                value={config.gpgpuShadowEnabled}
+                options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+                onChange={(v) => updateConfig('gpgpuShadowEnabled', v)}
+              />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                地形と OBJ から 3D ライトへの遮蔽をベイクし、粒子・地形・体積光を減衰させます。本格的なシャドウマップではなく遮蔽マップによる近似です。遮蔽はライトオブジェクトに対してのみ適用されます。
+              </div>
+              {config.gpgpuShadowEnabled && (
+                <>
+                  <Slider label="Shadow Strength" value={config.gpgpuShadowStrength} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuShadowStrength', v)} />
+                  <Slider label="Shadow Softness" value={config.gpgpuShadowSoftness} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuShadowSoftness', v)} />
+                  <Toggle
+                    label="Source: Terrain (地形を遮蔽源)"
+                    value={config.gpgpuShadowSourceTerrain}
+                    options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+                    onChange={(v) => updateConfig('gpgpuShadowSourceTerrain', v)}
+                  />
+                  <Toggle
+                    label="Source: OBJ (OBJ を遮蔽源)"
+                    value={config.gpgpuShadowSourceObj}
+                    options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+                    onChange={(v) => updateConfig('gpgpuShadowSourceObj', v)}
+                  />
+                </>
+              )}
+              <Slider label="Fog Self-Shadow (煙・霧の自己影)" value={config.gpgpuFogSelfShadow} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuFogSelfShadow', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                ボリューメトリック煙の内部で、ライト方向の密度積分により反対側が沈みます（Volumetric 表示用）。炎の色・温度はモノクロ方針のため対象外です。
+              </div>
+              {config.gpgpuFogSelfShadow > 0 && (
+                <Slider label="Fog Shadow Steps (1-16)" value={config.gpgpuFogShadowSteps} min={1} max={16} step={1} onChange={(v) => updateConfig('gpgpuFogShadowSteps', Math.round(v))} />
+              )}
+            </div>
           </div>
           <Toggle
             label="Audio Reactive"

@@ -8,6 +8,7 @@ import {
   getTerrainMeshProceduralCanvas,
   tunnelScrollOffset,
 } from '../lib/terrainMesh';
+import { buildShadowScene, occlusionAtPoint } from '../lib/shadowOcclusion';
 
 // Terrain Mesh (Phase P, Mir-style): a polygon counterpart to the
 // Phase L point terrain. A 128x128 grid is displaced by the shared
@@ -63,6 +64,13 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
   const texOffsetX = config.gpgpuTerrainTextureOffsetX;
   const texOffsetY = config.gpgpuTerrainTextureOffsetY;
   const tunnelSpeed = config.gpgpuTunnelSpeed;
+  // Occlusion-map shadow (Phase Z): per-vertex colours from the
+  // same pure occlusion function the bake uses, evaluated at the
+  // vertex positions (plane mode only — the tunnel's wrapped
+  // frame has no single light horizon, documented limit). With
+  // the shadow off no colour attribute exists and the materials
+  // render exactly as before.
+  const shadowActive = config.gpgpuShadowEnabled && config.gpgpuShadowStrength > 0 && !tunnel;
 
   const worldScale = morphScale * bounceRadius * 0.48 * meshScale;
   const geometry = React.useMemo(() => {
@@ -77,9 +85,24 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
     geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
     geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
+    if (shadowActive) {
+      const scene = buildShadowScene(config);
+      const colors = new Float32Array(data.vertexCount * 3);
+      for (let i = 0; i < data.vertexCount; i++) {
+        const occ = occlusionAtPoint(
+          data.positions[i * 3], data.positions[i * 3 + 1], data.positions[i * 3 + 2], scene,
+        );
+        const f = 1 - config.gpgpuShadowStrength * occ;
+        colors[i * 3] = f;
+        colors[i * 3 + 1] = f;
+        colors[i * 3 + 2] = f;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    }
     geo.computeVertexNormals();
     return geo;
-  }, [enabled, amp, freq, octaves, terrainSeed, seed, morphScale, bounceRadius, meshScale, tunnel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, amp, freq, octaves, terrainSeed, seed, morphScale, bounceRadius, meshScale, tunnel, shadowActive, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
 
   React.useEffect(() => {
     return () => {
@@ -181,8 +204,9 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
             // lands — the remount on presence flip is what makes
             // the image texture visible at all (found in the
             // Phase V gate; the no-map form is byte-identical).
-            key={map ? 'with-map' : 'no-map'}
+            key={`${map ? 'with-map' : 'no-map'}-${shadowActive ? 'shadow' : 'plain'}`}
             color={color}
+            vertexColors={shadowActive}
             roughness={0.92}
             metalness={0.0}
             map={map ?? undefined}
@@ -197,7 +221,9 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
       return (
         <mesh key={key} geometry={geometry} position={[0, 0, zOffset]}>
           <meshBasicMaterial
+            key={shadowActive ? 'shadow' : 'plain'}
             color={color}
+            vertexColors={shadowActive}
             wireframe
             transparent={transparent}
             opacity={opacity}
@@ -209,7 +235,9 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
     return (
       <points key={key} geometry={geometry} position={[0, 0, zOffset]}>
         <pointsMaterial
+          key={shadowActive ? 'shadow' : 'plain'}
           color={color}
+          vertexColors={shadowActive}
           size={2.4}
           sizeAttenuation
           transparent={transparent}
