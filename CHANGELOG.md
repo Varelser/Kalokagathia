@@ -4,6 +4,67 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.32.0] — 2026-11-17
+
+Phase AA (fourth period, final phase): behaviour semantics and
+dedicated Form deformation, plus path stamping and the OBJ
+repetition grammar. Base is the actually-shipped v1.31.0. With
+all new keys at their defaults the render is bit-identical to
+v1.31.0 (verified on the iMac real-GPU gate: FROZEN
+deterministic render, all 12 frames at 0.00000). 22 new config
+keys (1,059 total), starters +5 (527 total).
+
+### Added
+- **Particle Life behaviour** (`gpgpuParticleLifePursue` /
+  `Evade` / `VisionRange` / `VisionAngle` / `MaxSpeed` /
+  `MeanderAmount` / `MeanderScale`, 7 new keys;
+  `lib/particleLifeBehavior.ts` + GLSL twin): a cyclic predator
+  chain over the species — species i pursues species (i+1) mod n
+  and evades species (i-1) mod n — as an additive term on top of
+  the existing interaction matrix (the matrix itself is
+  unchanged). Behaviour targets are gated by vision (range +
+  cone around the velocity direction), the velocity inside the
+  Particle Life block can be capped, and Meander is a
+  per-particle wander (own phase per particle), not a global
+  modulation.
+- **Form-dedicated deformation** (`gpgpuMorphDisperse*` /
+  `Twist*` / `Fractal*`, 7 new keys;
+  `lib/formDeformation.ts`): Disperse (per-point loosening,
+  radial or axial), Twist (rotation around an axis proportional
+  to the coordinate along it) and Fractal Field (seeded fBm
+  displacement with an evolution offset) applied to the baked
+  base form before the replica grammar — a dedicated placement
+  grammar, separate from the Flow / Vortex motion systems.
+- **Path stamping** (path mode `stamp` + `gpgpuMorphStamp*`,
+  4 new keys; `lib/stampPlacement.ts`): shapes (disc / ring /
+  star / diamond / imported-OBJ point cloud) stamped at equal
+  arc-length intervals along the authored SVG path, optionally
+  aligned to the path tangent.
+- **Smooth Tube taper** (`gpgpuSmoothTubeTaper`, 1 new key;
+  `lib/smoothTubeProfile.ts`): the history tube's cross-section
+  thins toward the oldest ring; 0 keeps the constant radius.
+- **OBJ repetition grammar** (`gpgpuObjMeshRepeatMode` /
+  `RepeatRotation` / `RepeatScaleStep`, 3 new keys;
+  `lib/objMesh.ts`): the OBJ mesh repetition gains a radial
+  layout and the replica-style per-copy chain (rotation step ×
+  i, scale step ^ i). Grid / 0 / 1 reproduces the Phase V layout
+  exactly.
+- Starters +5 (527 total): predator chase, meander swarm, twist
+  knot form, star stamps, OBJ radial chain.
+
+### Honest limits
+- The pursue / evade chain is cyclic and fixed (i → i+1); there
+  is no free per-pair behaviour matrix, and the max speed is a
+  single key rather than per-species values.
+- The behaviour terms run on the WebGL velocity pass; the
+  WebGPU and CPU sub-paths keep the matrix-only behaviour
+  (the same sub-path convention as earlier phases).
+- Stamp shapes live in the path plane (the OBJ stamp keeps its
+  sampled depth); stamps are a bake-time placement, not a
+  live geometry instancer.
+- The radial OBJ layout is a single ring; per-copy transforms
+  are translation + Y rotation + uniform scale only.
+
 ## [1.31.0] — 2026-11-17
 
 Phase Z (fourth period): shadows and smoke — an occlusion-map
