@@ -18,6 +18,11 @@
  *  - gradient tex  — the shader-facing bake for the slope force:
  *                    R/G encode the unit DOWNHILL direction,
  *                    B the normalised slope magnitude.
+ *  - collider tex  — the shader-facing bake for the terrain
+ *                    collider (Phase AI): RG pack the height as a
+ *                    16-bit value, B/A carry the gradient
+ *                    components; decoded by the sim shaders with
+ *                    a manual bilinear (see TerrainDerivedMaps).
  *
  * Everything is a pure function of (terrain params, bake seed):
  * the same config bakes bit-identically, which the unit tests
@@ -111,8 +116,21 @@ export interface TerrainDerivedMaps {
   curvature: Uint8ClampedArray;
   /** Shader bake: RG = unit downhill direction, B = |grad| / max. */
   gradient: Uint8ClampedArray;
+  /**
+   * Collider bake (Phase AI): RG = the height packed as a 16-bit
+   * value over [-maxAbsHeight, +maxAbsHeight] (R = high byte,
+   * G = low byte), B/A = the gradient components gx/gz encoded
+   * over [-maxGradient, +maxGradient]. The sim shaders decode it
+   * with a manual bilinear (hardware filtering would corrupt the
+   * packed height at low-byte wraps), so the texture is created
+   * with NearestFilter.
+   */
+  collider: Uint8ClampedArray;
   maxGradient: number;
   maxAbsCurvature: number;
+  /** Maximum |height| over the grid — the collider pack range and
+   *  the decode scale (× worldScale) for the packed height. */
+  maxAbsHeight: number;
 }
 
 function clamp01(v: number): number {
@@ -164,10 +182,16 @@ export function deriveMapsFromHeightGrid(heights: ArrayLike<number>, size: numbe
       if (a > maxAbsCurvature) maxAbsCurvature = a;
     }
   }
+  let maxAbsHeight = 0;
+  for (let idx = 0; idx < count; idx++) {
+    const a = Math.abs(heights[idx]);
+    if (a > maxAbsHeight) maxAbsHeight = a;
+  }
   const normal = new Uint8ClampedArray(count * 4);
   const slope = new Uint8ClampedArray(count * 4);
   const curvature = new Uint8ClampedArray(count * 4);
   const gradient = new Uint8ClampedArray(count * 4);
+  const collider = new Uint8ClampedArray(count * 4);
   const gradNorm = maxGradient > 0 ? 1 / maxGradient : 0;
   const curvNorm = maxAbsCurvature > 0 ? 1 / maxAbsCurvature : 0;
   for (let idx = 0; idx < count; idx++) {
@@ -193,8 +217,17 @@ export function deriveMapsFromHeightGrid(heights: ArrayLike<number>, size: numbe
     }
     gradient[o + 2] = sb;
     gradient[o + 3] = 255;
+    // Collider pack (Phase AI): height as a 16-bit value over
+    // [-maxAbsHeight, +maxAbsHeight]; gradient components over
+    // [-maxGradient, +maxGradient] (0.5 when the field is flat).
+    const hv = maxAbsHeight > 0 ? clamp01(heights[idx] / maxAbsHeight * 0.5 + 0.5) : 0.5;
+    const packed = Math.round(hv * 65535);
+    collider[o] = (packed >> 8) & 255;
+    collider[o + 1] = packed & 255;
+    collider[o + 2] = toByte(maxGradient > 0 ? dx * gradNorm * 0.5 + 0.5 : 0.5);
+    collider[o + 3] = toByte(maxGradient > 0 ? dz * gradNorm * 0.5 + 0.5 : 0.5);
   }
-  return { size: n, normal, slope, curvature, gradient, maxGradient, maxAbsCurvature };
+  return { size: n, normal, slope, curvature, gradient, collider, maxGradient, maxAbsCurvature, maxAbsHeight };
 }
 
 export function buildTerrainDerivedMaps(
@@ -230,6 +263,8 @@ export function terrainOptionsFromConfig(config: ParticleConfig): GpgpuMorphTerr
     frequency: config.gpgpuMorphTerrainFrequency,
     octaves: config.gpgpuMorphTerrainOctaves,
     seed: config.gpgpuMorphTerrainSeed,
+    kind: config.gpgpuMorphTerrainKind,
+    terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
   };
 }
 
@@ -239,6 +274,10 @@ function derivedCacheKey(config: ParticleConfig): string {
     config.gpgpuMorphTerrainFrequency,
     config.gpgpuMorphTerrainOctaves,
     config.gpgpuMorphTerrainSeed,
+    // Phase AI: the generation recipe reshapes every bake, so it
+    // is part of the cache identity.
+    config.gpgpuMorphTerrainKind,
+    config.gpgpuMorphTerrainTerraceSteps,
     config.gpgpuSeed,
   ].join('|');
 }
@@ -264,6 +303,7 @@ interface DerivedTextureEntry {
   maps: TerrainDerivedMaps;
   byKind: Map<TerrainDerivedMapKind, THREE.DataTexture>;
   gradientTex: THREE.DataTexture | null;
+  colliderTex: THREE.DataTexture | null;
 }
 
 let textureEntry: DerivedTextureEntry | null = null;
@@ -280,14 +320,34 @@ function makeDerivedDataTexture(bytes: Uint8ClampedArray, size: number): THREE.D
   return tex;
 }
 
+/**
+ * The collider texture is the one NearestFilter bake: the packed
+ * 16-bit height must reach the shader unfiltered, because the
+ * manual bilinear in the sim shaders decodes each corner texel
+ * before interpolating (hardware filtering interpolates the two
+ * bytes independently and corrupts the value at low-byte wraps).
+ */
+function makeColliderDataTexture(bytes: Uint8ClampedArray, size: number): THREE.DataTexture {
+  const data = new Uint8Array(bytes.length);
+  data.set(bytes);
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function getTextureEntry(config: ParticleConfig): DerivedTextureEntry {
   const key = derivedCacheKey(config);
   if (textureEntry && textureEntry.key === key) return textureEntry;
   if (textureEntry) {
     textureEntry.byKind.forEach((t) => t.dispose());
     textureEntry.gradientTex?.dispose();
+    textureEntry.colliderTex?.dispose();
   }
-  textureEntry = { key, maps: getTerrainDerivedMaps(config), byKind: new Map(), gradientTex: null };
+  textureEntry = { key, maps: getTerrainDerivedMaps(config), byKind: new Map(), gradientTex: null, colliderTex: null };
   return textureEntry;
 }
 
@@ -338,10 +398,60 @@ export function getTerrainSlopeGradientTexture(config: ParticleConfig): THREE.Te
   return entry.gradientTex;
 }
 
+/** World-units multiplier of the terrain field (the mesh's own
+ *  worldScale: normalized position × this = world position, and
+ *  field height × this = world height). */
+export function terrainMeshWorldScale(config: ParticleConfig): number {
+  return Math.max(
+    config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48 * config.gpgpuTerrainMeshScale,
+    0,
+  );
+}
+
 /** World half-extent of the terrain plane (mesh worldScale x E). */
 export function terrainSlopeWorldExtent(config: ParticleConfig): number {
-  const worldScale = config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48 * config.gpgpuTerrainMeshScale;
-  return TERRAIN_MESH_EXTENT * Math.max(worldScale, 0);
+  return TERRAIN_MESH_EXTENT * terrainMeshWorldScale(config);
+}
+
+// ---------------------------------------------------------------------------
+// Terrain collider (Phase AI)
+
+/**
+ * Collider gate, resolved CPU-side exactly like the slope force:
+ * the height field only exists as a collider while the terrain
+ * itself is live (mesh enabled, plane mode — the tunnel wraps the
+ * field, so a planar height test is meaningless there).
+ */
+export function isTerrainColliderActive(config: ParticleConfig): boolean {
+  return !!config.gpgpuTerrainColliderEnabled
+    && !!config.gpgpuTerrainMeshEnabled
+    && !config.gpgpuTerrainMeshTunnel;
+}
+
+export function getTerrainColliderTexture(config: ParticleConfig): THREE.Texture | null {
+  if (!isTerrainColliderActive(config)) return null;
+  const entry = getTextureEntry(config);
+  if (!entry.colliderTex) {
+    entry.colliderTex = makeColliderDataTexture(entry.maps.collider, entry.maps.size);
+  }
+  return entry.colliderTex;
+}
+
+/**
+ * Decode scale for the packed collider height, in world units:
+ * world height = (packed × 2 − 1) × maxAbsHeight × worldScale.
+ * 0 for a flat field (every packed value is then the midpoint and
+ * the decoded height is 0 regardless).
+ */
+export function terrainColliderHeightWorld(config: ParticleConfig): number {
+  return getTerrainDerivedMaps(config).maxAbsHeight * terrainMeshWorldScale(config);
+}
+
+/** Decode scale for the packed collider gradient components:
+ *  field gradient = (byte × 2 − 1) × maxGradient. The gradient is
+ *  world-scale invariant (height and XZ share the world scale). */
+export function terrainColliderGradientScale(config: ParticleConfig): number {
+  return getTerrainDerivedMaps(config).maxGradient;
 }
 
 // ---------------------------------------------------------------------------

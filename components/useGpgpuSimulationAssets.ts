@@ -93,6 +93,16 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSlopeForceStrength: { value: 1.0 },
       uSlopeTex:           { value: null },
       uSlopeExtent:        { value: 1.0 },
+      // Terrain collider (Phase AI): disabled + no texture is
+      // the exact legacy path.
+      uTerrainColliderEnabled: { value: false },
+      uTerrainColliderTex:     { value: null },
+      uTerrainExtent:          { value: 1.0 },
+      uTerrainHeightWorld:     { value: 0.0 },
+      uTerrainGradScale:       { value: 0.0 },
+      uTerrainTexSize:         { value: 129.0 },
+      uTerrainBounce:          { value: 0.5 },
+      uTerrainFriction:        { value: 0.25 },
       uWellEnabled:      { value: false },
       uWellStrength:     { value: 1.0 },
       uWellSoftening:    { value: 10.0 },
@@ -198,6 +208,14 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uTime:          { value: 0 },
       uFloorEnabled:  { value: false },
       uFloorY:        { value: -110.0 },
+      // Terrain collider (Phase AI): disabled + no texture is
+      // the exact legacy path.
+      uTerrainColliderEnabled: { value: false },
+      uTerrainColliderTex:     { value: null },
+      uTerrainExtent:          { value: 1.0 },
+      uTerrainHeightWorld:     { value: 0.0 },
+      uTerrainGradScale:       { value: 0.0 },
+      uTerrainTexSize:         { value: 129.0 },
       uMouseEnabled:  { value: false },
       uMousePos:      { value: new THREE.Vector3(0, 0, 0) },
       uMouseRadius:   { value: 150.0 },

@@ -172,6 +172,22 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphTerrainFrequency: 1.6,
   gpgpuMorphTerrainOctaves: 4,
   gpgpuMorphTerrainSeed: 0,
+  // Terrain recipes (Phase AI): 'fbm' default = the Phase L field.
+  gpgpuMorphTerrainKind: 'fbm' as const,
+  gpgpuMorphTerrainTerraceSteps: 6,
+  // Terrain scatter grammar (Phase AI): off by default; the
+  // sub-keys at these values resolve to the legacy tiling anyway.
+  gpgpuMorphScatterEnabled: false,
+  gpgpuMorphScatterDensity: 1,
+  gpgpuMorphScatterHeightMin: 0,
+  gpgpuMorphScatterHeightMax: 1,
+  gpgpuMorphScatterSlopeMax: 1,
+  gpgpuMorphScatterAlignNormal: 0,
+  gpgpuMorphScatterSpecies: 1,
+  // Terrain collider (Phase AI): off by default = legacy path.
+  gpgpuTerrainColliderEnabled: false,
+  gpgpuTerrainColliderBounce: 0.5,
+  gpgpuTerrainColliderFriction: 0.25,
   // Path placement (Phase S): 'off' default = legacy random pick.
   // Only read when the morph target is 'svg'.
   gpgpuMorphPathMode: 'off' as const,

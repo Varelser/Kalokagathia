@@ -58,6 +58,7 @@
 import {
   terrainFieldSeedFor,
   terrainHeightAt,
+  type GpgpuMorphTerrainKind,
   type GpgpuMorphTerrainOptions,
 } from './gpgpuMorphTargets';
 import {
@@ -338,6 +339,8 @@ export interface ShadowSceneConfig {
   gpgpuMorphTerrainFrequency: number;
   gpgpuMorphTerrainOctaves: number;
   gpgpuMorphTerrainSeed: number;
+  gpgpuMorphTerrainKind: GpgpuMorphTerrainKind;
+  gpgpuMorphTerrainTerraceSteps: number;
   gpgpuSeed: number;
   gpgpuMorphScale: number;
   gpgpuBounceRadius: number;
@@ -400,6 +403,10 @@ export function buildShadowScene(config: ShadowSceneConfig): ShadowScene {
       frequency: config.gpgpuMorphTerrainFrequency,
       octaves: config.gpgpuMorphTerrainOctaves,
       seed: config.gpgpuMorphTerrainSeed,
+      // Terrain recipes (Phase AI): the occluder follows the
+      // selected recipe like every other consumer.
+      kind: config.gpgpuMorphTerrainKind,
+      terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
     },
     seed: config.gpgpuSeed,
     worldScale,

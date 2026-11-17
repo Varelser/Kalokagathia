@@ -7,7 +7,14 @@ import {
 } from '../lib/webgpuCompute';
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
-import { getTerrainSlopeGradientTexture, terrainSlopeWorldExtent } from '../lib/terrainDerivedMaps';
+import {
+  getTerrainSlopeGradientTexture,
+  terrainSlopeWorldExtent,
+  getTerrainColliderTexture,
+  terrainColliderHeightWorld,
+  terrainColliderGradientScale,
+  TERRAIN_DERIVED_SIZE,
+} from '../lib/terrainDerivedMaps';
 
 // Particle Life matrix cache: the flat uniform array only changes when
 // preset / species / seed change, so avoid reallocating it every frame.
@@ -400,6 +407,21 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uSlopeForceStrength) velSimMat.uniforms.uSlopeForceStrength.value = Math.max(0, config.gpgpuSlopeForceStrength ?? 1);
   if (velSimMat.uniforms.uSlopeTex) velSimMat.uniforms.uSlopeTex.value = slopeTex;
   if (velSimMat.uniforms.uSlopeExtent) velSimMat.uniforms.uSlopeExtent.value = Math.max(terrainSlopeWorldExtent(config), 0.001);
+  // Terrain collider (Phase AI): resolved CPU-side like the
+  // slope force — the texture getter returns null unless the
+  // key is on AND the terrain mesh is live in plane mode, so
+  // the disabled uniform keeps the exact legacy path. Resolving
+  // here (shared by the replica-stack runner) means stacks
+  // collide with the same terrain.
+  const terrainColliderTex = getTerrainColliderTexture(config);
+  if (velSimMat.uniforms.uTerrainColliderEnabled) velSimMat.uniforms.uTerrainColliderEnabled.value = !!terrainColliderTex;
+  if (velSimMat.uniforms.uTerrainColliderTex) velSimMat.uniforms.uTerrainColliderTex.value = terrainColliderTex;
+  if (velSimMat.uniforms.uTerrainExtent) velSimMat.uniforms.uTerrainExtent.value = Math.max(terrainSlopeWorldExtent(config), 0.001);
+  if (velSimMat.uniforms.uTerrainHeightWorld) velSimMat.uniforms.uTerrainHeightWorld.value = terrainColliderTex ? terrainColliderHeightWorld(config) : 0;
+  if (velSimMat.uniforms.uTerrainGradScale) velSimMat.uniforms.uTerrainGradScale.value = terrainColliderTex ? terrainColliderGradientScale(config) : 0;
+  if (velSimMat.uniforms.uTerrainTexSize) velSimMat.uniforms.uTerrainTexSize.value = TERRAIN_DERIVED_SIZE;
+  if (velSimMat.uniforms.uTerrainBounce) velSimMat.uniforms.uTerrainBounce.value = Math.max(0, Math.min(1, config.gpgpuTerrainColliderBounce ?? 0.5));
+  if (velSimMat.uniforms.uTerrainFriction) velSimMat.uniforms.uTerrainFriction.value = Math.max(0, Math.min(1, config.gpgpuTerrainColliderFriction ?? 0.25));
   velSimMat.uniforms.uWellEnabled.value = config.gpgpuWellEnabled;
   velSimMat.uniforms.uWellStrength.value = config.gpgpuWellStrength;
   velSimMat.uniforms.uWellSoftening.value = config.gpgpuWellSoftening;
@@ -490,6 +512,14 @@ export function runSimulationPasses(args: {
   posSimMat.uniforms.uSdfBounce.value = config.gpgpuSdfBounce;
   posSimMat.uniforms.uFloorEnabled.value = config.gpgpuFloorEnabled;
   posSimMat.uniforms.uFloorY.value = config.gpgpuFloorY;
+  // Terrain collider (Phase AI): same resolution as the velocity
+  // pass — the position pass only pushes out of the surface.
+  if (posSimMat.uniforms.uTerrainColliderEnabled) posSimMat.uniforms.uTerrainColliderEnabled.value = !!terrainColliderTex;
+  if (posSimMat.uniforms.uTerrainColliderTex) posSimMat.uniforms.uTerrainColliderTex.value = terrainColliderTex;
+  if (posSimMat.uniforms.uTerrainExtent) posSimMat.uniforms.uTerrainExtent.value = Math.max(terrainSlopeWorldExtent(config), 0.001);
+  if (posSimMat.uniforms.uTerrainHeightWorld) posSimMat.uniforms.uTerrainHeightWorld.value = terrainColliderTex ? terrainColliderHeightWorld(config) : 0;
+  if (posSimMat.uniforms.uTerrainGradScale) posSimMat.uniforms.uTerrainGradScale.value = terrainColliderTex ? terrainColliderGradientScale(config) : 0;
+  if (posSimMat.uniforms.uTerrainTexSize) posSimMat.uniforms.uTerrainTexSize.value = TERRAIN_DERIVED_SIZE;
   posSimMat.uniforms.uMouseEnabled.value = config.gpgpuMouseEnabled;
   posSimMat.uniforms.uMousePos.value.copy(mouseWorld);
   posSimMat.uniforms.uMouseRadius.value = config.gpgpuMouseRadius;

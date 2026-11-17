@@ -53,6 +53,11 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
   const freq = config.gpgpuMorphTerrainFrequency;
   const octaves = config.gpgpuMorphTerrainOctaves;
   const terrainSeed = config.gpgpuMorphTerrainSeed;
+  // Terrain recipes (Phase AI): the visible mesh follows the
+  // same recipe as the bake / collider, so what you see is what
+  // particles collide with.
+  const terrainKind = config.gpgpuMorphTerrainKind;
+  const terrainTerraceSteps = config.gpgpuMorphTerrainTerraceSteps;
   const seed = config.gpgpuSeed;
   const morphScale = config.gpgpuMorphScale;
   const bounceRadius = config.gpgpuBounceRadius;
@@ -76,7 +81,7 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
   const geometry = React.useMemo(() => {
     if (!enabled) return null;
     const data = buildTerrainMeshGeometryData({
-      terrain: { amplitude: amp, frequency: freq, octaves, seed: terrainSeed },
+      terrain: { amplitude: amp, frequency: freq, octaves, seed: terrainSeed, kind: terrainKind, terraceSteps: terrainTerraceSteps },
       seed,
       worldScale,
       tunnel,
@@ -102,7 +107,7 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
     geo.computeVertexNormals();
     return geo;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, amp, freq, octaves, terrainSeed, seed, morphScale, bounceRadius, meshScale, tunnel, shadowActive, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
+  }, [enabled, amp, freq, octaves, terrainSeed, terrainKind, terrainTerraceSteps, seed, morphScale, bounceRadius, meshScale, tunnel, shadowActive, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
 
   React.useEffect(() => {
     return () => {

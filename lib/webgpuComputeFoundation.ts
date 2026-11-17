@@ -117,6 +117,10 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // entry: those are draw-path textures that resolve identically
   // on every path.
   if (config.gpgpuSlopeForceEnabled) features.push('slope-force');
+  // Terrain collider (Phase AI): the collider reads the derived
+  // collider bake in the sim passes, which the WGSL passes do
+  // not implement — declaring it routes the session to WebGL.
+  if (config.gpgpuTerrainColliderEnabled) features.push('terrain-collider');
   return features;
 }
 

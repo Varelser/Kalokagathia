@@ -220,7 +220,20 @@ export function buildCpuMorphData(
       frequency: config.gpgpuMorphTerrainFrequency,
       octaves: config.gpgpuMorphTerrainOctaves,
       seed: config.gpgpuMorphTerrainSeed,
+      // Terrain recipes (Phase AI): 'fbm' is the legacy field.
+      kind: config.gpgpuMorphTerrainKind,
+      terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
     },
+    // Terrain scatter grammar (Phase AI): top-level bake option,
+    // same assembly as the GPU paths.
+    scatter: config.gpgpuMorphScatterEnabled ? {
+      density: config.gpgpuMorphScatterDensity,
+      heightMin: config.gpgpuMorphScatterHeightMin,
+      heightMax: config.gpgpuMorphScatterHeightMax,
+      slopeMax: config.gpgpuMorphScatterSlopeMax,
+      alignNormal: config.gpgpuMorphScatterAlignNormal,
+      species: config.gpgpuMorphScatterSpecies,
+    } : null,
     // Raster mask (Phase X): the CPU path bakes with the same mask
     // option as the GPU paths, so clip / shape apply here too.
     mask: config.gpgpuMaskMode !== 'off' && config.gpgpuMaskMap && config.gpgpuMaskMap.length > 0

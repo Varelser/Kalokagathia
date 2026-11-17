@@ -4,6 +4,47 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.41.0] — 2026-11-18
+
+Sixth-term Phase AI: the terrain completed — the three items the
+Phase AE brief replacement dropped (terrain collider, terrain
+generation recipes, terrain scatter grammar) are recovered.
+Twelve new config keys (1,126 → 1,138), two new starters
+(543 → 545). Every new key defaults to the legacy behaviour —
+with all keys at their defaults the render is bit-identical to
+v1.40.0 by construction (the fBm recipe is the legacy height
+function verbatim, the default scatter resolves to the identity,
+and the collider's disabled uniform keeps the legacy sim path).
+
+### Added
+- **Terrain generation recipes** (`gpgpuMorphTerrainKind` /
+  `gpgpuMorphTerrainTerraceSteps`): the height field's pure
+  function gains three recipes beside the legacy fBm — `ridge`
+  (folded ridged multifractal), `terrace` (quantised fBm with a
+  smooth riser at each step's top edge) and `cellular` (Worley
+  F1 cells). Every consumer (morph bake, terrain mesh, derived
+  maps, occlusion, collider) reads the same function, so the
+  whole terrain changes shape together.
+- **Terrain collider** (`gpgpuTerrainColliderEnabled` /
+  `gpgpuTerrainColliderBounce` / `gpgpuTerrainColliderFriction`):
+  particles now collide with the height field. A dedicated
+  collider bake in the derived-map set packs the height as a
+  16-bit value plus the gradient; the velocity pass reflects the
+  normal component with restitution and damps the tangential
+  component with friction (so particles settle on slopes), and
+  the position pass pushes particles back onto the surface.
+  Active when the terrain mesh is on in plane mode — the same
+  resolution as the slope force; declared to the WebGPU
+  capability registry like the slope force.
+- **Terrain scatter grammar** (`gpgpuMorphScatterEnabled` /
+  `Density` / `HeightMin` / `HeightMax` / `SlopeMax` /
+  `AlignNormal` / `Species`): the terrain bake resamples each
+  candidate up to five times and keeps it with probability
+  density × height-band × slope-limit, so the point cloud gains
+  habitats. Align Normal tilts the bake normals onto the
+  surface; Species splits the band into zones that scale the
+  emission-kick class. All-default scatter is the identity.
+
 ## [1.40.0] — 2026-11-17
 
 Sixth-term Phase AH: the remaining small grammar of emission,

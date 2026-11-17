@@ -271,6 +271,40 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphTerrainFrequency: number;
   gpgpuMorphTerrainOctaves: number;
   gpgpuMorphTerrainSeed: number;
+  // Terrain generation recipes (Phase AI): 'fbm' (default) is the
+  // Phase L field bit-for-bit; 'ridge' / 'terrace' / 'cellular'
+  // reshape the one shared height field, so the morph bake, the
+  // terrain mesh, the derived maps and the collider all grow the
+  // same landscape. TerraceSteps is only read by 'terrace'.
+  gpgpuMorphTerrainKind: 'fbm' | 'ridge' | 'terrace' | 'cellular';
+  gpgpuMorphTerrainTerraceSteps: number;
+  // Terrain scatter grammar (Phase AI): a foliage-style placement
+  // grammar for the terrain morph target — density / height band /
+  // slope cap drive the bake's acceptance resampling, the aligned
+  // normal writes the terrain normal into the companion cloud,
+  // and the species count splits the height range into species
+  // zones whose class scales the normal magnitude. Every key at
+  // its default resolves the grammar to null, so the bake stays
+  // bit-identical to the legacy grid tiling.
+  gpgpuMorphScatterEnabled: boolean;
+  gpgpuMorphScatterDensity: number;
+  gpgpuMorphScatterHeightMin: number;
+  gpgpuMorphScatterHeightMax: number;
+  gpgpuMorphScatterSlopeMax: number;
+  gpgpuMorphScatterAlignNormal: number;
+  gpgpuMorphScatterSpecies: number;
+  // Terrain collider (Phase AI): particles bounce / rest on the
+  // height field itself (velocity reflection with restitution +
+  // tangential friction in the velocity pass, surface push-out in
+  // the position pass, sampling the derived collider bake). Only
+  // live while the terrain mesh is enabled in plane mode (the
+  // same gate as the slope force). Off (default) = the exact
+  // legacy path; the terrain was NOT a particle collider before
+  // this phase (occlusion source / slope force / morph target
+  // only).
+  gpgpuTerrainColliderEnabled: boolean;
+  gpgpuTerrainColliderBounce: number;
+  gpgpuTerrainColliderFriction: number;
   // Authored path placement (Phase S): the svg morph target viewed
   // as an ordered path (lib/pathGeometry.ts) instead of an unordered
   // cloud. 'off' (default) keeps the legacy seeded random pick over

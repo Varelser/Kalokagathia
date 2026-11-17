@@ -95,6 +95,19 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uSlopeForceStrength;
   uniform sampler2D uSlopeTex;
   uniform float uSlopeExtent;
+  // Terrain collider (Phase AI): the derived collider bake
+  // (RG = 16-bit packed height, B/A = gradient components).
+  // Resolved CPU-side like the slope force (enabled key AND
+  // terrain mesh on AND plane mode AND texture ready), so a
+  // false uniform is the exact legacy path.
+  uniform bool  uTerrainColliderEnabled;
+  uniform sampler2D uTerrainColliderTex;
+  uniform float uTerrainExtent;
+  uniform float uTerrainHeightWorld;
+  uniform float uTerrainGradScale;
+  uniform float uTerrainTexSize;
+  uniform float uTerrainBounce;
+  uniform float uTerrainFriction;
   uniform bool  uWellEnabled;
   uniform float uWellStrength;
   uniform float uWellSoftening;
@@ -338,6 +351,37 @@ export const SIM_VEL_FRAG = /* glsl */ `
     float idx = floor(uv.y * uTexSizeF) * uTexSizeF + floor(uv.x * uTexSizeF);
     float h = plHash(idx + 17.17);
     return int(min(floor(h * float(uParticleLifeSpecies)), float(uParticleLifeSpecies - 1)));
+  }
+
+  // Terrain collider sampling (Phase AI): the collider bake packs
+  // the height as a 16-bit value in RG and the gradient components
+  // in B/A (lib/terrainDerivedMaps.ts). The texture is
+  // NearestFilter, so this manual bilinear decodes each corner
+  // texel BEFORE interpolating — hardware filtering would
+  // interpolate the packed bytes independently and corrupt the
+  // height at low-byte wraps. Returns (worldHeight, gradX, gradZ)
+  // with the gradient in field units (world-scale invariant: the
+  // height and the XZ plane share the world scale). An identical
+  // copy lives in the position pass (which uses .x only).
+  vec3 terrainColliderSample(vec2 uv) {
+    vec2 gridPos = uv * uTerrainTexSize - 0.5;
+    vec2 base = floor(gridPos);
+    vec2 f = clamp(gridPos - base, 0.0, 1.0);
+    vec2 i00 = clamp(base, vec2(0.0), vec2(uTerrainTexSize - 1.0));
+    vec2 i10 = clamp(base + vec2(1.0, 0.0), vec2(0.0), vec2(uTerrainTexSize - 1.0));
+    vec2 i01 = clamp(base + vec2(0.0, 1.0), vec2(0.0), vec2(uTerrainTexSize - 1.0));
+    vec2 i11 = clamp(base + vec2(1.0, 1.0), vec2(0.0), vec2(uTerrainTexSize - 1.0));
+    vec4 t00 = texture2D(uTerrainColliderTex, (i00 + 0.5) / uTerrainTexSize);
+    vec4 t10 = texture2D(uTerrainColliderTex, (i10 + 0.5) / uTerrainTexSize);
+    vec4 t01 = texture2D(uTerrainColliderTex, (i01 + 0.5) / uTerrainTexSize);
+    vec4 t11 = texture2D(uTerrainColliderTex, (i11 + 0.5) / uTerrainTexSize);
+    float h00 = (t00.r * 255.0 * 256.0 + t00.g * 255.0) / 65535.0;
+    float h10 = (t10.r * 255.0 * 256.0 + t10.g * 255.0) / 65535.0;
+    float h01 = (t01.r * 255.0 * 256.0 + t01.g * 255.0) / 65535.0;
+    float h11 = (t11.r * 255.0 * 256.0 + t11.g * 255.0) / 65535.0;
+    float h = mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
+    vec2 g = mix(mix(t00.ba, t10.ba, f.x), mix(t01.ba, t11.ba, f.x), f.y) * 2.0 - 1.0;
+    return vec3((h * 2.0 - 1.0) * uTerrainHeightWorld, g * uTerrainGradScale);
   }
 
   // Age curve evaluation (Phase AC): the same 5-point piecewise-
@@ -930,6 +974,31 @@ export const SIM_VEL_FRAG = /* glsl */ `
       if (sd < 2.0) {
         float vn = dot(vel, sn);
         if (vn < 0.0) vel -= sn * vn * (1.0 + uSdfBounce);
+      }
+    }
+
+    // Terrain Collider (Phase AI) — velocity response on the
+    // height field: the floor bounce's response generalised to
+    // the terrain normal (reflect the normal component with
+    // restitution, damp the tangential component with friction,
+    // which is what lets particles come to rest on a slope
+    // instead of sliding forever). Only inside the field domain
+    // — outside it there is no terrain and particles fall
+    // through — and only near the surface; the position pass
+    // owns the exact push-out.
+    if (uTerrainColliderEnabled) {
+      vec2 tcUv = pos.xz / (2.0 * max(uTerrainExtent, 0.001)) + 0.5;
+      if (tcUv.x >= 0.0 && tcUv.x <= 1.0 && tcUv.y >= 0.0 && tcUv.y <= 1.0) {
+        vec3 tc = terrainColliderSample(tcUv);
+        if (pos.y < tc.x + 1.0) {
+          vec3 tn = normalize(vec3(-tc.y, 1.0, -tc.z));
+          float vn = dot(vel, tn);
+          if (vn < 0.0) {
+            vec3 vN = tn * vn;
+            vec3 vT = vel - vN;
+            vel = vT * (1.0 - uTerrainFriction) - vN * uTerrainBounce;
+          }
+        }
       }
     }
 

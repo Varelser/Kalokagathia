@@ -29,6 +29,16 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform float uSdfBounce;
   uniform bool  uFloorEnabled;
   uniform float uFloorY;
+  // Terrain collider (Phase AI): the derived collider bake
+  // (RG = 16-bit packed height). Resolved CPU-side like the
+  // slope force (enabled key AND terrain mesh on AND plane
+  // mode), so a false uniform is the exact legacy path.
+  uniform bool  uTerrainColliderEnabled;
+  uniform sampler2D uTerrainColliderTex;
+  uniform float uTerrainExtent;
+  uniform float uTerrainHeightWorld;
+  uniform float uTerrainGradScale;
+  uniform float uTerrainTexSize;
   uniform bool  uMouseEnabled;
   uniform vec3  uMousePos;
   uniform float uMouseRadius;
@@ -91,6 +101,31 @@ export const SIM_POS_FRAG = /* glsl */ `
       cos(q.z) * sin(q.x) - sin(q.y) * sin(q.z)
     );
     return normalize(g + vec3(0.0001));
+  }
+
+  // Terrain collider sampling (Phase AI): identical copy of the
+  // velocity pass's decoder (manual bilinear over the packed
+  // 16-bit height; see that copy for the rationale). This pass
+  // uses .x (the world height) only.
+  vec3 terrainColliderSample(vec2 uv) {
+    vec2 gridPos = uv * uTerrainTexSize - 0.5;
+    vec2 base = floor(gridPos);
+    vec2 f = clamp(gridPos - base, 0.0, 1.0);
+    vec2 i00 = clamp(base, vec2(0.0), vec2(uTerrainTexSize - 1.0));
+    vec2 i10 = clamp(base + vec2(1.0, 0.0), vec2(0.0), vec2(uTerrainTexSize - 1.0));
+    vec2 i01 = clamp(base + vec2(0.0, 1.0), vec2(0.0), vec2(uTerrainTexSize - 1.0));
+    vec2 i11 = clamp(base + vec2(1.0, 1.0), vec2(0.0), vec2(uTerrainTexSize - 1.0));
+    vec4 t00 = texture2D(uTerrainColliderTex, (i00 + 0.5) / uTerrainTexSize);
+    vec4 t10 = texture2D(uTerrainColliderTex, (i10 + 0.5) / uTerrainTexSize);
+    vec4 t01 = texture2D(uTerrainColliderTex, (i01 + 0.5) / uTerrainTexSize);
+    vec4 t11 = texture2D(uTerrainColliderTex, (i11 + 0.5) / uTerrainTexSize);
+    float h00 = (t00.r * 255.0 * 256.0 + t00.g * 255.0) / 65535.0;
+    float h10 = (t10.r * 255.0 * 256.0 + t10.g * 255.0) / 65535.0;
+    float h01 = (t01.r * 255.0 * 256.0 + t01.g * 255.0) / 65535.0;
+    float h11 = (t11.r * 255.0 * 256.0 + t11.g * 255.0) / 65535.0;
+    float h = mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
+    vec2 g = mix(mix(t00.ba, t10.ba, f.x), mix(t01.ba, t11.ba, f.x), f.y) * 2.0 - 1.0;
+    return vec3((h * 2.0 - 1.0) * uTerrainHeightWorld, g * uTerrainGradScale);
   }
 
   // Pointer paint gate (B3): bit-identical with the velocity shader's
@@ -169,6 +204,19 @@ export const SIM_POS_FRAG = /* glsl */ `
     // floorY + (floorY - y) * 0.1; the velocity pass owns the bounce.
     if (uFloorEnabled && pos.y < uFloorY) {
       pos.y = uFloorY + (uFloorY - pos.y) * 0.1;
+    }
+
+    // Terrain clamp (Phase AI): push a particle that ended the
+    // step below the height field back onto the surface (exact
+    // contact — the velocity pass owns the bounce / rest
+    // response). Only inside the field domain, like the
+    // velocity response.
+    if (uTerrainColliderEnabled) {
+      vec2 tcUv = pos.xz / (2.0 * max(uTerrainExtent, 0.001)) + 0.5;
+      if (tcUv.x >= 0.0 && tcUv.x <= 1.0 && tcUv.y >= 0.0 && tcUv.y <= 1.0) {
+        float tcH = terrainColliderSample(tcUv).x;
+        if (pos.y < tcH) pos.y = tcH;
+      }
     }
 
     // Pointer paint (B3): gated particles are re-emitted at the brush

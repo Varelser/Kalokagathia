@@ -1,19 +1,19 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.40.0**（2026-11-17、第6期 Phase AH＝周期バースト／自転ランダム範囲／ノイズシード／ランプ5点化／筆致ジッタ。新規7キー・スターター+2。iMac ゲート・出荷は PHASE_AH_REPORT.md 参照）
+**現行バージョン: v1.41.0**（2026-11-18、第6期 Phase AI＝地形の完結: 生成レシピ3種／地形コライダ／地形散布文法。新規12キー・スターター+2。iMac ゲート・出荷は PHASE_AI_REPORT.md 参照）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: MAINT_SHIP_REPORT.md / MAINT_PHASE_REPORT.md、前: PHASE_AG_REPORT.md / PHASE_AG_GATE_REPORT.md）
+  （最新: PHASE_AI_REPORT.md / PHASE_AI_GATE_REPORT.md、前: PHASE_AH_REPORT.md / PHASE_AH_GATE_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.39.1] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.41.0] が最新項）
 
-## 資産の実数（2026-11-17 実測）
+## 資産の実数（2026-11-18 実測）
 
-- config キー: **1,126件** ／ 内蔵スターター: **543件**
+- config キー: **1,138件** ／ 内蔵スターター: **545件**
 - 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

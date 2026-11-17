@@ -150,11 +150,63 @@ export interface GpgpuMorphReplicaOptions {
  * the same (amplitude, frequency, octaves) can grow a different
  * landscape; the bake's main seed is mixed in as well.
  */
+/**
+ * Terrain generation recipes (Phase AI): how the height field is
+ * synthesised from the lattice hashes. 'fbm' is the Phase L field
+ * (the default — every pre-AI config means fbm); 'ridge' folds the
+ * value noise into sharp crests; 'terrace' quantises the fBm height
+ * into smoothed steps; 'cellular' sums Worley F1 cells instead of
+ * value noise. All recipes keep the Phase L invariants: pure,
+ * deterministic, and bounded by ±amplitude.
+ */
+export type GpgpuMorphTerrainKind = 'fbm' | 'ridge' | 'terrace' | 'cellular';
+
 export interface GpgpuMorphTerrainOptions {
   amplitude: number;
   frequency: number;
   octaves: number;
   seed: number;
+  /**
+   * Generation recipe (Phase AI); absent = 'fbm', which runs the
+   * Phase L body verbatim, so existing landscapes stay
+   * bit-identical.
+   */
+  kind?: GpgpuMorphTerrainKind;
+  /** Terrace step count (Phase AI); only read by the 'terrace'
+   *  recipe. Absent = 6, clamped to 2..32. */
+  terraceSteps?: number;
+}
+
+/**
+ * Terrain scatter grammar (Phase AI): a dedicated placement grammar
+ * for the terrain target, in the foliage sense — the bake's point
+ * distribution, companion normals and species classes are driven by
+ * terrain conditions (height band / slope / density) instead of the
+ * plain one-point-per-grid-cell tiling. All fields are resolved
+ * through resolveTerrainScatter: an all-default scatter resolves to
+ * null, in which case the terrain branch runs the legacy tiling
+ * verbatim (no extra RNG draws), so identity holds not only with
+ * the grammar off but with it on at defaults.
+ */
+export interface GpgpuMorphTerrainScatterOptions {
+  /** Overall acceptance density 0..1 (1 = no thinning). */
+  density: number;
+  /** Height band, normalised t = h / amplitude * 0.5 + 0.5. */
+  heightMin: number;
+  heightMax: number;
+  /** Slope cap 0..1, relative to the bake grid's own maximum
+   *  gradient (the AE slope map's normalisation). 1 = no cap. */
+  slopeMax: number;
+  /** Companion-normal alignment 0..1: 0 keeps the legacy zero
+   *  normals; 1 writes the full terrain normal (scaled by the
+   *  species class below). */
+  alignNormal: number;
+  /** Species zones 1..4 across the height band: a particle's zone
+   *  is chosen by its final height, and the zone scales its
+   *  aligned normal's magnitude (the engine's per-particle class
+   *  channel — the normal magnitude drives the Phase O emission
+   *  kick speed). 1 = a single species. */
+  species: number;
 }
 
 export interface GpgpuMorphTargetBuildOptions {
@@ -267,6 +319,18 @@ export interface GpgpuMorphTargetBuildOptions {
     seed: number;
     gap: number;
   } | null;
+  /**
+   * Terrain scatter grammar (Phase AI, see
+   * GpgpuMorphTerrainScatterOptions): only consulted by the
+   * terrain target. Absent / null / all-default values = the
+   * legacy grid tiling exactly (the resolver returns null and the
+   * branch is skipped, consuming no extra RNG draws). A
+   * non-default scatter consumes extra draws for its resampling,
+   * so an enabled bake is deterministic for a given seed but does
+   * not share the plain branch's draw pattern — the Phase X mask
+   * precedent.
+   */
+  scatter?: GpgpuMorphTerrainScatterOptions | null;
 }
 
 /**
@@ -301,14 +365,34 @@ function terrainLattice(ix: number, iz: number, seed: number): number {
 }
 
 /**
- * Height of the terrain field at normalized (x, z) — smoothstep-
- * interpolated value noise summed over `octaves` fBm octaves
- * (lacunarity 2, gain 0.5, gain-normalized, so the result stays
- * within ±amplitude for amplitude >= 0). Pure and deterministic:
- * same (x, z, params, fieldSeed) always yields the same height.
- * `fieldSeed` is the already-mixed seed (bake seed + terrain seed).
+ * One smoothstep-interpolated value-noise sample in [-1, 1) at
+ * lattice-scaled coordinates (sx, sz). This is the per-octave body
+ * the Phase L fBm loop always ran, extracted verbatim — the fBm
+ * sum below performs the identical operations in the identical
+ * order, so fBm heights are bit-identical to Phase L.
  */
-export function terrainHeightAt(
+function terrainValueNoiseAt(sx: number, sz: number, seed: number): number {
+  const ix = Math.floor(sx);
+  const iz = Math.floor(sz);
+  const fx = sx - ix;
+  const fz = sz - iz;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uz = fz * fz * (3 - 2 * fz);
+  const v00 = terrainLattice(ix, iz, seed);
+  const v10 = terrainLattice(ix + 1, iz, seed);
+  const v01 = terrainLattice(ix, iz + 1, seed);
+  const v11 = terrainLattice(ix + 1, iz + 1, seed);
+  const top = v00 + (v10 - v00) * ux;
+  const bottom = v01 + (v11 - v01) * ux;
+  return top + (bottom - top) * uz;
+}
+
+/**
+ * The Phase L field: value noise summed over `octaves` fBm octaves
+ * (lacunarity 2, gain 0.5, gain-normalized, so the result stays
+ * within ±amplitude for amplitude >= 0).
+ */
+function terrainFbmHeight(
   x: number,
   z: number,
   terrain: GpgpuMorphTerrainOptions,
@@ -322,28 +406,285 @@ export function terrainHeightAt(
   let gain = 0.5;
   let freq = baseFreq;
   for (let o = 0; o < octaves; o++) {
-    const sx = x * freq;
-    const sz = z * freq;
-    const ix = Math.floor(sx);
-    const iz = Math.floor(sz);
-    const fx = sx - ix;
-    const fz = sz - iz;
-    const ux = fx * fx * (3 - 2 * fx);
-    const uz = fz * fz * (3 - 2 * fz);
-    const s = fieldSeed + o * 101;
-    const v00 = terrainLattice(ix, iz, s);
-    const v10 = terrainLattice(ix + 1, iz, s);
-    const v01 = terrainLattice(ix, iz + 1, s);
-    const v11 = terrainLattice(ix + 1, iz + 1, s);
-    const top = v00 + (v10 - v00) * ux;
-    const bottom = v01 + (v11 - v01) * ux;
-    sum += (top + (bottom - top) * uz) * gain;
+    sum += terrainValueNoiseAt(x * freq, z * freq, fieldSeed + o * 101) * gain;
     norm += gain;
     gain *= 0.5;
     freq *= 2;
   }
   return (sum / norm) * amplitude;
 }
+
+/**
+ * Ridged recipe (Phase AI): each octave folds the value noise
+ * through r = (1 − |n|)², so the zero lines of the noise become
+ * sharp crests. The gain-normalised sum lies in [0, 1] and is
+ * remapped to [−1, 1] before the amplitude scale, keeping the
+ * ±amplitude bound.
+ */
+function terrainRidgedHeight(
+  x: number,
+  z: number,
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+): number {
+  const octaves = Math.max(1, Math.min(6, Math.floor(terrain.octaves) || 1));
+  const baseFreq = Math.max(0.05, terrain.frequency);
+  const amplitude = Math.max(0, terrain.amplitude);
+  let sum = 0;
+  let norm = 0;
+  let gain = 0.5;
+  let freq = baseFreq;
+  for (let o = 0; o < octaves; o++) {
+    const n = terrainValueNoiseAt(x * freq, z * freq, fieldSeed + o * 101);
+    const r = 1 - Math.abs(n);
+    sum += r * r * gain;
+    norm += gain;
+    gain *= 0.5;
+    freq *= 2;
+  }
+  return ((sum / norm) * 2 - 1) * amplitude;
+}
+
+/** Terrace step count, clamped to the recipe's defined range. */
+export function clampTerrainTerraceSteps(steps: number | undefined): number {
+  const s = Math.floor(steps ?? 6);
+  return Number.isFinite(s) ? Math.max(2, Math.min(32, s)) : 6;
+}
+
+function smoothstep01(edge0: number, edge1: number, v: number): number {
+  const t = Math.max(0, Math.min(1, (v - edge0) / Math.max(edge1 - edge0, 1e-9)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Terraced recipe (Phase AI): the fBm height quantised into
+ * `terraceSteps` plateaus. Each step's top 28% is a smoothstep
+ * riser into the next plateau, so the landscape reads as flat
+ * shelves with smooth cliffs rather than a staircase of hard
+ * discontinuities. The transform is a pure remap of the fBm
+ * height, so the ±amplitude bound is inherited.
+ */
+function terrainTerracedHeight(
+  x: number,
+  z: number,
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+): number {
+  const amplitude = Math.max(0, terrain.amplitude);
+  if (amplitude <= 0) return 0;
+  const h = terrainFbmHeight(x, z, terrain, fieldSeed);
+  const steps = clampTerrainTerraceSteps(terrain.terraceSteps);
+  const u = Math.max(0, Math.min(1, h / amplitude * 0.5 + 0.5));
+  const su = u * steps;
+  const base = Math.floor(su);
+  const f = su - base;
+  const stepped = (base + smoothstep01(0.72, 1, f)) / steps;
+  return (stepped * 2 - 1) * amplitude;
+}
+
+/**
+ * One Worley F1 cellular sample mapped to [-1, 1]: feature points
+ * are the integer lattice hashes jittered inside their cells
+ * (two independent lattice hashes per cell), F1 is the distance
+ * to the nearest feature over the 3×3 neighbourhood, and the
+ * sample is clamp(1 − F1, 0, 1) × 2 − 1 — bumps over the feature
+ * points, flat basins far from all of them.
+ */
+function terrainCellularNoiseAt(sx: number, sz: number, seed: number): number {
+  const ix = Math.floor(sx);
+  const iz = Math.floor(sz);
+  let f1 = Infinity;
+  for (let j = iz - 1; j <= iz + 1; j++) {
+    for (let i = ix - 1; i <= ix + 1; i++) {
+      const px = i + (terrainLattice(i, j, seed) * 0.5 + 0.5);
+      const pz = j + (terrainLattice(i, j, seed + 7919) * 0.5 + 0.5);
+      const dx = px - sx;
+      const dz = pz - sz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < f1) f1 = d2;
+    }
+  }
+  const d = Math.sqrt(f1);
+  return Math.max(0, Math.min(1, 1 - d)) * 2 - 1;
+}
+
+/**
+ * Cellular recipe (Phase AI): Worley F1 octaves summed with the
+ * same gain ladder as the fBm, so the result stays within
+ * ±amplitude. A different noise species for the same terrain
+ * grammar (Houdini §10's ノイズ種).
+ */
+function terrainCellularHeight(
+  x: number,
+  z: number,
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+): number {
+  const octaves = Math.max(1, Math.min(6, Math.floor(terrain.octaves) || 1));
+  const baseFreq = Math.max(0.05, terrain.frequency);
+  const amplitude = Math.max(0, terrain.amplitude);
+  let sum = 0;
+  let norm = 0;
+  let gain = 0.5;
+  let freq = baseFreq;
+  for (let o = 0; o < octaves; o++) {
+    sum += terrainCellularNoiseAt(x * freq, z * freq, fieldSeed + o * 101) * gain;
+    norm += gain;
+    gain *= 0.5;
+    freq *= 2;
+  }
+  return (sum / norm) * amplitude;
+}
+
+/**
+ * Height of the terrain field at normalized (x, z), under the
+ * recipe selected by `terrain.kind` (Phase AI; absent = 'fbm').
+ * Pure and deterministic: same (x, z, params, fieldSeed) always
+ * yields the same height, and every recipe stays within
+ * ±amplitude for amplitude >= 0. `fieldSeed` is the already-mixed
+ * seed (bake seed + terrain seed). Every consumer of the field
+ * (morph bake, terrain mesh, derived maps, shadow occlusion,
+ * collider bake) goes through this one function, so a recipe
+ * change reshapes all of them identically — one landscape.
+ */
+export function terrainHeightAt(
+  x: number,
+  z: number,
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+): number {
+  switch (terrain.kind ?? 'fbm') {
+    case 'ridge': return terrainRidgedHeight(x, z, terrain, fieldSeed);
+    case 'terrace': return terrainTerracedHeight(x, z, terrain, fieldSeed);
+    case 'cellular': return terrainCellularHeight(x, z, terrain, fieldSeed);
+    default: return terrainFbmHeight(x, z, terrain, fieldSeed);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Terrain scatter grammar (Phase AI)
+
+/** Finite-difference step for terrain gradients inside the bake —
+ *  the AE derived grid's own step ((2 × 1.05) / 128), so the
+ *  scatter's slope reads the same surface the slope map shows. */
+export const TERRAIN_GRADIENT_EPS = (1.05 * 2) / 128;
+
+/** Terrain gradient (dh/dx, dh/dz) at a field point, by central
+ *  differences of terrainHeightAt. Field units throughout: the
+ *  world gradient is identical because height and XZ share the
+ *  world scale. */
+export function terrainGradientAt(
+  x: number,
+  z: number,
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+  eps: number = TERRAIN_GRADIENT_EPS,
+): { gx: number; gz: number } {
+  const gx = (terrainHeightAt(x + eps, z, terrain, fieldSeed) - terrainHeightAt(x - eps, z, terrain, fieldSeed)) / (2 * eps);
+  const gz = (terrainHeightAt(x, z + eps, terrain, fieldSeed) - terrainHeightAt(x, z - eps, terrain, fieldSeed)) / (2 * eps);
+  return { gx, gz };
+}
+
+/**
+ * The slope normalisation reference for one bake: the maximum
+ * gradient magnitude over a coarse grid of the field domain (the
+ * AE slope map normalises by its own grid maximum the same way).
+ * Returns 0 for a flat field (every slope then reads 0).
+ */
+export function terrainScatterGradientRef(
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+  gridSize: number = 48,
+): number {
+  const n = Math.max(4, Math.floor(gridSize));
+  const extent = 1.05;
+  let max = 0;
+  for (let j = 0; j < n; j++) {
+    const fz = -extent + (j / (n - 1)) * extent * 2;
+    for (let i = 0; i < n; i++) {
+      const fx = -extent + (i / (n - 1)) * extent * 2;
+      const { gx, gz } = terrainGradientAt(fx, fz, terrain, fieldSeed);
+      const g = Math.hypot(gx, gz);
+      if (g > max) max = g;
+    }
+  }
+  return max;
+}
+
+function clampScatter01(v: number, fallback: number): number {
+  return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback;
+}
+
+/**
+ * Resolve scatter options to their clamped runtime form, or null
+ * when the grammar cannot change anything (absent options, or
+ * every parameter at its identity value: full density, full
+ * height band, no slope cap, no normal alignment). Null is the
+ * identity guarantee: the bake then runs the legacy terrain
+ * tiling verbatim and consumes no extra RNG draws.
+ */
+export function resolveTerrainScatter(
+  scatter: GpgpuMorphTerrainScatterOptions | null | undefined,
+): GpgpuMorphTerrainScatterOptions | null {
+  if (!scatter) return null;
+  const density = clampScatter01(scatter.density, 1);
+  let heightMin = clampScatter01(scatter.heightMin, 0);
+  let heightMax = clampScatter01(scatter.heightMax, 1);
+  if (heightMax < heightMin) { const t = heightMin; heightMin = heightMax; heightMax = t; }
+  const slopeMax = clampScatter01(scatter.slopeMax, 1);
+  const alignNormal = clampScatter01(scatter.alignNormal, 0);
+  const speciesRaw = Math.floor(scatter.species);
+  const species = Number.isFinite(speciesRaw) ? Math.max(1, Math.min(4, speciesRaw)) : 1;
+  if (density >= 1 && heightMin <= 0 && heightMax >= 1 && slopeMax >= 1 && alignNormal <= 0) {
+    return null;
+  }
+  return { density, heightMin, heightMax, slopeMax, alignNormal, species };
+}
+
+/**
+ * Acceptance probability of one scatter candidate: the product of
+ * the density, a height-band factor (1 inside the band, falling
+ * linearly to 0 over a 0.05 skirt outside it) and a slope factor
+ * (1 at or under the cap, falling to 0 over 0.15 of normalised
+ * slope above it). `t` is the normalised height, `slopeNorm` the
+ * gradient magnitude relative to the bake's reference maximum.
+ */
+export function terrainScatterAcceptance(
+  scatter: GpgpuMorphTerrainScatterOptions,
+  t: number,
+  slopeNorm: number,
+): number {
+  const skirt = 0.05;
+  let band = 1;
+  if (t < scatter.heightMin) band = clampScatter01((t - (scatter.heightMin - skirt)) / skirt, 0);
+  else if (t > scatter.heightMax) band = clampScatter01(((scatter.heightMax + skirt) - t) / skirt, 0);
+  let slope = 1;
+  if (scatter.slopeMax < 1) {
+    slope = slopeNorm <= scatter.slopeMax
+      ? 1
+      : clampScatter01(1 - (slopeNorm - scatter.slopeMax) / 0.15, 0);
+  }
+  return scatter.density * band * slope;
+}
+
+/**
+ * Species zone of a normalised height and the normal-magnitude
+ * class it carries: zones split the [0, 1] height range evenly;
+ * the class scale runs 0.55 (lowest zone) to 1.0 (highest), and a
+ * single species is always exactly 1.
+ */
+export function terrainScatterSpeciesScale(
+  scatter: GpgpuMorphTerrainScatterOptions,
+  t: number,
+): number {
+  if (scatter.species <= 1) return 1;
+  const zone = Math.min(scatter.species - 1, Math.max(0, Math.floor(t * scatter.species)));
+  return 0.55 + 0.45 * (zone / (scatter.species - 1));
+}
+
+/** Resampling attempts per particle in the scatter branch
+ *  (the first attempt is the particle's own grid cell). */
+export const TERRAIN_SCATTER_ATTEMPTS = 5;
 
 const TAU = Math.PI * 2;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
@@ -410,7 +751,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   data: Float32Array;
   normalData: Float32Array;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path, mask, form, textOnPath, fracture } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path, mask, form, textOnPath, fracture, scatter } = options;
   const formActive = isFormDeformationActive(form);
   // Raster mask (Phase X): resolved once; null unless the mode is
   // on and the map is usable, in which case the placement branches
@@ -439,6 +780,17 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   const terrainOpts = target === 'terrain' ? (terrain ?? DEFAULT_TERRAIN) : null;
   const terrainFieldSeed = terrainOpts
     ? terrainFieldSeedFor(seed, terrainOpts.seed)
+    : 0;
+  // Terrain scatter grammar (Phase AI): resolved once for the
+  // whole bake. Null (absent / all-default options) keeps the
+  // legacy grid tiling bit-identical. The gradient reference is
+  // only needed when the slope cap or the normal alignment can
+  // bite; the reference grid costs ~48² gradient evaluations,
+  // negligible next to the bake itself.
+  const terrainScatter = target === 'terrain' ? resolveTerrainScatter(scatter) : null;
+  const terrainScatterGradRef = terrainScatter && terrainOpts
+    && (terrainScatter.slopeMax < 1 || terrainScatter.alignNormal > 0)
+    ? terrainScatterGradientRef(terrainOpts, terrainFieldSeed)
     : 0;
   const mediaPoint = { x: 0, y: 0, z: 0 };
   // Path placement (Phase S): active only for the svg target with a
@@ -874,7 +1226,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
           break;
         }
         case 'terrain': {
-          // Seeded fBm height field (Phase L, Mir-style): particles
+          // Seeded height field (Phase L, Mir-style): particles
           // tile the XZ domain on the bake grid — one particle per
           // grid cell, jittered inside the cell by the shared rng
           // draws (s, h1) — and take the field height as Y. The
@@ -884,9 +1236,84 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
           const extent = 1.05;
           const cellX = i % texSize;
           const cellZ = Math.floor(i / texSize);
-          tx = (((cellX + s) / texSize) * 2 - 1) * extent;
-          tz = (((cellZ + h1) / texSize) * 2 - 1) * extent;
-          ty = terrainOpts ? terrainHeightAt(tx, tz, terrainOpts, terrainFieldSeed) : 0;
+          if (terrainScatter && terrainOpts) {
+            // Scatter grammar (Phase AI): candidates are drawn
+            // (the particle's own cell first, then fresh random
+            // cells) and accepted with the probability the terrain
+            // conditions give them (density × height band × slope
+            // cap), so the point distribution concentrates where
+            // the conditions allow — the foliage reading of the
+            // fixed pool. If no candidate is accepted, the
+            // highest-probability candidate seen is used, so the
+            // pool size and the surface coverage survive any
+            // condition set. Extra RNG draws are consumed only
+            // inside this branch.
+            let accX = 0;
+            let accY = 0;
+            let accZ = 0;
+            let accGx = 0;
+            let accGz = 0;
+            let accT = 0.5;
+            let bestP = -1;
+            let placed = false;
+            for (let attempt = 0; attempt < TERRAIN_SCATTER_ATTEMPTS && !placed; attempt++) {
+              let cx: number;
+              let cz: number;
+              if (attempt === 0) {
+                cx = (((cellX + s) / texSize) * 2 - 1) * extent;
+                cz = (((cellZ + h1) / texSize) * 2 - 1) * extent;
+              } else {
+                const rcx = Math.floor(rng() * texSize);
+                const rcz = Math.floor(rng() * texSize);
+                cx = (((rcx + rng()) / texSize) * 2 - 1) * extent;
+                cz = (((rcz + rng()) / texSize) * 2 - 1) * extent;
+              }
+              const h = terrainHeightAt(cx, cz, terrainOpts, terrainFieldSeed);
+              const t = terrainOpts.amplitude > 0
+                ? Math.max(0, Math.min(1, h / terrainOpts.amplitude * 0.5 + 0.5))
+                : 0.5;
+              let gx = 0;
+              let gz = 0;
+              let slopeNorm = 0;
+              if (terrainScatterGradRef > 0) {
+                const g = terrainGradientAt(cx, cz, terrainOpts, terrainFieldSeed);
+                gx = g.gx;
+                gz = g.gz;
+                slopeNorm = Math.min(1, Math.hypot(gx, gz) / terrainScatterGradRef);
+              }
+              const p = terrainScatterAcceptance(terrainScatter, t, slopeNorm);
+              if (p > bestP) {
+                bestP = p;
+                accX = cx; accY = h; accZ = cz; accGx = gx; accGz = gz; accT = t;
+              }
+              if (p >= 1 || (p > 0 && rng() < p)) {
+                // The accepted candidate itself is placed (not an
+                // earlier, luckier one); the best-seen record above
+                // is only the no-acceptance fallback.
+                accX = cx; accY = h; accZ = cz; accGx = gx; accGz = gz; accT = t;
+                placed = true;
+              }
+            }
+            tx = accX;
+            ty = accY;
+            tz = accZ;
+            // Posture (法線整列): the companion normal becomes the
+            // terrain normal, its magnitude carrying the species
+            // class of the particle's height zone. With alignment
+            // 0 the normals stay zero, exactly like the legacy
+            // terrain bake.
+            if (terrainScatter.alignNormal > 0) {
+              const invLen = 1 / Math.sqrt(accGx * accGx + 1 + accGz * accGz);
+              const mag = terrainScatter.alignNormal * terrainScatterSpeciesScale(terrainScatter, accT);
+              nnx = -accGx * invLen * mag;
+              nny = invLen * mag;
+              nnz = -accGz * invLen * mag;
+            }
+          } else {
+            tx = (((cellX + s) / texSize) * 2 - 1) * extent;
+            tz = (((cellZ + h1) / texSize) * 2 - 1) * extent;
+            ty = terrainOpts ? terrainHeightAt(tx, tz, terrainOpts, terrainFieldSeed) : 0;
+          }
           break;
         }
         case 'shell': {

@@ -214,7 +214,7 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
     tex.wrapT = THREE.ClampToEdgeWrapping;
     return { tex, extent: bake.extent };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.gpgpuShadowEnabled, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuMorphTerrainAmplitude, config.gpgpuMorphTerrainFrequency, config.gpgpuMorphTerrainOctaves, config.gpgpuMorphTerrainSeed, config.gpgpuSeed, config.gpgpuMorphScale, config.gpgpuBounceRadius, config.gpgpuTerrainMeshScale, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
+  }, [config.gpgpuShadowEnabled, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuMorphTerrainAmplitude, config.gpgpuMorphTerrainFrequency, config.gpgpuMorphTerrainOctaves, config.gpgpuMorphTerrainSeed, config.gpgpuMorphTerrainKind, config.gpgpuMorphTerrainTerraceSteps, config.gpgpuSeed, config.gpgpuMorphScale, config.gpgpuBounceRadius, config.gpgpuTerrainMeshScale, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
 
   React.useEffect(() => {
     return () => {

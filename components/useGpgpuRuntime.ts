@@ -460,7 +460,22 @@ export function buildMorphBakeData(
       frequency: config.gpgpuMorphTerrainFrequency,
       octaves: config.gpgpuMorphTerrainOctaves,
       seed: config.gpgpuMorphTerrainSeed,
+      // Terrain recipes (Phase AI): 'fbm' is the legacy field.
+      kind: config.gpgpuMorphTerrainKind,
+      terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
     },
+    // Terrain scatter grammar (Phase AI): a top-level bake
+    // option (only read by the terrain target), gated by its
+    // enabled key exactly like the mask option; all-default
+    // values resolve to the identity inside the bake.
+    scatter: config.gpgpuMorphScatterEnabled ? {
+      density: config.gpgpuMorphScatterDensity,
+      heightMin: config.gpgpuMorphScatterHeightMin,
+      heightMax: config.gpgpuMorphScatterHeightMax,
+      slopeMax: config.gpgpuMorphScatterSlopeMax,
+      alignNormal: config.gpgpuMorphScatterAlignNormal,
+      species: config.gpgpuMorphScatterSpecies,
+    } : null,
     mask: morphMaskOption(config),
   });
 }
@@ -830,6 +845,16 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphTerrainFrequency = config.gpgpuMorphTerrainFrequency;
   const morphTerrainOctaves = config.gpgpuMorphTerrainOctaves;
   const morphTerrainSeed = config.gpgpuMorphTerrainSeed;
+  // Terrain recipes + scatter grammar (Phase AI).
+  const morphTerrainKind = config.gpgpuMorphTerrainKind;
+  const morphTerrainTerraceSteps = config.gpgpuMorphTerrainTerraceSteps;
+  const morphScatterEnabled = config.gpgpuMorphScatterEnabled;
+  const morphScatterDensity = config.gpgpuMorphScatterDensity;
+  const morphScatterHeightMin = config.gpgpuMorphScatterHeightMin;
+  const morphScatterHeightMax = config.gpgpuMorphScatterHeightMax;
+  const morphScatterSlopeMax = config.gpgpuMorphScatterSlopeMax;
+  const morphScatterAlignNormal = config.gpgpuMorphScatterAlignNormal;
+  const morphScatterSpecies = config.gpgpuMorphScatterSpecies;
   const morphPathMode = config.gpgpuMorphPathMode;
   const morphTextOnPathEnabled = config.gpgpuMorphTextOnPathEnabled;
   const morphTextOnPathDelay = config.gpgpuMorphTextOnPathDelay;
@@ -967,7 +992,20 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         frequency: morphTerrainFrequency,
         octaves: morphTerrainOctaves,
         seed: morphTerrainSeed,
+        // Terrain recipes (Phase AI): 'fbm' is the legacy field.
+        kind: morphTerrainKind,
+        terraceSteps: morphTerrainTerraceSteps,
       },
+      // Terrain scatter grammar (Phase AI): top-level bake
+      // option, same assembly as the shared builder above.
+      scatter: morphScatterEnabled ? {
+        density: morphScatterDensity,
+        heightMin: morphScatterHeightMin,
+        heightMax: morphScatterHeightMax,
+        slopeMax: morphScatterSlopeMax,
+        alignNormal: morphScatterAlignNormal,
+        species: morphScatterSpecies,
+      } : null,
       // Raster mask (Phase X): same option the shared bake builder
       // assembles, from the effect's own captured values.
       mask: morphMaskMode !== 'off' && morphMaskMap.length > 0 && morphMaskWidth > 0 && morphMaskHeight > 0
@@ -1032,6 +1070,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTerrainFrequency,
     morphTerrainOctaves,
     morphTerrainSeed,
+    morphTerrainKind,
+    morphTerrainTerraceSteps,
+    morphScatterEnabled,
+    morphScatterDensity,
+    morphScatterHeightMin,
+    morphScatterHeightMax,
+    morphScatterSlopeMax,
+    morphScatterAlignNormal,
+    morphScatterSpecies,
     morphPathMode,
     morphTextOnPathEnabled,
     morphTextOnPathDelay,

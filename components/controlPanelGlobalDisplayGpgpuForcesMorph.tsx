@@ -106,9 +106,28 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
               <Slider label="Frequency （周波数）" value={config.gpgpuMorphTerrainFrequency} min={0.4} max={4} step={0.1} onChange={(v) => updateConfig('gpgpuMorphTerrainFrequency', v)} />
               <Slider label="Octaves （オクターブ）" value={config.gpgpuMorphTerrainOctaves} min={1} max={6} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainOctaves', Math.round(v))} />
               <Slider label="Terrain Seed （地形シード）" value={config.gpgpuMorphTerrainSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainSeed', Math.round(v))} />
+              <Toggle label="Recipe （生成レシピ）" value={config.gpgpuMorphTerrainKind} options={[{ label: 'fBm', val: 'fbm' as const }, { label: 'Ridge （尾根）', val: 'ridge' as const }, { label: 'Terrace （段々）', val: 'terrace' as const }, { label: 'Cellular （細胞状）', val: 'cellular' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainKind', v)} />
+              {config.gpgpuMorphTerrainKind === 'terrace' && (
+                <Slider label="Terrace Steps （段数）" value={config.gpgpuMorphTerrainTerraceSteps} min={2} max={32} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainTerraceSteps', Math.round(v))} />
+              )}
               <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-                シード付きフラクタル高度場（fBm）の表面に粒子を敷きます。同じ設定からは常に同じ地形になります。高さで色を変えるには Kinetix Color Gradient の Driver を Height にしてください（谷→山頂でグラデーションが進みます）。
+                シード付き高度場の表面に粒子を敷きます。同じ設定からは常に同じ地形になります。レシピ（Phase AI）は fBm（従来）／Ridge（尾根）／Terrace（段々）／Cellular（細胞状）で、メッシュ・派生マップ・地形コライダにも同じ形が使われます。高さで色を変えるには Kinetix Color Gradient の Driver を Height にしてください（谷→山頂でグラデーションが進みます）。
               </div>
+              <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Terrain Scatter （地形散布）</div>
+              <Toggle label="Scatter （散布文法）" value={config.gpgpuMorphScatterEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphScatterEnabled', v)} />
+              {config.gpgpuMorphScatterEnabled && (
+                <>
+                  <Slider label="Density （密度）" value={config.gpgpuMorphScatterDensity} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterDensity', v)} />
+                  <Slider label="Height Min （高度帯・下限）" value={config.gpgpuMorphScatterHeightMin} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterHeightMin', v)} />
+                  <Slider label="Height Max （高度帯・上限）" value={config.gpgpuMorphScatterHeightMax} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterHeightMax', v)} />
+                  <Slider label="Slope Max （斜度上限）" value={config.gpgpuMorphScatterSlopeMax} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterSlopeMax', v)} />
+                  <Slider label="Align Normal （法線整列）" value={config.gpgpuMorphScatterAlignNormal} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterAlignNormal', v)} />
+                  <Slider label="Species （種別ゾーン数）" value={config.gpgpuMorphScatterSpecies} min={1} max={4} step={1} onChange={(v) => updateConfig('gpgpuMorphScatterSpecies', Math.round(v))} />
+                  <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                    候補点を最大5回抽選し、密度×高度帯×斜度の受理確率で残す散布文法です（Phase AI）。高度帯と斜度で生息域を作り、法線整列で表面の向きに沿わせ、種別は高度帯ゾーンとして放出キックの強さに効きます。全パラメータ既定（密度1・帯0..1・斜度1・整列0・種別1）のときは散布を有効にしても従来の配置と完全に同一です。
+                  </div>
+                </>
+              )}
             </>
           )}
           <>
@@ -230,6 +249,10 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Slider label="Frequency （周波数）" value={config.gpgpuMorphTerrainFrequency} min={0.4} max={4} step={0.1} onChange={(v) => updateConfig('gpgpuMorphTerrainFrequency', v)} />
           <Slider label="Octaves （オクターブ）" value={config.gpgpuMorphTerrainOctaves} min={1} max={6} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainOctaves', Math.round(v))} />
           <Slider label="Terrain Seed （地形シード）" value={config.gpgpuMorphTerrainSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainSeed', Math.round(v))} />
+          <Toggle label="Recipe （生成レシピ）" value={config.gpgpuMorphTerrainKind} options={[{ label: 'fBm', val: 'fbm' as const }, { label: 'Ridge （尾根）', val: 'ridge' as const }, { label: 'Terrace （段々）', val: 'terrace' as const }, { label: 'Cellular （細胞状）', val: 'cellular' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainKind', v)} />
+          {config.gpgpuMorphTerrainKind === 'terrace' && (
+            <Slider label="Terrace Steps （段数）" value={config.gpgpuMorphTerrainTerraceSteps} min={2} max={32} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainTerraceSteps', Math.round(v))} />
+          )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は地形専用画像が優先され、未設定時は Horizon 背景画像を流用します。Repeat / Offset は全テクスチャ種に効く UV 変換です。Tunnel Speed は地形の位相スクロールによる前進表現で、カメラ自体は動きません。速度 0 では従来の静止トンネルと完全に同一です。
           </div>
@@ -280,6 +303,20 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Slider label="Restitution (反発)" value={config.gpgpuFloorBounce} min={0} max={1} step={0.02} onChange={(v) => updateConfig('gpgpuFloorBounce', v)} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             GPGPU 粒子が水平な床で跳ね返ります（Kinetix floorBounce）。球境界だけだった GPGPU に床が増えます。
+          </div>
+        </>
+      )}
+    </div>
+
+    {/* Terrain Collider (Phase AI) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Terrain Collider （地形コライダ）" value={config.gpgpuTerrainColliderEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuTerrainColliderEnabled', v)} />
+      {config.gpgpuTerrainColliderEnabled && (
+        <>
+          <Slider label="Bounce （反発）" value={config.gpgpuTerrainColliderBounce} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainColliderBounce', v)} />
+          <Slider label="Friction （摩擦）" value={config.gpgpuTerrainColliderFriction} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainColliderFriction', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            粒子が高度場の表面で跳ね、摩擦で斜面に静止します（Phase AI）。地形メッシュが有効で平面モード（トンネルでない）のときだけ効きます。反発 0・摩擦 1 で表面に貼り付くように止まります。地形生成レシピの形そのものと衝突します。
           </div>
         </>
       )}
