@@ -1,0 +1,288 @@
+import React from 'react';
+
+import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
+
+import { Slider, Toggle } from './controlPanelParts';
+import { MorphObjImportBlock, MorphSvgImportBlock, ObjMeshBlock, TerrainTextureImageBlock } from './controlPanelGlobalDisplayGpgpuForcesImportBlocks';
+import { TerrainDerivedMapsBlock } from './controlPanelGlobalDisplayGpgpuForcesMapBlocks';
+
+export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
+  config,
+  updateConfig,
+}) => (
+  <>
+    {/* Morph Targets (Kinetix integration B1a) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Morph Targets" value={config.gpgpuMorphEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphEnabled', v)} />
+      {config.gpgpuMorphEnabled && (
+        <>
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Target Shape</div>
+          <select
+            value={config.gpgpuMorphTarget}
+            onChange={(e) => updateConfig('gpgpuMorphTarget', e.target.value as typeof config.gpgpuMorphTarget)}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="trefoil">Trefoil (三つ葉結び)</option>
+            <option value="torusKnot">Torus Knot (3,5)</option>
+            <option value="galaxy">Galaxy (渦巻銀河)</option>
+            <option value="mobius">Möbius (メビウス帯)</option>
+            <option value="geodesic">Geodesic (測地ドーム)</option>
+            <option value="crown">Crown (王冠)</option>
+            <option value="blackhole">Black Hole (降着円盤+ジェット)</option>
+            <option value="klein">Klein Bottle (クラインの壺)</option>
+            <option value="cymatic">Cymatic (球面調和シェル)</option>
+            <option value="gyroid">Gyroid (ジャイロイド曲面)</option>
+            <option value="dnaRibbon">DNA Ribbon (二重螺旋)</option>
+            <option value="hypercube">Hypercube (4次元立方体)</option>
+            <option value="mandelbulb">Mandelbulb (点群近似)</option>
+            <option value="shell">Shell (オウムガイ)</option>
+            <option value="text">Text (レイヤー2のテキストマップ)</option>
+            <option value="image">Image (レイヤー2の画像マップ)</option>
+            <option value="svg">SVG (取り込んだロゴ/図形)</option>
+            <option value="obj">OBJ (取り込んだ3Dメッシュ)</option>
+            <option value="terrain">Terrain (地形・フラクタル高度場)</option>
+          </select>
+          {config.gpgpuMorphTarget === 'svg' && (
+            <MorphSvgImportBlock config={config} updateConfig={updateConfig} />
+          )}
+          {config.gpgpuMorphTarget === 'svg' && (
+            <>
+              <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Path （パス沿い配置）</div>
+              <Toggle label="Mode" value={config.gpgpuMorphPathMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Along', val: 'along' as const }, { label: 'Write-on', val: 'writeOn' as const }, { label: 'Stamp', val: 'stamp' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathMode', v)} />
+              {config.gpgpuMorphPathMode !== 'off' && (
+                <>
+                  <Toggle label="Subpaths （サブパス配分）" value={config.gpgpuMorphPathSubpathMode} options={[{ label: 'Proportional', val: 'proportional' as const }, { label: 'Even', val: 'even' as const }, { label: 'First', val: 'first' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathSubpathMode', v)} />
+                  {config.gpgpuMorphPathMode === 'stamp' && (
+                    <>
+                      <Toggle label="Stamp Shape （スタンプ形状）" value={config.gpgpuMorphStampShape} options={[{ label: 'Disc', val: 'disc' as const }, { label: 'Ring', val: 'ring' as const }, { label: 'Star', val: 'star' as const }, { label: 'Diamond', val: 'diamond' as const }, { label: 'OBJ', val: 'obj' as const }]} onChange={(v) => updateConfig('gpgpuMorphStampShape', v)} />
+                      <Slider label="Stamp Spacing （間隔・パス割合）" value={config.gpgpuMorphStampSpacing} min={0.02} max={0.5} step={0.005} onChange={(v) => updateConfig('gpgpuMorphStampSpacing', v)} />
+                      <Slider label="Stamp Size （大きさ）" value={config.gpgpuMorphStampSize} min={0.02} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphStampSize', v)} />
+                      <Toggle label="Stamp Align （接線に整列）" value={config.gpgpuMorphStampAlign} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphStampAlign', v)} />
+                      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                        パス上に形状を等間隔（弧長）でスタンプします。OBJ 形状は取り込んだ OBJ の点群をスタンプに使います（OBJ 未取り込み時は Disc で代替）。
+                      </div>
+                    </>
+                  )}
+                  {config.gpgpuMorphPathMode === 'writeOn' && (
+                    <>
+                      <Slider label="Write-On Start （開始・割合）" value={config.gpgpuMorphPathWriteOnStart} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphPathWriteOnStart', v)} />
+                      <Slider label="Write-On End （終了・割合）" value={config.gpgpuMorphPathWriteOnEnd} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphPathWriteOnEnd', v)} />
+                    </>
+                  )}
+                  {config.gpgpuMorphPathMode !== 'stamp' && (
+                  <Slider label="Taper （テーパー）" value={config.gpgpuMorphPathTaper} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphPathTaper', v)} />
+                  )}
+                  {config.gpgpuMorphPathTaper > 0 && (
+                    <Toggle label="Taper Shape （形状）" value={config.gpgpuMorphPathTaperShape} options={[{ label: 'Linear', val: 'linear' as const }, { label: 'Smooth', val: 'smooth' as const }, { label: 'Bell', val: 'bell' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathTaperShape', v)} />
+                  )}
+                  {(config.gpgpuMorphPathMode === 'along' || config.gpgpuMorphPathMode === 'writeOn') && (
+                    <>
+                      <Toggle label="Text on Path （パス上文字）" value={config.gpgpuMorphTextOnPathEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphTextOnPathEnabled', v)} />
+                      {config.gpgpuMorphTextOnPathEnabled && (
+                        <>
+                          <Slider label="Text Delay （文字ごとの遅延）" value={config.gpgpuMorphTextOnPathDelay} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTextOnPathDelay', v)} />
+                          <Slider label="Text Size （グリフの大きさ）" value={config.gpgpuMorphTextOnPathSize} min={0.25} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTextOnPathSize', v)} />
+                          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                            レイヤー2 TextMap の文字列を1文字ずつパス上に並べます（文字の形に粒子を配置）。Delay は文字ごとの弧長スロットをずらし、Write-on の窓を動かすと文字が順に現れます。文字列は TextMap の Text で編集します。
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                Off では従来どおり輪郭点群から無作為に抽出します。Along は粒子をパスの弧長順に割り当て、Write-on は窓［Start, End］の範囲だけを描いた状態にします。Taper はパスの法線方向へ配置帯を広げます（最大幅 0.1 固定、窓の始点基準）。複製（Replicas）と組み合わせると、複製ごとにパスの連続区間が割り当てられます。
+              </div>
+            </>
+          )}
+          {config.gpgpuMorphTarget === 'obj' && (
+            <MorphObjImportBlock config={config} updateConfig={updateConfig} />
+          )}
+          {config.gpgpuMorphTarget === 'terrain' && (
+            <>
+              <div className="mb-1 mt-1 text-[9px] uppercase tracking-widest opacity-60">Terrain （地形）</div>
+              <Slider label="Amplitude （標高の振幅）" value={config.gpgpuMorphTerrainAmplitude} min={0} max={1.5} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainAmplitude', v)} />
+              <Slider label="Frequency （周波数）" value={config.gpgpuMorphTerrainFrequency} min={0.4} max={4} step={0.1} onChange={(v) => updateConfig('gpgpuMorphTerrainFrequency', v)} />
+              <Slider label="Octaves （オクターブ）" value={config.gpgpuMorphTerrainOctaves} min={1} max={6} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainOctaves', Math.round(v))} />
+              <Slider label="Terrain Seed （地形シード）" value={config.gpgpuMorphTerrainSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainSeed', Math.round(v))} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                シード付きフラクタル高度場（fBm）の表面に粒子を敷きます。同じ設定からは常に同じ地形になります。高さで色を変えるには Kinetix Color Gradient の Driver を Height にしてください（谷→山頂でグラデーションが進みます）。
+              </div>
+            </>
+          )}
+          <>
+            <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Form Deformation （フォーム専用変形: 配置変形）</div>
+            <Slider label="Disperse Amount （拡散量）" value={config.gpgpuMorphDisperseAmount} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphDisperseAmount', v)} />
+            {config.gpgpuMorphDisperseAmount !== 0 && (
+              <Toggle label="Disperse Direction （拡散方向）" value={config.gpgpuMorphDisperseDirection} options={[{ label: 'Radial', val: 'radial' as const }, { label: 'X', val: 'x' as const }, { label: 'Y', val: 'y' as const }, { label: 'Z', val: 'z' as const }]} onChange={(v) => updateConfig('gpgpuMorphDisperseDirection', v)} />
+            )}
+            <Slider label="Twist Amount （ねじり量）" value={config.gpgpuMorphTwistAmount} min={-4} max={4} step={0.1} onChange={(v) => updateConfig('gpgpuMorphTwistAmount', v)} />
+            {config.gpgpuMorphTwistAmount !== 0 && (
+              <Toggle label="Twist Axis （ねじり軸）" value={config.gpgpuMorphTwistAxis} options={[{ label: 'X', val: 'x' as const }, { label: 'Y', val: 'y' as const }, { label: 'Z', val: 'z' as const }]} onChange={(v) => updateConfig('gpgpuMorphTwistAxis', v)} />
+            )}
+            <Slider label="Fractal Amount （フラクタル変位量）" value={config.gpgpuMorphFractalAmount} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFractalAmount', v)} />
+            {config.gpgpuMorphFractalAmount !== 0 && (
+              <>
+                <Slider label="Fractal Frequency （周波数）" value={config.gpgpuMorphFractalFrequency} min={0.2} max={8} step={0.1} onChange={(v) => updateConfig('gpgpuMorphFractalFrequency', v)} />
+                <Slider label="Fractal Evolution （時間発展）" value={config.gpgpuMorphFractalEvolution} min={0} max={20} step={0.25} onChange={(v) => updateConfig('gpgpuMorphFractalEvolution', v)} />
+              </>
+            )}
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              モーフ配置そのものへの専用変形です（Flow／Vortex 等のモーションとは別系統）。全て 0 では従来と完全同一になります。
+            </div>
+          </>
+          <>
+            <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Fracture （Voronoi 破砕）</div>
+            <Toggle label="Voronoi Fracture （ボロノイ破砕）" value={config.gpgpuMorphFractureEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphFractureEnabled', v)} />
+            {config.gpgpuMorphFractureEnabled && (
+              <>
+                <Slider label="Cells （セル数）" value={config.gpgpuMorphFractureCells} min={2} max={64} step={1} onChange={(v) => updateConfig('gpgpuMorphFractureCells', Math.round(v))} />
+                <Slider label="Seed （分割シード）" value={config.gpgpuMorphFractureSeed} min={0} max={9999} step={1} onChange={(v) => updateConfig('gpgpuMorphFractureSeed', Math.round(v))} />
+                <Slider label="Gap （分離量）" value={config.gpgpuMorphFractureGap} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphFractureGap', v)} />
+                <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                  ベイクした点群をシード付きボロノイセルで割り、破片ごとに引き離します。サイトは点群自身から抽選されるので形に沿って割れます。同じシードでは常に同じ分割になります。全モーフ目標（Text／Image／SVG／OBJ／地形ほか）に効きます。
+                </div>
+              </>
+            )}
+          </>
+          <>
+            <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Surface Fibers （モーフ面ファイバー）</div>
+            <Toggle label="Morph Fibers （面ファイバー）" value={config.gpgpuMorphFiberEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphFiberEnabled', v)} />
+            {config.gpgpuMorphFiberEnabled && (
+              <>
+                <Slider label="Fiber Count （本数）" value={config.gpgpuMorphFiberCount} min={50} max={4000} step={10} onChange={(v) => updateConfig('gpgpuMorphFiberCount', Math.round(v))} />
+                <Slider label="Fiber Length （長さ）" value={config.gpgpuMorphFiberLength} min={0.05} max={1.5} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberLength', v)} />
+                <Slider label="Fiber Curl （カール）" value={config.gpgpuMorphFiberCurl} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberCurl', v)} />
+                <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                  モーフベイクの表面点から法線方向（OBJ は実法線、その他は放射方向）へ繊維を生やします。描画のみの重ね表示で、シミュレーションには影響しません。根元の抽選は決定的です。
+                </div>
+              </>
+            )}
+          </>
+          <Slider label="Strength" value={config.gpgpuMorphStrength} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuMorphStrength', v)} />
+          <Slider label="Scale" value={config.gpgpuMorphScale} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScale', v)} />
+          <Slider label="Jitter" value={config.gpgpuMorphJitter} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphJitter', v)} />
+          <Slider label="Orbit Speed" value={config.gpgpuMorphOrbitSpeed} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphOrbitSpeed', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            各粒子に割り当てた形状点群へバネ引力で集めます（Kinetix モーフの GPGPU 再実装）。Text はレイヤー2のテキスト設定、Image はレイヤー2に読み込んだ画像マップ、SVG は取り込んだ SVG の輪郭、OBJ は取り込んだ OBJ メッシュの表面、Terrain はシード付きフラクタル高度場の表面を使います。
+          </div>
+          <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Replicas （複製文法）</div>
+          <Slider label="Replica Count" value={config.gpgpuMorphReplicaCount} min={1} max={8} step={1} onChange={(v) => updateConfig('gpgpuMorphReplicaCount', Math.round(v))} />
+          {config.gpgpuMorphReplicaCount > 1 && (
+            <>
+              <Slider label="Spacing （間隔）" value={config.gpgpuMorphReplicaSpacing} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphReplicaSpacing', v)} />
+              <Toggle label="Axis （並べる軸）" value={config.gpgpuMorphReplicaAxis} options={[{ label: 'X', val: 'x' as const }, { label: 'Y', val: 'y' as const }, { label: 'Z', val: 'z' as const }]} onChange={(v) => updateConfig('gpgpuMorphReplicaAxis', v)} />
+              <Slider label="Rotation Step （回転増分°）" value={config.gpgpuMorphReplicaRotation} min={-180} max={180} step={5} onChange={(v) => updateConfig('gpgpuMorphReplicaRotation', v)} />
+              <Slider label="Scale Step （等比）" value={config.gpgpuMorphReplicaScaleStep} min={0.5} max={1.6} step={0.02} onChange={(v) => updateConfig('gpgpuMorphReplicaScaleStep', v)} />
+              <Slider label="Phase Step （位相ずらし°）" value={config.gpgpuMorphReplicaPhaseStep} min={0} max={360} step={5} onChange={(v) => updateConfig('gpgpuMorphReplicaPhaseStep', v)} />
+              <Slider label="Age Step （年齢位相・周期比）" value={config.gpgpuMorphReplicaAgeStep} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphReplicaAgeStep', v)} />
+              <Toggle label="Independent Sim （独立シム）" value={config.gpgpuMorphReplicaIndependent} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphReplicaIndependent', v)} />
+              {config.gpgpuMorphReplicaIndependent && (
+                <Slider label="Divergence （分岐度）" value={config.gpgpuMorphReplicaDivergence} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphReplicaDivergence', v)} />
+              )}
+            </>
+          )}
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            形状点群を複製して、間隔・回転・拡縮を累積させた連鎖にします。総点数は増えず、複製へ割り当てます。Phase Step は複製ごとの公転位相をずらす時間オフセット（Echospace 的な「遅れて追う連鎖」）です。Count 1 のときは従来と完全に同一です。Independent Sim を On にすると、各複製が独立したシミュレーション状態を持ち、力の場も複製ごとに分岐します（WebGL 経路のみ）。
+          </div>
+        </>
+      )}
+    </div>
+
+    {/* Terrain Mesh (Phase P, Mir-style polygon terrain) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Terrain Mesh （地形メッシュ）" value={config.gpgpuTerrainMeshEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuTerrainMeshEnabled', v)} />
+      {config.gpgpuTerrainMeshEnabled && (
+        <>
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Display （表示形態）</div>
+          <Toggle label="Display" value={config.gpgpuTerrainMeshDisplay} options={[{ label: 'Shaded', val: 'shaded' as const }, { label: 'Wireframe', val: 'wireframe' as const }, { label: 'Points', val: 'points' as const }]} onChange={(v) => updateConfig('gpgpuTerrainMeshDisplay', v)} />
+          <Toggle label="Tunnel （トンネル）" value={config.gpgpuTerrainMeshTunnel} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuTerrainMeshTunnel', v)} />
+          {config.gpgpuTerrainMeshTunnel && (
+            <Slider label="Tunnel Speed （前進速度）" value={config.gpgpuTunnelSpeed} min={0} max={60} step={1} onChange={(v) => updateConfig('gpgpuTunnelSpeed', v)} />
+          )}
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Texture （表面テクスチャ）</div>
+          <select
+            value={config.gpgpuTerrainMeshTexture}
+            onChange={(e) => updateConfig('gpgpuTerrainMeshTexture', e.target.value as typeof config.gpgpuTerrainMeshTexture)}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="none">None (単色陰影)</option>
+            <option value="gradient">Gradient (モノクロ+等高線)</option>
+            <option value="grid">Grid (測量グリッド)</option>
+            <option value="image">Image (地形専用画像／背景画像)</option>
+          </select>
+          {config.gpgpuTerrainMeshTexture === 'image' && (
+            <TerrainTextureImageBlock config={config} updateConfig={updateConfig} />
+          )}
+          {config.gpgpuTerrainMeshTexture !== 'none' && (
+            <>
+              <Slider label="Texture Repeat （繰り返し）" value={config.gpgpuTerrainTextureRepeat} min={0.25} max={8} step={0.25} onChange={(v) => updateConfig('gpgpuTerrainTextureRepeat', v)} />
+              <Slider label="Texture Offset X" value={config.gpgpuTerrainTextureOffsetX} min={-1} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuTerrainTextureOffsetX', v)} />
+              <Slider label="Texture Offset Y" value={config.gpgpuTerrainTextureOffsetY} min={-1} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuTerrainTextureOffsetY', v)} />
+            </>
+          )}
+          <Slider label="Scale （大きさ）" value={config.gpgpuTerrainMeshScale} min={0.25} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainMeshScale', v)} />
+          <Slider label="Opacity （不透明度）" value={config.gpgpuTerrainMeshOpacity} min={0.05} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainMeshOpacity', v)} />
+          <Slider label="Brightness （明るさ）" value={config.gpgpuTerrainMeshBrightness} min={0.1} max={2.5} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainMeshBrightness', v)} />
+          <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Terrain Field （高度場・モーフ地形と共有）</div>
+          <Slider label="Amplitude （標高の振幅）" value={config.gpgpuMorphTerrainAmplitude} min={0} max={1.5} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainAmplitude', v)} />
+          <Slider label="Frequency （周波数）" value={config.gpgpuMorphTerrainFrequency} min={0.4} max={4} step={0.1} onChange={(v) => updateConfig('gpgpuMorphTerrainFrequency', v)} />
+          <Slider label="Octaves （オクターブ）" value={config.gpgpuMorphTerrainOctaves} min={1} max={6} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainOctaves', Math.round(v))} />
+          <Slider label="Terrain Seed （地形シード）" value={config.gpgpuMorphTerrainSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainSeed', Math.round(v))} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は地形専用画像が優先され、未設定時は Horizon 背景画像を流用します。Repeat / Offset は全テクスチャ種に効く UV 変換です。Tunnel Speed は地形の位相スクロールによる前進表現で、カメラ自体は動きません。速度 0 では従来の静止トンネルと完全に同一です。
+          </div>
+          <TerrainDerivedMapsBlock config={config} updateConfig={updateConfig} />
+        </>
+      )}
+    </div>
+
+    {/* OBJ Mesh (Phase V, Mir-style mesh side of the OBJ import) */}
+    <ObjMeshBlock config={config} updateConfig={updateConfig} />
+
+    {/* Verlet Integration */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Verlet Integration" value={config.gpgpuVerletEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuVerletEnabled', v)} />
+    </div>
+
+    {/* SDF Collider */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="SDF Collider" value={config.gpgpuSdfEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuSdfEnabled', v)} />
+      {config.gpgpuSdfEnabled && (
+        <>
+          <Toggle
+            label="Shape"
+            value={config.gpgpuSdfShape}
+            options={[{ label: 'Sphere', val: 'sphere' }, { label: 'Box', val: 'box' }, { label: 'Torus', val: 'torus' }, { label: 'Capsule', val: 'capsule' }, { label: 'Gyroid', val: 'gyroid' }]}
+            onChange={(v) => updateConfig('gpgpuSdfShape', v)}
+          />
+          {config.gpgpuSdfShape === 'gyroid' && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              Gyroid: ジャイロイド曲面（TPMS）の内側が固体になる迷路状コライダです（Kinetix の gyro）。Size が周期の大きさを決めます。
+            </div>
+          )}
+          <Slider label="Size" value={config.gpgpuSdfSize} min={5} max={300} step={5} onChange={(v) => updateConfig('gpgpuSdfSize', v)} />
+          <Slider label="Bounce" value={config.gpgpuSdfBounce} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuSdfBounce', v)} />
+          <Slider label="Center X" value={config.gpgpuSdfX} min={-300} max={300} step={5} onChange={(v) => updateConfig('gpgpuSdfX', v)} />
+          <Slider label="Center Y" value={config.gpgpuSdfY} min={-300} max={300} step={5} onChange={(v) => updateConfig('gpgpuSdfY', v)} />
+          <Slider label="Center Z" value={config.gpgpuSdfZ} min={-300} max={300} step={5} onChange={(v) => updateConfig('gpgpuSdfZ', v)} />
+        </>
+      )}
+    </div>
+
+    {/* Floor Bounce (B3) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Floor Bounce (床)" value={config.gpgpuFloorEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuFloorEnabled', v)} />
+      {config.gpgpuFloorEnabled && (
+        <>
+          <Slider label="Floor Y" value={config.gpgpuFloorY} min={-400} max={100} step={5} onChange={(v) => updateConfig('gpgpuFloorY', v)} />
+          <Slider label="Restitution (反発)" value={config.gpgpuFloorBounce} min={0} max={1} step={0.02} onChange={(v) => updateConfig('gpgpuFloorBounce', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            GPGPU 粒子が水平な床で跳ね返ります（Kinetix floorBounce）。球境界だけだった GPGPU に床が増えます。
+          </div>
+        </>
+      )}
+    </div>
+  </>
+);

@@ -1,15 +1,15 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.39.0**（2026-11-17 出荷、第5期 Phase AG＝生成と破砕の文法化・第5期最終フェーズ）
+**現行バージョン: v1.39.1**（2026-11-17 出荷、保守リリース＝Forces パネル分割＋CPU テストハーネス復旧。機能・キー・スターターは v1.39.0 から無変更）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_AG_REPORT.md / PHASE_AG_GATE_REPORT.md、前: PHASE_AF2_REPORT.md）
+  （最新: MAINT_SHIP_REPORT.md / MAINT_PHASE_REPORT.md、前: PHASE_AG_REPORT.md / PHASE_AG_GATE_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.39.0] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.39.1] が最新項）
 
 ## 資産の実数（2026-11-17 実測）
 

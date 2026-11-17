@@ -4,6 +4,38 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.39.1] — 2026-11-17
+
+Maintenance release: no new features, no new config keys, no
+behaviour change. Base is the actually-shipped v1.39.0; with all
+keys at their defaults the render is bit-identical to v1.39.0
+(verified on the iMac real-GPU gate: FROZEN deterministic render,
+all 12 frames at 0.00000). Config keys stay at 1,119 and starters
+at 541.
+
+### Changed
+- **Forces panel split** (pure refactor, Phase E method): the
+  largest file in the tree, `components/controlPanelGlobalDisplayGpgpuForces.tsx`
+  (131,729 bytes / 1,946 lines), is split verbatim into a
+  1,026-byte composing shell plus seven sibling modules
+  (ForcesCore / ForcesMorph / ForcesAuxColor / ForcesMaps /
+  ForcesMapBlocks / ForcesImportBlocks / ForcesCustom, largest
+  28,612 bytes). A non-empty-line multiset audit proves no line
+  of the original was lost or altered; the public export
+  (`GlobalDisplayGpgpuForcesSection`) is unchanged.
+
+### Fixed (test harness, outside the app bundle)
+- **CPU port comparison tests restored**: the Phase R and
+  Phase X2 bit-identity tests compared against legacy CPU sims
+  kept as `.bak` files, which the AUDIT1390 `.bak` purge deleted.
+  The genuine pre-change sims were recovered from this
+  repository's own history (v1.19.0 and v1.27.1) and are now kept
+  as permanent fixtures outside the app tree. The Phase X2
+  signature expectations were updated to the current signature
+  form (Phase AA added 11 morph fields in v1.32.0); both suites
+  now pass in full (Phase R 26/26, Phase X2 27/27), with all
+  bit-identity assertions unchanged.
+
 ## [1.39.0] — 2026-11-17
 
 Phase AG (fifth period, final phase): generation and fracture
