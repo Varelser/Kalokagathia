@@ -5,6 +5,7 @@ import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
 import { splitTextOnPathGlyphs, type TextGlyphRaster } from '../lib/gpgpuTextOnPath';
+import { fractureOptionFromConfig } from '../lib/voronoiFracture';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
@@ -432,6 +433,9 @@ export function buildMorphBakeData(
       stampAlign: config.gpgpuMorphStampAlign,
     },
     textOnPath,
+    // Voronoi fracture (Phase AG): shared option builder so the
+    // WebGPU bake and the WebGL / CPU routings can never drift.
+    fracture: fractureOptionFromConfig(config),
     form: {
       disperseAmount: config.gpgpuMorphDisperseAmount,
       disperseDirection: config.gpgpuMorphDisperseDirection,
@@ -931,6 +935,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         stampAlign: morphStampAlign,
       },
       textOnPath,
+      // Voronoi fracture (Phase AG): same shared option builder
+      // as the WebGPU bake (buildMorphBakeData above).
+      fracture: fractureOptionFromConfig(config),
       form: {
         disperseAmount: morphDisperseAmount,
         disperseDirection: morphDisperseDirection,

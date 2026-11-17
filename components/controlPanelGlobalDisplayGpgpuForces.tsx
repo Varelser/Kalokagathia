@@ -456,6 +456,34 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
               モーフ配置そのものへの専用変形です（Flow／Vortex 等のモーションとは別系統）。全て 0 では従来と完全同一になります。
             </div>
           </>
+          <>
+            <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Fracture （Voronoi 破砕）</div>
+            <Toggle label="Voronoi Fracture （ボロノイ破砕）" value={config.gpgpuMorphFractureEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphFractureEnabled', v)} />
+            {config.gpgpuMorphFractureEnabled && (
+              <>
+                <Slider label="Cells （セル数）" value={config.gpgpuMorphFractureCells} min={2} max={64} step={1} onChange={(v) => updateConfig('gpgpuMorphFractureCells', Math.round(v))} />
+                <Slider label="Seed （分割シード）" value={config.gpgpuMorphFractureSeed} min={0} max={9999} step={1} onChange={(v) => updateConfig('gpgpuMorphFractureSeed', Math.round(v))} />
+                <Slider label="Gap （分離量）" value={config.gpgpuMorphFractureGap} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphFractureGap', v)} />
+                <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                  ベイクした点群をシード付きボロノイセルで割り、破片ごとに引き離します。サイトは点群自身から抽選されるので形に沿って割れます。同じシードでは常に同じ分割になります。全モーフ目標（Text／Image／SVG／OBJ／地形ほか）に効きます。
+                </div>
+              </>
+            )}
+          </>
+          <>
+            <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Surface Fibers （モーフ面ファイバー）</div>
+            <Toggle label="Morph Fibers （面ファイバー）" value={config.gpgpuMorphFiberEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphFiberEnabled', v)} />
+            {config.gpgpuMorphFiberEnabled && (
+              <>
+                <Slider label="Fiber Count （本数）" value={config.gpgpuMorphFiberCount} min={50} max={4000} step={10} onChange={(v) => updateConfig('gpgpuMorphFiberCount', Math.round(v))} />
+                <Slider label="Fiber Length （長さ）" value={config.gpgpuMorphFiberLength} min={0.05} max={1.5} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberLength', v)} />
+                <Slider label="Fiber Curl （カール）" value={config.gpgpuMorphFiberCurl} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberCurl', v)} />
+                <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                  モーフベイクの表面点から法線方向（OBJ は実法線、その他は放射方向）へ繊維を生やします。描画のみの重ね表示で、シミュレーションには影響しません。根元の抽選は決定的です。
+                </div>
+              </>
+            )}
+          </>
           <Slider label="Strength" value={config.gpgpuMorphStrength} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuMorphStrength', v)} />
           <Slider label="Scale" value={config.gpgpuMorphScale} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScale', v)} />
           <Slider label="Jitter" value={config.gpgpuMorphJitter} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphJitter', v)} />

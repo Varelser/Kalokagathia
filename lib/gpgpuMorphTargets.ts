@@ -42,6 +42,7 @@
 
 import type { ParticleConfig } from '../types';
 import { createSeededRng } from './seededRng';
+import { applyVoronoiFracture } from './voronoiFracture';
 import {
   maskAcceptsAt,
   resolveActiveMask,
@@ -252,6 +253,20 @@ export interface GpgpuMorphTargetBuildOptions {
    * the legacy bake exactly (the branch is skipped entirely).
    */
   form?: FormDeformationOptions | null;
+  /**
+   * Voronoi fracture (Phase AG, lib/voronoiFracture.ts): a
+   * post-pass over the finished bake — the cloud is partitioned
+   * into seeded Voronoi cells and each cell is shrunk toward its
+   * centroid and pushed away from the shape centre by `gap`.
+   * Applied inside this shared builder, so the WebGPU, WebGL and
+   * CPU routings all consume the same fractured cloud. Absent /
+   * null = the legacy bake exactly (the pass is skipped).
+   */
+  fracture?: {
+    cells: number;
+    seed: number;
+    gap: number;
+  } | null;
 }
 
 /**
@@ -395,7 +410,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   data: Float32Array;
   normalData: Float32Array;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path, mask, form, textOnPath } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path, mask, form, textOnPath, fracture } = options;
   const formActive = isFormDeformationActive(form);
   // Raster mask (Phase X): resolved once; null unless the mode is
   // on and the map is usable, in which case the placement branches
@@ -980,6 +995,12 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
     normalData[o + 1] = nny;
     normalData[o + 2] = nnz;
     normalData[o + 3] = 0;
+  }
+  // Voronoi fracture (Phase AG): post-pass over the finished
+  // cloud. Skipped entirely unless the option is present, so the
+  // default bake stays bit-identical.
+  if (fracture) {
+    applyVoronoiFracture(data, count, fracture);
   }
   return { data, normalData };
 }

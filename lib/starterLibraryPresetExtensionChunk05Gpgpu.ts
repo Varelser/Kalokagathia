@@ -2069,4 +2069,51 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         layer2TextMapText: 'VARELSER',
         gpgpuTrailEnabled: false,
       }),
+  // Phase AG: Voronoi fracture — a torus knot bake split into
+  // seeded Voronoi cells and pulled apart, so the shape reads
+  // as broken chunks. Same seed → same division, always.
+  createStarterPreset('starter-voronoi-fracture', 'Voronoi Fracture (Seeded Cells)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.1,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'torusKnot',
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.02,
+        gpgpuMorphOrbitSpeed: 0.1,
+        gpgpuMorphFractureEnabled: true,
+        gpgpuMorphFractureCells: 14,
+        gpgpuMorphFractureSeed: 7,
+        gpgpuMorphFractureGap: 0.45,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase AG: custom L-system rules — the dragon curve written
+  // in the opened rule grammar instead of a fixed preset, drawn
+  // by layer 2's L-system sheet.
+  createStarterPreset('starter-lsys-dragon-rules', 'L-System Dragon (Custom Rules)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: true,
+        layer2Type: 'l-system',
+        layer2LsysPreset: 'plant',
+        layer2LsysCustomRules: 'axiom = FX; X = X+YF+; Y = -FX-Y',
+        layer2LsysDepth: 8,
+        layer2LsysAngle: 90,
+        layer2LsysLengthDecay: 0.9,
+        layer2LsysWind: 0,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: false,
+      }),
 ];

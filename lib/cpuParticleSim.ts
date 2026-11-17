@@ -28,6 +28,7 @@ import { buildGpgpuMorphTargetDataWithNormals } from './gpgpuMorphTargets';
 import type { MorphMediaMap } from './gpgpuMorphTargets';
 import type { PathGeometry } from './pathGeometry';
 import type { TextGlyphRaster } from './gpgpuTextOnPath';
+import { fractureOptionFromConfig } from './voronoiFracture';
 
 export const CPU_PARTICLE_CAP = 4000;
 const CPU_PARTICLE_MIN = 240;
@@ -191,6 +192,10 @@ export function buildCpuMorphData(
       stampAlign: config.gpgpuMorphStampAlign,
     },
     textOnPath: extras.textOnPath ?? null,
+    // Voronoi fracture (Phase AG): read from config directly,
+    // like the path / form options above — the shared bake applies
+    // it, so the CPU cloud fractures identically to the GPU bakes.
+    fracture: fractureOptionFromConfig(config),
     form: {
       disperseAmount: config.gpgpuMorphDisperseAmount,
       disperseDirection: config.gpgpuMorphDisperseDirection,

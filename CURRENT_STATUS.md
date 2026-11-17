@@ -1,19 +1,19 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.38.0**（2026-11-17 出荷、第5期 Phase AF2＝AF 原案分の実施）
+**現行バージョン: v1.39.0**（2026-11-17 出荷、第5期 Phase AG＝生成と破砕の文法化・第5期最終フェーズ）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_AF2_REPORT.md / PHASE_AF2_GATE_REPORT.md、前: PHASE_AF_REPORT.md）
+  （最新: PHASE_AG_REPORT.md / PHASE_AG_GATE_REPORT.md、前: PHASE_AF2_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.38.0] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.39.0] が最新項）
 
 ## 資産の実数（2026-11-17 実測）
 
-- config キー: **1,109件** ／ 内蔵スターター: **539件**
+- config キー: **1,119件** ／ 内蔵スターター: **541件**
 - 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

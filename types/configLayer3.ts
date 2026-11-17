@@ -270,6 +270,8 @@ export interface ParticleConfigLayer3 {
   layer3DlaSeed: number;
   layer3DlaOpacity: number;
   layer3LsysPreset: 'plant' | 'fern' | 'tree' | 'coral' | 'lightning';
+  // Custom L-system rule text (Phase AG): see layer2LsysCustomRules.
+  layer3LsysCustomRules: string;
   layer3LsysDepth: number;
   layer3LsysAngle: number;
   layer3LsysLengthDecay: number;

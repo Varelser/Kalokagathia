@@ -275,6 +275,12 @@ export interface ParticleConfigLayer2 {
   layer2DlaSeed: number;
   layer2DlaOpacity: number;
   layer2LsysPreset: 'plant' | 'fern' | 'tree' | 'coral' | 'lightning';
+  // Custom L-system rule text (Phase AG, lib/lSystem.ts
+  // parseLSystemRuleText): 'axiom = X; X = ...; F = ...' entries.
+  // '' (default) = the preset ruleset exactly; invalid text also
+  // falls back to the preset, so a bad string can never break
+  // generation.
+  layer2LsysCustomRules: string;
   layer2LsysDepth: number;
   layer2LsysAngle: number;
   layer2LsysLengthDecay: number;

@@ -10,6 +10,7 @@ import { useGpgpuAssets } from './useGpgpuAssets';
 import { getTexSize, useGpgpuRuntime } from './useGpgpuRuntime';
 import { GpgpuRenderOutputs } from './gpgpuRenderOutputs';
 import { GpgpuFieldGlyphs } from './sceneGpgpuFieldGlyphs';
+import { GpgpuMorphFibers } from './sceneGpgpuMorphFibers';
 import {
   createGpgpuFrameDiagnosticSnapshot,
   readbackParticlePositions,
@@ -534,6 +535,9 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       <GpgpuRenderOutputs config={config} assets={assets} />
       {config.gpgpuFieldGlyphEnabled && (
         <GpgpuFieldGlyphs config={config} timeRef={timeRef} />
+      )}
+      {config.gpgpuMorphFiberEnabled && (
+        <GpgpuMorphFibers config={config} />
       )}
     </>
   );

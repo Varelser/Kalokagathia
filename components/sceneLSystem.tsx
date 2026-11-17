@@ -32,6 +32,7 @@ export const LSystem: React.FC<LSystemProps> = ({ config, layerIndex, isPlaying 
   const raw = layerIndex === 2 ? {
     color: config.layer2Color,
     preset: config.layer2LsysPreset,
+    customRules: config.layer2LsysCustomRules,
     depth: config.layer2LsysDepth,
     angle: config.layer2LsysAngle,
     lengthDecay: config.layer2LsysLengthDecay,
@@ -42,6 +43,7 @@ export const LSystem: React.FC<LSystemProps> = ({ config, layerIndex, isPlaying 
   } : {
     color: config.layer3Color,
     preset: config.layer3LsysPreset,
+    customRules: config.layer3LsysCustomRules,
     depth: config.layer3LsysDepth,
     angle: config.layer3LsysAngle,
     lengthDecay: config.layer3LsysLengthDecay,
@@ -61,9 +63,10 @@ export const LSystem: React.FC<LSystemProps> = ({ config, layerIndex, isPlaying 
   const curvature = clampN(raw.curvature, 0, -15, 15);
   const opacity = clampN(raw.opacity, 0.9, 0, 1);
 
+  const customRules = typeof raw.customRules === 'string' ? raw.customRules : '';
   const generated = React.useMemo(
-    () => generateLSystem({ preset, depth, angleDeg: angle, lengthDecay, seed, curvatureDeg: curvature }),
-    [preset, depth, angle, lengthDecay, seed, curvature],
+    () => generateLSystem({ preset, depth, angleDeg: angle, lengthDecay, seed, curvatureDeg: curvature, customRules }),
+    [preset, depth, angle, lengthDecay, seed, curvature, customRules],
   );
 
   const geometry = React.useMemo(() => {

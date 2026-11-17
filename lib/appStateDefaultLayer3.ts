@@ -228,6 +228,7 @@ export const APP_STATE_DEFAULT_LAYER_3: Partial<ParticleConfig> = {
   layer3DlaSeed: 1,
   layer3DlaOpacity: 0.9,
   layer3LsysPreset: 'plant',
+  layer3LsysCustomRules: '',
   layer3LsysDepth: 5,
   layer3LsysAngle: 25,
   layer3LsysLengthDecay: 0.78,

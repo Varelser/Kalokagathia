@@ -1,0 +1,146 @@
+// ── Morph-surface fibers (Phase AG) ────────────────────────────
+// Strands grown from the morph bake's surface points: roots are
+// seeded picks from the baked cloud, each strand leaves its root
+// along the surface normal (the OBJ companion normals when the
+// bake provides them, a radial direction otherwise) and bends
+// toward a per-strand tangent as it grows — the guide-hair
+// grammar (root on a surface, direction inherited, groomed by a
+// curl amount) expressed over the sampling base.
+//
+// Pure and deterministic: the same cloud + options always
+// produce byte-identical strands (seeded mulberry32). This is a
+// display grammar only — nothing feeds back into the simulation.
+
+import { mulberry32 } from './lSystem';
+
+export interface MorphFiberOptions {
+  /** Requested strand count (clamped to 1..4000 and to the point count). */
+  count: number;
+  /** Strand length in bake (world) units. */
+  length: number;
+  /** Curl amount 0..1: how far the tip bends toward the tangent. */
+  curl: number;
+  /** Root-pick + tangent-phase seed. */
+  seed: number;
+  /** Polyline segments per strand (fixed grammar, default 4). */
+  segments?: number;
+}
+
+export function clampMorphFiberCount(v: number): number {
+  if (!Number.isFinite(v)) return 600;
+  return Math.max(1, Math.min(4000, Math.floor(v)));
+}
+
+export function clampMorphFiberLength(v: number): number {
+  if (!Number.isFinite(v)) return 0.35;
+  return Math.max(0.01, Math.min(10, v));
+}
+
+export function clampMorphFiberCurl(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+export interface MorphFiberResult {
+  /** LineSegments positions, 2 vertices (6 floats) per segment. */
+  positions: Float32Array;
+  /** LineSegments grayscale colours (root bright → tip dim). */
+  colors: Float32Array;
+  strandCount: number;
+  segmentCount: number;
+}
+
+/**
+ * Build the strand polylines. `points` / `normals` are xyz-packed
+ * (3 floats per point); normals may be null or all-zero (shell /
+ * non-OBJ targets), in which case the radial direction from the
+ * cloud centre is used. Points at the centre (zero radial) fall
+ * back to +Y.
+ */
+export function buildMorphFiberStrands(
+  points: ArrayLike<number>,
+  normals: ArrayLike<number> | null,
+  pointCount: number,
+  options: MorphFiberOptions,
+): MorphFiberResult {
+  const n = Math.max(0, Math.floor(pointCount));
+  const segsPerStrand = Math.max(1, Math.min(8, Math.floor(options.segments ?? 4)));
+  const want = Math.min(clampMorphFiberCount(options.count), n);
+  if (n === 0 || want === 0) {
+    return { positions: new Float32Array(0), colors: new Float32Array(0), strandCount: 0, segmentCount: 0 };
+  }
+  const length = clampMorphFiberLength(options.length);
+  const curl = clampMorphFiberCurl(options.curl);
+  const rng = mulberry32((Math.round(options.seed) * 2654435761) ^ 0x27d4eb2f);
+
+  // Cloud centre for the radial normal fallback.
+  let cx = 0; let cy = 0; let cz = 0;
+  for (let i = 0; i < n; i++) {
+    cx += points[i * 3] ?? 0; cy += points[i * 3 + 1] ?? 0; cz += points[i * 3 + 2] ?? 0;
+  }
+  cx /= n; cy /= n; cz /= n;
+
+  // Seeded partial Fisher–Yates root picks (same pattern as the
+  // fracture sites): roots always sit on the surface.
+  const idx = new Int32Array(n);
+  for (let i = 0; i < n; i++) idx[i] = i;
+  const roots = new Int32Array(want);
+  for (let i = 0; i < want; i++) {
+    const j = i + Math.floor(rng() * (n - i));
+    const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+    roots[i] = idx[i];
+  }
+
+  const positions = new Float32Array(want * segsPerStrand * 6);
+  const colors = new Float32Array(want * segsPerStrand * 6);
+  let v = 0;
+  for (let s = 0; s < want; s++) {
+    const p = roots[s] * 3;
+    const px = points[p] ?? 0; const py = points[p + 1] ?? 0; const pz = points[p + 2] ?? 0;
+    // Normal: bake normal when usable, else radial.
+    let nx = normals ? (normals[p] ?? 0) : 0;
+    let ny = normals ? (normals[p + 1] ?? 0) : 0;
+    let nz = normals ? (normals[p + 2] ?? 0) : 0;
+    let nl = Math.hypot(nx, ny, nz);
+    if (nl < 0.5) {
+      nx = px - cx; ny = py - cy; nz = pz - cz;
+      nl = Math.hypot(nx, ny, nz);
+      if (nl < 1e-9) { nx = 0; ny = 1; nz = 0; nl = 1; }
+    }
+    nx /= nl; ny /= nl; nz /= nl;
+    // Deterministic tangent: seeded phase in the plane ⊥ n.
+    const phi = rng() * Math.PI * 2;
+    // Basis (t1, t2) perpendicular to n.
+    const ax = Math.abs(ny) < 0.9 ? 0 : 1;
+    const ay = Math.abs(ny) < 0.9 ? 1 : 0;
+    let t1x = ny * 0 - nz * ay; // cross(n, a) with a = (ax, ay, 0)
+    let t1y = nz * ax - nx * 0;
+    let t1z = nx * ay - ny * ax;
+    const t1l = Math.hypot(t1x, t1y, t1z) || 1;
+    t1x /= t1l; t1y /= t1l; t1z /= t1l;
+    const t2x = ny * t1z - nz * t1y;
+    const t2y = nz * t1x - nx * t1z;
+    const t2z = nx * t1y - ny * t1x;
+    const tx = Math.cos(phi) * t1x + Math.sin(phi) * t2x;
+    const ty = Math.cos(phi) * t1y + Math.sin(phi) * t2y;
+    const tz = Math.cos(phi) * t1z + Math.sin(phi) * t2z;
+    // Polyline: step along n, bend quadratically toward t.
+    let prevX = px; let prevY = py; let prevZ = pz;
+    for (let k = 1; k <= segsPerStrand; k++) {
+      const f = k / segsPerStrand;
+      const bend = curl * length * 0.5 * f * f;
+      const qx = px + nx * (length * f) + tx * bend;
+      const qy = py + ny * (length * f) + ty * bend;
+      const qz = pz + nz * (length * f) + tz * bend;
+      const b0 = 0.8 - 0.5 * ((k - 1) / segsPerStrand);
+      const b1 = 0.8 - 0.5 * f;
+      positions[v * 6] = prevX; positions[v * 6 + 1] = prevY; positions[v * 6 + 2] = prevZ;
+      positions[v * 6 + 3] = qx; positions[v * 6 + 4] = qy; positions[v * 6 + 5] = qz;
+      colors[v * 6] = b0; colors[v * 6 + 1] = b0; colors[v * 6 + 2] = b0;
+      colors[v * 6 + 3] = b1; colors[v * 6 + 4] = b1; colors[v * 6 + 5] = b1;
+      v += 1;
+      prevX = qx; prevY = qy; prevZ = qz;
+    }
+  }
+  return { positions, colors, strandCount: want, segmentCount: want * segsPerStrand };
+}

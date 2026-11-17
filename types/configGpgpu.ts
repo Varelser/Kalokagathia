@@ -289,6 +289,25 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphTextOnPathEnabled: boolean;
   gpgpuMorphTextOnPathDelay: number;
   gpgpuMorphTextOnPathSize: number;
+  // Voronoi fracture (Phase AG, lib/voronoiFracture.ts): a
+  // post-pass over the morph bake — the cloud is partitioned
+  // into seeded Voronoi cells and each cell is shrunk toward its
+  // centroid and pushed away from the shape centre by Gap.
+  // Deterministic (same cloud + seed → same division). Default
+  // off = the legacy bake, bit-identical on every routing.
+  gpgpuMorphFractureEnabled: boolean;
+  gpgpuMorphFractureCells: number;
+  gpgpuMorphFractureSeed: number;
+  gpgpuMorphFractureGap: number;
+  // Morph-surface fibers (Phase AG, lib/morphFiber.ts): strands
+  // grown from the morph bake's surface points along their
+  // normals (radial fallback), drawn by an independent overlay
+  // component. Purely additive rendering — the simulation never
+  // reads it. Default off = nothing drawn, bit-identical.
+  gpgpuMorphFiberEnabled: boolean;
+  gpgpuMorphFiberCount: number;
+  gpgpuMorphFiberLength: number;
+  gpgpuMorphFiberCurl: number;
   // Shape stamping (Phase AA3, lib/stampPlacement.ts): path mode
   // 'stamp' places a small shape at equal arc-length intervals
   // along the authored path instead of distributing points along

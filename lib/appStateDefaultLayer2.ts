@@ -228,6 +228,7 @@ export const APP_STATE_DEFAULT_LAYER_2: Partial<ParticleConfig> = {
   layer2DlaSeed: 1,
   layer2DlaOpacity: 0.9,
   layer2LsysPreset: 'plant',
+  layer2LsysCustomRules: '',
   layer2LsysDepth: 5,
   layer2LsysAngle: 25,
   layer2LsysLengthDecay: 0.78,

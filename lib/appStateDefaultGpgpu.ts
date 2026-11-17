@@ -180,6 +180,16 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphTextOnPathEnabled: false,
   gpgpuMorphTextOnPathDelay: 0,
   gpgpuMorphTextOnPathSize: 1,
+  // Voronoi fracture (Phase AG): off = legacy bake bit-identical.
+  gpgpuMorphFractureEnabled: false,
+  gpgpuMorphFractureCells: 12,
+  gpgpuMorphFractureSeed: 1,
+  gpgpuMorphFractureGap: 0.25,
+  // Morph-surface fibers (Phase AG): off = nothing drawn.
+  gpgpuMorphFiberEnabled: false,
+  gpgpuMorphFiberCount: 600,
+  gpgpuMorphFiberLength: 0.35,
+  gpgpuMorphFiberCurl: 0.4,
   // Shape stamping (Phase AA3): only read in path mode 'stamp'.
   gpgpuMorphStampSpacing: 0.125,
   gpgpuMorphStampSize: 0.18,

@@ -4,6 +4,49 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.39.0] — 2026-11-17
+
+Phase AG (fifth period, final phase): generation and fracture
+become grammar — a seeded Voronoi fracture over the morph bake,
+the L-system rule grammar opened to editing, classic 2D fractal
+rule texts shipped with it, and fibers grown from the morph
+surface. Base is the actually-shipped v1.38.0. With all new
+keys at their defaults the render is bit-identical to v1.38.0
+(verified on the iMac real-GPU gate: FROZEN deterministic
+render, all 12 frames at 0.00000). 10 new config keys (1,119
+total), starters +2 (541 total).
+
+### Added
+- **Voronoi fracture** (`gpgpuMorphFractureEnabled` / `Cells` /
+  `Seed` / `Gap`, pure logic in `lib/voronoiFracture.ts`): a
+  post-pass inside the shared morph bake partitions the baked
+  cloud into Voronoi cells around seeded sites drawn from the
+  cloud itself, then shrinks each cell toward its centroid and
+  pushes it away from the shape centre by Gap. Deterministic —
+  same cloud + seed → same division — and because the pass lives
+  in the shared builder, the WebGPU, WebGL and CPU routings all
+  consume the identical fractured cloud. Applies to every morph
+  target (text / image / svg / obj / terrain / shapes).
+- **L-system rule opening** (`layer2LsysCustomRules` /
+  `layer3LsysCustomRules`, parser in `lib/lSystem.ts`): the
+  five fixed rulesets (plant / fern / tree / coral / lightning —
+  confirmed on inspection) can now be replaced by an editable
+  rule string (`axiom = X; X = ...; F = ...`, `|` for stochastic
+  alternatives). The default '' is the preset exactly; invalid
+  text falls back to the preset safely and can never throw.
+- **2D fractal rule texts** (`L_SYSTEM_FRACTAL_RULES`): Koch
+  curve, Koch snowflake, dragon curve, Sierpinski arrowhead and
+  Hilbert curve as one-click rule texts (with suggested angle /
+  depth) in the L-system panel — recursive figures drawn through
+  the opened grammar.
+- **Morph-surface fibers** (`gpgpuMorphFiberEnabled` / `Count` /
+  `Length` / `Curl`, strand builder in `lib/morphFiber.ts`,
+  overlay in `components/sceneGpgpuMorphFibers.tsx`): strands
+  rooted on the morph bake's surface points, growing along the
+  surface normals (OBJ companion normals, radial fallback) with
+  a seeded tangent bend. Display-only and deterministic; the
+  simulation never reads it.
+
 ## [1.38.0] — 2026-11-17
 
 Phase AF2 (fifth period, the Phase AF original-plan items):

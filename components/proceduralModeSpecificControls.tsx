@@ -2,6 +2,7 @@ import React from 'react';
 import { Sparkles } from 'lucide-react';
 import type { ParticleConfig } from '../types';
 import { Slider, Toggle } from './controlPanelParts';
+import { L_SYSTEM_FRACTAL_RULES } from '../lib/lSystem';
 import type { UpdateConfig } from './controlPanelTabsShared';
 import type { ProceduralMode } from './proceduralModeSettingsCatalog';
 
@@ -255,6 +256,46 @@ export const ProceduralModeSpecificControls: React.FC<ProceduralModeSpecificCont
     <Slider label="Curvature（湾曲）" value={numberValue('LsysCurvature')} min={-15} max={15} step={0.5} onChange={(value) => setNumber('LsysCurvature', value)} />
     <Slider label="Wind（風揺れ）" value={numberValue('LsysWind')} min={0} max={1} step={0.01} onChange={(value) => setNumber('LsysWind', value)} />
     <Slider label="Opacity" value={numberValue('LsysOpacity')} min={0} max={1} step={0.01} onChange={(value) => setNumber('LsysOpacity', value)} />
+    <div className="col-span-2">
+      <div className="mb-1 text-[10px] uppercase tracking-widest text-white/50">Custom Rules（ルール文字列・Phase AG）</div>
+      <textarea
+        value={stringValue('LsysCustomRules') ?? ''}
+        onChange={(e) => setString('LsysCustomRules', e.target.value)}
+        placeholder="axiom = X; X = F+[[X]-X]-F[-FX]+X; F = FF"
+        rows={3}
+        spellCheck={false}
+        className="w-full rounded border border-white/10 bg-black/30 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-white/85 placeholder:text-white/25 focus:border-white/30 focus:outline-none"
+      />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        書式: axiom = 公理; 記号 = 書換規則（; または改行区切り）。使える文字は英数字と + - [ ] 、確率分岐は | で区切ります。空欄ならプリセットのルールセットそのもの、不正な文字列はプリセットへ安全に戻ります。
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {Object.entries(L_SYSTEM_FRACTAL_RULES).map(([id, fractal]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => {
+              setString('LsysCustomRules', fractal.rules);
+              setNumber('LsysAngle', fractal.angleDeg);
+              setNumber('LsysDepth', fractal.depth);
+            }}
+            className="rounded border border-white/15 bg-white/5 px-2 py-1 text-[10px] text-white/75 transition hover:bg-white/15 hover:text-white"
+          >
+            {fractal.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setString('LsysCustomRules', '')}
+          className="rounded border border-white/15 bg-white/5 px-2 py-1 text-[10px] text-white/75 transition hover:bg-white/15 hover:text-white"
+        >
+          Clear（プリセットに戻す）
+        </button>
+      </div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        フラクタルボタンは古典的な再帰図形（Koch／雪片／ドラゴン／シェルピンスキー／ヒルベルト）のルールと推奨の角度・深さを投入します。
+      </div>
+    </div>
   </div>
 )}
 

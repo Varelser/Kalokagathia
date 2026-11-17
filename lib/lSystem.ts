@@ -33,6 +33,15 @@ export interface LSystemParams {
   curvatureDeg: number;
   /** Step length at bracket depth 0, in unit space before normalisation. */
   baseLength?: number;
+  /**
+   * Custom rule text (Phase AG, see parseLSystemRuleText). When
+   * non-empty and parseable it replaces the preset's axiom and
+   * productions (anchor / brightness / base length are inherited
+   * from the preset). Empty or invalid text falls back to the
+   * preset ruleset exactly — the default '' is bit-identical to
+   * the legacy fixed-preset generation.
+   */
+  customRules?: string;
 }
 
 export interface LSystemResult {
@@ -63,7 +72,7 @@ export function mulberry32(seed: number): () => number {
 
 type Production = string | readonly string[];
 
-interface RuleSet {
+export interface LSystemRuleSet {
   axiom: string;
   productions: Readonly<Record<string, Production>>;
   anchor: 'bottom' | 'top';
@@ -72,7 +81,7 @@ interface RuleSet {
   baseLength: number;
 }
 
-export const L_SYSTEM_RULE_SETS: Record<LSystemPresetId, RuleSet> = {
+export const L_SYSTEM_RULE_SETS: Record<LSystemPresetId, LSystemRuleSet> = {
   // Classic fractal plant (Prusinkiewicz & Lindenmayer).
   plant: {
     axiom: 'X',
@@ -130,9 +139,106 @@ export const L_SYSTEM_RULE_SETS: Record<LSystemPresetId, RuleSet> = {
   },
 };
 
+// ── Custom rule text (Phase AG: rule grammar opened) ──────────
+// Grammar: entries separated by ';' or newlines. Each entry is
+// either `axiom = <string>` or `<one symbol> = <production>`.
+// A production may list stochastic alternatives separated by '|'
+// (the rewriter picks with the seeded PRNG, like 'lightning').
+// Symbols without a production rewrite to themselves. Only
+// letters, digits and the turtle symbols + - [ ] are allowed;
+// anything else (or a size violation) invalidates the WHOLE text
+// and the caller falls back to the preset — a bad string can
+// never throw or produce a half-parsed ruleset.
+
+const RULE_TEXT_MAX = 4096;
+const RULE_AXIOM_MAX = 64;
+const RULE_PRODUCTION_MAX = 256;
+const RULE_PRODUCTIONS_MAX = 24;
+const RULE_SYMBOL_OK = /^[A-Za-z0-9+\-\[\]]+$/;
+
+export function parseLSystemRuleText(text: string, base: LSystemRuleSet): LSystemRuleSet | null {
+  if (typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || trimmed.length > RULE_TEXT_MAX) return null;
+  const entries = trimmed.split(/[;\n]+/).map((e) => e.trim()).filter((e) => e.length > 0);
+  if (entries.length === 0) return null;
+  let axiom: string | null = null;
+  const productions: Record<string, Production> = {};
+  let productionCount = 0;
+  for (const entry of entries) {
+    const eq = entry.indexOf('=');
+    if (eq < 0) return null;
+    const lhs = entry.slice(0, eq).trim();
+    const rhs = entry.slice(eq + 1).replace(/\s+/g, '');
+    if (lhs.toLowerCase() === 'axiom') {
+      if (rhs.length === 0 || rhs.length > RULE_AXIOM_MAX || !RULE_SYMBOL_OK.test(rhs)) return null;
+      axiom = rhs;
+    } else if (lhs.length === 1 && /[A-Za-z0-9]/.test(lhs)) {
+      if (rhs.length === 0 || rhs.length > RULE_PRODUCTION_MAX) return null;
+      const alternatives = rhs.split('|');
+      for (const alt of alternatives) {
+        if (alt.length === 0 || !RULE_SYMBOL_OK.test(alt)) return null;
+      }
+      if (productions[lhs] === undefined) productionCount += 1;
+      if (productionCount > RULE_PRODUCTIONS_MAX) return null;
+      productions[lhs] = alternatives.length === 1 ? alternatives[0] : alternatives;
+    } else {
+      return null;
+    }
+  }
+  if (axiom === null && productionCount === 0) return null;
+  return {
+    axiom: axiom ?? base.axiom,
+    productions,
+    anchor: base.anchor,
+    brightness: base.brightness,
+    baseLength: base.baseLength,
+  };
+}
+
+/**
+ * Classic 2D fractal rule texts (Phase AG), written in the custom
+ * rule grammar above: shipped so the opened grammar immediately
+ * draws recursive figures — Koch, snowflake, dragon, Sierpinski
+ * arrowhead, Hilbert. angleDeg / depth are the suggested turtle
+ * parameters for each text.
+ */
+export const L_SYSTEM_FRACTAL_RULES: Record<string, { label: string; rules: string; angleDeg: number; depth: number }> = {
+  koch: {
+    label: 'Koch Curve',
+    rules: 'axiom = F; F = F+F-F-F+F',
+    angleDeg: 90,
+    depth: 4,
+  },
+  snowflake: {
+    label: 'Koch Snowflake',
+    rules: 'axiom = F--F--F; F = F+F--F+F',
+    angleDeg: 60,
+    depth: 4,
+  },
+  dragon: {
+    label: 'Dragon Curve',
+    rules: 'axiom = FX; X = X+YF+; Y = -FX-Y',
+    angleDeg: 90,
+    depth: 8,
+  },
+  sierpinski: {
+    label: 'Sierpinski Arrowhead',
+    rules: 'axiom = YF; X = YF+XF+Y; Y = XF-YF-X',
+    angleDeg: 60,
+    depth: 6,
+  },
+  hilbert: {
+    label: 'Hilbert Curve',
+    rules: 'axiom = X; X = -YF+XFX+FY-; Y = +XF-YFY-FX+',
+    angleDeg: 90,
+    depth: 5,
+  },
+};
+
 const DEG = Math.PI / 180;
 
-function rewrite(rules: RuleSet, iterations: number, rng: () => number): { text: string; truncated: boolean } {
+function rewrite(rules: LSystemRuleSet, iterations: number, rng: () => number): { text: string; truncated: boolean } {
   let current = rules.axiom;
   let truncated = false;
   for (let i = 0; i < iterations; i += 1) {
@@ -157,7 +263,13 @@ function rewrite(rules: RuleSet, iterations: number, rng: () => number): { text:
 interface RawSegment { x1: number; y1: number; x2: number; y2: number; depth: number; energy: number }
 
 export function generateLSystem(params: LSystemParams): LSystemResult {
-  const rules = L_SYSTEM_RULE_SETS[params.preset] ?? L_SYSTEM_RULE_SETS.plant;
+  const presetRules = L_SYSTEM_RULE_SETS[params.preset] ?? L_SYSTEM_RULE_SETS.plant;
+  // Custom rules (Phase AG): a parseable non-empty text replaces
+  // the preset's axiom + productions; anything else (empty,
+  // invalid) keeps the preset exactly.
+  const rules = params.customRules
+    ? (parseLSystemRuleText(params.customRules, presetRules) ?? presetRules)
+    : presetRules;
   const iterations = Math.min(8, Math.max(1, Math.round(params.depth)));
   const angle = params.angleDeg * DEG;
   const curvature = params.curvatureDeg * DEG;
