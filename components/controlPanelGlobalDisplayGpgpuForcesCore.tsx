@@ -439,6 +439,20 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
           <Slider label="Gustiness" value={config.gpgpuWindGust} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuWindGust', v)} />
         </>
       )}
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Wind Volume （配置型・Phase AL）</div>
+      <Toggle label="Wind Volume" value={config.gpgpuWindVolumeEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuWindVolumeEnabled', v)} />
+      {config.gpgpuWindVolumeEnabled && (
+        <>
+          <Slider label="Center X" value={config.gpgpuWindVolumeX} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuWindVolumeX', v)} />
+          <Slider label="Center Y" value={config.gpgpuWindVolumeY} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuWindVolumeY', v)} />
+          <Slider label="Center Z" value={config.gpgpuWindVolumeZ} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuWindVolumeZ', v)} />
+          <Slider label="Radius" value={config.gpgpuWindVolumeRadius} min={1} max={400} step={1} onChange={(v) => updateConfig('gpgpuWindVolumeRadius', v)} />
+          <Slider label="Volume Strength" value={config.gpgpuWindVolumeStrength} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuWindVolumeStrength', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            置いた球の内側だけに風（向きと息づきは上の Wind 設定を継承）を効かせます。中心で最大、縁で滑らかにゼロになります。全体の Wind Force が OFF でもボリューム単独で効きます。
+          </div>
+        </>
+      )}
     </div>
 
     {/* Gravity Well */}

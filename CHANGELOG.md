@@ -4,6 +4,55 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.44.0] — 2026-11-18
+
+Sixth-term Phase AL: rendering extensions — an escape-time
+fractal post stage, image-based lighting from the background, a
+placed wind volume, and the remaining fiber grooming grammar.
+Twenty-one new config keys (1,156 → 1,177) and two new starters
+(549 → 551). Every addition is default-off and resolves to the
+legacy path verbatim while off: the fractal stage is absent from
+the post stack, the IBL branch in the geometry fragment shader is
+skipped at intensity 0, the wind-volume block in the velocity
+pass is skipped while disabled, and the fiber builder consumes
+no extra rng draws at the grooming defaults.
+
+### Added
+- **Escape-time fractal post stage** (`postFractalEnabled` /
+  `postFractalKind` / `postFractalCenterX` / `postFractalCenterY`
+  / `postFractalZoom` / `postFractalIterations` /
+  `postFractalJuliaX` / `postFractalJuliaY` / `postFractalMix`):
+  Mandelbrot / Julia escape-time fields rendered as monochrome
+  luminance (interior white, smooth escape bands) and mixed over
+  the frame. A separate foundation from Phase AG's recursive
+  L-system figures.
+- **Image-based lighting** (`gpgpuGeomIblIntensity`): the
+  background — the equirect image, or the horizon gradient baked
+  as an equirect — sampled as diffuse + fresnel-weighted
+  reflection light on the instanced geometry. Single-tap
+  approximation (no roughness mip chain).
+- **Wind volume** (`gpgpuWindVolumeEnabled` /
+  `gpgpuWindVolumeX` / `gpgpuWindVolumeY` / `gpgpuWindVolumeZ` /
+  `gpgpuWindVolumeRadius` / `gpgpuWindVolumeStrength`): a placed
+  sphere that localises the global wind (direction and gust are
+  inherited) with the light-style (1−(d/R)²)² falloff. Declared
+  to the WebGPU capability registry, so WebGPU sessions route to
+  WebGL while it is on.
+- **Fiber grooming** (`gpgpuMorphFiberGroomX` /
+  `gpgpuMorphFiberGroomY` / `gpgpuMorphFiberGroomZ` /
+  `gpgpuMorphFiberGroomAlign` / `gpgpuMorphFiberLengthVar`): a
+  global groom direction the strand growth aligns toward, plus a
+  deterministic per-strand length distribution for the Phase AG
+  morph-surface fibers.
+
+### Not in this release
+- Noise-texture time evolution (deferred from Phase AH) was
+  re-evaluated and deferred again: the applied map is a config
+  snapshot and every consumer bakes on config change, so no
+  natural per-frame regeneration path exists; the viable route
+  is a map-source foundation change, out of this phase's scope.
+  Recorded in PHASE_AL_BRIEF.md.
+
 ## [1.43.0] — 2026-11-18
 
 Sixth-term Phase AK: the attribute foundation — named point

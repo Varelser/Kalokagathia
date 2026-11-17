@@ -14,6 +14,8 @@ import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { normalizeLightDir } from '../lib/gpgpuLight';
 import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
+import { resolveIblEnvironment } from '../lib/iblEnvironment';
+import { horizonEquirectYawRadians } from '../lib/horizonBackground';
 
 // Occlusion-map shadow (Phase Z): the bake is a pure function of
 // the shadow-relevant config, so it is cached by that config's
@@ -455,6 +457,20 @@ export function syncVisualUniforms(args: {
     }
     if (geomMat.uniforms.uMeshStretch) geomMat.uniforms.uMeshStretch.value = config.gpgpuGeomStretch;
     if (geomMat.uniforms.uEnvReflect) geomMat.uniforms.uEnvReflect.value = config.gpgpuGeomEnvReflect;
+    // Image-based lighting (Phase AL): intensity 0 keeps the map
+    // unbound and the fragment branch closed (legacy verbatim).
+    if (geomMat.uniforms.uIblIntensity) {
+      const iblIntensity = Math.max(0, Math.min(2, config.gpgpuGeomIblIntensity ?? 0));
+      geomMat.uniforms.uIblIntensity.value = iblIntensity;
+      if (geomMat.uniforms.uIblMap) {
+        geomMat.uniforms.uIblMap.value = iblIntensity > 0.001
+          ? resolveIblEnvironment(config).texture
+          : null;
+      }
+      if (geomMat.uniforms.uIblYaw) {
+        geomMat.uniforms.uIblYaw.value = horizonEquirectYawRadians(config.backgroundEquirectYaw);
+      }
+    }
   }
 
   if (config.gpgpuVolumetricEnabled) {

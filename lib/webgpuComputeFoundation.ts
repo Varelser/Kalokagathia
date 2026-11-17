@@ -132,6 +132,9 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // every path already.
   if (config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) features.push('attr-force');
   if (config.gpgpuGroupEnabled) features.push('attr-group');
+  // Wind volume (Phase AL): the placed wind localisation lives in
+  // the WebGL velocity pass only — declaring it routes to WebGL.
+  if (config.gpgpuWindVolumeEnabled) features.push('wind-volume');
   return features;
 }
 

@@ -179,8 +179,14 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                 <Slider label="Fiber Count （本数）" value={config.gpgpuMorphFiberCount} min={50} max={4000} step={10} onChange={(v) => updateConfig('gpgpuMorphFiberCount', Math.round(v))} />
                 <Slider label="Fiber Length （長さ）" value={config.gpgpuMorphFiberLength} min={0.05} max={1.5} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberLength', v)} />
                 <Slider label="Fiber Curl （カール）" value={config.gpgpuMorphFiberCurl} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberCurl', v)} />
+                <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Grooming （グルーミング・Phase AL）</div>
+                <Slider label="Groom Direction X" value={config.gpgpuMorphFiberGroomX} min={-1} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberGroomX', v)} />
+                <Slider label="Groom Direction Y" value={config.gpgpuMorphFiberGroomY} min={-1} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberGroomY', v)} />
+                <Slider label="Groom Direction Z" value={config.gpgpuMorphFiberGroomZ} min={-1} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberGroomZ', v)} />
+                <Slider label="Groom Align （整列）" value={config.gpgpuMorphFiberGroomAlign} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphFiberGroomAlign', v)} />
+                <Slider label="Length Variation （長さ分布）" value={config.gpgpuMorphFiberLengthVar} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphFiberLengthVar', v)} />
                 <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-                  モーフベイクの表面点から法線方向（OBJ は実法線、その他は放射方向）へ繊維を生やします。描画のみの重ね表示で、シミュレーションには影響しません。根元の抽選は決定的です。
+                  モーフベイクの表面点から法線方向（OBJ は実法線、その他は放射方向）へ繊維を生やします。描画のみの重ね表示で、シミュレーションには影響しません。根元の抽選は決定的です。グルーミングは成長方向を全体の方向場へ寄せる編集文法で、方向が零ベクトルか整列 0 の間は従来の繊維と一致します。
                 </div>
               </>
             )}

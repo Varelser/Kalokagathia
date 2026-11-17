@@ -26,6 +26,8 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGeomScale: 1.0,
   // Geometry material extras + point shape (Kinetix integration B1b)
   gpgpuGeomEnvReflect: 0.0,
+  // Image-based lighting (Phase AL): 0 = legacy fragment path.
+  gpgpuGeomIblIntensity: 0.0,
   gpgpuGeomSpinSpeed: 0.0,
   gpgpuGeomSpinRandom: 0,
   gpgpuGeomStretch: 0.0,
@@ -105,6 +107,13 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuWindY: 0.0,
   gpgpuWindZ: 0.0,
   gpgpuWindGust: 0.3,
+  // Wind volume (Phase AL): placed sphere localising the wind.
+  gpgpuWindVolumeEnabled: false,
+  gpgpuWindVolumeX: 0.0,
+  gpgpuWindVolumeY: 0.0,
+  gpgpuWindVolumeZ: 0.0,
+  gpgpuWindVolumeRadius: 60.0,
+  gpgpuWindVolumeStrength: 1.0,
   // Gravity Well
   gpgpuWellEnabled: false,
   gpgpuWellStrength: 1.0,
@@ -232,6 +241,12 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphFiberCount: 600,
   gpgpuMorphFiberLength: 0.35,
   gpgpuMorphFiberCurl: 0.4,
+  // Fiber grooming (Phase AL): zero direction / 0 var = AG behaviour.
+  gpgpuMorphFiberGroomX: 0.0,
+  gpgpuMorphFiberGroomY: 0.0,
+  gpgpuMorphFiberGroomZ: 0.0,
+  gpgpuMorphFiberGroomAlign: 0.0,
+  gpgpuMorphFiberLengthVar: 0.0,
   // Shape stamping (Phase AA3): only read in path mode 'stamp'.
   gpgpuMorphStampSpacing: 0.125,
   gpgpuMorphStampSize: 0.18,

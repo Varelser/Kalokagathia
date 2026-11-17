@@ -45,6 +45,10 @@ export const GpgpuMorphFibers: React.FC<Props> = React.memo(({ config }) => {
       length: config.gpgpuMorphFiberLength * Math.max(0.01, config.gpgpuBounceRadius),
       curl: config.gpgpuMorphFiberCurl,
       seed: config.gpgpuSeed,
+      // Grooming (Phase AL): defaults keep the AG strands identical.
+      groom: [config.gpgpuMorphFiberGroomX, config.gpgpuMorphFiberGroomY, config.gpgpuMorphFiberGroomZ],
+      groomAlign: config.gpgpuMorphFiberGroomAlign,
+      lengthVar: config.gpgpuMorphFiberLengthVar,
     });
   }, [config]);
 

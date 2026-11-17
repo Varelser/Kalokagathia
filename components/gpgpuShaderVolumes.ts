@@ -110,6 +110,11 @@ export const GEOM_VERT = /* glsl */ `
   uniform bool  uAgeCurveRotationEnabled;
   uniform float uAgeCurveRotation[5];
   varying vec3 vNormal;
+  // Image-based lighting (Phase AL): world-space normal / position
+  // for the equirect sampling in GEOM_FRAG. Written always, read
+  // only inside the IBL branch, so the legacy look is untouched.
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldPos;
 
   // Closed-form integral of the 5-point age curve from 0 to t
   // (trapezoids + the exact quadratic on the partial segment).
@@ -204,6 +209,8 @@ export const GEOM_VERT = /* glsl */ `
     mat3 totalRot = rot * spin;
     vec3 local = totalRot * scaled;
     vNormal = normalize(normalMatrix * totalRot * normal);
+    vWorldNormal = totalRot * normal;
+    vWorldPos = instancePos + local;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(instancePos + local, 1.0);
   }
 `;
@@ -214,7 +221,29 @@ export const GEOM_FRAG = /* glsl */ `
   uniform vec3  uColor;
   uniform float uOpacity;
   uniform float uEnvReflect;
+  // Image-based lighting (Phase AL): equirect environment sampled
+  // as diffuse + reflection light. Single-tap approximation (no
+  // roughness mip chain — recorded in the phase report). The
+  // direction -> UV mapping is the three.js equirect convention,
+  // TS twin equirectUvForDirection in lib/iblEnvironment.ts.
+  uniform sampler2D uIblMap;
+  uniform float uIblIntensity;
+  uniform float uIblYaw;
   varying vec3 vNormal;
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldPos;
+
+  vec3 kaloIblRotYaw(vec3 d, float yaw) {
+    float c = cos(yaw);
+    float s = sin(yaw);
+    return vec3(c * d.x + s * d.z, d.y, -s * d.x + c * d.z);
+  }
+  vec2 kaloEquirectUv(vec3 dir) {
+    float v = asin(clamp(dir.y, -1.0, 1.0)) * 0.31830988618 + 0.5;
+    float u = atan(dir.z, dir.x) * 0.15915494309 + 0.5;
+    return vec2(u, v);
+  }
+
   void main() {
     vec3 N = normalize(vNormal);
     vec3 L = normalize(vec3(0.5, 1.0, 0.8));
@@ -233,6 +262,20 @@ export const GEOM_FRAG = /* glsl */ `
       float envGrad = 0.5 + 0.5 * N.y;
       vec3 envCol = mix(vec3(0.04, 0.05, 0.07), vec3(1.0), envGrad);
       col += uEnvReflect * envCol * (0.2 + 0.8 * fres);
+    }
+    // Image-based lighting (Phase AL): the actual background —
+    // equirect image, or the horizon gradient baked as an equirect
+    // — sampled by the world normal (diffuse) and the view
+    // reflection (fresnel-weighted). uIblIntensity == 0 (default)
+    // skips the branch entirely: legacy look, bit-identical.
+    if (uIblIntensity > 0.001) {
+      vec3 WN = normalize(vWorldNormal);
+      vec3 WV = normalize(cameraPosition - vWorldPos);
+      vec3 R = reflect(-WV, WN);
+      vec3 iblDiff = texture2D(uIblMap, kaloEquirectUv(kaloIblRotYaw(WN, uIblYaw))).rgb;
+      vec3 iblRefl = texture2D(uIblMap, kaloEquirectUv(kaloIblRotYaw(R, uIblYaw))).rgb;
+      float fresI = pow(1.0 - abs(dot(WN, WV)), 3.0);
+      col += uIblIntensity * (iblDiff * uColor * 0.6 + iblRefl * (0.15 + 0.85 * fresI));
     }
     gl_FragColor = vec4(col, uOpacity);
   }

@@ -86,6 +86,14 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uWindY;
   uniform float uWindZ;
   uniform float uWindGust;
+  // Wind volume (Phase AL): a placed sphere localising the wind
+  // above with the light-style falloff. TS twin:
+  // lib/gpgpuWindVolume.ts. Disabled = the block is skipped and
+  // the pass is verbatim legacy.
+  uniform bool  uWindVolumeEnabled;
+  uniform vec3  uWindVolumePos;
+  uniform float uWindVolumeRadius;
+  uniform float uWindVolumeStrength;
   // Terrain slope flow (Phase AE): the derived gradient bake of
   // the live terrain (RG = unit downhill direction, B = slope
   // magnitude normalised by the field's own maximum). Resolved
@@ -788,6 +796,31 @@ export const SIM_VEL_FRAG = /* glsl */ `
         vnoise(pos * 0.01 + replicaSeed + vec3(0.0, 3.1, replicaTime * 0.2))
       ) * uWindGust;
       vel += (normalize(vec3(uWindX, uWindY, uWindZ) + vec3(0.0001)) * uWindStrength + gust) * uDelta * 30.0 * grpWind;
+    }
+
+    // Wind volume (Phase AL): the same wind field, localised to a
+    // placed sphere. The weight is the light falloff (1-(d/R)^2)^2
+    // times the volume strength — at the centre with strength 1
+    // the contribution equals the global wind's, and outside the
+    // radius it is exactly zero. The group gate applies as it
+    // does to the global wind.
+    if (uWindVolumeEnabled) {
+      float wvDist = length(pos - uWindVolumePos);
+      float wvFall = 0.0;
+      if (uWindVolumeRadius > 0.0 && wvDist < uWindVolumeRadius) {
+        float wvQ = (wvDist / uWindVolumeRadius) * (wvDist / uWindVolumeRadius);
+        float wvX = 1.0 - wvQ;
+        wvFall = wvX * wvX;
+      }
+      if (wvFall > 0.0) {
+        vec3 wvGust = vec3(
+          vnoise(pos * 0.01 + replicaSeed + vec3(replicaTime * 0.3, 0.0, 0.0)),
+          vnoise(pos * 0.01 + replicaSeed + vec3(1.7, replicaTime * 0.25, 0.0)),
+          vnoise(pos * 0.01 + replicaSeed + vec3(0.0, 3.1, replicaTime * 0.2))
+        ) * uWindGust;
+        vel += (normalize(vec3(uWindX, uWindY, uWindZ) + vec3(0.0001)) * uWindStrength + wvGust)
+          * (wvFall * uWindVolumeStrength) * uDelta * 30.0 * grpWind;
+      }
     }
 
     // Terrain slope flow (Phase AE): run downhill along the

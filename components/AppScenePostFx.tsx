@@ -14,6 +14,7 @@ import { PosterizePass, OrderedDitherPass, HalftonePass } from './toneGradePasse
 import { EdgeDetectPass } from './edgeDetectPass';
 import { EdgeCapturePass } from './edgeCapturePass';
 import { DisplacePass } from './displacePass';
+import { FractalPass } from './fractalPass';
 import { getGradImageTexture } from '../lib/gradImageTexture';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { displaceChannelIndex } from '../lib/postFxMath';
@@ -94,6 +95,18 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   const edgeCapturePass = React.useMemo(() => new EdgeCapturePass(), []);
   React.useEffect(() => () => edgeCapturePass.dispose(), [edgeCapturePass]);
   edgeCapturePass.threshold = config.postEdgeThreshold;
+  // Escape-time fractal (Phase AL): stateless field pass; the
+  // stage exists only while enabled with a non-zero mix.
+  const fractalPass = React.useMemo(() => new FractalPass(), []);
+  React.useEffect(() => () => fractalPass.dispose(), [fractalPass]);
+  fractalPass.kind = config.postFractalKind;
+  fractalPass.centerX = config.postFractalCenterX;
+  fractalPass.centerY = config.postFractalCenterY;
+  fractalPass.zoom = config.postFractalZoom;
+  fractalPass.iterations = config.postFractalIterations;
+  fractalPass.juliaX = config.postFractalJuliaX;
+  fractalPass.juliaY = config.postFractalJuliaY;
+  fractalPass.mixAmount = config.postFractalMix;
   const displacePass = React.useMemo(() => new DisplacePass(), []);
   React.useEffect(() => () => displacePass.dispose(), [displacePass]);
   displacePass.amount = config.postDisplaceAmount;
@@ -177,6 +190,8 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
             return <primitive key={stage} object={slitScanPass} />;
           case 'displace':
             return <primitive key={stage} object={displacePass} />;
+          case 'fractal':
+            return <primitive key={stage} object={fractalPass} />;
           case 'feedback':
             return <primitive key={stage} object={feedbackPass} />;
           case 'posterize':

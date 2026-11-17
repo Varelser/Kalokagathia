@@ -168,6 +168,19 @@ export interface ParticleConfigCore {
   postKaleidoscopeEnabled: boolean;
   postKaleidoscopeSegments: number;
   postKaleidoscopeRotation: number;
+  // Escape-time fractal (Phase AL): a post stage rendering the
+  // Mandelbrot / Julia escape-time field as a monochrome luminance
+  // image, mixed over the frame. Default off = the stage is absent
+  // from the stack and the output is identical to before.
+  postFractalEnabled: boolean;
+  postFractalKind: 'mandelbrot' | 'julia';
+  postFractalCenterX: number;
+  postFractalCenterY: number;
+  postFractalZoom: number;
+  postFractalIterations: number;
+  postFractalJuliaX: number;
+  postFractalJuliaY: number;
+  postFractalMix: number;
   postSlitScanEnabled: boolean;
   postSlitScanBands: number;
   postSlitScanCycle: number;

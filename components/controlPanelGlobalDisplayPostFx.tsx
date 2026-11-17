@@ -169,6 +169,36 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
           </>
         )}
         <Toggle
+          label="Fractal （脱出時間フラクタル・Phase AL）"
+          value={config.postFractalEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postFractalEnabled', v)}
+        />
+        {config.postFractalEnabled && (
+          <>
+            <Toggle
+              label="Fractal Kind"
+              value={config.postFractalKind}
+              options={[{ label: 'Mandelbrot', val: 'mandelbrot' as const }, { label: 'Julia', val: 'julia' as const }]}
+              onChange={(v) => updateConfig('postFractalKind', v)}
+            />
+            <Slider label="Fractal Center X" value={config.postFractalCenterX} min={-2} max={2} step={0.01} onChange={(v) => updateConfig('postFractalCenterX', v)} />
+            <Slider label="Fractal Center Y" value={config.postFractalCenterY} min={-2} max={2} step={0.01} onChange={(v) => updateConfig('postFractalCenterY', v)} />
+            <Slider label="Fractal Zoom" value={config.postFractalZoom} min={0.05} max={1000} step={0.05} onChange={(v) => updateConfig('postFractalZoom', v)} />
+            <Slider label="Fractal Iterations" value={config.postFractalIterations} min={1} max={256} step={1} onChange={(v) => updateConfig('postFractalIterations', Math.round(v))} />
+            {config.postFractalKind === 'julia' && (
+              <>
+                <Slider label="Julia Constant X" value={config.postFractalJuliaX} min={-2} max={2} step={0.005} onChange={(v) => updateConfig('postFractalJuliaX', v)} />
+                <Slider label="Julia Constant Y" value={config.postFractalJuliaY} min={-2} max={2} step={0.005} onChange={(v) => updateConfig('postFractalJuliaY', v)} />
+              </>
+            )}
+            <Slider label="Fractal Mix" value={config.postFractalMix} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postFractalMix', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              複素平面の脱出時間場をモノクロで描くポスト段です。内部（非脱出）は白、脱出は反復回数で階調化します。Mix 0 では入力フレームそのものになります。
+            </div>
+          </>
+        )}
+        <Toggle
           label="Slit Scan (temporal bands)"
           value={config.postSlitScanEnabled}
           options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}

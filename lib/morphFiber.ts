@@ -24,6 +24,21 @@ export interface MorphFiberOptions {
   seed: number;
   /** Polyline segments per strand (fixed grammar, default 4). */
   segments?: number;
+  /**
+   * Grooming (Phase AL): a global groom direction the growth
+   * direction aligns toward. A zero / missing vector disables
+   * grooming entirely (legacy path, byte-identical).
+   */
+  groom?: [number, number, number];
+  /** Grooming strength 0..1: 0 keeps the surface normal as the
+   *  growth direction, 1 aligns it fully to the groom direction. */
+  groomAlign?: number;
+  /**
+   * Length distribution width 0..1: per-strand deterministic
+   * length multiplier in [1 - var/2, 1 + var/2]. 0 consumes no
+   * extra rng draws, so the legacy strands stay byte-identical.
+   */
+  lengthVar?: number;
 }
 
 export function clampMorphFiberCount(v: number): number {
@@ -37,6 +52,16 @@ export function clampMorphFiberLength(v: number): number {
 }
 
 export function clampMorphFiberCurl(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+export function clampMorphFiberGroomAlign(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+export function clampMorphFiberLengthVar(v: number): number {
   if (!Number.isFinite(v)) return 0;
   return Math.max(0, Math.min(1, v));
 }
@@ -71,6 +96,16 @@ export function buildMorphFiberStrands(
   }
   const length = clampMorphFiberLength(options.length);
   const curl = clampMorphFiberCurl(options.curl);
+  // Grooming (Phase AL): resolved once. groomAlign 0 or a zero
+  // groom vector keeps the legacy per-strand path untouched.
+  const groomAlign = clampMorphFiberGroomAlign(options.groomAlign ?? 0);
+  const lengthVar = clampMorphFiberLengthVar(options.lengthVar ?? 0);
+  const groomRaw = options.groom ?? [0, 0, 0];
+  const groomLen = Math.hypot(groomRaw[0], groomRaw[1], groomRaw[2]);
+  const grooming = groomAlign > 0 && groomLen > 1e-9;
+  const gx = grooming ? groomRaw[0] / groomLen : 0;
+  const gy = grooming ? groomRaw[1] / groomLen : 0;
+  const gz = grooming ? groomRaw[2] / groomLen : 0;
   const rng = mulberry32((Math.round(options.seed) * 2654435761) ^ 0x27d4eb2f);
 
   // Cloud centre for the radial normal fallback.
@@ -124,14 +159,51 @@ export function buildMorphFiberStrands(
     const tx = Math.cos(phi) * t1x + Math.sin(phi) * t2x;
     const ty = Math.cos(phi) * t1y + Math.sin(phi) * t2y;
     const tz = Math.cos(phi) * t1z + Math.sin(phi) * t2z;
-    // Polyline: step along n, bend quadratically toward t.
+    // Grooming (Phase AL): blend the growth direction from the
+    // surface normal toward the groom direction, and re-project
+    // the bend tangent onto the plane perpendicular to it. Only
+    // entered while grooming is active — the legacy variables are
+    // used verbatim otherwise.
+    let dirX = nx; let dirY = ny; let dirZ = nz;
+    let tanX = tx; let tanY = ty; let tanZ = tz;
+    if (grooming) {
+      let bx = nx * (1 - groomAlign) + gx * groomAlign;
+      let by = ny * (1 - groomAlign) + gy * groomAlign;
+      let bz = nz * (1 - groomAlign) + gz * groomAlign;
+      const bl = Math.hypot(bx, by, bz);
+      if (bl > 1e-9) {
+        bx /= bl; by /= bl; bz /= bl;
+        dirX = bx; dirY = by; dirZ = bz;
+        const dot = tx * dirX + ty * dirY + tz * dirZ;
+        let px2 = tx - dot * dirX;
+        let py2 = ty - dot * dirY;
+        let pz2 = tz - dot * dirZ;
+        const pl = Math.hypot(px2, py2, pz2);
+        if (pl > 1e-9) {
+          px2 /= pl; py2 /= pl; pz2 /= pl;
+          tanX = px2; tanY = py2; tanZ = pz2;
+        } else {
+          tanX = 0; tanY = 0; tanZ = 0;
+        }
+      }
+    }
+    // Length distribution (Phase AL): the extra rng draw happens
+    // only while lengthVar > 0, keeping the legacy stream (and
+    // therefore every strand) byte-identical at 0.
+    let strandLength = length;
+    if (lengthVar > 0) {
+      const lr = rng();
+      strandLength = length * (1 + (2 * lr - 1) * lengthVar * 0.5);
+    }
+    // Polyline: step along the growth direction, bend
+    // quadratically toward the tangent.
     let prevX = px; let prevY = py; let prevZ = pz;
     for (let k = 1; k <= segsPerStrand; k++) {
       const f = k / segsPerStrand;
-      const bend = curl * length * 0.5 * f * f;
-      const qx = px + nx * (length * f) + tx * bend;
-      const qy = py + ny * (length * f) + ty * bend;
-      const qz = pz + nz * (length * f) + tz * bend;
+      const bend = curl * strandLength * 0.5 * f * f;
+      const qx = px + dirX * (strandLength * f) + tanX * bend;
+      const qy = py + dirY * (strandLength * f) + tanY * bend;
+      const qz = pz + dirZ * (strandLength * f) + tanZ * bend;
       const b0 = 0.8 - 0.5 * ((k - 1) / segsPerStrand);
       const b1 = 0.8 - 0.5 * f;
       positions[v * 6] = prevX; positions[v * 6 + 1] = prevY; positions[v * 6 + 2] = prevZ;

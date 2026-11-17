@@ -28,6 +28,11 @@ export interface ParticleConfigGpgpu {
   // per-instance self-rotation, and velocity stretch (meshStretch).
   // All default to 0 = legacy geometry behaviour.
   gpgpuGeomEnvReflect: number;
+  // Image-based lighting (Phase AL): equirect sampling of the
+  // background (image source, or the horizon gradient baked as an
+  // equirect) as diffuse + reflection light on the instanced
+  // geometry. 0 (default) = the legacy fragment path verbatim.
+  gpgpuGeomIblIntensity: number;
   gpgpuGeomSpinSpeed: number;
   // Spin random range (Phase AH): per-particle multiplier spread
   // around the spin speed. 0 = every instance at exactly the base
@@ -154,6 +159,16 @@ export interface ParticleConfigGpgpu {
   gpgpuWindY: number;
   gpgpuWindZ: number;
   gpgpuWindGust: number;
+  // Wind volume (Phase AL): a placed spherical region that
+  // localises the global wind (direction / gust are inherited from
+  // the wind keys above) with the light-style (1-(d/R)^2)^2
+  // falloff. Default off = the velocity pass is verbatim legacy.
+  gpgpuWindVolumeEnabled: boolean;
+  gpgpuWindVolumeX: number;
+  gpgpuWindVolumeY: number;
+  gpgpuWindVolumeZ: number;
+  gpgpuWindVolumeRadius: number;
+  gpgpuWindVolumeStrength: number;
   // Gravity Well
   gpgpuWellEnabled: boolean;
   gpgpuWellStrength: number;
@@ -386,6 +401,15 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphFiberCount: number;
   gpgpuMorphFiberLength: number;
   gpgpuMorphFiberCurl: number;
+  // Fiber grooming (Phase AL): a global groom direction the strand
+  // tangents align toward (zero vector = no grooming), plus a
+  // per-strand length distribution width. Both default to the
+  // Phase AG behaviour byte-for-byte (no extra rng draws at 0).
+  gpgpuMorphFiberGroomX: number;
+  gpgpuMorphFiberGroomY: number;
+  gpgpuMorphFiberGroomZ: number;
+  gpgpuMorphFiberGroomAlign: number;
+  gpgpuMorphFiberLengthVar: number;
   // Shape stamping (Phase AA3, lib/stampPlacement.ts): path mode
   // 'stamp' places a small shape at equal arc-length intervals
   // along the authored path instead of distributing points along

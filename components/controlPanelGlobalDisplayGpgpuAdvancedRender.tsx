@@ -45,6 +45,10 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
           <Slider label="Geom Scale" value={config.gpgpuGeomScale} min={0.1} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuGeomScale', v)} />
           <Toggle label="Velocity Align" value={config.gpgpuGeomVelocityAlign} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGeomVelocityAlign', v)} />
           <Slider label="Env Reflect (Crystal)" value={config.gpgpuGeomEnvReflect} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGeomEnvReflect', v)} />
+          <Slider label="IBL Intensity （環境光・Phase AL）" value={config.gpgpuGeomIblIntensity} min={0} max={2} step={0.01} onChange={(v) => updateConfig('gpgpuGeomIblIntensity', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            背景（画像は equirect、グラデーションは環境ベイク）を照明としてサンプルし、拡散＋反射でジオメトリへ足します。0 の間は従来の見た目のままです。
+          </div>
           <Slider label="Spin Speed" value={config.gpgpuGeomSpinSpeed} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuGeomSpinSpeed', v)} />
           <Slider label="Spin Random （自転ランダム範囲）" value={config.gpgpuGeomSpinRandom} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGeomSpinRandom', v)} />
           <Slider label="Mesh Stretch" value={config.gpgpuGeomStretch} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuGeomStretch', v)} />

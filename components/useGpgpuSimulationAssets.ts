@@ -87,6 +87,11 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uWindY:            { value: 0.0 },
       uWindZ:            { value: 0.0 },
       uWindGust:         { value: 0.3 },
+      // Wind volume (Phase AL): disabled is the legacy path.
+      uWindVolumeEnabled:  { value: false },
+      uWindVolumePos:      { value: new THREE.Vector3(0, 0, 0) },
+      uWindVolumeRadius:   { value: 60.0 },
+      uWindVolumeStrength: { value: 1.0 },
       // Terrain slope flow (Phase AE): disabled + no texture is
       // the exact legacy path.
       uSlopeForceEnabled:  { value: false },

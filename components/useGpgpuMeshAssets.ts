@@ -47,6 +47,11 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       uAgeCurveRotation: { value: [1, 1, 1, 1, 1] },
       uMeshStretch:  { value: 0 },
       uEnvReflect:   { value: 0 },
+      // Image-based lighting (Phase AL): no map bound and zero
+      // intensity while off, so the fragment branch never runs.
+      uIblMap:       { value: null },
+      uIblIntensity: { value: 0 },
+      uIblYaw:       { value: 0 },
     },
     vertexShader: GEOM_VERT, fragmentShader: GEOM_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,

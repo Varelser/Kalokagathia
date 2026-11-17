@@ -11,6 +11,7 @@ export type PostFxStageId =
   | 'kaleidoscope'
   | 'slit-scan'
   | 'displace'
+  | 'fractal'
   | 'feedback'
   | 'posterize'
   | 'ordered-dither'
@@ -41,12 +42,15 @@ export type PostFxStackProfile = ParticleConfig['postFxStackProfile'];
 // the FINISHED frame's Sobel field into the edge supply target
 // and passes the frame through bit-identically, so it runs after
 // 'output-grade' and changes no pixel itself.
+// Phase AL: 'fractal' is a spatial field rendered over the frame,
+// so it sits with the spatial stages immediately before 'feedback'
+// (feedback then smears the fractal frame, the 'displace' idiom).
 const STACK_ORDERS: Record<PostFxStackProfile, PostFxStageId[]> = {
-  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
-  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
-  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
-  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
-  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
+  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'fractal', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
+  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'fractal', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
+  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'fractal', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
+  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'fractal', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
+  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'fractal', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
 };
 
 export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[] {
@@ -74,6 +78,11 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   }
   if (config.postSlitScanEnabled) {
     active.add('slit-scan');
+  }
+  // Phase AL: the fractal stage exists only when it would change
+  // a pixel (enabled with a non-zero mix).
+  if (config.postFractalEnabled && config.postFractalMix > 0.001) {
+    active.add('fractal');
   }
   if (config.postFeedbackEnabled) {
     active.add('feedback');

@@ -405,6 +405,15 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uWindY.value = config.gpgpuWindY;
   velSimMat.uniforms.uWindZ.value = config.gpgpuWindZ;
   velSimMat.uniforms.uWindGust.value = config.gpgpuWindGust;
+  // Wind volume (Phase AL): placed localisation of the wind.
+  if (velSimMat.uniforms.uWindVolumeEnabled) velSimMat.uniforms.uWindVolumeEnabled.value = config.gpgpuWindVolumeEnabled;
+  if (velSimMat.uniforms.uWindVolumePos) {
+    (velSimMat.uniforms.uWindVolumePos.value as THREE.Vector3).set(
+      config.gpgpuWindVolumeX, config.gpgpuWindVolumeY, config.gpgpuWindVolumeZ,
+    );
+  }
+  if (velSimMat.uniforms.uWindVolumeRadius) velSimMat.uniforms.uWindVolumeRadius.value = Math.max(0, config.gpgpuWindVolumeRadius ?? 60);
+  if (velSimMat.uniforms.uWindVolumeStrength) velSimMat.uniforms.uWindVolumeStrength.value = config.gpgpuWindVolumeStrength ?? 1;
   // Terrain slope flow (Phase AE): resolved CPU-side like the
   // kill mask — the texture getter returns null unless the key
   // is on AND the terrain mesh is live in plane mode, so the
