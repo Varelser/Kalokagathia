@@ -11,12 +11,16 @@ export type PostFxStageId =
   | 'kaleidoscope'
   | 'slit-scan'
   | 'displace'
+  | 'glitch'
+  | 'pixel-sort'
   | 'fractal'
+  | 'cellular'
   | 'feedback'
   | 'posterize'
   | 'ordered-dither'
   | 'halftone'
   | 'edge-detect'
+  | 'composite'
   | 'edge-capture'
   | 'radial-blur'
   | 'light-fx'
@@ -45,12 +49,20 @@ export type PostFxStackProfile = ParticleConfig['postFxStackProfile'];
 // Phase AL: 'fractal' is a spatial field rendered over the frame,
 // so it sits with the spatial stages immediately before 'feedback'
 // (feedback then smears the fractal frame, the 'displace' idiom).
+// Phase AM: 'glitch' / 'pixel-sort' are displacements of the frame
+// itself, so they sit after 'displace' and before 'fractal';
+// 'cellular' (a generated state field) sits after 'fractal' and
+// before 'feedback' (feedback then smears both); 'composite'
+// blends the finished frame with a supply texture, so it sits
+// after 'edge-detect' and before 'output-grade', which still
+// grades last ('edge-output' as its B layer therefore reads the
+// previous frame's capture).
 const STACK_ORDERS: Record<PostFxStackProfile, PostFxStageId[]> = {
-  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'fractal', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
-  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'fractal', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
-  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'fractal', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
-  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'fractal', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
-  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'fractal', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
+  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'output-grade', 'edge-capture'],
+  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'output-grade', 'edge-capture'],
+  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'output-grade', 'edge-capture'],
+  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'output-grade', 'edge-capture'],
+  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'output-grade', 'edge-capture'],
 };
 
 export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[] {
@@ -83,6 +95,20 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   // a pixel (enabled with a non-zero mix).
   if (config.postFractalEnabled && config.postFractalMix > 0.001) {
     active.add('fractal');
+  }
+  // Phase AM stages follow the same rule: a stage exists only
+  // when it would change a pixel.
+  if (config.postGlitchEnabled && config.postGlitchAmount > 0.0001) {
+    active.add('glitch');
+  }
+  if (config.postPixelSortEnabled) {
+    active.add('pixel-sort');
+  }
+  if (config.postCellularEnabled) {
+    active.add('cellular');
+  }
+  if (config.postCompositeEnabled && config.postCompositeMix > 0.001) {
+    active.add('composite');
   }
   if (config.postFeedbackEnabled) {
     active.add('feedback');

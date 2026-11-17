@@ -5,11 +5,12 @@ import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
 import { splitTextOnPathGlyphs, type TextGlyphRaster } from '../lib/gpgpuTextOnPath';
+import { traceContourGeometry } from '../lib/contourTrace';
 import { fractureOptionFromConfig } from '../lib/voronoiFracture';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
-import { parseSvgPathGeometry } from '../lib/pathGeometry';
+import { parseSvgPathGeometry, type PathGeometry } from '../lib/pathGeometry';
 import { sampleObjPointCloudWithNormals } from '../lib/objMorph';
 import { getSceneGeneration, noteGpgpuBackendSettled } from '../lib/sceneGeneration';
 import {
@@ -339,7 +340,12 @@ export function buildTextOnPathOption(args: {
   invert: boolean;
   delay: number;
   glyphSize: number;
-}): { glyphs: TextGlyphRaster[]; delay: number; size: number } | null {
+  // Per-glyph deformation amounts (Phase AM); all zero resolves
+  // to deform: null (the AF2 bake verbatim).
+  glyphScale: number;
+  glyphRotate: number;
+  glyphFade: number;
+}): { glyphs: TextGlyphRaster[]; delay: number; size: number; deform: { scaleVar: number; rotateDeg: number; fadeVar: number } | null } | null {
   if (args.target !== 'svg' || !args.enabled) return null;
   if (args.pathMode !== 'along' && args.pathMode !== 'writeOn') return null;
   const chars = splitTextOnPathGlyphs(args.text || 'TEXT');
@@ -357,7 +363,56 @@ export function buildTextOnPathOption(args: {
     ),
     size: 64,
   }));
-  return { glyphs, delay: args.delay, size: args.glyphSize };
+  const deform = args.glyphScale > 0 || args.glyphRotate > 0 || args.glyphFade > 0
+    ? { scaleVar: args.glyphScale, rotateDeg: args.glyphRotate, fadeVar: args.glyphFade }
+    : null;
+  return { glyphs, delay: args.delay, size: args.glyphSize, deform };
+}
+
+/**
+ * Contour geometry builder (Phase AM, lib/contourTrace.ts):
+ * shared by the WebGPU bake builder and the WebGL morph effect
+ * so the two routings can never drift. Traces the selected luma
+ * source — the layer-2 TextMap raster ('text') or the layer-2
+ * media luma map ('image') — at the configured threshold and
+ * returns the outline as a PathGeometry; null when the target
+ * is not 'contour' or no outline exists (the bake then falls
+ * back to a shell).
+ */
+export function buildContourGeometryOption(config: ParticleConfig): PathGeometry | null {
+  if (config.gpgpuMorphTarget !== 'contour') return null;
+  let mediaMap: MorphMediaMap | null = null;
+  if (config.gpgpuMorphContourSource === 'image') {
+    if (
+      config.layer2MediaLumaMap && config.layer2MediaLumaMap.length > 0
+      && config.layer2MediaMapWidth > 0 && config.layer2MediaMapHeight > 0
+    ) {
+      mediaMap = {
+        map: config.layer2MediaLumaMap,
+        width: config.layer2MediaMapWidth,
+        height: config.layer2MediaMapHeight,
+      };
+    }
+  } else {
+    const map = extractTextLumaMap(
+      config.layer2TextMapText,
+      128,
+      128,
+      config.layer2TextMapFontFamily,
+      config.layer2TextMapWeight,
+      config.layer2TextMapSize,
+      config.layer2TextMapPadding,
+      config.layer2TextMapInvert,
+    );
+    mediaMap = { map, width: 128, height: 128 };
+  }
+  if (!mediaMap) return null;
+  return traceContourGeometry(
+    mediaMap.map,
+    mediaMap.width,
+    mediaMap.height,
+    config.gpgpuMorphContourThreshold,
+  );
 }
 
 export function buildMorphBakeData(
@@ -412,7 +467,13 @@ export function buildMorphBakeData(
     invert: config.layer2TextMapInvert,
     delay: config.gpgpuMorphTextOnPathDelay,
     glyphSize: config.gpgpuMorphTextOnPathSize,
+    glyphScale: config.gpgpuMorphTextOnPathGlyphScale,
+    glyphRotate: config.gpgpuMorphTextOnPathGlyphRotate,
+    glyphFade: config.gpgpuMorphTextOnPathGlyphFade,
   });
+  // Contour target (Phase AM): shared builder — see
+  // buildContourGeometryOption above.
+  const contourGeometry = buildContourGeometryOption(config);
   // Phase AA3: in 'stamp' path mode with the 'obj' stamp shape, the
   // OBJ cloud is also sampled on the svg target (as a stamp pattern).
   const objSample = config.gpgpuMorphTarget === 'obj'
@@ -439,8 +500,11 @@ export function buildMorphBakeData(
       stampSize: config.gpgpuMorphStampSize,
       stampShape: config.gpgpuMorphStampShape,
       stampAlign: config.gpgpuMorphStampAlign,
+      // Path offset (Phase AM): 0 = the authored geometry itself.
+      offset: config.gpgpuMorphPathOffset,
     },
     textOnPath,
+    contourGeometry,
     // Voronoi fracture (Phase AG): shared option builder so the
     // WebGPU bake and the WebGL / CPU routings can never drift.
     fracture: fractureOptionFromConfig(config),
@@ -887,6 +951,13 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphStampSize = config.gpgpuMorphStampSize;
   const morphStampShape = config.gpgpuMorphStampShape;
   const morphStampAlign = config.gpgpuMorphStampAlign;
+  // Path offset / glyph deform / contour (Phase AM).
+  const morphPathOffset = config.gpgpuMorphPathOffset;
+  const morphGlyphScale = config.gpgpuMorphTextOnPathGlyphScale;
+  const morphGlyphRotate = config.gpgpuMorphTextOnPathGlyphRotate;
+  const morphGlyphFade = config.gpgpuMorphTextOnPathGlyphFade;
+  const morphContourSource = config.gpgpuMorphContourSource;
+  const morphContourThreshold = config.gpgpuMorphContourThreshold;
   const morphDisperseAmount = config.gpgpuMorphDisperseAmount;
   const morphDisperseDirection = config.gpgpuMorphDisperseDirection;
   const morphTwistAmount = config.gpgpuMorphTwistAmount;
@@ -945,7 +1016,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       invert: morphTextInvert,
       delay: morphTextOnPathDelay,
       glyphSize: morphTextOnPathSize,
+      glyphScale: morphGlyphScale,
+      glyphRotate: morphGlyphRotate,
+      glyphFade: morphGlyphFade,
     });
+    // Contour target (Phase AM): the shared builder reads the
+    // live config; the captured contour source / threshold are
+    // in this effect's dependency list, so a change re-runs the
+    // bake exactly like the other option builders.
+    const contourGeometry = buildContourGeometryOption(config);
     // obj (Phase J, modes + normals in Phase O): re-sample the
     // imported OBJ source text in the selected mode; null (no usable
     // geometry) falls back to the shell inside the bake, exactly like
@@ -977,8 +1056,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         stampSize: morphStampSize,
         stampShape: morphStampShape,
         stampAlign: morphStampAlign,
+        // Path offset (Phase AM): 0 = the authored geometry.
+        offset: morphPathOffset,
       },
       textOnPath,
+      contourGeometry,
       // Voronoi fracture (Phase AG): same shared option builder
       // as the WebGPU bake (buildMorphBakeData above).
       fracture: fractureOptionFromConfig(config),
@@ -1117,6 +1199,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphStampSize,
     morphStampShape,
     morphStampAlign,
+    morphPathOffset,
+    morphGlyphScale,
+    morphGlyphRotate,
+    morphGlyphFade,
+    morphContourSource,
+    morphContourThreshold,
     morphDisperseAmount,
     morphDisperseDirection,
     morphTwistAmount,

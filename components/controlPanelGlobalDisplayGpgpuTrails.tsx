@@ -2,6 +2,8 @@ import React from 'react';
 
 import { Slider, Toggle } from './controlPanelParts';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
+import { FreeCurveEditor } from './controlPanelGlobalDisplayGpgpuForcesCore';
+import { flattenFreeCurvePoints, normalizeFreeCurvePoints } from '../lib/freeCurve';
 
 export const GlobalDisplayGpgpuTrailsSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
@@ -57,11 +59,33 @@ export const GlobalDisplayGpgpuTrailsSection: React.FC<GlobalDisplayEffectsShare
           <Slider label="History Frames" value={config.gpgpuSmoothTubeHistory} min={4} max={32} step={2} onChange={(v) => updateConfig('gpgpuSmoothTubeHistory', Math.round(v))} />
           <Slider label="Tube Radius" value={config.gpgpuSmoothTubeRadius} min={0.5} max={15} step={0.5} onChange={(v) => updateConfig('gpgpuSmoothTubeRadius', v)} />
           <Slider label="Tube Taper （断面テーパー）" value={config.gpgpuSmoothTubeTaper} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuSmoothTubeTaper', v)} />
-          <Toggle label="Section Shape （断面形状）" value={config.gpgpuSmoothTubeSectionShape} options={[{ label: 'Circle', val: 'circle' as const }, { label: 'Polygon', val: 'polygon' as const }, { label: 'Star', val: 'star' as const }]} onChange={(v) => updateConfig('gpgpuSmoothTubeSectionShape', v)} />
+          <Toggle label="Section Shape （断面形状）" value={config.gpgpuSmoothTubeSectionShape} options={[{ label: 'Circle', val: 'circle' as const }, { label: 'Polygon', val: 'polygon' as const }, { label: 'Star', val: 'star' as const }, { label: 'Custom', val: 'custom' as const }]} onChange={(v) => updateConfig('gpgpuSmoothTubeSectionShape', v)} />
           <Slider label="Section Sides （断面の頂点数）" value={config.gpgpuSmoothTubeSectionSides} min={3} max={12} step={1} onChange={(v) => updateConfig('gpgpuSmoothTubeSectionSides', Math.round(v))} />
           {config.gpgpuSmoothTubeSectionShape === 'star' && (
             <Slider label="Section Inner Ratio （星形の内側比）" value={config.gpgpuSmoothTubeSectionInnerRatio} min={0.1} max={0.95} step={0.01} onChange={(v) => updateConfig('gpgpuSmoothTubeSectionInnerRatio', v)} />
           )}
+          {config.gpgpuSmoothTubeSectionShape === 'custom' && (
+            <>
+              <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Section Profile （任意断面・角度→半径倍率 — Phase AM）</div>
+              <FreeCurveEditor
+                points={normalizeFreeCurvePoints(config.gpgpuSmoothTubeSectionProfile)}
+                onChange={(points) => updateConfig('gpgpuSmoothTubeSectionProfile', flattenFreeCurvePoints(points))}
+              />
+            </>
+          )}
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Width Profile （幅・長さ方向 — Phase AM）</div>
+          <FreeCurveEditor
+            points={normalizeFreeCurvePoints(config.gpgpuSmoothTubeWidthProfile)}
+            onChange={(points) => updateConfig('gpgpuSmoothTubeWidthProfile', flattenFreeCurvePoints(points))}
+          />
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Height Profile （高さ・長さ方向 — Phase AM）</div>
+          <FreeCurveEditor
+            points={normalizeFreeCurvePoints(config.gpgpuSmoothTubeHeightProfile)}
+            onChange={(points) => updateConfig('gpgpuSmoothTubeHeightProfile', flattenFreeCurvePoints(points))}
+          />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            幅・高さプロファイルはリング位置（古い履歴→最新）に対する倍率です。全点 1（Flat）で従来同一です。Custom 断面は角度に対する半径倍率を自由曲線で与えます。
+          </div>
           <Slider label="Opacity" value={config.gpgpuSmoothTubeOpacity} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSmoothTubeOpacity', v)} />
           <div className="mt-2 flex items-center gap-3">
             <label className="text-[10px] text-white/60 uppercase tracking-wider">Color</label>

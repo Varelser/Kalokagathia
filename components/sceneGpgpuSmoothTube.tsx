@@ -6,7 +6,8 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
-import { smoothTubeRadiusAt } from '../lib/smoothTubeProfile';
+import { smoothTubeRadiusAt, tubeRibbonScaleAt } from '../lib/smoothTubeProfile';
+import { normalizeFreeCurvePoints } from '../lib/freeCurve';
 import { buildTubeSection, tubeSectionPointCount } from '../lib/tubeSectionProfile';
 
 type Props = {
@@ -34,8 +35,23 @@ export const GpgpuSmoothTube: React.FC<Props> = React.memo(({ config, posReadbac
       config.gpgpuSmoothTubeSectionShape,
       config.gpgpuSmoothTubeSectionSides,
       config.gpgpuSmoothTubeSectionInnerRatio,
+      // Arbitrary section profile (Phase AM): only read by the
+      // 'custom' shape; the config asset is the flat [t, v, …]
+      // form, the builder takes curve points.
+      normalizeFreeCurvePoints(config.gpgpuSmoothTubeSectionProfile),
     ),
-    [config.gpgpuSmoothTubeSectionShape, config.gpgpuSmoothTubeSectionSides, config.gpgpuSmoothTubeSectionInnerRatio],
+    [config.gpgpuSmoothTubeSectionShape, config.gpgpuSmoothTubeSectionSides, config.gpgpuSmoothTubeSectionInnerRatio, config.gpgpuSmoothTubeSectionProfile],
+  );
+  // Ribbon profiles (Phase AM): normalised once per config
+  // change; the identity assets evaluate to exactly 1 in the
+  // frame loop below.
+  const widthProfilePoints = useMemo(
+    () => normalizeFreeCurvePoints(config.gpgpuSmoothTubeWidthProfile),
+    [config.gpgpuSmoothTubeWidthProfile],
+  );
+  const heightProfilePoints = useMemo(
+    () => normalizeFreeCurvePoints(config.gpgpuSmoothTubeHeightProfile),
+    [config.gpgpuSmoothTubeHeightProfile],
   );
   const sides   = tubeSectionPointCount(
     config.gpgpuSmoothTubeSectionShape,
@@ -166,11 +182,18 @@ export const GpgpuSmoothTube: React.FC<Props> = React.memo(({ config, posReadbac
 
         // Cross-section taper (Phase AA3): ring r runs oldest ->
         // newest history; taper 0 keeps the constant legacy radius.
-        const radius = smoothTubeRadiusAt(baseRadius, histLen <= 1 ? 1 : r / (histLen - 1), taper);
+        const ringT = histLen <= 1 ? 1 : r / (histLen - 1);
+        const radius = smoothTubeRadiusAt(baseRadius, ringT, taper);
+        // Ribbon profiles (Phase AM): width (N component) and
+        // height (B component) scale along the tube separately.
+        // The identity assets evaluate to exactly 1, so the
+        // default ring is bit-identical to the legacy one.
+        const widthScale = tubeRibbonScaleAt(widthProfilePoints, ringT);
+        const heightScale = tubeRibbonScaleAt(heightProfilePoints, ringT);
         for (let s = 0; s < sides; s++) {
           const sv = section[s];
-          const cos = sv.nx * sv.scale * radius;
-          const sin = sv.ny * sv.scale * radius;
+          const cos = sv.nx * sv.scale * radius * widthScale;
+          const sin = sv.ny * sv.scale * radius * heightScale;
           const vi = (r * sides + s) * 3;
           posArr[vi]     = _center.x + _right.x * cos + _up2.x * sin;
           posArr[vi + 1] = _center.y + _right.y * cos + _up2.y * sin;

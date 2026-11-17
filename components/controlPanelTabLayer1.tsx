@@ -73,6 +73,11 @@ export const Layer1TabContent: React.FC<ControlPanelContentProps> = ({ config, l
         <Slider label="Pulse Speed" value={config.pulseSpeed} min={0} max={10.0} step={0.001} onChange={(v) => updateConfig('pulseSpeed', v)} />
         <Slider label="Pulse Depth" value={config.pulseAmplitude} min={0} max={5000} step={1} onChange={(v) => updateConfig('pulseAmplitude', v)} />
         <Slider label="Line Jitter （筆致ジッタ・手描き風）" value={config.layer1LineJitter} min={0} max={10} step={0.05} onChange={(v) => updateConfig('layer1LineJitter', v)} />
+        <Slider label="Line Dash Length （破線のダッシュ長・Phase AM）" value={config.layer1LineDashLength} min={0} max={50} step={0.5} onChange={(v) => updateConfig('layer1LineDashLength', v)} />
+        <Slider label="Line Dash Gap （破線の間隔・Phase AM）" value={config.layer1LineDashGap} min={0} max={50} step={0.5} onChange={(v) => updateConfig('layer1LineDashGap', v)} />
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          破線はライン描画（Classic／Brush 両方）に効きます。ダッシュ長 0 で実線＝従来同一です。線分ごとに位相がずれるため、隣り合う線の破線は揃いません。
+        </div>
       </div>
     )}
     {config.layer1Enabled && (

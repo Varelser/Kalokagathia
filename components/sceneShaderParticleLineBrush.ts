@@ -27,6 +27,10 @@ export const BRUSH_LINE_VERTEX_SHADER = `
   // line shader's offset. 0 = exact zero (early-out). TS twin:
   // lib/lineJitter.ts.
   uniform float uLineJitter;
+  // Dashed lines (Phase AM): identical twin of the Classic line
+  // shader's dash. Length 0 = solid. TS twin: lib/lineDash.ts.
+  uniform float uLineDashLength;
+  uniform float uLineDashGap;
   uniform float uLife; uniform float uLifeSpread; uniform float uBurst; uniform float uBurstPhase; uniform float uBurstWaveform;
   uniform float uLineWidth;
   attribute vec3 aPosA; attribute vec3 aOffA; attribute vec4 aData1A; attribute vec4 aData2A; attribute vec4 aData3A;
@@ -37,6 +41,7 @@ export const BRUSH_LINE_VERTEX_SHADER = `
   varying float vBurst;
   varying float vEdge;
   varying float vAlong;
+  varying float vDashCoord;
   vec3 applyAudioSpatialWarp(vec3 pos, vec3 origin, float timeValue, float amp, float phase, float variant) {
     float radiusNorm = clamp(length(pos.xz) / max(1.0, uGlobalRadius), 0.0, 3.0);
     float heightNorm = pos.y / max(1.0, uGlobalRadius);
@@ -148,6 +153,15 @@ export const BRUSH_LINE_VERTEX_SHADER = `
     float audioLineBoost = 1.0 + uAudioBassLine * 0.95 + uAudioTrebleLine * 0.45 + uAudioPulse * 1.05;
     vAlpha = (1.0 - smoothstep(0.0, uConnectDistance, dist)) * uOpacity * audioLineBoost;
     if (dist > uConnectDistance) vAlpha = 0.0;
+    // Dashed lines (Phase AM): same coordinate grammar as the
+    // Classic shader (along-segment distance + midpoint hash
+    // phase). TS twin: lib/lineDash.ts.
+    vDashCoord = aLineCoord.x * dist;
+    if (uLineDashLength > 0.0) {
+      vec3 dashMid = (pA + pB) * 0.5;
+      float dashPhase = fract(sin(dashMid.x * 12.9898 + dashMid.y * 78.233 + dashMid.z * 37.719) * 43758.5453) * 61.7;
+      vDashCoord += dashPhase;
+    }
     vAlong = aLineCoord.x;
     vEdge = abs(aLineCoord.y);
     vec3 center = mix(pA, pB, vAlong);
@@ -170,6 +184,9 @@ export const BRUSH_LINE_FRAGMENT_SHADER = `
   varying float vBurst;
   varying float vEdge;
   varying float vAlong;
+  varying float vDashCoord;
+  uniform float uLineDashLength;
+  uniform float uLineDashGap;
   uniform vec3 uColor;
   uniform float uContrast;
   uniform float uInkMode;
@@ -198,6 +215,12 @@ export const BRUSH_LINE_FRAGMENT_SHADER = `
   }
   void main() {
     if (vAlpha <= 0.01) discard;
+    // Dashed lines (Phase AM): drop the gap spans (twin of the
+    // Classic shader). Length 0 never enters — solid lines.
+    if (uLineDashLength > 0.0) {
+      float dashPeriod = uLineDashLength + uLineDashGap;
+      if (dashPeriod > 0.0 && mod(vDashCoord, dashPeriod) > uLineDashLength) discard;
+    }
     float glow = max(0.0, uGlow);
     float velocityGlow = 1.0 + vVelocity * uLineVelocityGlow;
     float velocityAlpha = 1.0 + vVelocity * uLineVelocityAlpha;

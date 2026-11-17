@@ -93,7 +93,10 @@ export function configUsesEdgeSupply(config: ParticleConfig): boolean {
     || config.gpgpuMapColorSource === EDGE_OUTPUT_SOURCE
     || config.gpgpuMapSizeSource === EDGE_OUTPUT_SOURCE
     || config.gpgpuMapOpacitySource === EDGE_OUTPUT_SOURCE
-    || config.gpgpuMapDisplaceSource === EDGE_OUTPUT_SOURCE;
+    || config.gpgpuMapDisplaceSource === EDGE_OUTPUT_SOURCE
+    // Composite B layer (Phase AM): 'edge-output' reads the
+    // previous frame's capture, so it requests the supply too.
+    || (config.postCompositeEnabled === true && config.postCompositeSource === 'edge-output');
 }
 
 // ---------------------------------------------------------------------------

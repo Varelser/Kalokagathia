@@ -13,7 +13,7 @@ import {
 } from '../lib/cpuParticleSim';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
-import { buildTextOnPathOption } from './useGpgpuRuntime';
+import { buildContourGeometryOption, buildTextOnPathOption } from './useGpgpuRuntime';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
 import { parseSvgPathGeometry } from '../lib/pathGeometry';
 import { sampleObjPointCloudWithNormals } from '../lib/objMorph';
@@ -122,12 +122,19 @@ function computeMorphBakeExtras(config: ParticleConfig): CpuMorphBakeExtras {
     invert: config.layer2TextMapInvert,
     delay: config.gpgpuMorphTextOnPathDelay,
     glyphSize: config.gpgpuMorphTextOnPathSize,
+    glyphScale: config.gpgpuMorphTextOnPathGlyphScale,
+    glyphRotate: config.gpgpuMorphTextOnPathGlyphRotate,
+    glyphFade: config.gpgpuMorphTextOnPathGlyphFade,
   });
+  // Contour target (Phase AM): same shared builder the GPU
+  // paths use, so the CPU bake traces identically.
+  const contourGeometry = buildContourGeometryOption(config);
   return {
     mediaMap,
     svgPoints,
     pathGeometry,
     textOnPath,
+    contourGeometry,
     objPoints: objSample ? objSample.points : null,
     // Phase X2: the sample's normals feed the OBJ normal kick.
     objNormals: objSample ? objSample.normals : null,

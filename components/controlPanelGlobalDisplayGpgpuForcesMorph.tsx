@@ -42,11 +42,21 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
             <option value="obj">OBJ (取り込んだ3Dメッシュ)</option>
             <option value="terrain">Terrain (地形・フラクタル高度場)</option>
             <option value="data">Data (属性点群 — Phase AK)</option>
+            <option value="contour">Contour (輪郭のベクタ線化 — Phase AM)</option>
           </select>
           {config.gpgpuMorphTarget === 'data' && (
             <div className="mt-1 text-[9px] leading-relaxed text-white/40">
               Play タブ → Data Source で登録した属性点群の位置をターゲットにします（未登録の間は球殻にフォールバック）。点群の列は属性（Forces の Attributes 節、Data 源）として粒子へ渡ります。
             </div>
+          )}
+          {config.gpgpuMorphTarget === 'contour' && (
+            <>
+              <Toggle label="Contour Source （輪郭の抽出源）" value={config.gpgpuMorphContourSource} options={[{ label: 'Text', val: 'text' as const }, { label: 'Image', val: 'image' as const }]} onChange={(v) => updateConfig('gpgpuMorphContourSource', v)} />
+              <Slider label="Contour Threshold （抽出閾値）" value={config.gpgpuMorphContourThreshold} min={0.02} max={0.98} step={0.01} onChange={(v) => updateConfig('gpgpuMorphContourThreshold', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                抽出源の輝度を閾値で切り取り、輪郭をポリライン化（marching squares）して粒子を線の上に並べます。Text はレイヤー2 TextMap、Image はレイヤー2のメディア輝度マップです。輪郭が取れない（全面が閾値の片側）場合は球殻にフォールバックします。
+              </div>
+            </>
           )}
           {config.gpgpuMorphTarget === 'svg' && (
             <MorphSvgImportBlock config={config} updateConfig={updateConfig} />
@@ -81,6 +91,10 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                   {config.gpgpuMorphPathTaper > 0 && (
                     <Toggle label="Taper Shape （形状）" value={config.gpgpuMorphPathTaperShape} options={[{ label: 'Linear', val: 'linear' as const }, { label: 'Smooth', val: 'smooth' as const }, { label: 'Bell', val: 'bell' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathTaperShape', v)} />
                   )}
+                  <Slider label="Path Offset （パスの平行オフセット・Phase AM）" value={config.gpgpuMorphPathOffset} min={-0.5} max={0.5} step={0.005} onChange={(v) => updateConfig('gpgpuMorphPathOffset', v)} />
+                  <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                    パス全体を法線方向へ平行移動します（正＝進行方向の左、閉パスでは外側）。全パスモード共通で、0 で従来同一です。
+                  </div>
                   {(config.gpgpuMorphPathMode === 'along' || config.gpgpuMorphPathMode === 'writeOn') && (
                     <>
                       <Toggle label="Text on Path （パス上文字）" value={config.gpgpuMorphTextOnPathEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphTextOnPathEnabled', v)} />
@@ -88,6 +102,12 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                         <>
                           <Slider label="Text Delay （文字ごとの遅延）" value={config.gpgpuMorphTextOnPathDelay} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTextOnPathDelay', v)} />
                           <Slider label="Text Size （グリフの大きさ）" value={config.gpgpuMorphTextOnPathSize} min={0.25} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTextOnPathSize', v)} />
+                          <Slider label="Glyph Scale Var （文字ごとの拡大ばらつき・Phase AM）" value={config.gpgpuMorphTextOnPathGlyphScale} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTextOnPathGlyphScale', v)} />
+                          <Slider label="Glyph Rotate Var （文字ごとの回転ばらつき・度・Phase AM）" value={config.gpgpuMorphTextOnPathGlyphRotate} min={0} max={180} step={1} onChange={(v) => updateConfig('gpgpuMorphTextOnPathGlyphRotate', Math.round(v))} />
+                          <Slider label="Glyph Fade Var （文字ごとのフェードばらつき・Phase AM）" value={config.gpgpuMorphTextOnPathGlyphFade} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTextOnPathGlyphFade', v)} />
+                          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                            文字単位の変形は文字 index の決定的ハッシュで引くため、同じ設定では常に同じ崩れ方になります。Fade は透明化ではなく密度（その文字の粒子の一部が通常のパス配置へ落ちる）で表します。全て 0 で従来同一です。
+                          </div>
                           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
                             レイヤー2 TextMap の文字列を1文字ずつパス上に並べます（文字の形に粒子を配置）。Delay は文字ごとの弧長スロットをずらし、Write-on の窓を動かすと文字が順に現れます。文字列は TextMap の Text で編集します。
                           </div>

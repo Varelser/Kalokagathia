@@ -2408,4 +2408,58 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuWindVolumeStrength: 2,
         gpgpuTrailEnabled: false,
       }),
+  // Phase AM: contour target — the layer-2 TextMap raster's
+  // outline, traced by marching squares and vectorised into
+  // polylines the particles line up on (the text reads as its
+  // outline, not a filled raster cloud).
+  createStarterPreset('starter-contour-text-outline', 'Contour Text Outline (Vectorised Raster)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: true,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        layer2TextMapText: 'VARELSER',
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.4,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.02,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'contour',
+        gpgpuMorphContourSource: 'text',
+        gpgpuMorphContourThreshold: 0.3,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase AM: cellular automaton — a Life field seeded from a
+  // morph text cloud's luminance, evolving one generation per
+  // frame over the frame (mix 0.9 keeps a trace of the seed
+  // cloud under the automaton state).
+  createStarterPreset('starter-cellular-life-field', 'Cellular Life Field (Seeded Automaton)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.4,
+        gpgpuOpacity: 0.8,
+        gpgpuSpeed: 0.5,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.05,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'text',
+        postCellularEnabled: true,
+        postCellularRule: 'life',
+        postCellularCellSize: 6,
+        postCellularSeedThreshold: 0.35,
+        postCellularMix: 0.9,
+        gpgpuTrailEnabled: false,
+      }),
 ];

@@ -47,6 +47,10 @@ export function createParticleUniforms(config: ParticleConfig, isAux: boolean) {
     // Hand-drawn line jitter (Phase AH): consumed only by the
     // line shaders; 0 = no displacement.
     uLineJitter: { value: 0 },
+    // Dashed lines (Phase AM): consumed only by the line
+    // shaders; length 0 = solid.
+    uLineDashLength: { value: 0 },
+    uLineDashGap: { value: 0 },
     uMotionChainType2: { value: -1 },
     uMotionChainType3: { value: -1 },
     uWarpEnabled: { value: 0 },

@@ -20,8 +20,9 @@ import {
 
 /** Free curve editor (Phase AJ): per-point t / value sliders with
  *  add / remove, plus shape presets. Controlled entirely by the
- *  config value (the flat [t, v, …] asset). */
-const FreeCurveEditor: React.FC<{
+ *  config value (the flat [t, v, …] asset). Exported for the
+ *  Trails section's tube profiles (Phase AM). */
+export const FreeCurveEditor: React.FC<{
   points: FreeCurvePoint[];
   onChange: (points: FreeCurvePoint[]) => void;
 }> = ({ points, onChange }) => {

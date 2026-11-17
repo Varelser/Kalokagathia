@@ -15,9 +15,15 @@ import { EdgeDetectPass } from './edgeDetectPass';
 import { EdgeCapturePass } from './edgeCapturePass';
 import { DisplacePass } from './displacePass';
 import { FractalPass } from './fractalPass';
+import { CompositePass } from './compositePass';
+import { GlitchPass } from './glitchPass';
+import { PixelSortPass } from './pixelSortPass';
+import { CellularPass } from './cellularPass';
 import { getGradImageTexture } from '../lib/gradImageTexture';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { displaceChannelIndex } from '../lib/postFxMath';
+import { afMapSource, resolveAfMapSourceTexture } from '../lib/mapSourceSupply';
+import { compositeBlendModeIndex } from '../lib/compositeBlend';
 
 export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config }) => {
   const orderedPostFxStages = React.useMemo(() => getOrderedActivePostFxStageIds(config), [config]);
@@ -119,6 +125,51 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
     displacePass.mapTexture = null;
     displacePass.mapReady = false;
   }
+  // Composite (Phase AM): B is an AF supply texture; unready
+  // source → bit-identical passthrough inside the pass.
+  const compositePass = React.useMemo(() => new CompositePass(), []);
+  React.useEffect(() => () => compositePass.dispose(), [compositePass]);
+  compositePass.modeIndex = compositeBlendModeIndex(config.postCompositeMode);
+  compositePass.mixAmount = config.postCompositeMix;
+  if (config.postCompositeEnabled) {
+    const afKind = config.postCompositeSource === 'path-raster'
+      ? 'path'
+      : config.postCompositeSource === 'edge-output'
+        ? 'edge'
+        : 'text';
+    const layerState = resolveAfMapSourceTexture(afMapSource(afKind), config);
+    compositePass.sourceTexture = layerState && layerState.ready ? layerState.texture : null;
+  } else {
+    compositePass.sourceTexture = null;
+  }
+  // Glitch (Phase AM): stateless apart from its frame counter.
+  const glitchPass = React.useMemo(() => new GlitchPass(), []);
+  React.useEffect(() => () => glitchPass.dispose(), [glitchPass]);
+  glitchPass.amount = config.postGlitchAmount;
+  glitchPass.bands = config.postGlitchBands;
+  glitchPass.rate = config.postGlitchRate;
+  // Pixel sort (Phase AM): stateless across frames.
+  const pixelSortPass = React.useMemo(() => new PixelSortPass(), []);
+  React.useEffect(() => () => pixelSortPass.dispose(), [pixelSortPass]);
+  pixelSortPass.direction = config.postPixelSortDirection;
+  pixelSortPass.low = config.postPixelSortLow;
+  pixelSortPass.high = config.postPixelSortHigh;
+  pixelSortPass.passes = config.postPixelSortPasses;
+  // Cellular automaton (Phase AM): stateful; re-seeds when the
+  // rule / cell size / seed threshold signature changes (and on
+  // first enable, via the pass's initial seed request).
+  const cellularPass = React.useMemo(() => new CellularPass(), []);
+  React.useEffect(() => () => cellularPass.dispose(), [cellularPass]);
+  cellularPass.rule = config.postCellularRule;
+  cellularPass.cellSize = config.postCellularCellSize;
+  cellularPass.seedThreshold = config.postCellularSeedThreshold;
+  cellularPass.mixAmount = config.postCellularMix;
+  const cellularSeedSigRef = React.useRef('');
+  const cellularSeedSig = `${config.postCellularRule}|${config.postCellularCellSize}|${config.postCellularSeedThreshold}`;
+  if (config.postCellularEnabled && cellularSeedSigRef.current !== cellularSeedSig) {
+    cellularSeedSigRef.current = cellularSeedSig;
+    cellularPass.requestSeed();
+  }
 
   if (orderedPostFxStages.length === 0) {
     return null;
@@ -192,6 +243,14 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
             return <primitive key={stage} object={displacePass} />;
           case 'fractal':
             return <primitive key={stage} object={fractalPass} />;
+          case 'glitch':
+            return <primitive key={stage} object={glitchPass} />;
+          case 'pixel-sort':
+            return <primitive key={stage} object={pixelSortPass} />;
+          case 'cellular':
+            return <primitive key={stage} object={cellularPass} />;
+          case 'composite':
+            return <primitive key={stage} object={compositePass} />;
           case 'feedback':
             return <primitive key={stage} object={feedbackPass} />;
           case 'posterize':

@@ -51,6 +51,7 @@ import {
 } from './layerMask';
 import {
   PATH_TAPER_MAX_WIDTH,
+  offsetPathGeometry,
   resolvePathPoint,
   taperWidthAt,
   type MorphPathOptions,
@@ -71,7 +72,9 @@ import {
   stampLocalPoint,
 } from './stampPlacement';
 import {
+  deformGlyphPoint,
   sampleTextGlyphPoint,
+  textGlyphDeform,
   textOnPathGlyphS,
   textOnPathSlotAt,
   type TextGlyphRaster,
@@ -109,6 +112,10 @@ export const GPGPU_MORPH_TARGETS: readonly GpgpuMorphTargetKind[] = [
   // target — positions only; the columns ride the attribute
   // texture, not the bake.
   'data',
+  // 'contour' (Phase AM) appends after 'data' for the same
+  // reason: the traced outline of a luma source
+  // (lib/contourTrace.ts) as a path-style placement.
+  'contour',
 ] as const;
 
 export interface MorphMediaMap {
@@ -291,7 +298,26 @@ export interface GpgpuMorphTargetBuildOptions {
     glyphs: TextGlyphRaster[];
     delay: number;
     size: number;
+    /**
+     * Per-glyph deformation (Phase AM): scale / rotation /
+     * fade variation amounts. Absent / null = the AF2 placement
+     * verbatim (the shared builder only sets this while at
+     * least one amount is non-zero).
+     */
+    deform?: {
+      scaleVar: number;
+      rotateDeg: number;
+      fadeVar: number;
+    } | null;
   } | null;
+  /**
+   * Contour geometry for the contour target (Phase AM,
+   * lib/contourTrace.ts): the traced outline of the selected
+   * luma source as ordered subpaths. Only consulted when the
+   * target is 'contour'; null (no contour at the threshold)
+   * falls back to a shell, like a missing media map.
+   */
+  contourGeometry?: PathGeometry | null;
   /**
    * Raster mask (Phase X, lib/layerMask.ts): a luminance map plus
    * its mode. 'shape' replaces the placement sampling with the
@@ -764,7 +790,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   data: Float32Array;
   normalData: Float32Array;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, scatter } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, scatter, contourGeometry } = options;
   const formActive = isFormDeformationActive(form);
   // Raster mask (Phase X): resolved once; null unless the mode is
   // on and the map is usable, in which case the placement branches
@@ -843,6 +869,21 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   const topGlyphCount = topGlyphs.length;
   const topDelay = textOnPath ? textOnPath.delay : 0;
   const topSize = textOnPath ? textOnPath.size : 1;
+  // Path offset (Phase AM): a single geometry transform before
+  // the loop. offsetPathGeometry returns the input reference at
+  // distance 0, so with the key at its default every path branch
+  // below runs the authored geometry verbatim.
+  const pathGeom = pathActive && pathGeometry
+    ? offsetPathGeometry(pathGeometry, path?.offset ?? 0)
+    : pathGeometry;
+  // Per-glyph deformation (Phase AM): present only while the
+  // shared builder resolved a non-zero variation set.
+  const topDeform = textOnPathActive && textOnPath ? (textOnPath.deform ?? null) : null;
+  // Contour target (Phase AM): the traced outline geometry,
+  // placed with the same no-draw ordered parameter as the path
+  // branch.
+  const contourActive =
+    target === 'contour' && contourGeometry != null && contourGeometry.totalLength > 0;
 
   for (let i = 0; i < count; i++) {
     const s = rng();
@@ -923,7 +964,28 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
         nny = ty / shellLen;
         nnz = tz / shellLen;
       }
-    } else if (stampActive && pathGeometry) {
+    } else if (contourActive && contourGeometry) {
+      // Contour target (Phase AM, lib/contourTrace.ts): the
+      // traced outline of the selected luma source, placed like
+      // the authored path — particle i owns the ordered contour
+      // parameter p = (i + 0.5) / count over the concatenated
+      // arc length (proportional across subpaths). No RNG draws,
+      // exactly like the Phase S branch; the replica grammar
+      // below still applies its per-copy transform afterwards.
+      const p = (i + 0.5) / count;
+      const resolved = resolvePathPoint(contourGeometry, p, 'proportional');
+      tx = resolved.x;
+      ty = resolved.y;
+      tz = 0;
+    } else if (target === 'contour') {
+      // contour requested but no usable outline (blank or
+      // saturated source at the threshold): shell fallback
+      // (as media / obj / data).
+      const phi = Math.acos(2 * s - 1);
+      tx = 0.9 * Math.sin(phi) * Math.cos(h1 * TAU);
+      ty = 0.9 * Math.sin(phi) * Math.sin(h1 * TAU);
+      tz = 0.9 * Math.cos(phi);
+    } else if (stampActive && pathGeom) {
       // Shape stamping (Phase AA3, Tao-style): the block's points
       // are grouped into `stampCount` consecutive stamps along the
       // path. Stamp k sits at equal arc-length parameter
@@ -942,7 +1004,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
       const localIdx = i - blockStart;
       const k = Math.min(stampCount - 1, Math.floor(localIdx / perStamp));
       const j = localIdx - k * perStamp;
-      const resolved = resolvePathPoint(pathGeometry, stampCenterS(k, stampCount), pathSubpathMode);
+      const resolved = resolvePathPoint(pathGeom!, stampCenterS(k, stampCount), pathSubpathMode);
       if (stampShape === 'obj' && stampObjPointCount > 0 && objPoints) {
         const pick = ((j * 37 + k * 131) % stampObjPointCount) * 3;
         const lx = (objPoints[pick] ?? 0) * stampSize;
@@ -968,7 +1030,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
         ty = placed.y;
         tz = 0;
       }
-    } else if (textOnPathActive && pathGeometry) {
+    } else if (textOnPathActive && pathGeom) {
       // Text on path (Phase AF2, lib/gpgpuTextOnPath.ts): the
       // particle's ordered path parameter p (the same replica
       // block mapping as the plain path branch) selects a virtual
@@ -985,19 +1047,34 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
       const f = (i - blockStart + 0.5) / Math.max(1, blockEnd - blockStart);
       const p = (r + f) / replicaCount;
       const hit = textOnPathSlotAt(p, topGlyphCount, topDelay);
-      const glyphPoint = hit.glyph >= 0 ? sampleTextGlyphPoint(topGlyphs[hit.glyph], rng) : null;
+      // Per-glyph deformation (Phase AM): the fade test draws
+      // h1 AFTER the glyph sampler's draws, so the legacy bake
+      // (no deform set) consumes exactly the AF2 draw order.
+      // A faded particle keeps the plain path placement below —
+      // the fade is a density expression, not an alpha.
+      let glyphPoint = hit.glyph >= 0 ? sampleTextGlyphPoint(topGlyphs[hit.glyph], rng) : null;
+      let deformPt: { lx: number; ly: number } | null = null;
+      if (hit.glyph >= 0 && glyphPoint && topDeform) {
+        const deform = textGlyphDeform(hit.glyph, topDeform.scaleVar, topDeform.rotateDeg, topDeform.fadeVar);
+        if (deform.fade > 0 && h1 < deform.fade) {
+          glyphPoint = null;
+        } else {
+          deformPt = deformGlyphPoint(glyphPoint.lx, glyphPoint.ly, deform);
+        }
+      }
       if (hit.glyph >= 0 && glyphPoint) {
-        const sRaw = textOnPathGlyphS(hit.glyph, glyphPoint.lx, topGlyphCount, topDelay);
+        const pt = deformPt ?? glyphPoint;
+        const sRaw = textOnPathGlyphS(hit.glyph, pt.lx, topGlyphCount, topDelay);
         const s01 = pathMode === 'writeOn' ? pathWinStart + (pathWinEnd - pathWinStart) * sRaw : sRaw;
-        const resolved = resolvePathPoint(pathGeometry, s01, pathSubpathMode);
-        const cellH = (pathGeometry.totalLength / topGlyphCount) * topSize;
-        const off = (0.5 - glyphPoint.ly) * cellH;
+        const resolved = resolvePathPoint(pathGeom!, s01, pathSubpathMode);
+        const cellH = (pathGeom!.totalLength / topGlyphCount) * topSize;
+        const off = (0.5 - pt.ly) * cellH;
         tx = resolved.x + -resolved.tangentY * off;
         ty = resolved.y + resolved.tangentX * off;
         tz = 0;
       } else {
         const s01 = pathMode === 'writeOn' ? pathWinStart + (pathWinEnd - pathWinStart) * p : p;
-        const resolved = resolvePathPoint(pathGeometry, s01, pathSubpathMode);
+        const resolved = resolvePathPoint(pathGeom!, s01, pathSubpathMode);
         tx = resolved.x;
         ty = resolved.y;
         tz = 0;
@@ -1010,7 +1087,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
           }
         }
       }
-    } else if (pathActive && pathGeometry) {
+    } else if (pathActive && pathGeom) {
       // Authored path placement (Phase S): particle i owns the path
       // position p = (r + f) / replicaCount, where r is its replica
       // block (the same contiguous block mapping the replica grammar
@@ -1028,7 +1105,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
       const f = (i - blockStart + 0.5) / Math.max(1, blockEnd - blockStart);
       const p = (r + f) / replicaCount;
       const s01 = pathMode === 'writeOn' ? pathWinStart + (pathWinEnd - pathWinStart) * p : p;
-      const resolved = resolvePathPoint(pathGeometry, s01, pathSubpathMode);
+      const resolved = resolvePathPoint(pathGeom!, s01, pathSubpathMode);
       tx = resolved.x;
       ty = resolved.y;
       tz = 0;

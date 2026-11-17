@@ -228,9 +228,19 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphPathTaper: 0,
   gpgpuMorphPathTaperShape: 'linear' as const,
   gpgpuMorphPathSubpathMode: 'proportional' as const,
+  // Path offset (Phase AM): 0 = the authored geometry itself.
+  gpgpuMorphPathOffset: 0,
   gpgpuMorphTextOnPathEnabled: false,
   gpgpuMorphTextOnPathDelay: 0,
   gpgpuMorphTextOnPathSize: 1,
+  // Per-glyph deformation (Phase AM): all 0 = AF2 bake verbatim.
+  gpgpuMorphTextOnPathGlyphScale: 0,
+  gpgpuMorphTextOnPathGlyphRotate: 0,
+  gpgpuMorphTextOnPathGlyphFade: 0,
+  // Contour target (Phase AM): trace the TextMap raster at the
+  // media threshold by default.
+  gpgpuMorphContourSource: 'text' as const,
+  gpgpuMorphContourThreshold: 0.3,
   // Voronoi fracture (Phase AG): off = legacy bake bit-identical.
   gpgpuMorphFractureEnabled: false,
   gpgpuMorphFractureCells: 12,
@@ -500,6 +510,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSmoothTubeSectionShape: 'circle' as const,
   gpgpuSmoothTubeSectionSides: 6,
   gpgpuSmoothTubeSectionInnerRatio: 0.6,
+  // Section / ribbon profiles (Phase AM): identity curve assets.
+  gpgpuSmoothTubeSectionProfile: [0, 1, 1, 1],
+  gpgpuSmoothTubeWidthProfile: [0, 1, 1, 1],
+  gpgpuSmoothTubeHeightProfile: [0, 1, 1, 1],
   gpgpuFieldGlyphEnabled: false,
   gpgpuFieldGlyphGrid: 16,
   gpgpuFieldGlyphLength: 0.5,

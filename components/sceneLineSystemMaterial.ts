@@ -5,6 +5,7 @@ import { resolveMotionRoute } from '../lib/motionRoute';
 import { resolveMotionGraphVec4s } from '../lib/motionGraph';
 import { resolveMotionDagPacked } from '../lib/motionDag';
 import { clampLineJitter } from '../lib/lineJitter';
+import { clampLineDashGap, clampLineDashLength } from '../lib/lineDash';
 import { resolveLayerParams } from './sceneParticleSystemShared';
 import { getLayerRuntimeLineSnapshot } from '../lib/sceneRenderRouting';
 import type { ShaderUniformMap } from './sceneShared';
@@ -108,6 +109,12 @@ export function updateLineMaterial(mat: THREE.ShaderMaterial | null | undefined,
   // passed here keeps its initial 0 forever (and that runtime
   // path is also gated by a layer key that excludes this value).
   if (mat.uniforms.uLineJitter) mat.uniforms.uLineJitter.value = clampLineJitter(config.layer1LineJitter ?? 0);
+  // Dashed lines (Phase AM): same config-direct wiring as the
+  // jitter above (the shared-uniforms copy cannot carry these
+  // for the same R3F clone reason). A single global key pair
+  // for the line draw, like the jitter.
+  if (mat.uniforms.uLineDashLength) mat.uniforms.uLineDashLength.value = clampLineDashLength(config.layer1LineDashLength ?? 0);
+  if (mat.uniforms.uLineDashGap) mat.uniforms.uLineDashGap.value = clampLineDashGap(config.layer1LineDashGap ?? 0);
   mat.uniforms.uGravity.value = uniforms.uGravity.value;
   mat.uniforms.uViscosity.value = uniforms.uViscosity.value;
   mat.uniforms.uFluidForce.value = uniforms.uFluidForce.value;
@@ -138,9 +145,9 @@ export function updateLineMaterial(mat: THREE.ShaderMaterial | null | undefined,
 }
 
 export function createBrushLineUniforms(_config: ParticleConfig, uniforms: ShaderUniformMap, layerConnectionStyle: ParticleConfig['layer2ConnectionStyle']) {
-  return { ...uniforms, uConnectDistance: { value: 50 }, uOpacity: { value: 0.2 }, uAudioBassMotion: { value: 0 }, uAudioTrebleMotion: { value: 0 }, uAudioBassLine: { value: 0 }, uAudioTrebleLine: { value: 0 }, uAudioPulse: { value: 0 }, uAudioMorph: { value: 0 }, uAudioShatter: { value: 0 }, uAudioTwist: { value: 0 }, uAudioBend: { value: 0 }, uAudioWarp: { value: 0 }, uLineVelocityGlow: { value: 0 }, uLineVelocityAlpha: { value: 0 }, uLineBurstPulse: { value: 0 }, uLineShimmer: { value: 0 }, uLineFlickerSpeed: { value: 1 }, uHueShift: { value: 0 }, uLineWidth: { value: 0.7 }, uLineSoftness: { value: 0.65 }, uBrushStyle: { value: layerConnectionStyle === 'filament' ? 1 : 0 } };
+  return { ...uniforms, uConnectDistance: { value: 50 }, uOpacity: { value: 0.2 }, uAudioBassMotion: { value: 0 }, uAudioTrebleMotion: { value: 0 }, uAudioBassLine: { value: 0 }, uAudioTrebleLine: { value: 0 }, uAudioPulse: { value: 0 }, uAudioMorph: { value: 0 }, uAudioShatter: { value: 0 }, uAudioTwist: { value: 0 }, uAudioBend: { value: 0 }, uAudioWarp: { value: 0 }, uLineVelocityGlow: { value: 0 }, uLineVelocityAlpha: { value: 0 }, uLineBurstPulse: { value: 0 }, uLineShimmer: { value: 0 }, uLineFlickerSpeed: { value: 1 }, uHueShift: { value: 0 }, uLineWidth: { value: 0.7 }, uLineSoftness: { value: 0.65 }, uBrushStyle: { value: layerConnectionStyle === 'filament' ? 1 : 0 }, uLineDashLength: { value: 0 }, uLineDashGap: { value: 0 } };
 }
 
 export function createClassicLineUniforms(uniforms: ShaderUniformMap) {
-  return { ...uniforms, uConnectDistance: { value: 50 }, uOpacity: { value: 0.2 }, uAudioBassMotion: { value: 0 }, uAudioTrebleMotion: { value: 0 }, uAudioBassLine: { value: 0 }, uAudioTrebleLine: { value: 0 }, uAudioPulse: { value: 0 }, uAudioMorph: { value: 0 }, uAudioShatter: { value: 0 }, uAudioTwist: { value: 0 }, uAudioBend: { value: 0 }, uAudioWarp: { value: 0 }, uLineVelocityGlow: { value: 0 }, uLineVelocityAlpha: { value: 0 }, uLineBurstPulse: { value: 0 }, uLineShimmer: { value: 0 }, uLineFlickerSpeed: { value: 1 }, uHueShift: { value: 0 } };
+  return { ...uniforms, uConnectDistance: { value: 50 }, uOpacity: { value: 0.2 }, uAudioBassMotion: { value: 0 }, uAudioTrebleMotion: { value: 0 }, uAudioBassLine: { value: 0 }, uAudioTrebleLine: { value: 0 }, uAudioPulse: { value: 0 }, uAudioMorph: { value: 0 }, uAudioShatter: { value: 0 }, uAudioTwist: { value: 0 }, uAudioBend: { value: 0 }, uAudioWarp: { value: 0 }, uLineVelocityGlow: { value: 0 }, uLineVelocityAlpha: { value: 0 }, uLineBurstPulse: { value: 0 }, uLineShimmer: { value: 0 }, uLineFlickerSpeed: { value: 1 }, uHueShift: { value: 0 }, uLineDashLength: { value: 0 }, uLineDashGap: { value: 0 } };
 }

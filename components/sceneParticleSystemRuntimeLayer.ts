@@ -267,6 +267,11 @@ export function applyParticleLayerUniforms(
   // the line draw (the line shaders are shared by the line
   // systems); clamped like lib/lineJitter.ts.
   if (mat.uniforms.uLineJitter) mat.uniforms.uLineJitter.value = Math.max(0, Math.min(10, config.layer1LineJitter ?? 0));
+  // Dashed lines (Phase AM): parity with the jitter line above;
+  // the line systems' own material update reads the config
+  // directly and is authoritative for the line draw.
+  if (mat.uniforms.uLineDashLength) mat.uniforms.uLineDashLength.value = Math.max(0, Math.min(50, config.layer1LineDashLength ?? 0));
+  if (mat.uniforms.uLineDashGap) mat.uniforms.uLineDashGap.value = Math.max(0, Math.min(50, config.layer1LineDashGap ?? 0));
   mat.uniforms.uGlobalNoiseScale.value = state.noise;
   mat.uniforms.uGlobalComplexity.value = state.complexity;
   mat.uniforms.uGlobalEvolution.value = state.evol;

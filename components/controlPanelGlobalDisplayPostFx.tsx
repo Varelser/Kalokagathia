@@ -199,6 +199,92 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
           </>
         )}
         <Toggle
+          label="Composite （2層コンポジット・Phase AM）"
+          value={config.postCompositeEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postCompositeEnabled', v)}
+        />
+        {config.postCompositeEnabled && (
+          <>
+            <Toggle
+              label="Composite Source （第2層）"
+              value={config.postCompositeSource}
+              options={[{ label: 'Text Raster', val: 'text-raster' as const }, { label: 'Path Raster', val: 'path-raster' as const }, { label: 'Edge Output', val: 'edge-output' as const }]}
+              onChange={(v) => updateConfig('postCompositeSource', v)}
+            />
+            <Toggle
+              label="Composite Mode （ブレンド）"
+              value={config.postCompositeMode}
+              options={[{ label: 'Normal', val: 'normal' as const }, { label: 'Multiply', val: 'multiply' as const }, { label: 'Screen', val: 'screen' as const }, { label: 'Overlay', val: 'overlay' as const }, { label: 'Soft Light', val: 'soft-light' as const }, { label: 'Difference', val: 'difference' as const }, { label: 'Add', val: 'add' as const }, { label: 'Subtract', val: 'subtract' as const }]}
+              onChange={(v) => updateConfig('postCompositeMode', v)}
+            />
+            <Slider label="Composite Mix" value={config.postCompositeMix} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postCompositeMix', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              フレームと第2層（供給テクスチャ）をブレンドモードで合成するポスト段です。第2層が未準備の間は入力をそのまま通します。Edge Output は前フレームのエッジ抽出結果を読みます。
+            </div>
+          </>
+        )}
+        <Toggle
+          label="Glitch （グリッチ・Phase AM）"
+          value={config.postGlitchEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postGlitchEnabled', v)}
+        />
+        {config.postGlitchEnabled && (
+          <>
+            <Slider label="Glitch Amount" value={config.postGlitchAmount} min={0} max={0.25} step={0.005} onChange={(v) => updateConfig('postGlitchAmount', v)} />
+            <Slider label="Glitch Bands" value={config.postGlitchBands} min={2} max={128} step={1} onChange={(v) => updateConfig('postGlitchBands', Math.round(v))} />
+            <Slider label="Glitch Rate" value={config.postGlitchRate} min={0.5} max={30} step={0.5} onChange={(v) => updateConfig('postGlitchRate', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              横バンドの一部を決定的ハッシュで水平にずらします（データモッシュ＝フレーム間の動き転送は対象外）。パターン時間はパス内部のフレームカウンタで量子化するため、決定的レンダーで再現します。
+            </div>
+          </>
+        )}
+        <Toggle
+          label="Pixel Sort （ピクセルソート・Phase AM）"
+          value={config.postPixelSortEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postPixelSortEnabled', v)}
+        />
+        {config.postPixelSortEnabled && (
+          <>
+            <Toggle
+              label="Pixel Sort Direction"
+              value={config.postPixelSortDirection}
+              options={[{ label: 'Horizontal', val: 'horizontal' as const }, { label: 'Vertical', val: 'vertical' as const }]}
+              onChange={(v) => updateConfig('postPixelSortDirection', v)}
+            />
+            <Slider label="Pixel Sort Low" value={config.postPixelSortLow} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postPixelSortLow', v)} />
+            <Slider label="Pixel Sort High" value={config.postPixelSortHigh} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postPixelSortHigh', v)} />
+            <Slider label="Pixel Sort Passes" value={config.postPixelSortPasses} min={1} max={64} step={1} onChange={(v) => updateConfig('postPixelSortPasses', Math.round(v))} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              輝度スパン [Low, High] の内側だけ、行（または列）方向に輝度順へ並べ替えます。スパン外のピクセルは動かず壁になります。Passes は並べ替えの到達距離です。
+            </div>
+          </>
+        )}
+        <Toggle
+          label="Cellular （離散セルオートマトン・Phase AM）"
+          value={config.postCellularEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postCellularEnabled', v)}
+        />
+        {config.postCellularEnabled && (
+          <>
+            <Toggle
+              label="Cellular Rule"
+              value={config.postCellularRule}
+              options={[{ label: 'Life', val: 'life' as const }, { label: 'HighLife', val: 'highlife' as const }, { label: 'Day & Night', val: 'daynight' as const }, { label: 'Seeds', val: 'seeds' as const }, { label: 'Maze', val: 'maze' as const }, { label: 'Coral', val: 'coral' as const }]}
+              onChange={(v) => updateConfig('postCellularRule', v)}
+            />
+            <Slider label="Cellular Cell Size" value={config.postCellularCellSize} min={1} max={16} step={1} onChange={(v) => updateConfig('postCellularCellSize', Math.round(v))} />
+            <Slider label="Cellular Seed Threshold" value={config.postCellularSeedThreshold} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postCellularSeedThreshold', v)} />
+            <Slider label="Cellular Mix" value={config.postCellularMix} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postCellularMix', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              低解像度の状態テクスチャを B/S ルールで1フレーム1世代ずつ発展させます。種は有効化時とルール／セルサイズ／閾値の変更時に、現在フレームの輝度から取り直します。
+            </div>
+          </>
+        )}
+        <Toggle
           label="Slit Scan (temporal bands)"
           value={config.postSlitScanEnabled}
           options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}

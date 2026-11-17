@@ -141,8 +141,18 @@ export interface CpuMorphBakeExtras {
   pathGeometry?: PathGeometry | null;
   /** Text on path (Phase AF2): glyph rasters for the bake's
    *  textOnPath option, assembled by the caller like the GPU
-   *  paths assemble theirs. */
-  textOnPath?: { glyphs: TextGlyphRaster[]; delay: number; size: number } | null;
+   *  paths assemble theirs. The deform set (Phase AM) rides
+   *  along when present. */
+  textOnPath?: {
+    glyphs: TextGlyphRaster[];
+    delay: number;
+    size: number;
+    deform?: { scaleVar: number; rotateDeg: number; fadeVar: number } | null;
+  } | null;
+  /** Contour geometry (Phase AM): the traced outline for the
+   *  contour target, assembled by the caller via the shared
+   *  builder like the GPU paths. */
+  contourGeometry?: PathGeometry | null;
   objPoints?: ArrayLike<number> | null;
   /** Per-sample unit normals parallel to objPoints (Phase O). */
   objNormals?: ArrayLike<number> | null;
@@ -190,8 +200,11 @@ export function buildCpuMorphData(
       stampSize: config.gpgpuMorphStampSize,
       stampShape: config.gpgpuMorphStampShape,
       stampAlign: config.gpgpuMorphStampAlign,
+      // Path offset (Phase AM): 0 = the authored geometry itself.
+      offset: config.gpgpuMorphPathOffset,
     },
     textOnPath: extras.textOnPath ?? null,
+    contourGeometry: extras.contourGeometry ?? null,
     // Voronoi fracture (Phase AG): read from config directly,
     // like the path / form options above — the shared bake applies
     // it, so the CPU cloud fractures identically to the GPU bakes.
@@ -320,6 +333,11 @@ export function cpuShapeSignature(config: ParticleConfig): string {
     config.gpgpuMorphPathTaperShape, config.gpgpuMorphPathSubpathMode,
     config.gpgpuMorphStampSpacing, config.gpgpuMorphStampSize,
     config.gpgpuMorphStampShape, config.gpgpuMorphStampAlign,
+    // Path offset / glyph deform / contour (Phase AM bake inputs).
+    config.gpgpuMorphPathOffset,
+    config.gpgpuMorphTextOnPathGlyphScale, config.gpgpuMorphTextOnPathGlyphRotate,
+    config.gpgpuMorphTextOnPathGlyphFade,
+    config.gpgpuMorphContourSource, config.gpgpuMorphContourThreshold,
     config.gpgpuMorphDisperseAmount, config.gpgpuMorphDisperseDirection,
     config.gpgpuMorphTwistAmount, config.gpgpuMorphTwistAxis,
     config.gpgpuMorphFractalAmount, config.gpgpuMorphFractalFrequency,

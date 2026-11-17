@@ -95,6 +95,104 @@ export function textOnPathGlyphS(
 /** Luma threshold of the media grammar (sampleMediaPoint). */
 export const TEXT_GLYPH_LUMA_THRESHOLD = 0.3;
 
+// ── Per-glyph deformation (Phase AM) ───────────────────────────
+// The per-character transform grammar the 2D audit §2 row asked
+// for next to the AF2 stagger: each glyph gets a deterministic
+// scale / rotation / fade drawn from its INDEX by an integer
+// hash — no RNG draws, so the bake's consumption order is
+// untouched and the same string always deforms the same way.
+// All three amounts at 0 resolve to the identity transform, and
+// the bake only consults this while a deform option is present.
+
+export interface TextGlyphDeform {
+  /** Local scale multiplier around the glyph centre. */
+  scale: number;
+  /** Local rotation, radians (raster space: x right, y down). */
+  angle: number;
+  /** 0..1: probability that a particle of this glyph falls
+   *  back to the plain path placement (density fade — the bake
+   *  has no per-particle opacity channel; its alpha is the
+   *  replica phase's). */
+  fade: number;
+}
+
+/** Integer hash → three stable uniforms in [0, 1) for a glyph. */
+function glyphHash3(index: number): [number, number, number] {
+  let h = Math.imul((index | 0) + 1, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h ^= h >>> 13;
+  const u1 = (h >>> 0) / 4294967296;
+  let h2 = Math.imul(h ^ 0x27d4eb2d, 0x165667b1);
+  h2 = Math.imul(h2 ^ (h2 >>> 15), 0x85ebca6b);
+  h2 ^= h2 >>> 13;
+  const u2 = (h2 >>> 0) / 4294967296;
+  let h3 = Math.imul(h2 ^ 0x9e3779b1, 0x27d4eb2d);
+  h3 = Math.imul(h3 ^ (h3 >>> 15), 0x85ebca6b);
+  h3 ^= h3 >>> 13;
+  const u3 = (h3 >>> 0) / 4294967296;
+  return [u1, u2, u3];
+}
+
+export function clampGlyphScaleVar(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+export function clampGlyphRotateDeg(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(180, v));
+}
+
+export function clampGlyphFadeVar(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * The deform of one glyph. Scale varies within ±75% of the
+ * scale-variation amount, rotation within ±rotateDeg, fade is
+ * the variation amount scaled by the glyph's own uniform (so
+ * fade only ever thins a glyph, never the whole string at once
+ * unless the amount is 1 and the uniform near 1).
+ */
+export function textGlyphDeform(
+  glyphIndex: number,
+  scaleVar: number,
+  rotateDeg: number,
+  fadeVar: number,
+): TextGlyphDeform {
+  const sv = clampGlyphScaleVar(scaleVar);
+  const rd = clampGlyphRotateDeg(rotateDeg);
+  const fv = clampGlyphFadeVar(fadeVar);
+  if (sv <= 0 && rd <= 0 && fv <= 0) return { scale: 1, angle: 0, fade: 0 };
+  const [u1, u2, u3] = glyphHash3(Math.max(0, Math.floor(glyphIndex)));
+  return {
+    scale: 1 + sv * (u1 * 2 - 1) * 0.75,
+    angle: ((rd * Math.PI) / 180) * (u2 * 2 - 1),
+    fade: fv * u3,
+  };
+}
+
+/**
+ * Apply a glyph deform to a sampled glyph-local point: rotate
+ * and scale (lx, ly) around the cell centre (0.5, 0.5). The
+ * identity deform returns the inputs untouched.
+ */
+export function deformGlyphPoint(
+  lx: number,
+  ly: number,
+  deform: TextGlyphDeform,
+): { lx: number; ly: number } {
+  if (deform.scale === 1 && deform.angle === 0) return { lx, ly };
+  const cx = lx - 0.5;
+  const cy = ly - 0.5;
+  const cos = Math.cos(deform.angle);
+  const sin = Math.sin(deform.angle);
+  const rx = (cx * cos - cy * sin) * deform.scale;
+  const ry = (cx * sin + cy * cos) * deform.scale;
+  return { lx: 0.5 + rx, ly: 0.5 + ry };
+}
+
 /**
  * Sample one lit point of a glyph raster with the media grammar:
  * uniform cell picks accepted at the luma threshold, up to 24

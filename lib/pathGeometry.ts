@@ -89,6 +89,11 @@ export interface MorphPathOptions {
   stampSize?: number;
   stampShape?: 'disc' | 'ring' | 'star' | 'diamond' | 'obj';
   stampAlign?: boolean;
+  /** Parallel offset (Phase AM): the geometry is shifted
+   *  sideways by this distance (see offsetPathGeometry) before
+   *  any mode places points. Absent / 0 = the authored geometry
+   *  itself. Applies to every mode, text-on-path included. */
+  offset?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1020,4 +1025,109 @@ export function resolvePathPoint(geom: PathGeometry, s01: number, subpathMode: M
   const p = pointAtArcLength(table, local);
   const t = pathTangentAt(table, local);
   return { x: p.x, y: p.y, tangentX: t.x, tangentY: t.y, subpathIndex: index };
+}
+
+// ---------------------------------------------------------------------------
+// Parallel offset (Phase AM)
+// ---------------------------------------------------------------------------
+//
+// The 2D audit §1 "path offset" generator: shift every subpath
+// polyline sideways by a signed distance, producing a NEW
+// PathGeometry of parallel contours. Positive distance offsets
+// to the LEFT of the direction of travel (the normal (-dy, dx));
+// for a closed subpath wound CCW in this y-up space that is the
+// outside. Vertices use miter joins with the miter length
+// clamped to 3× the distance (beyond the clamp the join falls
+// back toward a bevel reading instead of spiking). Distance 0
+// returns the input geometry itself (same reference), which is
+// the bake's identity guarantee.
+
+/** Miter length cap, as a multiple of the offset distance. */
+export const PATH_OFFSET_MITER_MAX = 3;
+
+export function offsetPolylinePoints(
+  points: Float64Array,
+  closed: boolean,
+  distance: number,
+): Float64Array {
+  const n = Math.floor(points.length / 2);
+  const out = new Float64Array(points.length);
+  if (n === 0 || distance === 0) {
+    out.set(points);
+    return out;
+  }
+  // A closed table repeats its start point as its last point:
+  // the offset ring is the unique vertices, and the duplicate
+  // inherits the start vertex's offset so the closing edge
+  // stays parallel.
+  const duplicatesStart = closed && n >= 2
+    && points[0] === points[(n - 1) * 2]
+    && points[1] === points[(n - 1) * 2 + 1];
+  const ring = duplicatesStart ? n - 1 : n;
+  const dirAt = (i: number, j: number): { x: number; y: number } => {
+    const dx = points[j * 2] - points[i * 2];
+    const dy = points[j * 2 + 1] - points[i * 2 + 1];
+    const len = Math.hypot(dx, dy);
+    return len > 1e-12 ? { x: dx / len, y: dy / len } : { x: 0, y: 0 };
+  };
+  for (let i = 0; i < ring; i++) {
+    const prev = closed ? (i - 1 + ring) % ring : Math.max(0, i - 1);
+    const next = closed ? (i + 1) % ring : Math.min(ring - 1, i + 1);
+    const dIn = dirAt(prev, i);
+    const dOut = dirAt(i, next);
+    let nx = -dIn.y + -dOut.y;
+    let ny = dIn.x + dOut.x;
+    const nLen = Math.hypot(nx, ny);
+    let mx: number;
+    let my: number;
+    let scale: number;
+    if (nLen < 1e-9) {
+      // Hairpin: fall back to the incoming segment's normal.
+      mx = -dIn.y;
+      my = dIn.x;
+      scale = distance;
+    } else {
+      mx = nx / nLen;
+      my = ny / nLen;
+      // cos of the half angle between the miter direction and
+      // either segment normal.
+      const cosHalf = Math.max(0.34, mx * -dOut.y + my * dOut.x);
+      scale = distance / cosHalf;
+      const maxLen = Math.abs(distance) * PATH_OFFSET_MITER_MAX;
+      if (Math.abs(scale) > maxLen) scale = Math.sign(scale) * maxLen;
+    }
+    out[i * 2] = points[i * 2] + mx * scale;
+    out[i * 2 + 1] = points[i * 2 + 1] + my * scale;
+  }
+  if (duplicatesStart) {
+    out[(n - 1) * 2] = out[0];
+    out[(n - 1) * 2 + 1] = out[1];
+  }
+  return out;
+}
+
+/**
+ * Offset every subpath of a geometry by `distance` (normalised
+ * morph units). Returns the input unchanged (same reference)
+ * when the distance is 0 or not finite.
+ */
+export function offsetPathGeometry(geom: PathGeometry, distance: number): PathGeometry {
+  if (!Number.isFinite(distance) || distance === 0) return geom;
+  const subpaths: PathSubpath[] = [];
+  const offsets: number[] = [];
+  let totalLength = 0;
+  for (const sub of geom.subpaths) {
+    const shifted = offsetPolylinePoints(sub.points, sub.closed, distance);
+    const table = buildChordLengthTable(shifted);
+    offsets.push(totalLength);
+    totalLength += table.length;
+    subpaths.push({ ...table, closed: sub.closed });
+  }
+  return {
+    subpaths,
+    totalLength,
+    subpathOffsets: Float64Array.from(offsets),
+    viewBox: geom.viewBox,
+    sourceHash: `${geom.sourceHash}:off${distance}`,
+  };
 }

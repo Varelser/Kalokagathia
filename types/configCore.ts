@@ -181,6 +181,36 @@ export interface ParticleConfigCore {
   postFractalJuliaX: number;
   postFractalJuliaY: number;
   postFractalMix: number;
+  // Composite (Phase AM): a two-layer composite post stage — the
+  // frame blended with an AF supply texture (text-raster /
+  // path-raster / edge-output) under a blend-mode group. Default
+  // off = the stage is absent and the output is identical.
+  postCompositeEnabled: boolean;
+  postCompositeSource: string;
+  postCompositeMode: 'normal' | 'multiply' | 'screen' | 'overlay' | 'soft-light' | 'difference' | 'add' | 'subtract';
+  postCompositeMix: number;
+  // Glitch (Phase AM): horizontal band displacement by a
+  // deterministic (band, time-quantum) hash. Default off.
+  postGlitchEnabled: boolean;
+  postGlitchAmount: number;
+  postGlitchBands: number;
+  postGlitchRate: number;
+  // Pixel sort (Phase AM): odd-even compare-exchange sorting of
+  // the in-span pixels along rows / columns, stateless per
+  // frame. Default off.
+  postPixelSortEnabled: boolean;
+  postPixelSortDirection: 'horizontal' | 'vertical';
+  postPixelSortLow: number;
+  postPixelSortHigh: number;
+  postPixelSortPasses: number;
+  // Discrete cellular automaton (Phase AM): a B/S rule engine
+  // over a low-resolution ping-pong state texture, seeded from
+  // the frame's luminance. Default off.
+  postCellularEnabled: boolean;
+  postCellularRule: 'life' | 'highlife' | 'daynight' | 'seeds' | 'maze' | 'coral';
+  postCellularCellSize: number;
+  postCellularSeedThreshold: number;
+  postCellularMix: number;
   postSlitScanEnabled: boolean;
   postSlitScanBands: number;
   postSlitScanCycle: number;

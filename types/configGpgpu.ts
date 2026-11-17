@@ -252,7 +252,7 @@ export interface ParticleConfigGpgpu {
   // baked into a float texture; the velocity shader pulls each particle
   // toward its assigned target with the Kinetix morph spring law.
   gpgpuMorphEnabled: boolean;
-  gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj' | 'terrain' | 'data';
+  gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj' | 'terrain' | 'data' | 'contour';
   // SVG import (Pro-2): the imported SVG document's source text. Like
   // the TextMap text it lives in the config so it persists with
   // projects / presets; the point cloud is re-sampled from it
@@ -370,6 +370,12 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphPathTaper: number;
   gpgpuMorphPathTaperShape: 'linear' | 'smooth' | 'bell';
   gpgpuMorphPathSubpathMode: 'proportional' | 'even' | 'first';
+  // Path offset (Phase AM, lib/pathGeometry.ts): every subpath
+  // is shifted sideways by this distance (normalised units,
+  // positive = left of travel = outward for CCW closed paths)
+  // before placement, in every path mode. 0 = the authored
+  // geometry itself (identity).
+  gpgpuMorphPathOffset: number;
   // Text on path (Phase AF2, lib/gpgpuTextOnPath.ts): with the
   // path target active, the layer-2 TextMap string is laid out
   // glyph by glyph along the authored path — each glyph's luma
@@ -382,6 +388,25 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphTextOnPathEnabled: boolean;
   gpgpuMorphTextOnPathDelay: number;
   gpgpuMorphTextOnPathSize: number;
+  // Per-glyph deformation (Phase AM, lib/gpgpuTextOnPath.ts):
+  // each glyph's local placement is scaled / rotated by a
+  // deterministic per-index amount, and Fade thins glyphs by
+  // dropping a per-glyph fraction of their particles back to
+  // the plain path placement (density fade — the bake's alpha
+  // channel belongs to the replica phase). All 0 (defaults) =
+  // the deform option is absent and the AF2 bake is verbatim.
+  gpgpuMorphTextOnPathGlyphScale: number;
+  gpgpuMorphTextOnPathGlyphRotate: number;
+  gpgpuMorphTextOnPathGlyphFade: number;
+  // Contour target (Phase AM, lib/contourTrace.ts): the
+  // 'contour' morph target traces the outline of a luma source
+  // (marching squares) into paths and places particles along
+  // them. Source selects which luma grid is traced ('text' =
+  // the layer-2 TextMap raster, 'image' = the layer-2 media
+  // luma map); Threshold is the marching-squares level (0.3 =
+  // the media grammar's threshold).
+  gpgpuMorphContourSource: 'text' | 'image';
+  gpgpuMorphContourThreshold: number;
   // Voronoi fracture (Phase AG, lib/voronoiFracture.ts): a
   // post-pass over the morph bake — the cloud is partitioned
   // into seeded Voronoi cells and each cell is shrunk toward its
@@ -853,9 +878,19 @@ export interface ParticleConfigGpgpu {
   // the legacy ring, bit-identical; 'polygon' uses Sides vertices;
   // 'star' alternates outer / inner (InnerRatio) vertices, 2 x
   // Sides points. The length profile stays with Taper above.
-  gpgpuSmoothTubeSectionShape: 'circle' | 'polygon' | 'star';
+  gpgpuSmoothTubeSectionShape: 'circle' | 'polygon' | 'star' | 'custom';
   gpgpuSmoothTubeSectionSides: number;
   gpgpuSmoothTubeSectionInnerRatio: number;
+  // Arbitrary section profile + ribbon profiles (Phase AM):
+  // 'custom' sections read their radial scale from a free-curve
+  // profile over the ring angle; the width (N) and height (B)
+  // ring components scale along the tube's length by their own
+  // free-curve profiles. All three are flat [t, v, …] curve
+  // assets (lib/freeCurve.ts); the identity asset [0, 1, 1, 1]
+  // (the default) makes every one of them an exact no-op.
+  gpgpuSmoothTubeSectionProfile: number[];
+  gpgpuSmoothTubeWidthProfile: number[];
+  gpgpuSmoothTubeHeightProfile: number[];
   // Flow-field glyph overlay (Phase AF2,
   // lib/fieldGlyphSampling.ts + components/
   // sceneGpgpuFieldGlyphs.tsx): the curl field drawn as line

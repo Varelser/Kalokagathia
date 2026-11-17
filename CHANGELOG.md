@@ -4,6 +4,79 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.45.0] — 2026-11-18
+
+Sixth-term Phase AM: 2D foundation extensions — the contour of a
+luma source vectorised into a morph target, per-glyph deformation
+for text on a path, the remaining sweep/loft profiles, a two-layer
+composite post stage, and the 2D small bundle (dashed lines, path
+offset, pixel sort, a discrete cellular automaton, glitch). The
+data-mosh half of the glitch row (frame-to-frame motion transfer)
+stays out of scope, as planned. Twenty-nine new config keys
+(1,177 → 1,206) and two new starters (551 → 553). Every addition
+is default-off / default-identity and resolves to the legacy path
+verbatim while off: the new post stages are absent from the stack,
+the contour target appends after 'data' without touching the seed
+order of the existing targets, the glyph deform option is null at
+zero amounts, the path offset returns the authored geometry
+reference at 0, and the tube profiles are the identity curve asset.
+
+### Added
+- **Contour morph target** (`gpgpuMorphTarget: 'contour'` /
+  `gpgpuMorphContourSource` / `gpgpuMorphContourThreshold`):
+  marching squares over the layer-2 TextMap raster or the media
+  luma map, chained into polylines in the media mapping and placed
+  like an authored path (no RNG draws; shell fallback when no
+  outline exists). New lib `lib/contourTrace.ts`.
+- **Per-glyph deformation** (`gpgpuMorphTextOnPathGlyphScale` /
+  `gpgpuMorphTextOnPathGlyphRotate` /
+  `gpgpuMorphTextOnPathGlyphFade`): each glyph's scale / rotation
+  / fade drawn from a deterministic integer hash of its index;
+  the fade is a density expression (faded particles keep the
+  plain path placement), because the bake's alpha channel is the
+  replica phase's.
+- **Custom tube section + ribbon profiles**
+  (`gpgpuSmoothTubeSectionShape: 'custom'` /
+  `gpgpuSmoothTubeSectionProfile` /
+  `gpgpuSmoothTubeWidthProfile` /
+  `gpgpuSmoothTubeHeightProfile`): the section's radial scale
+  from a free curve over the ring angle; the ribbon's width (N)
+  and height (B) components scaled along the tube by their own
+  free curves, edited with the Phase AJ curve editor.
+- **Composite post stage** (`postCompositeEnabled` /
+  `postCompositeSource` / `postCompositeMode` /
+  `postCompositeMix`): the frame blended with an AF supply
+  texture (text-raster / path-raster / edge-output) under eight
+  blend modes; a bit-identical passthrough while the layer is
+  not ready.
+- **Glitch post stage** (`postGlitchEnabled` /
+  `postGlitchAmount` / `postGlitchBands` / `postGlitchRate`):
+  horizontal bands displaced by a deterministic (band, time
+  quantum) hash plus a fine row jitter; the quantum comes from
+  the pass's own frame counter.
+- **Pixel sort post stage** (`postPixelSortEnabled` /
+  `postPixelSortDirection` / `postPixelSortLow` /
+  `postPixelSortHigh` / `postPixelSortPasses`): odd-even
+  transposition compare-exchange inside the luminance span,
+  iterated in an internal ping-pong; out-of-span pixels are
+  barriers. Stateless across frames.
+- **Cellular automaton post stage** (`postCellularEnabled` /
+  `postCellularRule` / `postCellularCellSize` /
+  `postCellularSeedThreshold` / `postCellularMix`): a B/S-rule
+  automaton (life / highlife / daynight / seeds / maze / coral)
+  on a low-resolution ping-pong state texture, seeded from the
+  current frame's luminance on enable and on rule / size /
+  threshold changes.
+- **Dashed lines** (`layer1LineDashLength` /
+  `layer1LineDashGap`): both line shaders carry a dash
+  coordinate (segment arc length + midpoint hash phase) and
+  discard the gap spans; length 0 is the solid legacy line.
+- **Path offset** (`gpgpuMorphPathOffset`): every morph path
+  mode places on the miter-joined parallel offset of the
+  authored geometry; 0 returns the geometry itself.
+- Starters: "Contour Text Outline (Vectorised Raster)" and
+  "Cellular Life Field (Seeded Automaton)".
+
 ## [1.44.0] — 2026-11-18
 
 Sixth-term Phase AL: rendering extensions — an escape-time

@@ -23,6 +23,11 @@ export interface ParticleConfigLayer1 {
   // Hand-drawn line jitter (Phase AH): deterministic per-endpoint
   // displacement in the line shaders. 0 = legacy lines.
   layer1LineJitter: number;
+  // Dashed lines (Phase AM): the line shaders discard the gap
+  // part of a dash period along each segment. Length 0 = solid
+  // (legacy) lines.
+  layer1LineDashLength: number;
+  layer1LineDashGap: number;
   pulseSpeed: number;
   pulseAmplitude: number;
   // Per-layer SDF

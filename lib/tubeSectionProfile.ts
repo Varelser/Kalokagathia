@@ -20,7 +20,12 @@
 // The length profile of the tube stays with the existing taper
 // (lib/smoothTubeProfile.ts) — this module owns only the section.
 
-export type TubeSectionShape = 'circle' | 'polygon' | 'star';
+import {
+  evaluateFreeCurve,
+  type FreeCurvePoint,
+} from './freeCurve';
+
+export type TubeSectionShape = 'circle' | 'polygon' | 'star' | 'custom';
 
 export interface TubeSectionVertex {
   /** Unit direction components (cos / sin of the ring angle). */
@@ -49,16 +54,32 @@ export function tubeSectionPointCount(
   return shape === 'star' ? s * 2 : s;
 }
 
+/** Radial scale bounds of the 'custom' section profile: 0
+ *  pinches the ring onto the centre line, 2 doubles it. */
+export const TUBE_SECTION_CUSTOM_SCALE_MAX = 2;
+
+export function clampTubeSectionCustomScale(v: number): number {
+  if (!Number.isFinite(v)) return 1;
+  return Math.max(0, Math.min(TUBE_SECTION_CUSTOM_SCALE_MAX, v));
+}
+
 /**
  * The ring's vertex directions in legacy order: vertex j sits at
  * angle (j / count) * 2π, starting at angle 0 (the +N axis of the
  * ring frame). For 'circle' with sides 6 this returns exactly the
  * six (cos, sin, 1) triples the legacy inline loop produced.
+ *
+ * 'custom' (Phase AM) reads the radial scale from a free-curve
+ * profile over the ring angle (t = j / count): the arbitrary
+ * cross-section profile of the Sweep/Loft grammar. The identity
+ * profile evaluates to exactly 1 everywhere, so a custom section
+ * with the default profile is the circle with the same sides.
  */
 export function buildTubeSection(
   shape: TubeSectionShape,
   sides: number,
   innerRatio: number,
+  customProfile?: readonly FreeCurvePoint[] | null,
 ): TubeSectionVertex[] {
   const count = tubeSectionPointCount(shape, sides);
   const ratio = Number.isFinite(innerRatio)
@@ -68,7 +89,12 @@ export function buildTubeSection(
   for (let j = 0; j < count; j++) {
     // The legacy angle expression, kept verbatim: (2π · j) / count.
     const ang = ((Math.PI * 2) * j) / count;
-    const scale = shape === 'star' && j % 2 === 1 ? ratio : 1;
+    let scale = shape === 'star' && j % 2 === 1 ? ratio : 1;
+    if (shape === 'custom') {
+      scale = customProfile && customProfile.length >= 2
+        ? clampTubeSectionCustomScale(evaluateFreeCurve(customProfile, j / count))
+        : 1;
+    }
     out.push({ nx: Math.cos(ang), ny: Math.sin(ang), scale });
   }
   return out;

@@ -22,3 +22,29 @@ export function smoothTubeRadiusAt(baseRadius: number, t: number, taper: number)
   const k = clampSmoothTubeTaper(taper);
   return baseRadius * (1 - k + k * tt);
 }
+
+// ── Ribbon width / height profiles (Phase AM) ──────────────────
+// The Sweep/Loft remainder: the ring's N component (width) and
+// B component (height) scale independently along the tube's
+// length, each by a free-curve profile (lib/freeCurve.ts) over
+// the same ring parameter t the taper uses. The identity
+// profile evaluates to exactly 1, so with the default profiles
+// the vertex math is the legacy computation bit for bit (a
+// multiply by 1.0). Scales clamp to [0, 2] like the custom
+// section profile.
+
+import {
+  evaluateFreeCurve,
+  type FreeCurvePoint,
+} from './freeCurve';
+import { clampTubeSectionCustomScale } from './tubeSectionProfile';
+
+/** Width (N) or height (B) scale of ring t under a profile. */
+export function tubeRibbonScaleAt(
+  profile: readonly FreeCurvePoint[] | null | undefined,
+  t: number,
+): number {
+  if (!profile || profile.length < 2) return 1;
+  const tt = Math.max(0, Math.min(1, t));
+  return clampTubeSectionCustomScale(evaluateFreeCurve(profile, tt));
+}
