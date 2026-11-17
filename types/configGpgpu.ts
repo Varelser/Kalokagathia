@@ -416,6 +416,27 @@ export interface ParticleConfigGpgpu {
   gpgpuLightTrailWidth: number;
   /** Trail fade exponent: alpha ~ u^fade along old -> new. */
   gpgpuLightTrailFade: number;
+  // Occlusion-map shadow + fog self-shadow (Phase Z): an
+  // occlusion-map approximation baked from the terrain height
+  // field and the OBJ bounding sphere against the Phase T light
+  // object — NOT a full shadow map, and the UI says so
+  // (「シャドウ（遮蔽マップ近似）」). Disabled by default and
+  // strength 0 is also an exact identity, so with the defaults
+  // the render is bit-identical to v1.30.0. Flame colour /
+  // temperature are out of scope (monochrome policy).
+  gpgpuShadowEnabled: boolean;
+  /** Shadow darkness 0..1; 0 keeps every receiver bit-identical. */
+  gpgpuShadowStrength: number;
+  /** Penumbra softness 0..1 of the baked occlusion. */
+  gpgpuShadowSoftness: number;
+  /** Terrain height field casts occlusion. */
+  gpgpuShadowSourceTerrain: boolean;
+  /** OBJ mesh (bounding sphere) casts occlusion. */
+  gpgpuShadowSourceObj: boolean;
+  /** Fog / volumetric self-shadow strength; 0 = legacy fog. */
+  gpgpuFogSelfShadow: number;
+  /** Secondary march steps for the fog self-shadow (1..16). */
+  gpgpuFogShadowSteps: number;
   // Color over Lifetime
   gpgpuAgeColorEnabled: boolean;
   gpgpuAgeColorYoung: string;

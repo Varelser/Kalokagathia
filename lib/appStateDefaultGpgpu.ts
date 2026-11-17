@@ -250,6 +250,17 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuLightTrailEnabled: false,
   gpgpuLightTrailWidth: 6,
   gpgpuLightTrailFade: 1.5,
+  // Occlusion-map shadow + fog self-shadow (Phase Z): shadow off
+  // and strength / self-shadow 0 by default — nothing bakes, no
+  // receiver changes, and the render is bit-identical to v1.30.0
+  // until opted in.
+  gpgpuShadowEnabled: false,
+  gpgpuShadowStrength: 0,
+  gpgpuShadowSoftness: 0.5,
+  gpgpuShadowSourceTerrain: true,
+  gpgpuShadowSourceObj: true,
+  gpgpuFogSelfShadow: 0,
+  gpgpuFogShadowSteps: 4,
   // Color over Lifetime
   gpgpuAgeColorEnabled: false,
   gpgpuAgeColorYoung: '#00aaff',

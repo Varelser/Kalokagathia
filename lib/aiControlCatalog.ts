@@ -361,6 +361,10 @@ const NUMS: NumDef[] = [
   ['gpgpuLightVolumeSoftness', 'GPGPU 体積光のエッジの柔らかさ（深度フェード量、深度交差はしない）'],
   ['gpgpuLightTrailWidth', 'GPGPU ライト軌跡リボンの幅（ワールド単位）'],
   ['gpgpuLightTrailFade', 'GPGPU ライト軌跡リボンの減衰（古い側ほど薄くなる指数）'],
+  ['gpgpuShadowStrength', 'GPGPU シャドウ（遮蔽マップ近似）の濃さ（0で従来同一）'],
+  ['gpgpuShadowSoftness', 'GPGPU シャドウ（遮蔽マップ近似）のぼかし量（半影の柔らかさ）'],
+  ['gpgpuFogSelfShadow', 'GPGPU 煙・霧の自己影の強さ（0で従来同一）'],
+  ['gpgpuFogShadowSteps', 'GPGPU 煙・霧の自己影のサンプリング刻み（1〜16）'],
   ['gpgpuMapSizeAmount', 'GPGPU Layer Map のサイズ変調の強さ（グラデーション画像の輝度を粒子位置でサンプリング、0で無効）'],
   ['gpgpuMapOpacityAmount', 'GPGPU Layer Map の不透明度変調の強さ（グラデーション画像の輝度を粒子位置でサンプリング、0で無効）'],
   ['gpgpuMapDisplaceAmount', 'GPGPU Layer Map の変位の強さ（輝度で配置点を半径方向にずらす、0で無効）'],
@@ -508,6 +512,9 @@ const BOOLS: BoolDef[] = [
   ['gpgpuLightConeEnabled', 'GPGPU 3Dライトのコーン（スポット）絞り込みの有効化'],
   ['gpgpuLightVolumeEnabled', 'GPGPU 体積光（見える光、Lux）の有効化'],
   ['gpgpuLightTrailEnabled', 'GPGPU ライト軌跡リボン（Tao）の有効化'],
+  ['gpgpuShadowEnabled', 'GPGPU シャドウ（遮蔽マップ近似、本格シャドウマップではない）の有効化'],
+  ['gpgpuShadowSourceTerrain', 'GPGPU シャドウの遮蔽源に地形メッシュを使う'],
+  ['gpgpuShadowSourceObj', 'GPGPU シャドウの遮蔽源に OBJ メッシュ（外接球近似）を使う'],
   ['gpgpuFloorEnabled', 'GPGPUの床バウンス'],
 ];
 
