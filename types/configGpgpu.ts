@@ -50,6 +50,24 @@ export interface ParticleConfigGpgpu {
   gpgpuAgeMax: number;
   gpgpuAgeFadeIn: number;
   gpgpuAgeFadeOut: number;
+  // Lifecycle grammar (Phase AB, lib/gpgpuLifecycle.ts): the spawn
+  // gate meters how the fixed pool joins the simulation — burst is
+  // the fraction live at t = 0, rate releases the remainder
+  // (pool fraction per second). Burst 1 (default) disables the
+  // gate entirely. The kill conditions respawn a particle
+  // immediately when it leaves the bounce sphere (boundary) or
+  // sits in a rejected raster-mask region (mask, the Phase X mask
+  // keys below, evaluated with the draw clip's rule); both default
+  // OFF. The global drag is the rate of the pool-wide damping
+  // factor (1 - rate * dt) — default 1.1 is the legacy fixed
+  // damping, bit-identical — and the global max speed (0 = off)
+  // promotes the Particle Life cap semantics to the whole pool.
+  gpgpuSpawnRate: number;
+  gpgpuSpawnBurst: number;
+  gpgpuKillBoundary: boolean;
+  gpgpuKillMask: boolean;
+  gpgpuDrag: number;
+  gpgpuMaxSpeed: number;
   // Curl Noise
   gpgpuCurlEnabled: boolean;
   gpgpuCurlStrength: number;
@@ -115,6 +133,11 @@ export interface ParticleConfigGpgpu {
   gpgpuSphViscosity: number;
   gpgpuSphRadius: number;
   gpgpuSphRestDensity: number;
+  // Surface tension (Phase AB): a cohesion term in the SPH force
+  // sum — neighbours pull the particle toward themselves with the
+  // kernel weight, so a droplet holds together. An approximation
+  // (no curvature model); 0 (default) = off, legacy SPH.
+  gpgpuSphSurfaceTension: number;
   // Vector Field
   gpgpuVFieldEnabled: boolean;
   gpgpuVFieldType: 'dipole' | 'saddle' | 'spiral' | 'source' | 'abc' | 'gyre' | 'worley';
@@ -153,6 +176,12 @@ export interface ParticleConfigGpgpu {
   gpgpuParticleLifeMaxSpeed: number;
   gpgpuParticleLifeMeanderAmount: number;
   gpgpuParticleLifeMeanderScale: number;
+  // Obstacle avoidance (Phase AB): the third Steering term — a
+  // push along the SDF collider's normal, quadratic in the
+  // proximity inside the vision range. 0 (default) = off; only
+  // acts while the SDF collider is enabled. TS twin:
+  // obstacleAvoidForce in lib/particleLifeBehavior.ts.
+  gpgpuParticleLifeAvoid: number;
   // Spring (to spawn pos)
   gpgpuSpringEnabled: boolean;
   gpgpuSpringStrength: number;
@@ -379,7 +408,7 @@ export interface ParticleConfigGpgpu {
   // continuous spark shedding from live main particles (Kinetix
   // auxMode). 'none' (default) runs no aux passes at all. The layer
   // Aux/Spark systems are unrelated and keep working as before.
-  gpgpuAuxMode: 'none' | 'deathBurst' | 'bounceSplash' | 'sparkTrail';
+  gpgpuAuxMode: 'none' | 'deathBurst' | 'bounceSplash' | 'sparkTrail' | 'birthBurst';
   gpgpuAuxCount: number;
   gpgpuAuxIntensity: number;
   gpgpuAuxLife: number;
@@ -407,7 +436,7 @@ export interface ParticleConfigGpgpu {
   // pool is allocated or run, and depth 1 (default) is exactly the
   // legacy single-pool behaviour.
   gpgpuAuxDepth: number;
-  gpgpuAux2Mode: 'none' | 'deathBurst' | 'bounceSplash' | 'sparkTrail';
+  gpgpuAux2Mode: 'none' | 'deathBurst' | 'bounceSplash' | 'sparkTrail' | 'birthBurst';
   gpgpuAux2Intensity: number;
   gpgpuAux2Life: number;
   gpgpuAux2Speed: number;

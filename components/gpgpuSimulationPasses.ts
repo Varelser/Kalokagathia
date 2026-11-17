@@ -137,6 +137,13 @@ export function runSimulationPasses(args: {
   morphNormalTex: THREE.Texture | null;
   morphKickStart: number;
   prevPosTex: THREE.Texture | null;
+  // Lifecycle grammar (Phase AB): seconds since the spawn epoch
+  // (the scene resets the epoch when the spawn keys / pool change;
+  // defaults to `time` when the caller does not track one) and the
+  // resolved Phase X mask texture for the mask kill (null unless
+  // the kill is on and the mask image is ready).
+  spawnTime?: number;
+  killMaskTex?: THREE.Texture | null;
   webgpuState: WebGPUComputeState | null;
   webgpuPosTex: THREE.DataTexture | null;
   webgpuPingIsARef: MutableRefObject<boolean>;
@@ -348,6 +355,14 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uParticleLifeMaxSpeed) velSimMat.uniforms.uParticleLifeMaxSpeed.value = config.gpgpuParticleLifeMaxSpeed;
   if (velSimMat.uniforms.uParticleLifeMeanderAmount) velSimMat.uniforms.uParticleLifeMeanderAmount.value = config.gpgpuParticleLifeMeanderAmount;
   if (velSimMat.uniforms.uParticleLifeMeanderScale) velSimMat.uniforms.uParticleLifeMeanderScale.value = config.gpgpuParticleLifeMeanderScale;
+  if (velSimMat.uniforms.uParticleLifeAvoid) velSimMat.uniforms.uParticleLifeAvoid.value = Math.max(0, config.gpgpuParticleLifeAvoid || 0);
+  // Lifecycle grammar (Phase AB): spawn gate + global drag / max
+  // speed. The clamps mirror lib/gpgpuLifecycle.ts.
+  if (velSimMat.uniforms.uSpawnRate) velSimMat.uniforms.uSpawnRate.value = Math.max(0.01, Math.min(1, config.gpgpuSpawnRate || 1));
+  if (velSimMat.uniforms.uSpawnBurst) velSimMat.uniforms.uSpawnBurst.value = Math.max(0, Math.min(1, config.gpgpuSpawnBurst ?? 1));
+  if (velSimMat.uniforms.uSpawnTime) velSimMat.uniforms.uSpawnTime.value = args.spawnTime ?? time;
+  if (velSimMat.uniforms.uDragRate) velSimMat.uniforms.uDragRate.value = Math.max(0, Math.min(10, config.gpgpuDrag ?? 1.1));
+  if (velSimMat.uniforms.uMaxSpeed) velSimMat.uniforms.uMaxSpeed.value = Math.max(0, config.gpgpuMaxSpeed || 0);
   velSimMat.uniforms.uAttractorStrength.value = config.gpgpuAttractorStrength;
   velSimMat.uniforms.uAttractorScale.value = config.gpgpuAttractorScale;
   velSimMat.uniforms.uVortexEnabled.value = config.gpgpuVortexEnabled;
@@ -377,6 +392,7 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uSphViscosity.value = config.gpgpuSphViscosity;
   velSimMat.uniforms.uSphRadius.value = config.gpgpuSphRadius;
   velSimMat.uniforms.uSphRestDensity.value = config.gpgpuSphRestDensity;
+  if (velSimMat.uniforms.uSphSurfaceTension) velSimMat.uniforms.uSphSurfaceTension.value = Math.max(0, config.gpgpuSphSurfaceTension || 0);
   velSimMat.uniforms.uVFieldEnabled.value = config.gpgpuVFieldEnabled;
   velSimMat.uniforms.uVFieldType.value = { dipole: 0, saddle: 1, spiral: 2, source: 3, abc: 4, gyre: 5, worley: 6 }[config.gpgpuVFieldType] ?? 3;
   velSimMat.uniforms.uVFieldStrength.value = config.gpgpuVFieldStrength;
@@ -460,6 +476,18 @@ export function runSimulationPasses(args: {
     posSimMat.uniforms.uEmitLight.value = config.gpgpuEmitShape === 'light';
     (posSimMat.uniforms.uEmitLightPos.value as THREE.Vector3).set(config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ);
   }
+  // Lifecycle grammar (Phase AB): spawn gate + kill conditions.
+  // The mask kill resolves here: key on AND a ready mask texture —
+  // otherwise the shader keeps the legacy path (the UI states the
+  // fallback, like the draw clip does).
+  if (posSimMat.uniforms.uSpawnRate) posSimMat.uniforms.uSpawnRate.value = Math.max(0.01, Math.min(1, config.gpgpuSpawnRate || 1));
+  if (posSimMat.uniforms.uSpawnBurst) posSimMat.uniforms.uSpawnBurst.value = Math.max(0, Math.min(1, config.gpgpuSpawnBurst ?? 1));
+  if (posSimMat.uniforms.uSpawnTime) posSimMat.uniforms.uSpawnTime.value = args.spawnTime ?? time;
+  if (posSimMat.uniforms.uKillBoundary) posSimMat.uniforms.uKillBoundary.value = !!config.gpgpuKillBoundary;
+  if (posSimMat.uniforms.uKillMask) posSimMat.uniforms.uKillMask.value = !!config.gpgpuKillMask && !!args.killMaskTex;
+  if (posSimMat.uniforms.uKillMaskTex) posSimMat.uniforms.uKillMaskTex.value = args.killMaskTex ?? null;
+  if (posSimMat.uniforms.uKillMaskThreshold) posSimMat.uniforms.uKillMaskThreshold.value = Math.max(0, Math.min(1, config.gpgpuMaskThreshold ?? 0.5));
+  if (posSimMat.uniforms.uKillMaskInvert) posSimMat.uniforms.uKillMaskInvert.value = !!config.gpgpuMaskInvert;
   simMesh.material = posSimMat;
   gl.setRenderTarget(posOut);
   gl.render(simScene, simCamera);
@@ -484,6 +512,7 @@ const AUX_MODE_IDS: Record<Exclude<ParticleConfig['gpgpuAuxMode'], 'none'>, numb
   deathBurst: 0,
   bounceSplash: 1,
   sparkTrail: 2,
+  birthBurst: 3,
 };
 
 // Aux event emission passes (B3): run after the main velocity/position

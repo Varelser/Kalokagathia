@@ -89,6 +89,19 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   if (config.gpgpuFloorEnabled) features.push('floor');
   if (config.gpgpuCustomForceEnabled && (config.gpgpuCustomForceCode || '').trim().length > 0) features.push('custom-force');
   if (config.gpgpuAuxMode !== 'none') features.push('aux');
+  // Phase AB lifecycle grammar: the spawn gate, the kill
+  // conditions, the global drag / max speed and the two new force
+  // terms live in the WebGL passes only. They are requested here
+  // (and deliberately NOT added to the supported list) so a
+  // WebGPU-preference config using them routes to WebGL instead
+  // of silently losing the effect — the Phase R morph lesson.
+  // The Aux birthBurst mode needs no entry of its own: 'aux'
+  // already routes every aux config to WebGL.
+  if ((config.gpgpuSpawnBurst ?? 1) < 1) features.push('spawn-gate');
+  if (config.gpgpuKillBoundary || config.gpgpuKillMask) features.push('kill-conditions');
+  if ((config.gpgpuMaxSpeed || 0) > 0 || Math.abs((config.gpgpuDrag ?? 1.1) - 1.1) > 1e-9) features.push('global-velocity-limit');
+  if (config.gpgpuParticleLifeEnabled && (config.gpgpuParticleLifeAvoid || 0) > 0) features.push('particle-life-avoid');
+  if (config.gpgpuSphEnabled && (config.gpgpuSphSurfaceTension || 0) > 0) features.push('sph-surface-tension');
   return features;
 }
 

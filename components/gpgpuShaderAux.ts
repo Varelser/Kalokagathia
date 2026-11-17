@@ -18,6 +18,11 @@
 //   sparks; spawning happens on the slot's own recycle with a hash
 //   gate, and the spark velocity is sourceVel * 0.15 + hash spread
 //   (Kinetix's allocateSlot call for sparkTrail).
+// - birthBurst (Phase AB): a candidate whose age restarted at ~0
+//   on the previous frame — it (re)spawned through the main pool's
+//   shared respawn block (age wrap, spawn-gate activation, kill) —
+//   emits a gentle burst at its new position, with probability
+//   0.35 * intensity. Modes 0-2 above are byte-untouched.
 //
 // State layout mirrors the main sim: position texture (xyz + age in
 // w) and velocity texture (xyz + per-particle life in w). A particle
@@ -78,6 +83,23 @@ const AUX_EVENT_GLSL = /* glsl */ `
           return vec4(mPos.xyz, 1.0);
         }
         break;
+      }
+      if (uAuxMode == 3) {
+        // birthBurst (Phase AB): the candidate (re)spawned on the
+        // previous frame — its age restarted at ~0 through the
+        // shared respawn block (age wrap, spawn-gate activation or
+        // a kill), the same signal the morph kick envelope reads.
+        // The window is 0.75 * delta so each birth fires on exactly
+        // one frame start. The burst sits at the particle's current
+        // position, one frame of motion past the emit point.
+        if (uAgeEnabled && mPos.w < delta * 0.75 && gate < 0.35 * uAuxIntensity) {
+          vec4 mVel = texture2D(uMainVelTex, srcUv);
+          vec3 dir = auxHash3(auxIdx * 4.31 + tick * 1.113);
+          float dl = length(dir);
+          dir = dl > 0.01 ? dir / dl : vec3(0.0, 1.0, 0.0);
+          gAuxSpawnVel = mVel.xyz * 0.25 + dir * uAuxSpeed * (0.2 + 0.3 * auxHash(auxIdx * 6.7 + tick));
+          return vec4(mPos.xyz, 1.0);
+        }
       }
       if (uAuxMode == 0) {
         // deathBurst: age wrap this frame (mPos.w is the pre-update age).
@@ -312,6 +334,18 @@ const AUX_CHAIN_EVENT_GLSL = /* glsl */ `
           return vec4(mPos.xyz, 1.0);
         }
         break;
+      }
+      if (uAuxMode == 3) {
+        // birthBurst (Phase AB): the source particle spawned on
+        // the previous frame — its age restarted at 0 while it is
+        // alive (same 0.75 * delta window as level 1).
+        if (alive && mPos.w < delta * 0.75 && gate < 0.35 * uAuxIntensity) {
+          vec3 dir = auxChainHash3(auxIdx * 4.31 + uChainSalt + tick * 1.113);
+          float dl = length(dir);
+          dir = dl > 0.01 ? dir / dl : vec3(0.0, 1.0, 0.0);
+          gAuxChainSpawnVel = mVel.xyz * 0.25 + dir * uAuxSpeed * (0.2 + 0.3 * auxChainHash(auxIdx * 6.7 + uChainSalt + tick));
+          return vec4(mPos.xyz, 1.0);
+        }
       }
       if (uAuxMode == 0) {
         // deathBurst: the source's age crosses its own life this

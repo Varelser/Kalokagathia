@@ -68,6 +68,14 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uParticleLifeMaxSpeed: { value: 0 },
       uParticleLifeMeanderAmount: { value: 0 },
       uParticleLifeMeanderScale:  { value: 1 },
+      uParticleLifeAvoid:         { value: 0 },
+      // Lifecycle grammar (Phase AB): gate off / legacy drag at
+      // the defaults; the passes fill them from config per frame.
+      uSpawnRate:   { value: 1.0 },
+      uSpawnBurst:  { value: 1.0 },
+      uSpawnTime:   { value: 0 },
+      uDragRate:    { value: 1.1 },
+      uMaxSpeed:    { value: 0 },
       uVortexEnabled:    { value: false },
       uVortexStrength:   { value: 1.0 },
       uVortexTilt:       { value: 0.0 },
@@ -95,6 +103,7 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSphViscosity:    { value: 0.5 },
       uSphRadius:       { value: 40.0 },
       uSphRestDensity:  { value: 2.0 },
+      uSphSurfaceTension: { value: 0 },
       uVFieldEnabled:   { value: false },
       uVFieldType:      { value: 2 },
       uVFieldStrength:  { value: 1.0 },
@@ -182,6 +191,15 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       // is 'light'; the position then mirrors the light keys.
       uEmitLight:     { value: false },
       uEmitLightPos:  { value: new THREE.Vector3(0, 0, 0) },
+      // Lifecycle grammar (Phase AB): spawn gate + kill conditions.
+      uSpawnRate:   { value: 1.0 },
+      uSpawnBurst:  { value: 1.0 },
+      uSpawnTime:   { value: 0 },
+      uKillBoundary: { value: false },
+      uKillMask:     { value: false },
+      uKillMaskTex:  { value: null },
+      uKillMaskThreshold: { value: 0.5 },
+      uKillMaskInvert: { value: false },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_POS_FRAG,
   });

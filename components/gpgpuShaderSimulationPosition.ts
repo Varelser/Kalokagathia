@@ -39,9 +39,27 @@ export const SIM_POS_FRAG = /* glsl */ `
   // origin sphere. False (default) keeps the legacy statement.
   uniform bool  uEmitLight;
   uniform vec3  uEmitLightPos;
+  // Lifecycle grammar (Phase AB): spawn gate + kill conditions.
+  // uKillMask is resolved CPU-side (key on AND mask texture
+  // ready); the mask is the Phase X raster mask image, sampled
+  // with the draw clip's own UV rule and threshold / invert keys.
+  uniform float uSpawnRate;
+  uniform float uSpawnBurst;
+  uniform float uSpawnTime;
+  uniform bool  uKillBoundary;
+  uniform bool  uKillMask;
+  uniform sampler2D uKillMaskTex;
+  uniform float uKillMaskThreshold;
+  uniform bool  uKillMaskInvert;
   varying vec2 vUv;
 
   float hash1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+  // Spawn gate hash (Phase AB): identical to the velocity pass and
+  // to spawnHashForUv in lib/gpgpuLifecycle.ts.
+  float spawnHash(vec2 uv) {
+    return fract(sin(dot(uv + vec2(7.77, 3.13), vec2(127.1, 311.7))) * 43758.5453);
+  }
 
   // Gyroid SDF (B3) — identical formulation to the velocity shader.
   float gyroidField(vec3 p, vec3 sc, float size) {
@@ -69,6 +87,23 @@ export const SIM_POS_FRAG = /* glsl */ `
     vec3 pos = posData.xyz;
     float age = posData.w;
     vec3 vel = texture2D(uVelTex, vUv).xyz;
+
+    // Spawn gate (Phase AB): an unreleased particle is parked
+    // off-screen with its age frozen (the velocity pass zeroes its
+    // velocity under the same test). On the single frame the
+    // release threshold crosses its hash it activates through the
+    // shared respawn block below. Burst 1 (default) skips this.
+    bool spawnActivating = false;
+    if (uSpawnBurst < 1.0) {
+      float sHash = spawnHash(vUv);
+      float thrNow = min(1.0, uSpawnBurst + uSpawnRate * max(uSpawnTime, 0.0));
+      if (sHash >= thrNow) {
+        gl_FragColor = vec4(0.0, -99999.0, 0.0, age);
+        return;
+      }
+      float thrPrev = min(1.0, uSpawnBurst + uSpawnRate * max(uSpawnTime - uDelta, 0.0));
+      spawnActivating = sHash >= thrPrev;
+    }
 
     if (uVerletEnabled) {
       vec3 prevPos = texture2D(uPrevPosTex, vUv).xyz;
@@ -135,9 +170,28 @@ export const SIM_POS_FRAG = /* glsl */ `
       }
     }
 
+    // Respawn decision: the legacy age wrap, the Phase AB spawn
+    // activation, and the Phase AB kill conditions all enter the
+    // same respawn block below, so every (re)birth in the pool
+    // shares one placement law (and one Aux birth signal).
+    bool doRespawn = spawnActivating;
     if (uAgeEnabled) {
       age += uDelta;
-      if (age > uAgeMax) {
+      if (age > uAgeMax) doRespawn = true;
+    }
+    // Kill conditions (Phase AB): leave the bounce sphere, or sit
+    // in a rejected raster-mask region, and the particle respawns
+    // now instead of bouncing / living on. Both default off. The
+    // mask test mirrors the draw clip (Phase X): same UV rule,
+    // same threshold / invert keys.
+    if (uKillBoundary && length(pos) > uBounceRadius + 0.001) doRespawn = true;
+    if (uKillMask) {
+      vec2 maskUv = clamp(pos.xy * (1.0 / (2.0 * max(uBounceRadius, 1.0))) + 0.5, 0.0, 1.0);
+      float mLuma = dot(texture2D(uKillMaskTex, maskUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+      if (uKillMaskInvert) mLuma = 1.0 - mLuma;
+      if (mLuma < uKillMaskThreshold) doRespawn = true;
+    }
+    if (doRespawn) {
         float r   = uBounceRadius * (0.05 + hash1(vUv + vec2(age)) * 0.9);
         float th  = hash1(vUv + vec2(1.3)) * 6.2832;
         float phi = acos(2.0 * hash1(vUv + vec2(2.7)) - 1.0);
@@ -169,7 +223,6 @@ export const SIM_POS_FRAG = /* glsl */ `
         // (exactly 0.0 in the shared path, so this is a no-op
         // there beyond the per-texel term above).
         age += uReplicaAgeBase;
-      }
     }
 
     gl_FragColor = vec4(pos, age);

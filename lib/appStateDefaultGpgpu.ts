@@ -42,6 +42,15 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuAgeMax: 8.0,
   gpgpuAgeFadeIn: 0.1,
   gpgpuAgeFadeOut: 0.2,
+  // Lifecycle grammar (Phase AB): burst 1 disables the spawn gate
+  // (whole pool live at t = 0, the legacy behaviour); kills off;
+  // drag 1.1 is the legacy fixed damping; max speed 0 = uncapped.
+  gpgpuSpawnRate: 1.0,
+  gpgpuSpawnBurst: 1.0,
+  gpgpuKillBoundary: false,
+  gpgpuKillMask: false,
+  gpgpuDrag: 1.1,
+  gpgpuMaxSpeed: 0,
   gpgpuCurlEnabled: false,
   gpgpuCurlStrength: 1.0,
   gpgpuCurlScale: 0.008,
@@ -92,6 +101,8 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSphViscosity: 0.5,
   gpgpuSphRadius: 40.0,
   gpgpuSphRestDensity: 2.0,
+  // Surface tension (Phase AB, cohesion approximation): 0 = off.
+  gpgpuSphSurfaceTension: 0,
   // Vector Field
   gpgpuVFieldEnabled: false,
   gpgpuVFieldType: 'spiral' as const,
@@ -122,6 +133,9 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuParticleLifeMaxSpeed: 0,
   gpgpuParticleLifeMeanderAmount: 0,
   gpgpuParticleLifeMeanderScale: 1,
+  // Obstacle avoidance (Phase AB): 0 = off (Steering stays
+  // pursue / evade only, the Phase AA behaviour).
+  gpgpuParticleLifeAvoid: 0,
   // Spring (to spawn pos)
   gpgpuSpringEnabled: false,
   gpgpuSpringStrength: 1.0,

@@ -51,6 +51,16 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uParticleLifeMaxSpeed;
   uniform float uParticleLifeMeanderAmount;
   uniform float uParticleLifeMeanderScale;
+  uniform float uParticleLifeAvoid;
+  // Lifecycle grammar (Phase AB): spawn gate (burst < 1 holds part
+  // of the pool parked until the release threshold crosses its
+  // hash) and the pool-wide drag rate / max speed. uDragRate's
+  // default 1.1 is the legacy fixed damping; uMaxSpeed 0 = off.
+  uniform float uSpawnRate;
+  uniform float uSpawnBurst;
+  uniform float uSpawnTime;
+  uniform float uDragRate;
+  uniform float uMaxSpeed;
   uniform bool  uVortexEnabled;
   uniform float uVortexStrength;
   uniform float uVortexTilt;
@@ -78,6 +88,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uSphViscosity;
   uniform float uSphRadius;
   uniform float uSphRestDensity;
+  uniform float uSphSurfaceTension;
   uniform bool  uVFieldEnabled;
   uniform int   uVFieldType;
   uniform float uVFieldStrength;
@@ -239,6 +250,45 @@ export const SIM_VEL_FRAG = /* glsl */ `
     return fract(sin(dot(uv * 913.7 + vec2(tick * 17.31, tick * 7.77), vec2(12.9898, 78.233))) * 43758.5453);
   }
 
+  // Spawn gate hash (Phase AB): the position shader's hash1 family
+  // at a fixed offset — the identical expression lives in the
+  // position pass and in lib/gpgpuLifecycle.ts (spawnHashForUv), so
+  // all three agree on which particles are released.
+  float spawnHash(vec2 uv) {
+    return fract(sin(dot(uv + vec2(7.77, 3.13), vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  // SDF distance for obstacle avoidance (Phase AB): the same field
+  // formulas the collider block at the bottom of main() evaluates
+  // (gyroid uses the gradient-normalised approximation above).
+  // TS twin: sdfDistance in lib/particleLifeBehavior.ts.
+  float abSdfDistance(vec3 p) {
+    vec3 sc = vec3(uSdfX, uSdfY, uSdfZ);
+    vec3 d = p - sc;
+    if (uSdfShape == 0) {
+      return length(d) - uSdfSize;
+    } else if (uSdfShape == 1) {
+      vec3 q = abs(d) - vec3(uSdfSize);
+      return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+    } else if (uSdfShape == 2) {
+      float ringD = length(d.xz) - uSdfSize;
+      return length(vec2(ringD, d.y)) - uSdfSize * 0.35;
+    } else if (uSdfShape == 4) {
+      return gyroidField(p, sc, uSdfSize) * uSdfSize * 0.227;
+    }
+    float yc = clamp(d.y, -uSdfSize, uSdfSize);
+    return length(vec3(d.x, d.y - yc, d.z)) - uSdfSize * 0.4;
+  }
+  vec3 abSdfNormal(vec3 p) {
+    float e = 0.5;
+    vec3 g = vec3(
+      abSdfDistance(p + vec3(e, 0.0, 0.0)) - abSdfDistance(p - vec3(e, 0.0, 0.0)),
+      abSdfDistance(p + vec3(0.0, e, 0.0)) - abSdfDistance(p - vec3(0.0, e, 0.0)),
+      abSdfDistance(p + vec3(0.0, 0.0, e)) - abSdfDistance(p - vec3(0.0, 0.0, e)));
+    float gl = length(g);
+    return gl > 0.0001 ? g / gl : vec3(0.0, 1.0, 0.0);
+  }
+
   // Particle Life species: fixed per particle, derived from the texel
   // index with the same hash the points readout uses, so sim and draw
   // always agree on which species a particle belongs to.
@@ -257,6 +307,20 @@ export const SIM_VEL_FRAG = /* glsl */ `
     vec3 pos = posData.xyz;
     vec3 vel = velData.xyz;
     float phaseState = velData.w;
+
+    // Spawn gate (Phase AB): an unreleased particle carries zero
+    // velocity (its phase state is preserved verbatim) so it sits
+    // parked — the position pass holds it off-screen — until the
+    // release threshold crosses its hash. Burst 1 (default) skips
+    // this entirely. TS twin: spawnStateForIndex in
+    // lib/gpgpuLifecycle.ts.
+    if (uSpawnBurst < 1.0) {
+      float sThr = min(1.0, uSpawnBurst + uSpawnRate * max(uSpawnTime, 0.0));
+      if (spawnHash(vUv) >= sThr) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, phaseState);
+        return;
+      }
+    }
 
     // Replica independent simulation (Phase W2): in stack mode
     // this pass simulates ONE replica block inside its own
@@ -450,6 +514,20 @@ export const SIM_VEL_FRAG = /* glsl */ `
           sin(pos.x * mScale + mPhase * 2.3 + mTime));
         vel += mVec * uParticleLifeMeanderAmount * uDelta * 30.0;
       }
+      // Obstacle avoidance (Phase AB): the third Steering term —
+      // a push along the SDF collider's normal, quadratic in the
+      // proximity inside the vision range (same range fallback as
+      // the vision gate: 0 = interaction radius). Only acts while
+      // the collider is enabled. TS twin: obstacleAvoidForce in
+      // lib/particleLifeBehavior.ts.
+      if (uParticleLifeAvoid > 0.0 && uSdfEnabled) {
+        float aRange = uParticleLifeVisionRange > 0.0 ? uParticleLifeVisionRange : plRadius;
+        float aSd = abSdfDistance(pos);
+        if (aSd < aRange) {
+          float aw = clamp(1.0 - aSd / aRange, 0.0, 1.0);
+          vel += abSdfNormal(pos) * (uParticleLifeAvoid * aw * aw) * uDelta * 45.0;
+        }
+      }
       vel *= pow(clamp(uParticleLifeFriction, 0.0, 1.0), uDelta * 60.0);
       // Max speed (Phase AA1): 0 = uncapped (legacy).
       if (uParticleLifeMaxSpeed > 0.0) {
@@ -577,6 +655,9 @@ export const SIM_VEL_FRAG = /* glsl */ `
       float density = 0.0;
       vec3 pressureForce = vec3(0.0);
       vec3 viscForce = vec3(0.0);
+      // Surface tension (Phase AB, cohesion approximation): the
+      // accumulated pull toward neighbours, kernel-weighted.
+      vec3 cohesionForce = vec3(0.0);
       float h2 = uSphRadius * uSphRadius;
       float stride = uTexSizeF / float(uNBodySamples);
       for (int i = 0; i < 64; i++) {
@@ -595,9 +676,26 @@ export const SIM_VEL_FRAG = /* glsl */ `
           float pressure = uSphPressure * max(0.0, density - uSphRestDensity);
           pressureForce += normalize(r + vec3(0.0001)) * pressure * w;
           viscForce += (oVel - vel) * w * uSphViscosity;
+          if (uSphSurfaceTension > 0.0) {
+            // Offset-weighted (spring form): the pull grows with
+            // the offset and vanishes at zero distance. A
+            // constant-magnitude (normalised) pull injected energy
+            // under discrete integration and measurably heated /
+            // expanded the cloud on the Phase AB real-GPU gate.
+            cohesionForce += (oPos - pos) * (w / uSphRadius);
+          }
         }
       }
       vel += (pressureForce + viscForce) * uDelta * 15.0;
+      if (uSphSurfaceTension > 0.0) {
+        // Much gentler gain than pressure / viscosity: at the
+        // shared x15 the spring was stiff enough that explicit
+        // integration heated the cloud and blew it apart on the
+        // Phase AB real-GPU gate (spread grew ~12% instead of
+        // shrinking). Cohesion here is a slow bias, not a stiff
+        // spring.
+        vel += cohesionForce * uSphSurfaceTension * uDelta * 1.0;
+      }
     }
 
     // Vector Field
@@ -810,7 +908,25 @@ export const SIM_VEL_FRAG = /* glsl */ `
 
     float spd = length(vel);
     if (spd > 350.0) vel *= 350.0 / spd;
-    vel *= (1.0 - 1.1 * uDelta);
+    // Global max speed (Phase AB): the Particle Life cap semantics
+    // promoted to the whole pool, applied after the legacy hard
+    // clamp and before damping — the same order as inside the
+    // Particle Life block. 0 (default) skips it.
+    if (uMaxSpeed > 0.0) {
+      float spd2 = length(vel);
+      if (spd2 > uMaxSpeed) vel *= uMaxSpeed / spd2;
+    }
+    // Global drag (Phase AB): at the default rate the legacy
+    // literal expression runs verbatim — reading the rate from a
+    // uniform made the Metal compiler reassociate the product
+    // and drift the result by ~1 ulp (measured on the Phase AB
+    // gate: a GPGPU subject differed from prod by 2e-8), the
+    // Phase Q lesson. Non-default rates take the uniform form.
+    if (uDragRate == 1.1) {
+      vel *= (1.0 - 1.1 * uDelta);
+    } else {
+      vel *= (1.0 - uDragRate * uDelta);
+    }
 
     float dist = length(pos);
     if (dist > uBounceRadius) {

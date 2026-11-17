@@ -37,6 +37,7 @@ import {
 import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
+import { getMapImageTexture } from '../lib/mapImageTexture';
 import { getDeterministicRotationFrame, isDeterministicJobActive } from '../lib/sceneRotationDeterminism';
 
 type GpgpuSystemProps = {
@@ -63,6 +64,17 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const morphKickTexRef = useRef<THREE.DataTexture | null>(null);
   const morphKickSpeedRef = useRef(0);
   const morphKickInitRef = useRef(false);
+  // Spawn epoch (Phase AB): the sim time at which the current
+  // spawn-gate settings (burst / rate / pool size / seed) took
+  // effect. The gate's clock is time since this instant, so
+  // editing the burst or re-seeding the pool restarts the release
+  // instead of consulting the app's absolute clock. The FIRST
+  // placement after a (re)mount keeps the epoch at 0 — the sim
+  // clock restarts at mount too, and deterministic renders
+  // remount the scene, so exports stay reproducible.
+  const spawnEpochStartRef = useRef(0);
+  const spawnEpochKeyRef = useRef('');
+  const spawnEpochInitRef = useRef(false);
   const routingSnapshotRef = useRef<GpgpuFrameDiagnosticSnapshot | null>(null);
 
   useEffect(() => {
@@ -236,6 +248,23 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       morphKickInitRef.current = true;
     }
 
+    // Spawn epoch (Phase AB): restart the release clock whenever
+    // the gate's inputs change (same placement discipline as the
+    // morph kick above).
+    const spawnEpochKey = `${config.gpgpuSpawnBurst}|${config.gpgpuSpawnRate}|${config.gpgpuCount}|${config.gpgpuSeed}`;
+    if (spawnEpochKey !== spawnEpochKeyRef.current) {
+      spawnEpochKeyRef.current = spawnEpochKey;
+      if (spawnEpochInitRef.current) spawnEpochStartRef.current = timeRef.current;
+      spawnEpochInitRef.current = true;
+    }
+    const spawnTime = timeRef.current - spawnEpochStartRef.current;
+    // Mask kill (Phase AB): the Phase X mask image texture, the
+    // same one the draw clip samples; null unless ready.
+    const killMaskState = config.gpgpuKillMask && config.gpgpuMaskSource
+      ? getMapImageTexture(config.gpgpuMaskSource)
+      : null;
+    const killMaskTex = killMaskState && killMaskState.ready ? killMaskState.texture : null;
+
     // Replica independent sim (Phase W2): while the stacks are
     // allocated, the simulation runs on the WebGL stack path —
     // the routing is resolved with the WebGPU backend masked out
@@ -300,6 +329,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         morphNormalTex: morphNormalTexRef.current,
         morphKickStart: morphKickStartRef.current,
         prevPosTex: prevPosRTRef.current?.texture ?? null,
+        spawnTime,
+        killMaskTex,
         webgpuState: webgpuStateRef.current,
         webgpuPosTex: webgpuPosTexRef.current,
         webgpuPingIsARef,

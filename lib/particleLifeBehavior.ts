@@ -285,6 +285,114 @@ export function stepParticleLifeBehavior(
   });
 }
 
+// ── Obstacle avoidance (Phase AB) ────────────────────────────────
+//
+// The third Steering term: pursue / evade (Phase AA1) act on other
+// PARTICLES; avoidance acts on the scene's SDF collider. A particle
+// inside the avoidance range of the collider surface is pushed
+// along the SDF normal with a weight that grows quadratically as
+// the surface approaches, so a swarm flowing at an obstacle bends
+// away before contact instead of only bouncing off it. The
+// distance field and its gradient are the velocity shader's own
+// SDF vocabulary (sphere / box / torus / capsule / gyroid, same
+// approximations), and the GLSL twin in
+// components/gpgpuShaderSimulationVelocity.ts evaluates the
+// identical formulas. Strength 0 (default) skips the term, and
+// the term only runs while the SDF collider is enabled — there is
+// nothing to avoid otherwise.
+
+export type SdfShapeId = 0 | 1 | 2 | 3 | 4;
+
+export interface SdfColliderSpec {
+  shape: SdfShapeId;
+  center: Vec3Like;
+  size: number;
+}
+
+export function clampAvoid(v: number): number {
+  return clampNonNegative(v, 0);
+}
+
+function gyroidFieldValue(px: number, py: number, pz: number, c: Vec3Like, size: number): number {
+  const k = Math.PI / Math.max(size, 1);
+  const qx = (px - c.x) * k;
+  const qy = (py - c.y) * k;
+  const qz = (pz - c.z) * k;
+  return Math.sin(qx) * Math.cos(qy) + Math.sin(qy) * Math.cos(qz) + Math.sin(qz) * Math.cos(qx);
+}
+
+/** Signed distance to the SDF collider (negative inside). */
+export function sdfDistance(shape: SdfShapeId, pos: Vec3Like, center: Vec3Like, size: number): number {
+  const dx = pos.x - center.x;
+  const dy = pos.y - center.y;
+  const dz = pos.z - center.z;
+  if (shape === 0) {
+    return Math.hypot(dx, dy, dz) - size;
+  }
+  if (shape === 1) {
+    const qx = Math.abs(dx) - size;
+    const qy = Math.abs(dy) - size;
+    const qz = Math.abs(dz) - size;
+    const ox = Math.max(qx, 0);
+    const oy = Math.max(qy, 0);
+    const oz = Math.max(qz, 0);
+    return Math.hypot(ox, oy, oz) + Math.min(Math.max(qx, Math.max(qy, qz)), 0);
+  }
+  if (shape === 2) {
+    const ringD = Math.hypot(dx, dz) - size;
+    return Math.hypot(ringD, dy) - size * 0.35;
+  }
+  if (shape === 4) {
+    return gyroidFieldValue(pos.x, pos.y, pos.z, center, size) * size * 0.227;
+  }
+  // capsule (3): segment along Y of half-length `size`, radius 0.4 * size.
+  const yc = Math.max(-size, Math.min(size, dy));
+  return Math.hypot(dx, dy - yc, dz) - size * 0.4;
+}
+
+/**
+ * Outward SDF normal by central differences (eps 0.5, the same
+ * step the GLSL twin uses). Falls back to +Y for a degenerate
+ * gradient (a particle exactly at a field singularity).
+ */
+export function sdfNormal(shape: SdfShapeId, pos: Vec3Like, center: Vec3Like, size: number): Vec3Like {
+  const eps = 0.5;
+  const gx = sdfDistance(shape, { x: pos.x + eps, y: pos.y, z: pos.z }, center, size)
+    - sdfDistance(shape, { x: pos.x - eps, y: pos.y, z: pos.z }, center, size);
+  const gy = sdfDistance(shape, { x: pos.x, y: pos.y + eps, z: pos.z }, center, size)
+    - sdfDistance(shape, { x: pos.x, y: pos.y - eps, z: pos.z }, center, size);
+  const gz = sdfDistance(shape, { x: pos.x, y: pos.y, z: pos.z + eps }, center, size)
+    - sdfDistance(shape, { x: pos.x, y: pos.y, z: pos.z - eps }, center, size);
+  const len = Math.hypot(gx, gy, gz);
+  if (!(len > 0.0001)) return { x: 0, y: 1, z: 0 };
+  return { x: gx / len, y: gy / len, z: gz / len };
+}
+
+/**
+ * Avoidance force on one particle: zero outside the effective
+ * range (visionRange, or `fallbackRange` when visionRange <= 0 —
+ * the same fallback rule as visionSees), full strength at or
+ * inside the surface, quadratic falloff between.
+ */
+export function obstacleAvoidForce(
+  pos: Vec3Like,
+  sdf: SdfColliderSpec,
+  strength: number,
+  visionRange: number,
+  fallbackRange: number,
+): Vec3Like {
+  const out = { x: 0, y: 0, z: 0 };
+  const s = clampAvoid(strength);
+  if (s <= 0) return out;
+  const range = visionRange > 0 ? visionRange : Math.max(1, fallbackRange);
+  const sd = sdfDistance(sdf.shape, pos, sdf.center, sdf.size);
+  if (sd >= range) return out;
+  const w0 = Math.max(0, Math.min(1, 1 - sd / range));
+  const w = w0 * w0;
+  const n = sdfNormal(sdf.shape, pos, sdf.center, sdf.size);
+  return { x: n.x * s * w, y: n.y * s * w, z: n.z * s * w };
+}
+
 /** Mean pairwise distance between the centroids of two species. */
 export function speciesCentroidDistance(
   particles: ReadonlyArray<BehaviorParticle>,
