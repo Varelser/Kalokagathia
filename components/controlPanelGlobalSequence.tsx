@@ -3,6 +3,7 @@ import { ListVideo, Pause, Play } from 'lucide-react';
 import { SequenceTimeline } from './controlPanelParts';
 import { ControlPanelContentProps } from './controlPanelTabsShared';
 import { ControlPanelSequenceItemCard } from './controlPanelSequenceItemCard';
+import { SequenceTracksSection } from './controlPanelSequenceTracks';
 
 export const GlobalSequenceSection: React.FC<ControlPanelContentProps> = ({
   activeSequenceItemId,
@@ -84,6 +85,17 @@ export const GlobalSequenceSection: React.FC<ControlPanelContentProps> = ({
         onSequenceDragOver={handleSequenceDragOver}
         onSequenceDrop={handleSequenceDrop}
         onSequenceDragEnd={handleSequenceDragEnd}
+      />
+    )}
+    {presetSequence.length > 0 && (
+      <SequenceTracksSection
+        config={config}
+        isPublicLibrary={isPublicLibrary}
+        isSequencePlaying={isSequencePlaying}
+        presetSequence={presetSequence}
+        activeSequenceItemId={activeSequenceItemId}
+        sequenceStepProgress={sequenceStepProgress}
+        sequenceSinglePassDuration={sequenceSinglePassDuration}
       />
     )}
     <div className="space-y-2 max-h-56 overflow-y-auto pr-1">

@@ -65,7 +65,7 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
   const isInteractingRef = React.useRef(false);
   const metaballPosRef = React.useRef<Float32Array | null>(null);
 
-  const effectiveConfig = useAppSceneTemporalConfig(config, isPlaying, audioRef);
+  const effectiveConfig = useAppSceneTemporalConfig(config, isPlaying, audioRef, isSequencePlaying);
   const sceneGeneration = useSceneGeneration();
   React.useEffect(() => {
     noteSceneGenerationMounted(sceneGeneration);

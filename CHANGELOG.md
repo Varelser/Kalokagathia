@@ -4,6 +4,44 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.46.0] — 2026-11-18
+
+Sixth-term Phase AN: the editing base — sequence tracks and
+keyframes. Any numeric parameter (including the camera keys) can
+now be laid out as a keyframe track on the sequence's time axis and
+is evaluated while a sequence plays. Tracks are a setup-side
+grammar, not config keys: they persist under their own localStorage
+key (`kalokagathia.sequenceTracks.v1`, the modulation pattern),
+apply only during sequence playback, and only in the effective
+config layer after modulation — config state is never written, so
+track overrides cannot fight the preset morph loop. With an empty
+track set the evaluation is never called and the effective config
+is the legacy path verbatim. No new config keys (total stays
+1,206) and no new starters (stays 553).
+
+### Added
+- **Sequence tracks** (`lib/sequenceTracks.ts`): tracks over the
+  numeric parameter catalog plus the camera keys the catalog never
+  carried (cameraDistance from the Global Display slider range,
+  manualRotation* as radian angles). Keyframes carry an absolute
+  pass time, a value clamped to the catalog range, and the easing
+  used toward them; evaluation is a pure function of time with end
+  holds and no extrapolation. Sanitization sorts keyframes,
+  collapses same-time duplicates (last wins), enforces one track
+  per key, and caps tracks (16) and keyframes per track (64).
+- **Sequence clock**: playback anchors an absolute pass time at
+  segment seams (playback start = 0, each morph start = the item's
+  segment start, loop wrap = −transition so the reading runs
+  continuously from the previous pass's tail) and publishes it to a
+  shared store at ~50ms. Anchoring at every seam means no drift.
+- **Tracks editor** in the Sequence section: catalog search to add
+  a track, keyframe markers on the pass timeline, add-key-at-
+  playhead capture from the current config, and numeric time /
+  value / easing editing. Editing is locked in the public build;
+  tracks still apply there during playback. Tracks are not yet
+  bundled into project files (same treatment as the modulation
+  setup).
+
 ## [1.45.0] — 2026-11-18
 
 Sixth-term Phase AM: 2D foundation extensions — the contour of a

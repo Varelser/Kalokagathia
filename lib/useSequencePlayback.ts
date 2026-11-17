@@ -16,6 +16,11 @@ import {
 } from './sequencePlaybackHelpers';
 import { isStarterPresetSequence, useStarterPresetLibrary } from './lazyStarterLibrary';
 import { getHydratedPayload, putStoragePayload, useStorageHydrated } from './storageDb';
+import {
+  getSequenceClockAnchor,
+  setSequenceClockTime,
+  wrapSequenceClockTime,
+} from './sequenceTracks';
 
 type UseSequencePlaybackArgs = {
   applyConfigInstant: SequenceApplyConfigInstant;
@@ -271,6 +276,77 @@ export function useSequencePlayback({
       }
     };
   }, [activeSequenceIndex, isPresetTransitioning, isSequencePlaying, presetSequence]);
+
+  // Sequence track clock (Phase AN): an anchored absolute pass time,
+  // published to the shared clock store at ~50ms so the effective
+  // config layer can evaluate keyframe tracks. Anchors are set at
+  // segment seams (playback start / morph start) from the pure seam
+  // functions in sequenceTracks, so the reading never drifts: every
+  // morph start re-anchors to the canonical segment start. The clock
+  // only feeds the effective-config layer; config state is untouched.
+  const sequenceClockAnchorRef = useRef<{ time: number; perf: number } | null>(null);
+  const sequenceClockPrevTransitioningRef = useRef(false);
+  const sequenceClockAnchoredIndexRef = useRef(-1);
+
+  useEffect(() => {
+    if (!isSequencePlaying) {
+      sequenceClockAnchorRef.current = null;
+      sequenceClockAnchoredIndexRef.current = -1;
+      setSequenceClockTime(0, false);
+      return;
+    }
+    if (!sequenceClockAnchorRef.current) {
+      sequenceClockAnchorRef.current = { time: 0, perf: performance.now() };
+      setSequenceClockTime(0, true);
+    }
+  }, [isSequencePlaying]);
+
+  useEffect(() => {
+    const wasTransitioning = sequenceClockPrevTransitioningRef.current;
+    sequenceClockPrevTransitioningRef.current = isPresetTransitioning;
+    if (!isSequencePlaying || wasTransitioning || !isPresetTransitioning) {
+      return;
+    }
+    const index = activeSequenceIndex;
+    if (index < 0) {
+      return;
+    }
+    // Playback always starts with an instant apply (no morph), so a
+    // morph whose target is item 0 is by construction a loop wrap.
+    const isLoopWrap = index === 0;
+    if (index === sequenceClockAnchoredIndexRef.current && !isLoopWrap) {
+      // A morph that is not a sequence seam (e.g. a manual preset
+      // click mid-playback): the clock keeps its current anchor.
+      return;
+    }
+    sequenceClockAnchoredIndexRef.current = index;
+    sequenceClockAnchorRef.current = {
+      time: getSequenceClockAnchor(presetSequence, index, isLoopWrap),
+      perf: performance.now(),
+    };
+  }, [activeSequenceIndex, isPresetTransitioning, isSequencePlaying, presetSequence]);
+
+  useEffect(() => {
+    if (!isSequencePlaying) {
+      return;
+    }
+    let frame = 0;
+    let last = 0;
+    const tick = () => {
+      const anchor = sequenceClockAnchorRef.current;
+      if (anchor) {
+        const now = performance.now();
+        if (!last || now - last >= 50) {
+          last = now;
+          const raw = anchor.time + (now - anchor.perf) / 1000;
+          setSequenceClockTime(wrapSequenceClockTime(raw, sequenceSinglePassDuration), true);
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isSequencePlaying, sequenceSinglePassDuration]);
 
   useEffect(() => () => {
     clearSequenceTimer();
