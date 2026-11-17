@@ -4,6 +4,37 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.36.0] — 2026-11-17
+
+Phase AE (fifth period, fourth phase): terrain, put to work —
+the height field stops being only a surface and becomes a
+source of derived information. Base is the actually-shipped
+v1.35.0. With all new keys at their defaults the render is
+bit-identical to v1.35.0 (verified on the iMac real-GPU gate:
+FROZEN deterministic render, all 12 frames at 0.00000). 2 new
+config keys (1,097 total), starters +2 (535 total).
+
+### Added
+- **Terrain derived maps** (`lib/terrainDerivedMaps.ts`): the
+  terrain field is sampled on the mesh's own vertex grid and
+  differentiated once, deterministically — a normal map, a
+  slope map (gradient magnitude normalised by the field's own
+  maximum) and a curvature map (signed Laplacian, mid grey =
+  flat). The same terrain parameters bake bit-identically.
+  Each map can be exported as a PNG from the Terrain section,
+  and can be assigned to any Layer Map or to the raster / kill
+  mask through an internal supply (a sentinel source that
+  resolves to the live bake and tracks the terrain parameters
+  — no image file round-trip).
+- **Terrain slope force** (`gpgpuSlopeForceEnabled`,
+  `gpgpuSlopeForceStrength`): particles flow downhill along
+  the derived gradient bake, proportional to the local slope.
+  Resolved CPU-side like the kill mask: the force exists only
+  while the terrain mesh is enabled in plane mode. On the
+  WebGPU path the feature is declared in the capability
+  registry (`slope-force`) and routes to WebGL instead of
+  silently dropping the effect.
+
 ## [1.35.0] — 2026-11-17
 
 Phase AD (fifth period, third phase): 2D post & sprites —

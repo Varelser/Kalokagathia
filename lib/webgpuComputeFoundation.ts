@@ -111,6 +111,12 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // modulation and applies on every path already.
   if (config.gpgpuAgeCurveVelocityEnabled || config.gpgpuAgeCurveForceEnabled) features.push('age-curve-sim');
   if (config.gpgpuCurlEnabled && Math.abs((config.gpgpuCurlSpeed ?? 1) - 1) > 1e-9) features.push('curl-speed');
+  // Phase AE terrain slope force: the downhill flow samples the
+  // derived gradient bake in the WebGL velocity pass only. The
+  // derived-map SUPPLY (Layer Maps / mask sources) needs no
+  // entry: those are draw-path textures that resolve identically
+  // on every path.
+  if (config.gpgpuSlopeForceEnabled) features.push('slope-force');
   return features;
 }
 

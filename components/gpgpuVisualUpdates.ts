@@ -6,7 +6,7 @@ import type { GpgpuAssetBundle } from './useGpgpuAssets';
 import { MAX_TRAIL } from './gpgpuShaders';
 import { fillGradientLutData } from '../lib/kinetixGradients';
 import { getGradImageTexture } from '../lib/gradImageTexture';
-import { getMapImageTexture } from '../lib/mapImageTexture';
+import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { resolveMapSource } from '../lib/layerMask';
 import { getSpriteImageTexture } from '../lib/spriteImageTexture';
 import { normalizeSpriteFrameFps, normalizeSpriteSheetDimension, spriteFrameModeIndex } from '../lib/spriteSheet';
@@ -237,7 +237,7 @@ export function syncVisualUniforms(args: {
       // their dedicated textures take priority in the shader).
       // With no colour source set this is the exact legacy lookup.
       const imageState = config.gpgpuMapColorSource
-        ? getMapImageTexture(resolveMapSource(config.gpgpuMapColorSource, config.gpgpuGradImageSource))
+        ? resolveMapSourceTexture(resolveMapSource(config.gpgpuMapColorSource, config.gpgpuGradImageSource), config)
         : getGradImageTexture(config.gpgpuGradImageSource);
       drawMat.uniforms.uGradImageTex.value = imageState.texture;
       if (drawMat.uniforms.uGradImageReady) drawMat.uniforms.uGradImageReady.value = imageState.ready;
@@ -274,12 +274,12 @@ export function syncVisualUniforms(args: {
   // the mask texture feeds the fragment clip. Unset sources leave
   // ready = false, which is exactly the Phase U fallback path.
   if (drawMat.uniforms.uMapSizeTex) {
-    const state = config.gpgpuMapSizeSource ? getMapImageTexture(config.gpgpuMapSizeSource) : null;
+    const state = config.gpgpuMapSizeSource ? resolveMapSourceTexture(config.gpgpuMapSizeSource, config) : null;
     drawMat.uniforms.uMapSizeTex.value = state ? state.texture : null;
     if (drawMat.uniforms.uMapSizeReady) drawMat.uniforms.uMapSizeReady.value = state ? state.ready : false;
   }
   if (drawMat.uniforms.uMapOpacityTex) {
-    const state = config.gpgpuMapOpacitySource ? getMapImageTexture(config.gpgpuMapOpacitySource) : null;
+    const state = config.gpgpuMapOpacitySource ? resolveMapSourceTexture(config.gpgpuMapOpacitySource, config) : null;
     drawMat.uniforms.uMapOpacityTex.value = state ? state.texture : null;
     if (drawMat.uniforms.uMapOpacityReady) drawMat.uniforms.uMapOpacityReady.value = state ? state.ready : false;
   }
@@ -288,7 +288,7 @@ export function syncVisualUniforms(args: {
     const state = !displaceSource
       ? null
       : config.gpgpuMapDisplaceSource
-        ? getMapImageTexture(displaceSource)
+        ? resolveMapSourceTexture(displaceSource, config)
         : getGradImageTexture(displaceSource);
     drawMat.uniforms.uMapDisplaceTex.value = state ? state.texture : null;
     if (drawMat.uniforms.uMapDisplaceReady) drawMat.uniforms.uMapDisplaceReady.value = state ? state.ready : false;
@@ -296,7 +296,7 @@ export function syncVisualUniforms(args: {
     if (drawMat.uniforms.uMapDisplaceRadius) drawMat.uniforms.uMapDisplaceRadius.value = Math.max(config.gpgpuBounceRadius, 1);
   }
   if (drawMat.uniforms.uMaskTex) {
-    const state = config.gpgpuMaskSource ? getMapImageTexture(config.gpgpuMaskSource) : null;
+    const state = config.gpgpuMaskSource ? resolveMapSourceTexture(config.gpgpuMaskSource, config) : null;
     drawMat.uniforms.uMaskTex.value = state ? state.texture : null;
     if (drawMat.uniforms.uMaskReady) drawMat.uniforms.uMaskReady.value = state ? state.ready : false;
     if (drawMat.uniforms.uMaskMode) drawMat.uniforms.uMaskMode.value = config.gpgpuMaskMode === 'clip' ? 1 : config.gpgpuMaskMode === 'shape' ? 2 : 0;

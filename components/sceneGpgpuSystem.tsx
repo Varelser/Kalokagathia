@@ -37,7 +37,7 @@ import {
 import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
-import { getMapImageTexture } from '../lib/mapImageTexture';
+import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { getDeterministicRotationFrame, isDeterministicJobActive } from '../lib/sceneRotationDeterminism';
 
 type GpgpuSystemProps = {
@@ -259,9 +259,11 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     }
     const spawnTime = timeRef.current - spawnEpochStartRef.current;
     // Mask kill (Phase AB): the Phase X mask image texture, the
-    // same one the draw clip samples; null unless ready.
+    // same one the draw clip samples; null unless ready. Phase AE:
+    // a terrain-derived sentinel source resolves to the live
+    // derived bake through the same single resolution point.
     const killMaskState = config.gpgpuKillMask && config.gpgpuMaskSource
-      ? getMapImageTexture(config.gpgpuMaskSource)
+      ? resolveMapSourceTexture(config.gpgpuMaskSource, config)
       : null;
     const killMaskTex = killMaskState && killMaskState.ready ? killMaskState.texture : null;
 

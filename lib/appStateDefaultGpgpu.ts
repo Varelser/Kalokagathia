@@ -207,6 +207,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuTerrainTextureOffsetY: 0,
   // Tunnel cruise (Phase V): 0 = the legacy static tunnel.
   gpgpuTunnelSpeed: 0,
+  // Terrain slope force (Phase AE): off by default; resolved
+  // CPU-side against the live terrain (mesh on, plane mode).
+  gpgpuSlopeForceEnabled: false,
+  gpgpuSlopeForceStrength: 1.0,
   // OBJ Mesh (Phase V): disabled by default — mounts nothing.
   gpgpuObjMeshEnabled: false,
   gpgpuObjMeshDisplay: 'wireframe' as const,

@@ -352,6 +352,13 @@ export interface ParticleConfigGpgpu {
   // and speed 0 renders exactly the legacy static tunnel. Only
   // read when gpgpuTerrainMeshTunnel is on.
   gpgpuTunnelSpeed: number;
+  // Terrain slope force (Phase AE): particles flow downhill
+  // along the terrain gradient (the derived gradient bake in
+  // lib/terrainDerivedMaps.ts). Resolved CPU-side like the kill
+  // mask: the force exists only while the terrain mesh is enabled
+  // in plane mode. Disabled (default) = no force, bit-identical.
+  gpgpuSlopeForceEnabled: boolean;
+  gpgpuSlopeForceStrength: number;
   // OBJ Mesh (Phase V, Mir-style mesh side of the OBJ import): the
   // imported OBJ (the SAME gpgpuMorphObjSource text the morph
   // target reads — one shared data source, never a second copy)

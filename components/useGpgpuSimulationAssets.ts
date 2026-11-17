@@ -85,6 +85,12 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uWindY:            { value: 0.0 },
       uWindZ:            { value: 0.0 },
       uWindGust:         { value: 0.3 },
+      // Terrain slope flow (Phase AE): disabled + no texture is
+      // the exact legacy path.
+      uSlopeForceEnabled:  { value: false },
+      uSlopeForceStrength: { value: 1.0 },
+      uSlopeTex:           { value: null },
+      uSlopeExtent:        { value: 1.0 },
       uWellEnabled:      { value: false },
       uWellStrength:     { value: 1.0 },
       uWellSoftening:    { value: 10.0 },

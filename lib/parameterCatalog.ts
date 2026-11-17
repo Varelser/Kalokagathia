@@ -198,6 +198,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuTerrainTextureOffsetX', label: "Terrain Texture Offset X", tab: 'global', min: -1, max: 1, step: 0.01 },
   { key: 'gpgpuTerrainTextureOffsetY', label: "Terrain Texture Offset Y", tab: 'global', min: -1, max: 1, step: 0.01 },
   { key: 'gpgpuTunnelSpeed', label: "Tunnel Speed", tab: 'global', min: 0, max: 60, step: 1 },
+  { key: 'gpgpuSlopeForceStrength', label: "Terrain Slope Force Strength", tab: 'global', min: 0, max: 5, step: 0.05 },
   { key: 'gpgpuObjMeshRepeat', label: "OBJ Mesh Repeat", tab: 'global', min: 1, max: 64, step: 1 },
   { key: 'gpgpuObjMeshScale', label: "OBJ Mesh Scale", tab: 'global', min: 0.25, max: 3, step: 0.05 },
   { key: 'gpgpuObjMeshPosX', label: "OBJ Mesh Position X", tab: 'global', min: -200, max: 200, step: 1 },

@@ -7,6 +7,7 @@ import {
 } from '../lib/webgpuCompute';
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
+import { getTerrainSlopeGradientTexture, terrainSlopeWorldExtent } from '../lib/terrainDerivedMaps';
 
 // Particle Life matrix cache: the flat uniform array only changes when
 // preset / species / seed change, so avoid reallocating it every frame.
@@ -387,6 +388,16 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uWindY.value = config.gpgpuWindY;
   velSimMat.uniforms.uWindZ.value = config.gpgpuWindZ;
   velSimMat.uniforms.uWindGust.value = config.gpgpuWindGust;
+  // Terrain slope flow (Phase AE): resolved CPU-side like the
+  // kill mask — the texture getter returns null unless the key
+  // is on AND the terrain mesh is live in plane mode, so the
+  // disabled uniform keeps the exact legacy path. Resolving here
+  // (not via scene args) means replica stacks share the force.
+  const slopeTex = getTerrainSlopeGradientTexture(config);
+  if (velSimMat.uniforms.uSlopeForceEnabled) velSimMat.uniforms.uSlopeForceEnabled.value = !!slopeTex;
+  if (velSimMat.uniforms.uSlopeForceStrength) velSimMat.uniforms.uSlopeForceStrength.value = Math.max(0, config.gpgpuSlopeForceStrength ?? 1);
+  if (velSimMat.uniforms.uSlopeTex) velSimMat.uniforms.uSlopeTex.value = slopeTex;
+  if (velSimMat.uniforms.uSlopeExtent) velSimMat.uniforms.uSlopeExtent.value = Math.max(terrainSlopeWorldExtent(config), 0.001);
   velSimMat.uniforms.uWellEnabled.value = config.gpgpuWellEnabled;
   velSimMat.uniforms.uWellStrength.value = config.gpgpuWellStrength;
   velSimMat.uniforms.uWellSoftening.value = config.gpgpuWellSoftening;

@@ -9,6 +9,16 @@ import { AGE_CURVE_POINT_MAX, AGE_CURVE_PRESETS, normalizeAgeCurvePoints } from 
 import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT, parseObjGeometry, isObjClosedMesh } from '../lib/objMorph';
 import { setModulationSetup, useModulationSetup } from '../lib/modulation';
 import { extractLumaMap } from './controlPanelPartsSourceMediaUtils';
+import {
+  TERRAIN_DERIVED_KINDS,
+  getTerrainDerivedMapCanvas,
+  isTerrainDerivedSource,
+  parseTerrainDerivedSource,
+  terrainDerivedSource,
+  terrainOptionsFromConfig,
+  type TerrainDerivedMapKind,
+} from '../lib/terrainDerivedMaps';
+import { saveBlobFile } from '../lib/platformFeatures';
 import type { ParticleConfig } from '../types';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
 
@@ -485,6 +495,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は地形専用画像が優先され、未設定時は Horizon 背景画像を流用します。Repeat / Offset は全テクスチャ種に効く UV 変換です。Tunnel Speed は地形の位相スクロールによる前進表現で、カメラ自体は動きません。速度 0 では従来の静止トンネルと完全に同一です。
           </div>
+          <TerrainDerivedMapsBlock config={config} updateConfig={updateConfig} />
         </>
       )}
     </div>
@@ -997,6 +1008,98 @@ function downscaledDataUrl(img: HTMLImageElement, maxPx: number): string {
  * with an explicit "未設定 = 共通マップ" state instead of a
  * silent fallback.
  */
+const DERIVED_KIND_LABELS: Record<TerrainDerivedMapKind, string> = {
+  normal: '法線',
+  slope: '勾配',
+  curvature: '曲率',
+};
+
+/** Small picker row for the terrain derived maps (Phase AE):
+ *  choosing one stores the sentinel source, which resolves to
+ *  the live bake — the assignment tracks the terrain parameters
+ *  instead of freezing a picture. */
+const DerivedSourceButtons: React.FC<{
+  source: string;
+  onPick: (kind: TerrainDerivedMapKind) => void;
+}> = ({ source, onPick }) => (
+  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+    <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">地形派生</span>
+    {TERRAIN_DERIVED_KINDS.map((kind) => {
+      const active = parseTerrainDerivedSource(source) === kind;
+      return (
+        <button
+          key={kind}
+          onClick={() => onPick(kind)}
+          className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest transition-colors ${active ? 'border-white/70 bg-white/20 text-white' : 'border-white/15 text-white/60 hover:bg-white/10'}`}
+        >
+          {DERIVED_KIND_LABELS[kind]}
+        </button>
+      );
+    })}
+  </div>
+);
+
+/**
+ * Terrain derived maps (Phase AE): previews + PNG export of the
+ * normal / slope / curvature bakes of the CURRENT field, and the
+ * slope force that runs particles downhill along the same bake.
+ * The previews are regenerated from the pure bake whenever the
+ * field parameters change (deterministic — same params, same
+ * picture, bit for bit).
+ */
+const TerrainDerivedMapsBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const amp = config.gpgpuMorphTerrainAmplitude;
+  const freq = config.gpgpuMorphTerrainFrequency;
+  const octaves = config.gpgpuMorphTerrainOctaves;
+  const terrainSeed = config.gpgpuMorphTerrainSeed;
+  const seed = config.gpgpuSeed;
+  const previews = React.useMemo(() => {
+    const terrain = { amplitude: amp, frequency: freq, octaves, seed: terrainSeed };
+    const out = {} as Record<TerrainDerivedMapKind, string>;
+    for (const kind of TERRAIN_DERIVED_KINDS) {
+      const canvas = getTerrainDerivedMapCanvas(kind, terrain, seed);
+      out[kind] = canvas ? canvas.toDataURL('image/png') : '';
+    }
+    return out;
+  }, [amp, freq, octaves, terrainSeed, seed]);
+  const exportPng = (kind: TerrainDerivedMapKind) => {
+    const canvas = getTerrainDerivedMapCanvas(kind, terrainOptionsFromConfig(config), seed);
+    if (!canvas) return;
+    canvas.toBlob((blob) => {
+      if (blob) void saveBlobFile(blob, `kalokagathia-terrain-${kind}.png`, { description: 'PNG image', accept: { 'image/png': ['.png'] } });
+    }, 'image/png');
+  };
+  return (
+    <div className="mt-3 border-t border-white/10 pt-3">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Derived Maps （派生マップ・Phase AE）</div>
+      <div className="flex flex-wrap gap-2">
+        {TERRAIN_DERIVED_KINDS.map((kind) => (
+          <div key={kind} className="flex flex-col items-center gap-1">
+            {previews[kind]
+              ? <img src={previews[kind]} alt="" className="h-16 w-16 rounded border border-white/20 object-cover" />
+              : <div className="h-16 w-16 rounded border border-white/20" />}
+            <div className="text-[9px] font-bold uppercase tracking-widest text-white/50">{DERIVED_KIND_LABELS[kind]} {kind}</div>
+            <button
+              onClick={() => exportPng(kind)}
+              className="rounded-full border border-white/15 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+            >
+              PNG 書き出し
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Slope Force （勾配フォース）</div>
+      <Toggle label="Slope Force （斜面を流れる）" value={config.gpgpuSlopeForceEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuSlopeForceEnabled', v)} />
+      {config.gpgpuSlopeForceEnabled && (
+        <Slider label="Strength （強さ）" value={config.gpgpuSlopeForceStrength} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuSlopeForceStrength', v)} />
+      )}
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        派生マップは高度場から決定的に生成されます（同じ地形パラメータではビット一致）。勾配はこの地形の最大斜度で、曲率は平坦が中グレーになるよう正規化しています。各マップは Layer Maps とラスタマスクのソース選択にある「地形派生」ボタンからも割り当てでき、そちらは画像ではなく地形パラメータに追随する内部供給です。勾配フォースは地形メッシュ有効・平面モードのときだけ効きます（トンネルでは無力）。
+      </div>
+    </div>
+  );
+};
+
 const MapSourceBlock: React.FC<{
   title: string;
   source: string;
@@ -1030,7 +1133,7 @@ const MapSourceBlock: React.FC<{
         </label>
         {source && (
           <>
-            <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />
+            {!isTerrainDerivedSource(source) && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
             <button
               onClick={() => onSource('')}
               className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
@@ -1040,8 +1143,11 @@ const MapSourceBlock: React.FC<{
           </>
         )}
       </div>
+      <DerivedSourceButtons source={source} onPick={(kind) => onSource(terrainDerivedSource(kind))} />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-        {source ? '専用画像を設定済み: このプロパティは共通マップではなくこの画像を使います。' : '未設定: このプロパティは共通マップを使います。'}
+        {isTerrainDerivedSource(source)
+          ? `地形派生マップ（${DERIVED_KIND_LABELS[parseTerrainDerivedSource(source) ?? 'slope']}）を設定済み: 地形パラメータに追随する内部供給です。`
+          : source ? '専用画像を設定済み: このプロパティは共通マップではなくこの画像を使います。' : '未設定: このプロパティは共通マップを使います。'}
       </div>
     </div>
   );
@@ -1082,6 +1188,20 @@ const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, up
     updateConfig('gpgpuMaskMapWidth', 0);
     updateConfig('gpgpuMaskMapHeight', 0);
   };
+  // Terrain derived supply (Phase AE): the sentinel source makes
+  // the draw clip / kill mask follow the live terrain bake; the
+  // numeric luma map is captured from the same bake (128px, the
+  // image-import convention) for the bake / placement consumers.
+  const applyDerived = (kind: TerrainDerivedMapKind) => {
+    const canvas = getTerrainDerivedMapCanvas(kind, terrainOptionsFromConfig(config), config.gpgpuSeed);
+    updateConfig('gpgpuMaskSource', terrainDerivedSource(kind));
+    if (canvas) {
+      const map = extractLumaMap(canvas, 128, 128);
+      updateConfig('gpgpuMaskMap', map);
+      updateConfig('gpgpuMaskMapWidth', 128);
+      updateConfig('gpgpuMaskMapHeight', 128);
+    }
+  };
   return (
     <div className="mb-2 mt-2 rounded border border-white/10 bg-white/5 p-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -1099,7 +1219,7 @@ const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, up
         </label>
         {(source || config.gpgpuMaskMap.length > 0) && (
           <>
-            {source && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
+            {source && !isTerrainDerivedSource(source) && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
             <button
               onClick={clear}
               className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
@@ -1109,8 +1229,11 @@ const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, up
           </>
         )}
       </div>
+      <DerivedSourceButtons source={source} onPick={applyDerived} />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-        {source
+        {isTerrainDerivedSource(source)
+          ? `地形派生マップ（${DERIVED_KIND_LABELS[parseTerrainDerivedSource(source) ?? 'slope']}）をマスクに供給中: 描画 clip と Kill は地形パラメータに追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点の地形から抽出済みです。`
+          : source
           ? `マスク設定済み（輝度マップ ${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight} を取り込み時に抽出）。白い領域が残り、黒い領域が間引かれます。`
           : config.gpgpuMaskMap.length > 0
             ? `輝度マップのみ設定済み（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}、プリセット由来）。ベイクとメディア配置には効きますが、描画時のフラグメント clip には画像本体が必要です。`

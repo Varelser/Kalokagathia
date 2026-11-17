@@ -80,6 +80,15 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uWindY;
   uniform float uWindZ;
   uniform float uWindGust;
+  // Terrain slope flow (Phase AE): the derived gradient bake of
+  // the live terrain (RG = unit downhill direction, B = slope
+  // magnitude normalised by the field's own maximum). Resolved
+  // CPU-side (enabled key AND terrain mesh on AND plane mode AND
+  // texture ready), so a false uniform is the exact legacy path.
+  uniform bool  uSlopeForceEnabled;
+  uniform float uSlopeForceStrength;
+  uniform sampler2D uSlopeTex;
+  uniform float uSlopeExtent;
   uniform bool  uWellEnabled;
   uniform float uWellStrength;
   uniform float uWellSoftening;
@@ -648,6 +657,18 @@ export const SIM_VEL_FRAG = /* glsl */ `
         vnoise(pos * 0.01 + replicaSeed + vec3(0.0, 3.1, replicaTime * 0.2))
       ) * uWindGust;
       vel += (normalize(vec3(uWindX, uWindY, uWindZ) + vec3(0.0001)) * uWindStrength + gust) * uDelta * 30.0;
+    }
+
+    // Terrain slope flow (Phase AE): run downhill along the
+    // terrain gradient, proportional to the local slope. The
+    // field is the XZ plane over [-uSlopeExtent, +uSlopeExtent];
+    // outside it the edge texels clamp, so the flow follows the
+    // border slope instead of vanishing.
+    if (uSlopeForceEnabled) {
+      vec2 slopeUv = clamp(pos.xz / (2.0 * max(uSlopeExtent, 0.001)) + 0.5, 0.0, 1.0);
+      vec3 slopeSample = texture2D(uSlopeTex, slopeUv).rgb;
+      vec2 downhill = slopeSample.rg * 2.0 - 1.0;
+      vel += vec3(downhill.x, 0.0, downhill.y) * (slopeSample.b * uSlopeForceStrength) * uDelta * 30.0;
     }
 
     // Gravity Well(s). Count 1 keeps the exact legacy single well at

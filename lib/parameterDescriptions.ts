@@ -204,6 +204,8 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuTerrainTextureOffsetX: '地形メッシュテクスチャの UV オフセット X（0で従来同一）',
   gpgpuTerrainTextureOffsetY: '地形メッシュテクスチャの UV オフセット Y（0で従来同一）',
   gpgpuTunnelSpeed: 'トンネルの前進速度（ワールド単位/秒）。地形の位相が決定的にスクロールし無限に進む見た目になる。0で従来の静止トンネルと同一',
+  gpgpuSlopeForceEnabled: '地形の勾配フォース（斜面の下り方向へ粒子が流れる）。地形メッシュ有効・平面モードのときだけ効く。既定OFFで従来同一',
+  gpgpuSlopeForceStrength: '勾配フォースの強さ（勾配マップの正規化済み斜度に比例）',
   gpgpuObjMeshEnabled: 'OBJ メッシュ描画（取り込み済み OBJ をポリゴンメッシュとして描く、モーフと同じ gpgpuMorphObjSource を共有）。既定OFFで従来同一',
   gpgpuObjMeshDisplay: 'OBJ メッシュの表示形態（wireframe=線画 / solid=法線陰影の面）',
   gpgpuObjMeshRepeat: 'OBJ メッシュの反復数（格子状に複製、1で単体）',
