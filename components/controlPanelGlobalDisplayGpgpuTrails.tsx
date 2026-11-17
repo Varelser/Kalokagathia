@@ -56,6 +56,7 @@ export const GlobalDisplayGpgpuTrailsSection: React.FC<GlobalDisplayEffectsShare
           <Slider label="Particle Count" value={config.gpgpuSmoothTubeCount} min={4} max={128} step={4} onChange={(v) => updateConfig('gpgpuSmoothTubeCount', Math.round(v))} />
           <Slider label="History Frames" value={config.gpgpuSmoothTubeHistory} min={4} max={32} step={2} onChange={(v) => updateConfig('gpgpuSmoothTubeHistory', Math.round(v))} />
           <Slider label="Tube Radius" value={config.gpgpuSmoothTubeRadius} min={0.5} max={15} step={0.5} onChange={(v) => updateConfig('gpgpuSmoothTubeRadius', v)} />
+          <Slider label="Tube Taper （断面テーパー）" value={config.gpgpuSmoothTubeTaper} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuSmoothTubeTaper', v)} />
           <Slider label="Opacity" value={config.gpgpuSmoothTubeOpacity} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSmoothTubeOpacity', v)} />
           <div className="mt-2 flex items-center gap-3">
             <label className="text-[10px] text-white/60 uppercase tracking-wider">Color</label>

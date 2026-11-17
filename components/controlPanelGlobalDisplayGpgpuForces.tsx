@@ -163,6 +163,14 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <Slider label="Strength" value={config.gpgpuParticleLifeStrength} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuParticleLifeStrength', v)} />
           <Slider label="Radius" value={config.gpgpuParticleLifeRadius} min={10} max={160} step={5} onChange={(v) => updateConfig('gpgpuParticleLifeRadius', v)} />
           <Slider label="Friction" value={config.gpgpuParticleLifeFriction} min={0.5} max={0.99} step={0.01} onChange={(v) => updateConfig('gpgpuParticleLifeFriction', v)} />
+          <div className="mt-1 mb-1 text-[10px] uppercase tracking-widest text-white/50">Behaviour （行動: 循環する捕食チェーン — 種 i は種 i+1 を追い、種 i-1 から逃げる）</div>
+          <Slider label="Pursue （追跡）" value={config.gpgpuParticleLifePursue} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuParticleLifePursue', v)} />
+          <Slider label="Evade （逃避）" value={config.gpgpuParticleLifeEvade} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuParticleLifeEvade', v)} />
+          <Slider label="Vision Range （視野距離）" value={config.gpgpuParticleLifeVisionRange} min={0} max={200} step={5} onChange={(v) => updateConfig('gpgpuParticleLifeVisionRange', v)} />
+          <Slider label="Vision Angle （視野角°）" value={config.gpgpuParticleLifeVisionAngle} min={10} max={360} step={5} onChange={(v) => updateConfig('gpgpuParticleLifeVisionAngle', v)} />
+          <Slider label="Max Speed （最高速度・0で無制限）" value={config.gpgpuParticleLifeMaxSpeed} min={0} max={120} step={1} onChange={(v) => updateConfig('gpgpuParticleLifeMaxSpeed', v)} />
+          <Slider label="Meander Amount （徘徊）" value={config.gpgpuParticleLifeMeanderAmount} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuParticleLifeMeanderAmount', v)} />
+          <Slider label="Meander Scale （徘徊スケール）" value={config.gpgpuParticleLifeMeanderScale} min={0.1} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuParticleLifeMeanderScale', v)} />
           {config.gpgpuParticleLifePreset === 'random' && (
             <button
               onClick={() => updateConfig('gpgpuParticleLifeSeed', Math.floor(Math.random() * 1000000))}
@@ -317,17 +325,30 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           {config.gpgpuMorphTarget === 'svg' && (
             <>
               <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Path （パス沿い配置）</div>
-              <Toggle label="Mode" value={config.gpgpuMorphPathMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Along', val: 'along' as const }, { label: 'Write-on', val: 'writeOn' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathMode', v)} />
+              <Toggle label="Mode" value={config.gpgpuMorphPathMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Along', val: 'along' as const }, { label: 'Write-on', val: 'writeOn' as const }, { label: 'Stamp', val: 'stamp' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathMode', v)} />
               {config.gpgpuMorphPathMode !== 'off' && (
                 <>
                   <Toggle label="Subpaths （サブパス配分）" value={config.gpgpuMorphPathSubpathMode} options={[{ label: 'Proportional', val: 'proportional' as const }, { label: 'Even', val: 'even' as const }, { label: 'First', val: 'first' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathSubpathMode', v)} />
+                  {config.gpgpuMorphPathMode === 'stamp' && (
+                    <>
+                      <Toggle label="Stamp Shape （スタンプ形状）" value={config.gpgpuMorphStampShape} options={[{ label: 'Disc', val: 'disc' as const }, { label: 'Ring', val: 'ring' as const }, { label: 'Star', val: 'star' as const }, { label: 'Diamond', val: 'diamond' as const }, { label: 'OBJ', val: 'obj' as const }]} onChange={(v) => updateConfig('gpgpuMorphStampShape', v)} />
+                      <Slider label="Stamp Spacing （間隔・パス割合）" value={config.gpgpuMorphStampSpacing} min={0.02} max={0.5} step={0.005} onChange={(v) => updateConfig('gpgpuMorphStampSpacing', v)} />
+                      <Slider label="Stamp Size （大きさ）" value={config.gpgpuMorphStampSize} min={0.02} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphStampSize', v)} />
+                      <Toggle label="Stamp Align （接線に整列）" value={config.gpgpuMorphStampAlign} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphStampAlign', v)} />
+                      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                        パス上に形状を等間隔（弧長）でスタンプします。OBJ 形状は取り込んだ OBJ の点群をスタンプに使います（OBJ 未取り込み時は Disc で代替）。
+                      </div>
+                    </>
+                  )}
                   {config.gpgpuMorphPathMode === 'writeOn' && (
                     <>
                       <Slider label="Write-On Start （開始・割合）" value={config.gpgpuMorphPathWriteOnStart} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphPathWriteOnStart', v)} />
                       <Slider label="Write-On End （終了・割合）" value={config.gpgpuMorphPathWriteOnEnd} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphPathWriteOnEnd', v)} />
                     </>
                   )}
+                  {config.gpgpuMorphPathMode !== 'stamp' && (
                   <Slider label="Taper （テーパー）" value={config.gpgpuMorphPathTaper} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphPathTaper', v)} />
+                  )}
                   {config.gpgpuMorphPathTaper > 0 && (
                     <Toggle label="Taper Shape （形状）" value={config.gpgpuMorphPathTaperShape} options={[{ label: 'Linear', val: 'linear' as const }, { label: 'Smooth', val: 'smooth' as const }, { label: 'Bell', val: 'bell' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathTaperShape', v)} />
                   )}
@@ -353,6 +374,27 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
               </div>
             </>
           )}
+          <>
+            <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Form Deformation （フォーム専用変形: 配置変形）</div>
+            <Slider label="Disperse Amount （拡散量）" value={config.gpgpuMorphDisperseAmount} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphDisperseAmount', v)} />
+            {config.gpgpuMorphDisperseAmount !== 0 && (
+              <Toggle label="Disperse Direction （拡散方向）" value={config.gpgpuMorphDisperseDirection} options={[{ label: 'Radial', val: 'radial' as const }, { label: 'X', val: 'x' as const }, { label: 'Y', val: 'y' as const }, { label: 'Z', val: 'z' as const }]} onChange={(v) => updateConfig('gpgpuMorphDisperseDirection', v)} />
+            )}
+            <Slider label="Twist Amount （ねじり量）" value={config.gpgpuMorphTwistAmount} min={-4} max={4} step={0.1} onChange={(v) => updateConfig('gpgpuMorphTwistAmount', v)} />
+            {config.gpgpuMorphTwistAmount !== 0 && (
+              <Toggle label="Twist Axis （ねじり軸）" value={config.gpgpuMorphTwistAxis} options={[{ label: 'X', val: 'x' as const }, { label: 'Y', val: 'y' as const }, { label: 'Z', val: 'z' as const }]} onChange={(v) => updateConfig('gpgpuMorphTwistAxis', v)} />
+            )}
+            <Slider label="Fractal Amount （フラクタル変位量）" value={config.gpgpuMorphFractalAmount} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFractalAmount', v)} />
+            {config.gpgpuMorphFractalAmount !== 0 && (
+              <>
+                <Slider label="Fractal Frequency （周波数）" value={config.gpgpuMorphFractalFrequency} min={0.2} max={8} step={0.1} onChange={(v) => updateConfig('gpgpuMorphFractalFrequency', v)} />
+                <Slider label="Fractal Evolution （時間発展）" value={config.gpgpuMorphFractalEvolution} min={0} max={20} step={0.25} onChange={(v) => updateConfig('gpgpuMorphFractalEvolution', v)} />
+              </>
+            )}
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              モーフ配置そのものへの専用変形です（Flow／Vortex 等のモーションとは別系統）。全て 0 では従来と完全同一になります。
+            </div>
+          </>
           <Slider label="Strength" value={config.gpgpuMorphStrength} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuMorphStrength', v)} />
           <Slider label="Scale" value={config.gpgpuMorphScale} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScale', v)} />
           <Slider label="Jitter" value={config.gpgpuMorphJitter} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphJitter', v)} />
@@ -1380,6 +1422,9 @@ const ObjMeshBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updat
           <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Display （表示形態）</div>
           <Toggle label="Display" value={config.gpgpuObjMeshDisplay} options={[{ label: 'Wireframe', val: 'wireframe' as const }, { label: 'Solid', val: 'solid' as const }]} onChange={(v) => updateConfig('gpgpuObjMeshDisplay', v)} />
           <Slider label="Repeat （反復）" value={config.gpgpuObjMeshRepeat} min={1} max={64} step={1} onChange={(v) => updateConfig('gpgpuObjMeshRepeat', Math.round(v))} />
+          <Toggle label="Repeat Mode （反復配置）" value={config.gpgpuObjMeshRepeatMode} options={[{ label: 'Grid', val: 'grid' as const }, { label: 'Radial', val: 'radial' as const }]} onChange={(v) => updateConfig('gpgpuObjMeshRepeatMode', v)} />
+          <Slider label="Repeat Rotation （反復ごとの回転°）" value={config.gpgpuObjMeshRepeatRotation} min={-180} max={180} step={5} onChange={(v) => updateConfig('gpgpuObjMeshRepeatRotation', v)} />
+          <Slider label="Repeat Scale Step （反復ごとの拡縮比）" value={config.gpgpuObjMeshRepeatScaleStep} min={0.5} max={1.5} step={0.05} onChange={(v) => updateConfig('gpgpuObjMeshRepeatScaleStep', v)} />
           <Slider label="Scale （大きさ）" value={config.gpgpuObjMeshScale} min={0.25} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuObjMeshScale', v)} />
           <Slider label="Position X" value={config.gpgpuObjMeshPosX} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuObjMeshPosX', v)} />
           <Slider label="Position Y" value={config.gpgpuObjMeshPosY} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuObjMeshPosY', v)} />
