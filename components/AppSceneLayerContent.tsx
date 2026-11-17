@@ -16,6 +16,7 @@ function lazySystem<K extends string, C extends React.ComponentType<any>>(
 }
 
 const GpgpuSystem = lazySystem(() => import('./sceneGpgpuSystem'), 'GpgpuSystem');
+const LightVolume = lazySystem(() => import('./LightVolume'), 'LightVolume');
 const GpgpuSmoothTube = lazySystem(() => import('./sceneGpgpuSmoothTube'), 'GpgpuSmoothTube');
 const MembraneSystem = lazySystem(() => import('./sceneMembraneSystem'), 'MembraneSystem');
 const SurfaceShellSystem = lazySystem(() => import('./sceneSurfaceShellSystem'), 'SurfaceShellSystem');
@@ -259,6 +260,9 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
       )}
       {gpgpuPlan.smoothTubes && (
         <GpgpuSmoothTube config={config} posReadbackRef={metaballPosRef} isPlaying={isPlaying} />
+      )}
+      {(config.gpgpuLightVolumeEnabled || config.gpgpuLightTrailEnabled) && (
+        <LightVolume config={config} />
       )}
       {gpgpuPlan.metaballs && (
         <MetaballSystem

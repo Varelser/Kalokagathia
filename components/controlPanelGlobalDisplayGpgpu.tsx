@@ -158,6 +158,50 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
                 )}
               </>
             )}
+            <div className="mt-3 border-t border-white/10 pt-3">
+              <div className="mb-2 text-[10px] uppercase tracking-widest font-medium opacity-70">Light Volume / Trail (Phase Y)</div>
+              <Toggle
+                label="Volume Enabled (見える光)"
+                value={config.gpgpuLightVolumeEnabled}
+                options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+                onChange={(v) => updateConfig('gpgpuLightVolumeEnabled', v)}
+              />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                ライトの位置に体積光を描きます（描画のみ）。深度との交差・遮蔽はしないため、輪郭は Softness でぼかします。PostFx の Lux とは別物です。
+              </div>
+              {config.gpgpuLightVolumeEnabled && (
+                <>
+                  <Toggle
+                    label="Volume Shape"
+                    value={config.gpgpuLightVolumeShape}
+                    options={[{ label: 'Cone', val: 'cone' as const }, { label: 'Sphere', val: 'sphere' as const }]}
+                    onChange={(v) => updateConfig('gpgpuLightVolumeShape', v)}
+                  />
+                  <Slider label="Volume Intensity" value={config.gpgpuLightVolumeIntensity} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuLightVolumeIntensity', v)} />
+                  <Slider label="Volume Length / Radius" value={config.gpgpuLightVolumeLength} min={0} max={500} step={5} onChange={(v) => updateConfig('gpgpuLightVolumeLength', v)} />
+                  {config.gpgpuLightVolumeShape === 'cone' && (
+                    <Slider label="Volume Angle (deg, 半角)" value={config.gpgpuLightVolumeAngle} min={1} max={89} step={1} onChange={(v) => updateConfig('gpgpuLightVolumeAngle', v)} />
+                  )}
+                  <Slider label="Volume Steps (1-32)" value={config.gpgpuLightVolumeSteps} min={1} max={32} step={1} onChange={(v) => updateConfig('gpgpuLightVolumeSteps', Math.round(v))} />
+                  <Slider label="Volume Softness" value={config.gpgpuLightVolumeSoftness} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuLightVolumeSoftness', v)} />
+                </>
+              )}
+              <Toggle
+                label="Light Trail (ライト軌跡リボン)"
+                value={config.gpgpuLightTrailEnabled}
+                options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+                onChange={(v) => updateConfig('gpgpuLightTrailEnabled', v)}
+              />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                ライトが動いた軌跡をリボンとして描きます（粒子への影響はありません）。ライト位置を動かすと軌跡が伸びます。
+              </div>
+              {config.gpgpuLightTrailEnabled && (
+                <>
+                  <Slider label="Trail Width" value={config.gpgpuLightTrailWidth} min={0} max={50} step={0.5} onChange={(v) => updateConfig('gpgpuLightTrailWidth', v)} />
+                  <Slider label="Trail Fade" value={config.gpgpuLightTrailFade} min={0} max={4} step={0.1} onChange={(v) => updateConfig('gpgpuLightTrailFade', v)} />
+                </>
+              )}
+            </div>
           </div>
           <Toggle
             label="Audio Reactive"
