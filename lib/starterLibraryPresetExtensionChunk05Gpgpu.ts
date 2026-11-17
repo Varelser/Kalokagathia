@@ -1671,6 +1671,52 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuSdfBounce: 0.6,
         gpgpuTrailEnabled: false,
       }),
+  // Phase AC: age-curve velocity — particles are born fast and
+  // settle as they age (Velocity over Lifetime on the curl flow).
+  createStarterPreset('starter-gpgpu-agecurve-velocity-fade', 'GPGPU AgeCurve Velocity Fade (Signal & Time)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 1.6,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.8,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.05,
+        gpgpuCurlEnabled: true,
+        gpgpuCurlStrength: 1.0,
+        gpgpuAgeEnabled: true,
+        gpgpuAgeMax: 8,
+        gpgpuAgeCurveVelocityEnabled: true,
+        gpgpuAgeCurveVelocityPoints: [1.8, 1.4, 0.9, 0.5, 0.25],
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase AC: slow curl evolution — the field itself barely
+  // changes over time (Curl Speed 0.15), so the swarm drifts
+  // through a nearly frozen landscape of currents.
+  createStarterPreset('starter-gpgpu-curl-slow-evolution', 'GPGPU Curl Slow Evolution (Signal & Time)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 1.5,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.04,
+        gpgpuCurlEnabled: true,
+        gpgpuCurlStrength: 1.2,
+        gpgpuCurlSpeed: 0.15,
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AA2: Twist form — a torus knot placement twisted around
   // Y in proportion to its height, with a light fractal roughening.
   createStarterPreset('starter-gpgpu-form-twist-knot', 'GPGPU Form Twist Knot (Form Deformation)', {

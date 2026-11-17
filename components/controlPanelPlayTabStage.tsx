@@ -3,7 +3,7 @@ import { Activity, ArrowLeftRight, Monitor } from 'lucide-react';
 import type { ParticleConfig, PresetRecord } from '../types';
 import { PARAMETER_CATALOG } from '../lib/parameterCatalog';
 import { getNoiseLinkStatus, type NoiseLinkStatus } from '../lib/noiseLink';
-import { AUDIO_BAND_OPTIONS, LFO_WAVEFORM_OPTIONS, NOISE_SOURCE_OPTIONS, createStarterModulationRoutes, describeModulationSource, evaluateLfo, setModulationSetup, useModulationSetup, type LfoWaveform, type ModulationRoute, type ModulationSetup, type ModulationSource, type NoiseSourceId } from '../lib/modulation';
+import { AUDIO_BAND_OPTIONS, ENVELOPE_TRIGGER_OPTIONS, LFO_WAVEFORM_OPTIONS, NOISE_SOURCE_OPTIONS, createStarterModulationRoutes, describeModulationSource, evaluateLfo, fireModulationEnvelope, setModulationSetup, useModulationSetup, type EnvelopeTrigger, type LfoWaveform, type ModulationRoute, type ModulationSetup, type ModulationSource, type NoiseSourceId } from '../lib/modulation';
 import { closeCleanOutput, isCleanOutputOpen, openCleanOutput } from '../lib/cleanOutput';
 import { collectGpuDiagnostics, type GpuDiagnosticsReport } from '../lib/gpuDiagnostics';
 import { GPU_TIER_LABELS_JA, redetectGpuTier, setGpuTierOverride, type GpuTier } from '../lib/gpuTier';
@@ -477,6 +477,14 @@ export const ModulationSection: React.FC<{
     if (kind === 'noise') {
       return { kind: 'noise', source: rest as NoiseSourceId };
     }
+    if (kind === 'vnoise') {
+      // Internal value noise (Phase AC) — generated in-app, not
+      // the external Noise app link above.
+      return { kind: 'vnoise', seed: 1, rate: 0.35, octaves: 2 };
+    }
+    if (kind === 'envelope') {
+      return { kind: 'envelope', trigger: 'manual', attack: 0.01, decay: 0.6 };
+    }
     return { kind: 'lfo', index: Number(rest) || 0 };
   };
 
@@ -485,7 +493,11 @@ export const ModulationSection: React.FC<{
       ? `lfo:${source.index}`
       : source.kind === 'noise'
         ? `noise:${source.source}`
-        : `audio:${source.band}`;
+        : source.kind === 'vnoise'
+          ? 'vnoise:internal'
+          : source.kind === 'envelope'
+            ? 'envelope:oneshot'
+            : `audio:${source.band}`;
 
   const addRoute = () => {
     const route: ModulationRoute = {
@@ -622,6 +634,14 @@ export const ModulationSection: React.FC<{
                       </option>
                     ))}
                   </optgroup>
+                  <optgroup label="生成 Generated">
+                    <option value="vnoise:internal" className="bg-neutral-900">
+                      内部ノイズ (Value Noise)
+                    </option>
+                    <option value="envelope:oneshot" className="bg-neutral-900">
+                      エンベロープ (Envelope)
+                    </option>
+                  </optgroup>
                 </select>
                 <select
                   value={route.target}
@@ -656,6 +676,94 @@ export const ModulationSection: React.FC<{
                   削除
                 </button>
               </div>
+              <Slider
+                label="ラグ Lag (s)"
+                value={route.lag ?? 0}
+                min={0}
+                max={2}
+                step={0.05}
+                onChange={(v) => updateRoute(route.id, { lag: v })}
+              />
+              {route.source.kind === 'vnoise' && (
+                <div className="grid grid-cols-3 gap-2">
+                  <Slider
+                    label="Seed"
+                    value={route.source.seed}
+                    min={0}
+                    max={9999}
+                    step={1}
+                    onChange={(v) => updateRoute(route.id, { source: { ...route.source, seed: Math.round(v) } as ModulationSource })}
+                  />
+                  <Slider
+                    label="Rate"
+                    value={route.source.rate}
+                    min={0.02}
+                    max={4}
+                    step={0.01}
+                    onChange={(v) => updateRoute(route.id, { source: { ...route.source, rate: v } as ModulationSource })}
+                  />
+                  <Slider
+                    label="Octaves"
+                    value={route.source.octaves}
+                    min={1}
+                    max={4}
+                    step={1}
+                    onChange={(v) => updateRoute(route.id, { source: { ...route.source, octaves: Math.round(v) } as ModulationSource })}
+                  />
+                </div>
+              )}
+              {route.source.kind === 'envelope' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2 items-start">
+                    <select
+                      value={route.source.trigger}
+                      onChange={(event) =>
+                        updateRoute(route.id, {
+                          source: { ...route.source, trigger: event.target.value as EnvelopeTrigger } as ModulationSource,
+                        })
+                      }
+                      className={selectClass}
+                      aria-label="エンベロープのトリガ"
+                    >
+                      {ENVELOPE_TRIGGER_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value} className="bg-neutral-900">
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {route.source.trigger === 'manual' ? (
+                      <button
+                        onClick={() => fireModulationEnvelope(route.id, performance.now() / 1000)}
+                        className="px-3 py-1.5 rounded bg-white text-black text-[11px] font-bold hover:bg-gray-200 transition-colors"
+                      >
+                        トリガ Trigger
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-white/40 leading-relaxed">
+                        {route.source.trigger === 'audio' ? '音声パルスの立ち上がりで発火します' : 'MIDI ノートオンで発火します'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Slider
+                      label="Attack (s)"
+                      value={route.source.attack}
+                      min={0.005}
+                      max={1}
+                      step={0.005}
+                      onChange={(v) => updateRoute(route.id, { source: { ...route.source, attack: v } as ModulationSource })}
+                    />
+                    <Slider
+                      label="Decay (s)"
+                      value={route.source.decay}
+                      min={0.05}
+                      max={4}
+                      step={0.05}
+                      onChange={(v) => updateRoute(route.id, { source: { ...route.source, decay: v } as ModulationSource })}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           ))}
           <button

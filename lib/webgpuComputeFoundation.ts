@@ -102,6 +102,15 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   if ((config.gpgpuMaxSpeed || 0) > 0 || Math.abs((config.gpgpuDrag ?? 1.1) - 1.1) > 1e-9) features.push('global-velocity-limit');
   if (config.gpgpuParticleLifeEnabled && (config.gpgpuParticleLifeAvoid || 0) > 0) features.push('particle-life-avoid');
   if (config.gpgpuSphEnabled && (config.gpgpuSphSurfaceTension || 0) > 0) features.push('sph-surface-tension');
+  // Phase AC signal & time grammar: the sim age curves
+  // (velocity / force) and a non-legacy curl evolution speed live
+  // in the WebGL passes only — same treatment as Phase AB above.
+  // The rotation curve needs no entry: geometry spin is a WebGL
+  // draw path that never runs under WebGPU compute. Modulation
+  // (internal noise / envelope / lag) is engine-level config
+  // modulation and applies on every path already.
+  if (config.gpgpuAgeCurveVelocityEnabled || config.gpgpuAgeCurveForceEnabled) features.push('age-curve-sim');
+  if (config.gpgpuCurlEnabled && Math.abs((config.gpgpuCurlSpeed ?? 1) - 1) > 1e-9) features.push('curl-speed');
   return features;
 }
 

@@ -95,7 +95,41 @@ export const GEOM_VERT = /* glsl */ `
   uniform float uTime;
   uniform float uSpinSpeed;
   uniform float uMeshStretch;
+  // Rotation over Lifetime (Phase AC): the age curve multiplies
+  // the spin RATE; the angle is the curve's closed-form integral
+  // over the particle's age (see kaloCurveIntegral5 below and the
+  // TS twin integrateAgeCurve in lib/ageCurve.ts). The passes
+  // suppress an all-ones curve, so a flat curve is the legacy spin.
+  uniform bool  uAgeEnabled;
+  uniform float uAgeMax;
+  uniform bool  uAgeCurveRotationEnabled;
+  uniform float uAgeCurveRotation[5];
   varying vec3 vNormal;
+
+  // Closed-form integral of the 5-point age curve from 0 to t
+  // (trapezoids + the exact quadratic on the partial segment).
+  float kaloCurveIntegral5(float t, float p0, float p1, float p2, float p3, float p4) {
+    float x = clamp(t, 0.0, 1.0);
+    float h = 0.25;
+    float a0 = h * (p0 + p1) * 0.5;
+    float a1 = h * (p1 + p2) * 0.5;
+    float a2 = h * (p2 + p3) * 0.5;
+    if (x <= h) { float f = x / h; return h * (p0 * f + (p1 - p0) * f * f * 0.5); }
+    if (x <= 2.0 * h) { float f = (x - h) / h; return a0 + h * (p1 * f + (p2 - p1) * f * f * 0.5); }
+    if (x <= 3.0 * h) { float f = (x - 2.0 * h) / h; return a0 + a1 + h * (p2 * f + (p3 - p2) * f * f * 0.5); }
+    float f = (x - 3.0 * h) / h;
+    return a0 + a1 + a2 + h * (p3 * f + (p4 - p3) * f * f * 0.5);
+  }
+  // The plain 5-point curve value (same blend as everywhere else).
+  float kaloEvalCurve5(float t, float p0, float p1, float p2, float p3, float p4) {
+    float x = clamp(t, 0.0, 1.0) * 4.0;
+    float v = p0;
+    v = mix(v, p1, clamp(x, 0.0, 1.0));
+    v = mix(v, p2, clamp(x - 1.0, 0.0, 1.0));
+    v = mix(v, p3, clamp(x - 2.0, 0.0, 1.0));
+    v = mix(v, p4, clamp(x - 3.0, 0.0, 1.0));
+    return v;
+  }
 
   mat3 lookRot(vec3 dir) {
     vec3 up = abs(dir.y) < 0.99 ? vec3(0,1,0) : vec3(1,0,0);
@@ -120,6 +154,26 @@ export const GEOM_VERT = /* glsl */ `
     // i.e. the legacy un-rotated geometry.
     float phase = fract(sin(dot(aTexCoord, vec2(127.1, 311.7))) * 43758.5453123);
     float spinAng = uSpinSpeed == 0.0 ? 0.0 : uTime * uSpinSpeed + phase * 6.2831853;
+    if (uSpinSpeed != 0.0 && uAgeCurveRotationEnabled) {
+      if (uAgeEnabled) {
+        // Integrate the rate over the particle's own age: the
+        // angle is spinSpeed × [ageMax × C(age/ageMax)] plus the
+        // tail beyond max age at the final point's rate. A forced
+        // age reset (kill/respawn) restarts the angle — the spin
+        // phase jumps there, by design of an age-driven rate.
+        float ageSec = texture2D(uPosTex, aTexCoord).w;
+        float ageMax = max(uAgeMax, 0.001);
+        float whole = ageMax * kaloCurveIntegral5(1.0, uAgeCurveRotation[0], uAgeCurveRotation[1], uAgeCurveRotation[2], uAgeCurveRotation[3], uAgeCurveRotation[4]);
+        float integ = ageSec <= ageMax
+          ? ageMax * kaloCurveIntegral5(ageSec / ageMax, uAgeCurveRotation[0], uAgeCurveRotation[1], uAgeCurveRotation[2], uAgeCurveRotation[3], uAgeCurveRotation[4])
+          : whole + (ageSec - ageMax) * uAgeCurveRotation[4];
+        spinAng = uSpinSpeed * integ + phase * 6.2831853;
+      } else {
+        // Age tracking off: the midpoint value as a constant rate
+        // multiplier (the points shader's 0.5 convention).
+        spinAng = uTime * uSpinSpeed * kaloEvalCurve5(0.5, uAgeCurveRotation[0], uAgeCurveRotation[1], uAgeCurveRotation[2], uAgeCurveRotation[3], uAgeCurveRotation[4]) + phase * 6.2831853;
+      }
+    }
     mat3 spin = rotYMat(spinAng);
     // Velocity stretch (meshStretch, B1b): elongates the geometry
     // along its local Z (the axis velocity alignment points along the

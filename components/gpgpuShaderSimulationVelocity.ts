@@ -61,6 +61,16 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uSpawnTime;
   uniform float uDragRate;
   uniform float uMaxSpeed;
+  // Signal & time grammar (Phase AC): the curl field's evolution
+  // speed (1 = legacy rate, an exact IEEE identity) and the age
+  // curves aimed at the simulation itself. The passes suppress a
+  // curve whose points are all 1 (identity) by clearing its
+  // Enabled uniform, so a flat curve takes the legacy path.
+  uniform float uCurlSpeed;
+  uniform bool  uAgeCurveVelocityEnabled;
+  uniform float uAgeCurveVelocity[5];
+  uniform bool  uAgeCurveForceEnabled;
+  uniform float uAgeCurveForce[5];
   uniform bool  uVortexEnabled;
   uniform float uVortexStrength;
   uniform float uVortexTilt;
@@ -102,6 +112,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uMorphObjNormalSpeed;
   uniform float uMorphKickStart;
   uniform bool  uAgeEnabled;
+  uniform float uAgeMax;
   uniform float uMorphStrength;
   uniform float uMorphOrbitSpeed;
   uniform float uMorphReplicaPhaseGain;
@@ -301,6 +312,20 @@ export const SIM_VEL_FRAG = /* glsl */ `
     return int(min(floor(h * float(uParticleLifeSpecies)), float(uParticleLifeSpecies - 1)));
   }
 
+  // Age curve evaluation (Phase AC): the same 5-point piecewise-
+  // linear blend as the points shader's kaloEvalCurve5 (and the TS
+  // twin, lib/ageCurve.ts evaluateAgeCurve) — an all-ones curve is
+  // exactly 1.0 at every t.
+  float kaloEvalCurve5(float t, float p0, float p1, float p2, float p3, float p4) {
+    float x = clamp(t, 0.0, 1.0) * 4.0;
+    float v = p0;
+    v = mix(v, p1, clamp(x, 0.0, 1.0));
+    v = mix(v, p2, clamp(x - 1.0, 0.0, 1.0));
+    v = mix(v, p3, clamp(x - 2.0, 0.0, 1.0));
+    v = mix(v, p4, clamp(x - 3.0, 0.0, 1.0));
+    return v;
+  }
+
   void main() {
     vec4 posData = texture2D(uPosTex, vUv);
     vec4 velData = texture2D(uVelTex, vUv);
@@ -340,6 +365,16 @@ export const SIM_VEL_FRAG = /* glsl */ `
       float globalIdx = uStackGlobalStart + localIdx;
       globalUv = (vec2(mod(globalIdx, uStackGlobalTexSizeF), floor(globalIdx / uStackGlobalTexSizeF)) + 0.5) / uStackGlobalTexSizeF;
     }
+
+    // Age ratio for the Phase AC sim curves — the points shader's
+    // convention (0.5 while age tracking is off).
+    float ageNorm = uAgeEnabled ? clamp(posData.w / max(uAgeMax, 0.001), 0.0, 1.0) : 0.5;
+    // Force over Lifetime baseline (Phase AC): the velocity before
+    // the built-in force accumulation below.
+    vec3 velForceBase = vel;
+    // Curl field clock (Phase AC): the legacy rate is 0.15/s;
+    // uCurlSpeed 1 multiplies it by exactly 1.0.
+    float curlTime = replicaTime * 0.15 * uCurlSpeed;
 
     vel.y -= uGravity * uDelta * 9.8;
 
@@ -386,9 +421,9 @@ export const SIM_VEL_FRAG = /* glsl */ `
     if (uCurlEnabled) {
       vec3 curl = (uCurlMode == 0 && uCurlOctaves <= 1)
         ? (uCurlSymmetry == 0
-          ? curlNoise(pos * uCurlScale + vec3(replicaTime * 0.15) + replicaSeed)
-          : symmetricCurl(pos * uCurlScale + replicaSeed, vec3(replicaTime * 0.15)))
-        : curlField(pos * uCurlScale + replicaSeed, vec3(replicaTime * 0.15));
+          ? curlNoise(pos * uCurlScale + vec3(curlTime) + replicaSeed)
+          : symmetricCurl(pos * uCurlScale + replicaSeed, vec3(curlTime)))
+        : curlField(pos * uCurlScale + replicaSeed, vec3(curlTime));
       vel += curl * uCurlStrength * 20.0 * uDelta;
     }
 
@@ -814,6 +849,12 @@ export const SIM_VEL_FRAG = /* glsl */ `
       }
     }
 
+    // Force over Lifetime capture (Phase AC): the velocity after
+    // the built-in force accumulation (gravity … morph). The
+    // collider / mouse / paint / floor / fluid / custom blocks
+    // below are NOT part of the scaled delta.
+    vec3 velAfterForces = vel;
+
     // SDF Collider — velocity reflection
     if (uSdfEnabled) {
       vec3 sc = vec3(uSdfX, uSdfY, uSdfZ);
@@ -906,6 +947,16 @@ export const SIM_VEL_FRAG = /* glsl */ `
 
     // __CUSTOM_FORCE__
 
+    // Force over Lifetime (Phase AC): scale only the built-in
+    // force delta captured above; everything after it (collisions,
+    // mouse, paint, floor, fluid, custom force) is added back
+    // unscaled. A factor of exactly 1 reconstructs vel bit-for-bit,
+    // and the passes suppress an all-ones curve outright.
+    if (uAgeCurveForceEnabled) {
+      float fmul = kaloEvalCurve5(ageNorm, uAgeCurveForce[0], uAgeCurveForce[1], uAgeCurveForce[2], uAgeCurveForce[3], uAgeCurveForce[4]);
+      vel = velForceBase + (velAfterForces - velForceBase) * fmul + (vel - velAfterForces);
+    }
+
     float spd = length(vel);
     if (spd > 350.0) vel *= 350.0 / spd;
     // Global max speed (Phase AB): the Particle Life cap semantics
@@ -933,6 +984,13 @@ export const SIM_VEL_FRAG = /* glsl */ `
       vec3 n = pos / dist;
       float vn = dot(vel, n);
       if (vn > 0.0) vel -= n * vn * (1.0 + uBounce);
+    }
+
+    // Velocity over Lifetime (Phase AC): the curve multiplies the
+    // final velocity. ×1.0 is exact in IEEE arithmetic, and the
+    // passes additionally suppress an all-ones curve outright.
+    if (uAgeCurveVelocityEnabled) {
+      vel *= kaloEvalCurve5(ageNorm, uAgeCurveVelocity[0], uAgeCurveVelocity[1], uAgeCurveVelocity[2], uAgeCurveVelocity[3], uAgeCurveVelocity[4]);
     }
 
     gl_FragColor = vec4(vel, phaseState);

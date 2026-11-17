@@ -75,6 +75,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
         <>
           <Slider label="Strength" value={config.gpgpuCurlStrength} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuCurlStrength', v)} />
           <Slider label="Scale" value={config.gpgpuCurlScale} min={0.001} max={0.05} step={0.001} onChange={(v) => updateConfig('gpgpuCurlScale', v)} />
+          <Slider label="Speed (時間発展)" value={config.gpgpuCurlSpeed} min={0} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCurlSpeed', v)} />
           <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Field Mode (場の型)</div>
           <select
             value={config.gpgpuCurlMode}
@@ -765,8 +766,29 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
         onToggle={(v) => updateConfig('gpgpuAgeCurveOpacityEnabled', v)}
         onPoints={(v) => updateConfig('gpgpuAgeCurveOpacityPoints', v)}
       />
+      <AgeCurveBlock
+        title="Velocity Curve（速度）"
+        enabled={config.gpgpuAgeCurveVelocityEnabled}
+        points={config.gpgpuAgeCurveVelocityPoints}
+        onToggle={(v) => updateConfig('gpgpuAgeCurveVelocityEnabled', v)}
+        onPoints={(v) => updateConfig('gpgpuAgeCurveVelocityPoints', v)}
+      />
+      <AgeCurveBlock
+        title="Force Curve（フォース）"
+        enabled={config.gpgpuAgeCurveForceEnabled}
+        points={config.gpgpuAgeCurveForcePoints}
+        onToggle={(v) => updateConfig('gpgpuAgeCurveForceEnabled', v)}
+        onPoints={(v) => updateConfig('gpgpuAgeCurveForcePoints', v)}
+      />
+      <AgeCurveBlock
+        title="Rotation Curve（回転・ジオメトリ自転）"
+        enabled={config.gpgpuAgeCurveRotationEnabled}
+        points={config.gpgpuAgeCurveRotationPoints}
+        onToggle={(v) => updateConfig('gpgpuAgeCurveRotationEnabled', v)}
+        onPoints={(v) => updateConfig('gpgpuAgeCurveRotationPoints', v)}
+      />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-        年齢比 t = 0 / 0.25 / 0.5 / 0.75 / 1 の5点に倍率を持ち、間を線形補間します。カーブは従来の年齢系（Size over Lifetime、フェードイン／アウト）に乗算されるため、全点 1.0 のままでは見た目は変わりません。
+        年齢比 t = 0 / 0.25 / 0.5 / 0.75 / 1 の5点に倍率を持ち、間を線形補間します。カーブは従来の年齢系（Size over Lifetime、フェードイン／アウト）やシミュレーション（速度・内蔵フォース・ジオメトリ自転の速さ）に乗算されるため、全点 1.0 のままでは見た目は変わりません。フォースは重力〜モーフの内蔵フォースが対象で、衝突・マウス・流体・カスタムフォースには掛かりません。
       </div>
     </div>
 

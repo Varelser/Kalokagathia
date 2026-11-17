@@ -58,6 +58,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // Curl flavour + octaves (B3): legacy field by default.
   gpgpuCurlMode: 'curl' as const,
   gpgpuCurlOctaves: 1,
+  gpgpuCurlSpeed: 1.0,
   gpgpuBoidsEnabled: false,
   gpgpuBoidsSeparation: 1.0,
   gpgpuBoidsAlignment: 0.5,
@@ -331,6 +332,14 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuAgeCurveSizePoints: [1, 1, 1, 1, 1],
   gpgpuAgeCurveOpacityEnabled: false,
   gpgpuAgeCurveOpacityPoints: [1, 1, 1, 1, 1],
+  // Age curve drive targets (Phase AC): disabled by default and
+  // all-ones points, so both layers of the identity hold.
+  gpgpuAgeCurveVelocityEnabled: false,
+  gpgpuAgeCurveVelocityPoints: [1, 1, 1, 1, 1],
+  gpgpuAgeCurveForceEnabled: false,
+  gpgpuAgeCurveForcePoints: [1, 1, 1, 1, 1],
+  gpgpuAgeCurveRotationEnabled: false,
+  gpgpuAgeCurveRotationPoints: [1, 1, 1, 1, 1],
   // Layer Maps per property (Phase U): 0 = no modulation.
   gpgpuMapSizeAmount: 0,
   gpgpuMapOpacityAmount: 0,

@@ -4,6 +4,52 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.34.0] — 2026-11-17
+
+Phase AC (fifth period, second phase): the signal & time grammar —
+an internal noise channel, per-route lag, envelope sources, the
+age curves aimed at the simulation itself, and a keyed curl
+evolution speed. Base is the actually-shipped v1.33.0. With all
+new keys and routes at their defaults the render is bit-identical
+to v1.33.0 (verified on the iMac real-GPU gate: FROZEN
+deterministic render, all 12 frames at 0.00000). 7 new config
+keys (1,074 total), starters +2 (531 total).
+
+### Added
+- **Internal noise channel** (modulation source `vnoise`;
+  `lib/modulation.ts`): a deterministic 1D value-noise fBm
+  (seed / rate / octaves on the source itself), a pure function
+  of (seed, time) so deterministic renders reproduce it exactly.
+  Distinct from the external Noise app link, which is untouched.
+- **Lag / smoothing** (route `lag`, seconds): a first-order lag
+  on any modulation route. State initialises to the first sampled
+  input and re-initialises when time runs backwards, so the
+  output is a pure function of the (time, input) sequence since
+  then. Lag 0 (default) bypasses the filter entirely.
+- **Envelope sources** (modulation source `envelope`): the
+  audioPulse idea generalised — attack/decay one-shots fired by
+  a manual Trigger button, the audio pulse band's rising edge,
+  or any MIDI note-on (hooked into the existing note-on path).
+- **Age curves for the simulation** (`gpgpuAgeCurveVelocity*` /
+  `gpgpuAgeCurveForce*` / `gpgpuAgeCurveRotation*`, same
+  Enabled+Points grammar as Size/Opacity): Velocity multiplies
+  the final velocity, Force multiplies the built-in force
+  accumulation only (gravity…morph; collisions, mouse, paint,
+  floor, fluid and custom force stay unscaled), Rotation
+  multiplies the geometry spin rate via the curve's closed-form
+  integral (`integrateAgeCurve`, TS/GLSL twins). A flat curve is
+  suppressed in the passes, so enabling one still runs the exact
+  legacy path. The WebGPU registry declares `age-curve-sim` for
+  the two sim curves; the Aux chain shaders are out of scope, as
+  with Phase AB's keys.
+- **Curl evolution speed** (`gpgpuCurlSpeed`, default 1.0): the
+  curl field's time offset is keyed; ×1.0 is an exact IEEE
+  identity and 0 freezes the field. Declared as `curl-speed` to
+  the WebGPU registry when non-default.
+- **Starters +2**: AgeCurve Velocity Fade and Curl Slow
+  Evolution; the modulation starter set gains an internal-noise
+  route (presets cannot carry modulation setups).
+
 ## [1.33.0] — 2026-11-17
 
 Phase AB (fifth period, first phase): the lifecycle grammar —

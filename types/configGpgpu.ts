@@ -84,6 +84,10 @@ export interface ParticleConfigGpgpu {
   // mirroring Kinetix's sampleCurlOctave composition.
   gpgpuCurlMode: 'curl' | 'ridged' | 'vortex';
   gpgpuCurlOctaves: number;
+  // Curl field evolution speed (Phase AC): multiplies the field's
+  // time offset. 1 (default) is the legacy evolution rate exactly
+  // (×1.0 is an IEEE identity); 0 freezes the field in time.
+  gpgpuCurlSpeed: number;
   // Boids
   gpgpuBoidsEnabled: boolean;
   gpgpuBoidsSeparation: number;
@@ -575,6 +579,17 @@ export interface ParticleConfigGpgpu {
   gpgpuAgeCurveSizePoints: number[];
   gpgpuAgeCurveOpacityEnabled: boolean;
   gpgpuAgeCurveOpacityPoints: number[];
+  // Age curve drive-target extension (Phase AC): the same
+  // Enabled+Points grammar aimed at the simulation — Velocity
+  // multiplies the particle velocity, Force multiplies the
+  // built-in force accumulation, Rotation multiplies the
+  // geometry spin rate (via the curve's closed-form integral).
+  gpgpuAgeCurveVelocityEnabled: boolean;
+  gpgpuAgeCurveVelocityPoints: number[];
+  gpgpuAgeCurveForceEnabled: boolean;
+  gpgpuAgeCurveForcePoints: number[];
+  gpgpuAgeCurveRotationEnabled: boolean;
+  gpgpuAgeCurveRotationPoints: number[];
   // Layer Maps per property (Phase U): the gradient image
   // (gpgpuGradImageSource, sampled by particle position through the
   // existing MediaLumaMap-style plumbing) modulates size / opacity

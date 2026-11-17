@@ -117,6 +117,14 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uMorphObjNormalSpeed: { value: 0.0 },
       uMorphKickStart:  { value: 0.0 },
       uAgeEnabled:      { value: false },
+      uAgeMax:          { value: 6.0 },
+      // Signal & time grammar (Phase AC): curl evolution speed +
+      // sim age curves. Defaults are the exact legacy neutrals.
+      uCurlSpeed:       { value: 1.0 },
+      uAgeCurveVelocityEnabled: { value: false },
+      uAgeCurveVelocity: { value: [1, 1, 1, 1, 1] },
+      uAgeCurveForceEnabled: { value: false },
+      uAgeCurveForce: { value: [1, 1, 1, 1, 1] },
       uMorphStrength:   { value: 3.0 },
       uMorphOrbitSpeed: { value: 0.3 },
       uMorphReplicaPhaseGain: { value: 0.0 },

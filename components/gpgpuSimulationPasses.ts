@@ -6,6 +6,7 @@ import {
   readbackWebGPUPositions,
 } from '../lib/webgpuCompute';
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
+import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 
 // Particle Life matrix cache: the flat uniform array only changes when
 // preset / species / seed change, so avoid reallocating it every frame.
@@ -363,6 +364,18 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uSpawnTime) velSimMat.uniforms.uSpawnTime.value = args.spawnTime ?? time;
   if (velSimMat.uniforms.uDragRate) velSimMat.uniforms.uDragRate.value = Math.max(0, Math.min(10, config.gpgpuDrag ?? 1.1));
   if (velSimMat.uniforms.uMaxSpeed) velSimMat.uniforms.uMaxSpeed.value = Math.max(0, config.gpgpuMaxSpeed || 0);
+  // Signal & time grammar (Phase AC): curl evolution speed and the
+  // age curves aimed at the simulation. A curve whose points are
+  // all 1 is suppressed here (Enabled stays false), so enabling a
+  // flat curve still runs the exact legacy shader path.
+  if (velSimMat.uniforms.uCurlSpeed) velSimMat.uniforms.uCurlSpeed.value = Math.max(0, Math.min(4, config.gpgpuCurlSpeed ?? 1));
+  if (velSimMat.uniforms.uAgeMax) velSimMat.uniforms.uAgeMax.value = config.gpgpuAgeMax;
+  const acVelocityPoints = normalizeAgeCurvePoints(config.gpgpuAgeCurveVelocityPoints);
+  const acForcePoints = normalizeAgeCurvePoints(config.gpgpuAgeCurveForcePoints);
+  if (velSimMat.uniforms.uAgeCurveVelocityEnabled) velSimMat.uniforms.uAgeCurveVelocityEnabled.value = config.gpgpuAgeCurveVelocityEnabled && !isAgeCurveIdentity(acVelocityPoints);
+  if (velSimMat.uniforms.uAgeCurveVelocity) velSimMat.uniforms.uAgeCurveVelocity.value = [...acVelocityPoints];
+  if (velSimMat.uniforms.uAgeCurveForceEnabled) velSimMat.uniforms.uAgeCurveForceEnabled.value = config.gpgpuAgeCurveForceEnabled && !isAgeCurveIdentity(acForcePoints);
+  if (velSimMat.uniforms.uAgeCurveForce) velSimMat.uniforms.uAgeCurveForce.value = [...acForcePoints];
   velSimMat.uniforms.uAttractorStrength.value = config.gpgpuAttractorStrength;
   velSimMat.uniforms.uAttractorScale.value = config.gpgpuAttractorScale;
   velSimMat.uniforms.uVortexEnabled.value = config.gpgpuVortexEnabled;

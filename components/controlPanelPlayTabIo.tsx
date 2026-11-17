@@ -8,6 +8,7 @@ import { MIDI_CLOCK_DIVISIONS, MidiClockTracker, SEQUENCE_SYNC_SOURCES, loadMidi
 import { INITIAL_LINK_STATE, LinkSyncClient, type LinkBridgeState } from '../lib/linkSync';
 import { MidiOutputEngine, loadMidiOutputSettings, saveMidiOutputSettings, type MidiOutputPortLike, type MidiOutputSettings } from '../lib/midiOutput';
 import { DEFAULT_OSC_BRIDGE_URL, describeOscTarget, isValidOscAddress, loadOscAssignments, oscValueToRatio, resolveOscAssignment, saveOscAssignments, scaleOscValue, type OscAssignment, type OscTarget } from '../lib/oscControl';
+import { noteModulationMidiTrigger } from '../lib/modulation';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { SectionTitle, TAB_SHORT_LABELS } from './controlPanelPlayTabShared';
 
@@ -463,6 +464,11 @@ export const MidiSection: React.FC<{
         const note = data[1];
         const velocity = data[2];
         if (velocity === 0) return;
+        // Modulation envelopes (Phase AC): every genuine note-on
+        // fires the MIDI-triggered envelope sources. The clock is
+        // the same performance.now()/1000 the modulation engine
+        // evaluates against.
+        noteModulationMidiTrigger(performance.now() / 1000);
         setLastEvent(`CH${channel + 1} Note ${note} (${describeMidiNote(note)}) vel ${velocity}`);
         const learnAction = learnNoteActionRef.current;
         if (learnAction) {

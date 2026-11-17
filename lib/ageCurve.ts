@@ -66,6 +66,39 @@ export function isAgeCurveIdentity(points: readonly number[]): boolean {
   return points.length === AGE_CURVE_POINT_COUNT && points.every((p) => p === 1);
 }
 
+/**
+ * Closed-form integral of the curve from 0 to x (x clamped to
+ * [0, 1]): the area under the piecewise-linear shape, computed
+ * segment by segment (trapezoids for full segments, the exact
+ * quadratic for the partial one). An all-ones curve integrates to
+ * exactly x. Phase AC uses this for Rotation over Lifetime: the
+ * geometry spin angle advances by spinSpeed × ageMax × this
+ * integral over the particle's normalised age, so the spin rate —
+ * not the angle — is what the curve multiplies, with no
+ * accumulation state. The GLSL twin (kaloCurveIntegral5) lives in
+ * components/gpgpuShaderVolumes.ts and follows the same segment
+ * arithmetic.
+ */
+export function integrateAgeCurve(points: readonly number[], xInput: number): number {
+  const x = Math.min(1, Math.max(0, xInput));
+  const h = 1 / (AGE_CURVE_POINT_COUNT - 1);
+  const segArea = (i: number) => (h * (points[i] + points[i + 1])) / 2;
+  if (x <= h) {
+    const f = x / h;
+    return h * (points[0] * f + ((points[1] - points[0]) * f * f) / 2);
+  }
+  if (x <= 2 * h) {
+    const f = (x - h) / h;
+    return segArea(0) + h * (points[1] * f + ((points[2] - points[1]) * f * f) / 2);
+  }
+  if (x <= 3 * h) {
+    const f = (x - 2 * h) / h;
+    return segArea(0) + segArea(1) + h * (points[2] * f + ((points[3] - points[2]) * f * f) / 2);
+  }
+  const f = (x - 3 * h) / h;
+  return segArea(0) + segArea(1) + segArea(2) + h * (points[3] * f + ((points[4] - points[3]) * f * f) / 2);
+}
+
 export interface AgeCurvePreset {
   id: string;
   label: string;

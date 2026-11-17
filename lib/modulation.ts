@@ -39,10 +39,21 @@ export interface LfoSettings {
   rate: number;
 }
 
+/** How an envelope source (Phase AC) is fired. */
+export type EnvelopeTrigger = 'manual' | 'audio' | 'midi';
+
 export type ModulationSource =
   | { kind: 'lfo'; index: number }
   | { kind: 'audio'; band: keyof AudioLevels }
-  | { kind: 'noise'; source: NoiseSourceId };
+  | { kind: 'noise'; source: NoiseSourceId }
+  // Internal value noise (Phase AC): generated in-app, a pure
+  // function of (seed, time) — NOT the external Noise app link
+  // above ('noise'), which is a live feed from another program.
+  | { kind: 'vnoise'; seed: number; rate: number; octaves: number }
+  // Generalised envelope (Phase AC): the audioPulse idea as a
+  // source of its own — attack/decay one-shot fired by a manual
+  // button, the audio pulse band, or any MIDI note-on.
+  | { kind: 'envelope'; trigger: EnvelopeTrigger; attack: number; decay: number };
 
 export interface ModulationRoute {
   id: string;
@@ -51,6 +62,13 @@ export interface ModulationRoute {
   target: keyof ParticleConfig;
   /** -1..1 — fraction of the target's catalog range applied around its center/base. */
   depth: number;
+  /**
+   * First-order lag / smoothing in seconds (Phase AC). 0 or
+   * absent = the raw signal, bit-identical to the pre-AC engine.
+   * The filter state lives outside the setup (see the signal
+   * state section below) so presets stay pure data.
+   */
+  lag?: number;
 }
 
 export interface ModulationSetup {
@@ -101,7 +119,126 @@ export function createStarterModulationRoutes(): ModulationRoute[] {
     { id: 'starter-1', source: { kind: 'lfo', index: 0 }, target: 'layer2FlowSpeed', depth: 0.35 },
     { id: 'starter-2', source: { kind: 'audio', band: 'bass' }, target: 'layer2BaseSize', depth: 0.5 },
     { id: 'starter-3', source: { kind: 'lfo', index: 1 }, target: 'layer3FlowSpeed', depth: 0.3 },
+    // Phase AC: the internal-noise showcase lives here, with the
+    // modulation system's own starter set (presets cannot carry a
+    // modulation setup — it is performance state, not config).
+    { id: 'starter-4', source: { kind: 'vnoise', seed: 7, rate: 0.3, octaves: 3 }, target: 'layer3BaseSize', depth: 0.4 },
   ];
+}
+
+/* ------------------------------------------------------------------ */
+/* Phase AC signal sources: internal value noise, envelope, lag.      */
+/*                                                                    */
+/* The value noise and the envelope shape are pure functions, so a    */
+/* deterministic render reproduces them bit-for-bit. The lag filter   */
+/* and the envelope triggers hold per-route state OUTSIDE the setup:  */
+/*                                                                    */
+/* - Lag state initialises to the first sampled input value (no       */
+/*   start-up ramp) and re-initialises whenever time runs backwards   */
+/*   (a new render / scrub), so the state is a pure function of the   */
+/*   (time, input) sequence since the last re-initialisation.        */
+/* - An envelope's value is a pure function of (time - last trigger   */
+/*   time). Manual triggers are recorded per route; the MIDI trigger  */
+/*   time is shared (every note-on fires every MIDI envelope, the     */
+/*   musical behaviour); the audio trigger edge-detects the pulse     */
+/*   band per route.                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Deterministic lattice hash → [0, 1). Integer math only (imul /
+ *  shifts), so the result is bit-identical on every JS engine. */
+export function hashLattice01(seed: number, i: number): number {
+  let h = (seed | 0) ^ Math.imul(i | 0, 0x27d4eb2d);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+
+/** One octave of 1D value noise at coordinate x → [0, 1]. */
+export function valueNoise1D(seed: number, x: number): number {
+  const i = Math.floor(x);
+  const f = x - i;
+  const u = f * f * (3 - 2 * f);
+  const a = hashLattice01(seed, i);
+  const b = hashLattice01(seed, i + 1);
+  return a + (b - a) * u;
+}
+
+/**
+ * Internal noise channel value at `time`: fBm over `octaves`
+ * octaves of value noise (amplitudes 1, 1/2, 1/4, …, normalised),
+ * sampled at time × rate lattice cells per second. → [0, 1],
+ * resting around 0.5 like an LFO. Pure function of its inputs.
+ */
+export function internalNoiseValue(seed: number, time: number, rate: number, octaves: number): number {
+  const oct = Math.max(1, Math.min(4, Math.round(octaves)));
+  let sum = 0;
+  let ampSum = 0;
+  let amp = 1;
+  let freq = 1;
+  for (let o = 0; o < oct; o++) {
+    sum += amp * valueNoise1D(seed + o * 101, time * rate * freq);
+    ampSum += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  return sum / ampSum;
+}
+
+/**
+ * Envelope shape: linear attack to 1 over `attack` seconds, then
+ * an exponential decay with time constant `decay`. elapsed < 0
+ * (never fired / fired in the future) is exactly 0.
+ */
+export function envelopeShape(elapsed: number, attack: number, decay: number): number {
+  if (!(elapsed >= 0)) return 0;
+  const a = Math.max(0.0005, attack);
+  if (elapsed < a) return elapsed / a;
+  return Math.exp(-(elapsed - a) / Math.max(0.01, decay));
+}
+
+/** One step of the first-order lag filter (pure). dt <= 0 holds. */
+export function lagStepValue(prev: number, raw: number, dt: number, lag: number): number {
+  if (!(dt > 0) || !(lag > 0)) return prev;
+  const alpha = 1 - Math.exp(-dt / lag);
+  return prev + (raw - prev) * alpha;
+}
+
+interface RouteSignalState {
+  /** Last lag output; null until the first sample initialises it. */
+  lagValue: number | null;
+  lagTime: number;
+  /** Last manual/audio trigger time for envelope sources. */
+  envLastTrigger: number;
+  /** Previous audio pulse level for edge detection. */
+  envPrevAudio: number;
+}
+
+const routeSignalStates = new Map<string, RouteSignalState>();
+let midiTriggerTime = Number.NEGATIVE_INFINITY;
+
+function getRouteSignalState(routeId: string): RouteSignalState {
+  let state = routeSignalStates.get(routeId);
+  if (!state) {
+    state = { lagValue: null, lagTime: 0, envLastTrigger: Number.NEGATIVE_INFINITY, envPrevAudio: 0 };
+    routeSignalStates.set(routeId, state);
+  }
+  return state;
+}
+
+/** Fire every manual-trigger envelope routed under `routeId`. */
+export function fireModulationEnvelope(routeId: string, time: number): void {
+  getRouteSignalState(routeId).envLastTrigger = time;
+}
+
+/** Called from the MIDI input path on every note-on (velocity > 0). */
+export function noteModulationMidiTrigger(time: number): void {
+  midiTriggerTime = time;
+}
+
+/** Drop all lag/envelope state (engine reset; also used by tests). */
+export function resetModulationSignalStates(): void {
+  routeSignalStates.clear();
+  midiTriggerTime = Number.NEGATIVE_INFINITY;
 }
 
 /** Evaluate an LFO at time t (seconds). Returns 0..1. */
@@ -138,6 +275,7 @@ export function evaluateSource(
   setup: ModulationSetup,
   time: number,
   audio: AudioLevels | undefined,
+  routeId?: string,
 ): SignalValue {
   if (source.kind === 'lfo') {
     const settings = setup.lfos[source.index];
@@ -150,15 +288,43 @@ export function evaluateSource(
     const value = getNoiseLinkValues()[source.source];
     return { value01: Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0)), center: 0 };
   }
+  if (source.kind === 'vnoise') {
+    return { value01: internalNoiseValue(source.seed, time, source.rate, source.octaves), center: 0.5 };
+  }
+  if (source.kind === 'envelope') {
+    const state = getRouteSignalState(routeId ?? '');
+    let lastTrigger = state.envLastTrigger;
+    if (source.trigger === 'midi') {
+      lastTrigger = Math.max(lastTrigger, midiTriggerTime);
+    } else if (source.trigger === 'audio') {
+      const level = audio ? audio.pulse : 0;
+      const clean = Number.isFinite(level) ? level : 0;
+      if (state.envPrevAudio <= 0.6 && clean > 0.6) state.envLastTrigger = time;
+      state.envPrevAudio = clean;
+      lastTrigger = state.envLastTrigger;
+    }
+    return { value01: envelopeShape(time - lastTrigger, source.attack, source.decay), center: 0 };
+  }
   const level = audio ? audio[source.band] : 0;
   return { value01: Math.min(1, Math.max(0, Number.isFinite(level) ? level : 0)), center: 0 };
 }
+
+export const ENVELOPE_TRIGGER_OPTIONS: { value: EnvelopeTrigger; label: string }[] = [
+  { value: 'manual', label: '手動ボタン Manual' },
+  { value: 'audio', label: '音声パルス Audio Pulse' },
+  { value: 'midi', label: 'MIDI ノート Note' },
+];
 
 export function describeModulationSource(source: ModulationSource): string {
   if (source.kind === 'lfo') return `LFO ${source.index + 1}`;
   if (source.kind === 'noise') {
     const option = NOISE_SOURCE_OPTIONS.find((candidate) => candidate.value === source.source);
     return option ? option.label : `Noise · ${source.source}`;
+  }
+  if (source.kind === 'vnoise') return `内部ノイズ #${source.seed}`;
+  if (source.kind === 'envelope') {
+    const trigger = ENVELOPE_TRIGGER_OPTIONS.find((option) => option.value === source.trigger);
+    return `エンベロープ (${trigger ? trigger.label : source.trigger})`;
   }
   const band = AUDIO_BAND_OPTIONS.find((option) => option.value === source.band);
   return band ? band.label : `Audio · ${source.band}`;
@@ -178,6 +344,13 @@ export function applyModulation(
   audio: AudioLevels | undefined,
 ): ParticleConfig {
   if (!setup.enabled || setup.routes.length === 0) return config;
+  // Prune signal state for routes that no longer exist (Phase AC).
+  if (routeSignalStates.size > setup.routes.length) {
+    const live = new Set(setup.routes.map((route) => route.id));
+    routeSignalStates.forEach((_, id) => {
+      if (!live.has(id)) routeSignalStates.delete(id);
+    });
+  }
   let next: ParticleConfig | null = null;
   const contributions = new Map<keyof ParticleConfig, number>();
   for (const route of setup.routes) {
@@ -185,7 +358,25 @@ export function applyModulation(
     if (!entry) continue;
     const base = config[route.target];
     if (typeof base !== 'number') continue;
-    const { value01, center } = evaluateSource(route.source, setup, time, audio);
+    const evaluated = evaluateSource(route.source, setup, time, audio, route.id);
+    let { value01 } = evaluated;
+    const { center } = evaluated;
+    // First-order lag (Phase AC): state initialises to the first
+    // sampled input and re-initialises when time runs backwards,
+    // so the output is a pure function of the (time, input)
+    // sequence since then. lag 0 / absent skips the state
+    // entirely — the pre-AC signal path, bit-identical.
+    if (route.lag && route.lag > 0) {
+      const state = getRouteSignalState(route.id);
+      if (state.lagValue === null || time < state.lagTime) {
+        state.lagValue = value01;
+        state.lagTime = time;
+      } else if (time > state.lagTime) {
+        state.lagValue = lagStepValue(state.lagValue, value01, time - state.lagTime, route.lag);
+        state.lagTime = time;
+      }
+      value01 = state.lagValue;
+    }
     const delta = (value01 - center) * route.depth * (entry.max - entry.min);
     contributions.set(route.target, (contributions.get(route.target) ?? 0) + delta);
   }
@@ -228,17 +419,38 @@ function sanitizeSetup(value: unknown): ModulationSetup {
       const route = entry as Partial<ModulationRoute>;
       const targetOk = typeof route.target === 'string' && PARAMETER_CATALOG.some((c) => c.key === route.target);
       if (!targetOk || !route.source || typeof route.source !== 'object') return;
-      const source = route.source as ModulationSource;
+      const rawSource = route.source as ModulationSource;
       const sourceOk =
-        (source.kind === 'lfo' && typeof source.index === 'number' && source.index >= 0 && source.index < MODULATION_LFO_COUNT) ||
-        (source.kind === 'audio' && AUDIO_BANDS.includes(source.band)) ||
-        (source.kind === 'noise' && NOISE_SOURCE_IDS.includes(source.source));
+        (rawSource.kind === 'lfo' && typeof rawSource.index === 'number' && rawSource.index >= 0 && rawSource.index < MODULATION_LFO_COUNT) ||
+        (rawSource.kind === 'audio' && AUDIO_BANDS.includes(rawSource.band)) ||
+        (rawSource.kind === 'noise' && NOISE_SOURCE_IDS.includes(rawSource.source)) ||
+        rawSource.kind === 'vnoise' ||
+        rawSource.kind === 'envelope';
       if (!sourceOk) return;
+      // Phase AC sources are rebuilt field by field so malformed
+      // stored values can never reach the evaluator.
+      let source: ModulationSource = rawSource;
+      if (rawSource.kind === 'vnoise') {
+        source = {
+          kind: 'vnoise',
+          seed: typeof rawSource.seed === 'number' && Number.isFinite(rawSource.seed) ? Math.min(9999, Math.max(0, Math.round(rawSource.seed))) : 1,
+          rate: typeof rawSource.rate === 'number' && Number.isFinite(rawSource.rate) ? Math.min(4, Math.max(0.02, rawSource.rate)) : 0.35,
+          octaves: typeof rawSource.octaves === 'number' && Number.isFinite(rawSource.octaves) ? Math.min(4, Math.max(1, Math.round(rawSource.octaves))) : 2,
+        };
+      } else if (rawSource.kind === 'envelope') {
+        source = {
+          kind: 'envelope',
+          trigger: rawSource.trigger === 'audio' || rawSource.trigger === 'midi' ? rawSource.trigger : 'manual',
+          attack: typeof rawSource.attack === 'number' && Number.isFinite(rawSource.attack) ? Math.min(1, Math.max(0.005, rawSource.attack)) : 0.01,
+          decay: typeof rawSource.decay === 'number' && Number.isFinite(rawSource.decay) ? Math.min(4, Math.max(0.05, rawSource.decay)) : 0.6,
+        };
+      }
       routes.push({
         id: typeof route.id === 'string' ? route.id : `route-${i}`,
         source,
         target: route.target as keyof ParticleConfig,
         depth: typeof route.depth === 'number' && Number.isFinite(route.depth) ? Math.min(1, Math.max(-1, route.depth)) : 0.3,
+        lag: typeof route.lag === 'number' && Number.isFinite(route.lag) ? Math.min(5, Math.max(0, route.lag)) : 0,
       });
     });
   }

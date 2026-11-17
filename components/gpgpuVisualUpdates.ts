@@ -9,7 +9,7 @@ import { getGradImageTexture } from '../lib/gradImageTexture';
 import { getMapImageTexture } from '../lib/mapImageTexture';
 import { resolveMapSource } from '../lib/layerMask';
 import { getSpriteImageTexture } from '../lib/spriteImageTexture';
-import { normalizeAgeCurvePoints } from '../lib/ageCurve';
+import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { normalizeLightDir } from '../lib/gpgpuLight';
 import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
 
@@ -415,6 +415,17 @@ export function syncVisualUniforms(args: {
     geomMat.uniforms.uVelocityAlign.value = config.gpgpuGeomVelocityAlign ? 1 : 0;
     if (geomMat.uniforms.uTime) geomMat.uniforms.uTime.value = time ?? 0;
     if (geomMat.uniforms.uSpinSpeed) geomMat.uniforms.uSpinSpeed.value = config.gpgpuGeomSpinSpeed;
+    // Rotation over Lifetime (Phase AC): an all-ones curve is
+    // suppressed here too, so a flat curve keeps the legacy spin.
+    if (geomMat.uniforms.uAgeEnabled) geomMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled;
+    if (geomMat.uniforms.uAgeMax) geomMat.uniforms.uAgeMax.value = config.gpgpuAgeMax;
+    if (geomMat.uniforms.uAgeCurveRotationEnabled) {
+      geomMat.uniforms.uAgeCurveRotationEnabled.value =
+        config.gpgpuAgeCurveRotationEnabled && !isAgeCurveIdentity(normalizeAgeCurvePoints(config.gpgpuAgeCurveRotationPoints));
+    }
+    if (geomMat.uniforms.uAgeCurveRotation) {
+      geomMat.uniforms.uAgeCurveRotation.value = [...normalizeAgeCurvePoints(config.gpgpuAgeCurveRotationPoints)];
+    }
     if (geomMat.uniforms.uMeshStretch) geomMat.uniforms.uMeshStretch.value = config.gpgpuGeomStretch;
     if (geomMat.uniforms.uEnvReflect) geomMat.uniforms.uEnvReflect.value = config.gpgpuGeomEnvReflect;
   }

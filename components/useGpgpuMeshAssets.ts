@@ -39,6 +39,11 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       uVelocityAlign:{ value: 0 },
       uTime:         { value: 0 },
       uSpinSpeed:    { value: 0 },
+      // Rotation over Lifetime (Phase AC): legacy neutrals.
+      uAgeEnabled:   { value: false },
+      uAgeMax:       { value: 6 },
+      uAgeCurveRotationEnabled: { value: false },
+      uAgeCurveRotation: { value: [1, 1, 1, 1, 1] },
       uMeshStretch:  { value: 0 },
       uEnvReflect:   { value: 0 },
     },

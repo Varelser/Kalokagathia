@@ -245,6 +245,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuNBodySampleCount', label: "Sample Count", tab: 'global', min: 4, max: 64, step: 4 },
   { key: 'gpgpuVelColorSaturation', label: "Saturation", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuCurlScale', label: "Scale", tab: 'global', min: 0.001, max: 0.05, step: 0.001 },
+  { key: 'gpgpuCurlSpeed', label: "Evolution Speed", tab: 'global', min: 0, max: 4, step: 0.05 },
   { key: 'gpgpuAttractorScale', label: "Scale", tab: 'global', min: 0.5, max: 50, step: 0.5 },
   { key: 'gpgpuVFieldScale', label: "Scale", tab: 'global', min: 0.001, max: 0.05, step: 0.001 },
   { key: 'gpgpuFluidScale', label: "Scale", tab: 'global', min: 0.5, max: 5, step: 0.1 },
