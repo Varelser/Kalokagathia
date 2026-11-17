@@ -54,6 +54,20 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
       )}
     </div>
 
+    {/* Lifecycle grammar (Phase AB): spawn gate / kill / global drag+cap */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Lifecycle — Spawn / Kill / Drag （ライフサイクル文法 — Phase AB）</div>
+      <Slider label="Spawn Burst （開始バースト）" value={config.gpgpuSpawnBurst} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnBurst', v)} />
+      <Slider label="Spawn Rate （放出レート）" value={config.gpgpuSpawnRate} min={0.01} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnRate', v)} />
+      <Toggle label="Boundary Kill （境界キル）" value={config.gpgpuKillBoundary} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuKillBoundary', v)} />
+      <Toggle label="Mask Kill （マスクキル）" value={config.gpgpuKillMask} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuKillMask', v)} />
+      <Slider label="Global Drag （全体ドラッグ）" value={config.gpgpuDrag} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuDrag', v)} />
+      <Slider label="Global Max Speed （全体の最高速度・0で無制限）" value={config.gpgpuMaxSpeed} min={0} max={350} step={1} onChange={(v) => updateConfig('gpgpuMaxSpeed', v)} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        粒子の「生まれ方・消え方」の文法です。Spawn Burst は開始時に有効な粒子の割合（1＝全粒子で従来同一）、残りは Spawn Rate（プール割合/秒）で順に放出されます。境界キルは球境界の外へ出た粒子を跳ね返さず消滅→リスポーンさせます。マスクキルはラスタマスク（Morph の Mask 画像）の拒否域にいる粒子を消滅→リスポーンさせます（マスク画像が読み込めていない間は無効）。Global Drag 1.1・Max Speed 0 が従来同一です。
+      </div>
+    </div>
+
     {/* Curl Noise */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Curl Noise" value={config.gpgpuCurlEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuCurlEnabled', v)} />
@@ -171,6 +185,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <Slider label="Max Speed （最高速度・0で無制限）" value={config.gpgpuParticleLifeMaxSpeed} min={0} max={120} step={1} onChange={(v) => updateConfig('gpgpuParticleLifeMaxSpeed', v)} />
           <Slider label="Meander Amount （徘徊）" value={config.gpgpuParticleLifeMeanderAmount} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuParticleLifeMeanderAmount', v)} />
           <Slider label="Meander Scale （徘徊スケール）" value={config.gpgpuParticleLifeMeanderScale} min={0.1} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuParticleLifeMeanderScale', v)} />
+          <Slider label="Avoid （障害物回避・SDF有効時）" value={config.gpgpuParticleLifeAvoid} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuParticleLifeAvoid', v)} />
           {config.gpgpuParticleLifePreset === 'random' && (
             <button
               onClick={() => updateConfig('gpgpuParticleLifeSeed', Math.floor(Math.random() * 1000000))}
@@ -259,6 +274,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <Slider label="Viscosity" value={config.gpgpuSphViscosity} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuSphViscosity', v)} />
           <Slider label="Interaction Radius" value={config.gpgpuSphRadius} min={5} max={200} step={5} onChange={(v) => updateConfig('gpgpuSphRadius', v)} />
           <Slider label="Rest Density" value={config.gpgpuSphRestDensity} min={0.1} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuSphRestDensity', v)} />
+          <Slider label="Surface Tension （表面張力・近似）" value={config.gpgpuSphSurfaceTension} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuSphSurfaceTension', v)} />
         </>
       )}
     </div>
@@ -531,6 +547,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
         <option value="deathBurst">Death Burst (死亡時に飛沫)</option>
         <option value="bounceSplash">Bounce Splash (バウンス時に飛沫)</option>
         <option value="sparkTrail">Spark Trail (火花を落としながら進む)</option>
+        <option value="birthBurst">Birth Burst (誕生時に飛沫)</option>
       </select>
       {config.gpgpuAuxMode !== 'none' && (
         <>
@@ -549,7 +566,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
             <button type="button" onClick={() => updateConfig('gpgpuAuxColor', '')} className="cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90">親を継承</button>
           </div>
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            主粒子（親）のイベントで生まれる子エミッタ専用プールです（Kinetix auxMode の GPU 実装が土台）。子は独自のシミュレーションを持ち、上の Child 系キーで親と違う重力（0で無重力・負で反重力）・ドラッグ・渦・色で生きられます。既定（重力倍率1／ドラッグ0／渦0／色は継承）は従来の共有挙動と同一です。Death Burst は Life System が On のときだけ発火します。レイヤー側の Aux/Spark（常時型）とは別系統で併存します。
+            主粒子（親）のイベントで生まれる子エミッタ専用プールです（Kinetix auxMode の GPU 実装が土台）。子は独自のシミュレーションを持ち、上の Child 系キーで親と違う重力（0で無重力・負で反重力）・ドラッグ・渦・色で生きられます。既定（重力倍率1／ドラッグ0／渦0／色は継承）は従来の共有挙動と同一です。Death Burst と Birth Burst（Phase AB: 粒子が生まれた瞬間に飛沫）は Life System が On のときだけ発火します。レイヤー側の Aux/Spark（常時型）とは別系統で併存します。
           </div>
           <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Chain — Grandchild Emitters （連鎖・孫エミッタ — Phase W1）</div>
           <select
@@ -573,6 +590,7 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
                 <option value="deathBurst">Death Burst （子の死亡時に飛沫）</option>
                 <option value="bounceSplash">Bounce Splash （子のバウンス時に飛沫）</option>
                 <option value="sparkTrail">Spark Trail （子が火花を落とす）</option>
+                <option value="birthBurst">Birth Burst （子が誕生時に飛沫）</option>
               </select>
               {config.gpgpuAux2Mode !== 'none' && (
                 <>
