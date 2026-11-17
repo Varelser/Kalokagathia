@@ -341,6 +341,13 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uParticleLifeFriction.value = config.gpgpuParticleLifeFriction;
   velSimMat.uniforms.uParticleLifeSpecies.value = Math.max(2, Math.min(6, Math.round(config.gpgpuParticleLifeSpecies)));
   velSimMat.uniforms.uParticleLifeMatrix.value = resolveParticleLifeMatrix(config);
+  if (velSimMat.uniforms.uParticleLifePursue) velSimMat.uniforms.uParticleLifePursue.value = config.gpgpuParticleLifePursue;
+  if (velSimMat.uniforms.uParticleLifeEvade) velSimMat.uniforms.uParticleLifeEvade.value = config.gpgpuParticleLifeEvade;
+  if (velSimMat.uniforms.uParticleLifeVisionRange) velSimMat.uniforms.uParticleLifeVisionRange.value = config.gpgpuParticleLifeVisionRange;
+  if (velSimMat.uniforms.uParticleLifeVisionAngle) velSimMat.uniforms.uParticleLifeVisionAngle.value = config.gpgpuParticleLifeVisionAngle;
+  if (velSimMat.uniforms.uParticleLifeMaxSpeed) velSimMat.uniforms.uParticleLifeMaxSpeed.value = config.gpgpuParticleLifeMaxSpeed;
+  if (velSimMat.uniforms.uParticleLifeMeanderAmount) velSimMat.uniforms.uParticleLifeMeanderAmount.value = config.gpgpuParticleLifeMeanderAmount;
+  if (velSimMat.uniforms.uParticleLifeMeanderScale) velSimMat.uniforms.uParticleLifeMeanderScale.value = config.gpgpuParticleLifeMeanderScale;
   velSimMat.uniforms.uAttractorStrength.value = config.gpgpuAttractorStrength;
   velSimMat.uniforms.uAttractorScale.value = config.gpgpuAttractorScale;
   velSimMat.uniforms.uVortexEnabled.value = config.gpgpuVortexEnabled;

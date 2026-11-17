@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
+import { smoothTubeRadiusAt } from '../lib/smoothTubeProfile';
 
 type Props = {
   config: ParticleConfig;
@@ -117,7 +118,8 @@ export const GpgpuSmoothTube: React.FC<Props> = React.memo(({ config, posReadbac
 
     if (frameCount.current < histLen) return; // wait until buffer is full
 
-    const radius = config.gpgpuSmoothTubeRadius;
+    const baseRadius = config.gpgpuSmoothTubeRadius;
+    const taper = config.gpgpuSmoothTubeTaper;
     const PI2 = Math.PI * 2;
 
     for (let p = 0; p < N; p++) {
@@ -148,6 +150,9 @@ export const GpgpuSmoothTube: React.FC<Props> = React.memo(({ config, posReadbac
         _right.crossVectors(_dir, _up).normalize();
         _up2.crossVectors(_right, _dir).normalize();
 
+        // Cross-section taper (Phase AA3): ring r runs oldest ->
+        // newest history; taper 0 keeps the constant legacy radius.
+        const radius = smoothTubeRadiusAt(baseRadius, histLen <= 1 ? 1 : r / (histLen - 1), taper);
         for (let s = 0; s < sides; s++) {
           const angle = (PI2 * s) / sides;
           const cos = Math.cos(angle) * radius;

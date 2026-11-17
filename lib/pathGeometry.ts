@@ -66,7 +66,7 @@ const PATH_SEGMENT_MAX_LEAVES = 65536;
  */
 export const PATH_TAPER_MAX_WIDTH = 0.1;
 
-export type MorphPathMode = 'off' | 'along' | 'writeOn';
+export type MorphPathMode = 'off' | 'along' | 'writeOn' | 'stamp';
 export type MorphPathTaperShape = 'linear' | 'smooth' | 'bell';
 export type MorphPathSubpathMode = 'proportional' | 'even' | 'first';
 
@@ -81,6 +81,14 @@ export interface MorphPathOptions {
   taper: number;
   taperShape: MorphPathTaperShape;
   subpathMode: MorphPathSubpathMode;
+  /** Shape stamping (Phase AA3, lib/stampPlacement.ts): only read
+   *  when mode is 'stamp'. Spacing = path fraction per stamp,
+   *  size = shape radius in normalised units, align = rotate each
+   *  stamp onto the path tangent. */
+  stampSpacing?: number;
+  stampSize?: number;
+  stampShape?: 'disc' | 'ring' | 'star' | 'diamond' | 'obj';
+  stampAlign?: boolean;
 }
 
 // ---------------------------------------------------------------------------

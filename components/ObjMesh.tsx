@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import {
   buildObjMeshGeometryData,
-  objMeshRepeatOffsets,
+  objMeshRepeatTransforms,
   objMeshWorldScale,
 } from '../lib/objMesh';
 
@@ -51,19 +51,21 @@ export const ObjMesh: React.FC<{ config: ParticleConfig }> = ({ config }) => {
     };
   }, [geometry]);
 
-  const offsets = React.useMemo(() => {
+  const repeatMode = config.gpgpuObjMeshRepeatMode;
+  const repeatRotation = config.gpgpuObjMeshRepeatRotation;
+  const repeatScaleStep = config.gpgpuObjMeshRepeatScaleStep;
+  const copies = React.useMemo(() => {
     if (!enabled || !geometry) return null;
-    return objMeshRepeatOffsets(repeat);
-  }, [enabled, geometry, repeat]);
+    return objMeshRepeatTransforms(repeat, repeatMode, repeatRotation, repeatScaleStep);
+  }, [enabled, geometry, repeat, repeatMode, repeatRotation, repeatScaleStep]);
 
-  if (!enabled || !geometry || !offsets) return null;
+  if (!enabled || !geometry || !copies) return null;
 
   const worldScale = objMeshWorldScale(morphScale, bounceRadius, meshScale);
   const grey = 0.84;
   const color = new THREE.Color(grey, grey, grey * 1.03);
   const transparent = opacity < 0.999;
   const rotY = (config.gpgpuObjMeshRotY * Math.PI) / 180;
-  const copyCount = offsets.length / 3;
 
   return (
     <group
@@ -76,14 +78,16 @@ export const ObjMesh: React.FC<{ config: ParticleConfig }> = ({ config }) => {
       <ambientLight intensity={0.8} />
       <directionalLight position={[90, 160, 70]} intensity={1.7} />
       <directionalLight position={[-110, 40, -90]} intensity={0.35} />
-      {Array.from({ length: copyCount }, (_, i) => {
+      {copies.map((copy, i) => {
         const position: [number, number, number] = [
-          offsets[i * 3] * worldScale,
-          offsets[i * 3 + 1] * worldScale,
-          offsets[i * 3 + 2] * worldScale,
+          copy.offset[0] * worldScale,
+          copy.offset[1] * worldScale,
+          copy.offset[2] * worldScale,
         ];
+        const copyScale = worldScale * copy.scale;
+        const copyRotY = (copy.rotYDeg * Math.PI) / 180;
         return display === 'solid' ? (
-          <mesh key={i} geometry={geometry} position={position} scale={worldScale}>
+          <mesh key={i} geometry={geometry} position={position} rotation={[0, copyRotY, 0]} scale={copyScale}>
             <meshStandardMaterial
               color={color}
               roughness={0.92}
@@ -94,7 +98,7 @@ export const ObjMesh: React.FC<{ config: ParticleConfig }> = ({ config }) => {
             />
           </mesh>
         ) : (
-          <mesh key={i} geometry={geometry} position={position} scale={worldScale}>
+          <mesh key={i} geometry={geometry} position={position} rotation={[0, copyRotY, 0]} scale={copyScale}>
             <meshBasicMaterial
               color={color}
               wireframe

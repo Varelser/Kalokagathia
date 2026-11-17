@@ -55,6 +55,20 @@ import {
   type MorphPathOptions,
   type PathGeometry,
 } from './pathGeometry';
+import {
+  applyFormDeformation,
+  formTwistAngleAt,
+  isFormDeformationActive,
+  rotateAroundAxis,
+  type FormDeformationOptions,
+} from './formDeformation';
+import {
+  clampStampSize,
+  placeStampPoint,
+  stampCenterS,
+  stampCountForSpacing,
+  stampLocalPoint,
+} from './stampPlacement';
 
 export type GpgpuMorphTargetKind = ParticleConfig['gpgpuMorphTarget'];
 
@@ -209,6 +223,14 @@ export interface GpgpuMorphTargetBuildOptions {
     threshold: number;
     invert: boolean;
   } | null;
+  /**
+   * Form-dedicated deformation (Phase AA2, lib/formDeformation.ts):
+   * Disperse / Twist / Fractal Field over the baked base point,
+   * applied after placement (and mask clip) and before the replica
+   * grammar, in normalised space. Absent / null / all amounts 0 =
+   * the legacy bake exactly (the branch is skipped entirely).
+   */
+  form?: FormDeformationOptions | null;
 }
 
 /**
@@ -352,7 +374,8 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   data: Float32Array;
   normalData: Float32Array;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path, mask } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path, mask, form } = options;
+  const formActive = isFormDeformationActive(form);
   // Raster mask (Phase X): resolved once; null unless the mode is
   // on and the map is usable, in which case the placement branches
   // below consult it. Null keeps the legacy bake bit-identical.
@@ -369,6 +392,11 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   const media = isMedia && mediaMap && mediaMap.map.length > 0 ? mediaMap : null;
   const svgPointCount = target === 'svg' && svgPoints ? Math.floor(svgPoints.length / 2) : 0;
   const objPointCount = target === 'obj' && objPoints ? Math.floor(objPoints.length / 3) : 0;
+  // Stamp 'obj' shape (Phase AA3): on the svg target the OBJ cloud
+  // is a stamp PATTERN source, not the placement itself, so it is
+  // counted separately (the obj placement branch above stays gated
+  // on target === 'obj' via objPointCount).
+  const stampObjPointCount = target === 'svg' && objPoints ? Math.floor(objPoints.length / 3) : 0;
   // Terrain (Phase L): the field seed mixes the bake seed with the
   // terrain seed offset, so gpgpuSeed still reshapes the landscape
   // while the terrain seed can vary it independently.
@@ -391,6 +419,15 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   const pathTaper = path ? Math.max(0, Math.min(1, path.taper)) : 0;
   const pathTaperShape = path ? path.taperShape : 'linear';
   const pathSubpathMode = path ? path.subpathMode : 'proportional';
+  // Shape stamping (Phase AA3): active only in 'stamp' path mode
+  // with a usable path geometry. The stamp count derives from the
+  // spacing key; each replica block stamps the full path with its
+  // own share of the point budget (perStamp points per stamp).
+  const stampActive = pathActive && pathMode === 'stamp';
+  const stampCount = stampActive && path ? stampCountForSpacing(path.stampSpacing ?? 0.125) : 0;
+  const stampSize = path ? clampStampSize(path.stampSize ?? 0.18) : 0.18;
+  const stampShape = path?.stampShape ?? 'disc';
+  const stampAlign = path?.stampAlign !== false;
 
   for (let i = 0; i < count; i++) {
     const s = rng();
@@ -446,6 +483,51 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
         nnx = tx / shellLen;
         nny = ty / shellLen;
         nnz = tz / shellLen;
+      }
+    } else if (stampActive && pathGeometry) {
+      // Shape stamping (Phase AA3, Tao-style): the block's points
+      // are grouped into `stampCount` consecutive stamps along the
+      // path. Stamp k sits at equal arc-length parameter
+      // (k + 0.5) / stampCount (resolved through the path geometry,
+      // honouring the subpath mode); its points form the selected
+      // shape in the path plane, rotated onto the tangent when
+      // alignment is on. 'obj' stamps sample the imported OBJ cloud
+      // (scaled into the stamp, z kept for depth) and fall back to
+      // the disc pattern without a usable cloud. This branch
+      // consumes no RNG draws, like the Phase S branch.
+      const r = Math.min(replicaCount - 1, Math.floor((i * replicaCount) / count));
+      const blockStart = Math.ceil((r * count) / replicaCount);
+      const blockEnd = Math.ceil(((r + 1) * count) / replicaCount);
+      const blockSize = Math.max(1, blockEnd - blockStart);
+      const perStamp = Math.max(1, Math.ceil(blockSize / stampCount));
+      const localIdx = i - blockStart;
+      const k = Math.min(stampCount - 1, Math.floor(localIdx / perStamp));
+      const j = localIdx - k * perStamp;
+      const resolved = resolvePathPoint(pathGeometry, stampCenterS(k, stampCount), pathSubpathMode);
+      if (stampShape === 'obj' && stampObjPointCount > 0 && objPoints) {
+        const pick = ((j * 37 + k * 131) % stampObjPointCount) * 3;
+        const lx = (objPoints[pick] ?? 0) * stampSize;
+        const ly = (objPoints[pick + 1] ?? 0) * stampSize;
+        const placed = placeStampPoint(
+          { x: lx, y: ly },
+          { x: resolved.x, y: resolved.y },
+          { x: resolved.tangentX, y: resolved.tangentY },
+          stampAlign,
+        );
+        tx = placed.x;
+        ty = placed.y;
+        tz = (objPoints[pick + 2] ?? 0) * stampSize;
+      } else {
+        const local = stampLocalPoint(stampShape === 'obj' ? 'disc' : stampShape, j, perStamp, stampSize);
+        const placed = placeStampPoint(
+          local,
+          { x: resolved.x, y: resolved.y },
+          { x: resolved.tangentX, y: resolved.tangentY },
+          stampAlign,
+        );
+        tx = placed.x;
+        ty = placed.y;
+        tz = 0;
       }
     } else if (pathActive && pathGeometry) {
       // Authored path placement (Phase S): particle i owns the path
@@ -753,6 +835,28 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
         nnx = 0;
         nny = 0;
         nnz = 0;
+      }
+    }
+
+    // Form-dedicated deformation (Phase AA2): Disperse / Twist /
+    // Fractal Field over the base point, in normalised space,
+    // before the replica grammar so every copy inherits the same
+    // deformed form. Skipped entirely when inactive (the legacy
+    // bake is then bit-identical). The twist also rotates the
+    // companion normal by the same angle around the same axis;
+    // disperse / fractal leave normals as-is (documented
+    // approximation — normals only feed the OBJ initial velocity).
+    if (formActive && form) {
+      const twistAngle = formTwistAngleAt({ x: tx, y: ty, z: tz }, form);
+      const deformed = applyFormDeformation({ x: tx, y: ty, z: tz }, i, form);
+      tx = deformed.x;
+      ty = deformed.y;
+      tz = deformed.z;
+      if (twistAngle !== 0 && (nnx !== 0 || nny !== 0 || nnz !== 0)) {
+        const rn = rotateAroundAxis({ x: nnx, y: nny, z: nnz }, form.twistAxis, twistAngle);
+        nnx = rn.x;
+        nny = rn.y;
+        nnz = rn.z;
       }
     }
 

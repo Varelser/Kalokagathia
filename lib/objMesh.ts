@@ -136,6 +136,61 @@ export function objMeshRepeatOffsets(repeat: number): Float32Array {
   return out;
 }
 
+export type ObjMeshRepeatMode = 'grid' | 'radial';
+
+export interface ObjMeshCopyTransform {
+  /** Offset in normalised units (flat xyz in `offset`). */
+  offset: [number, number, number];
+  /** Extra Y rotation for this copy, degrees. */
+  rotYDeg: number;
+  /** Scale multiplier for this copy. */
+  scale: number;
+}
+
+/**
+ * Per-copy transforms for the repetition grammar (Phase AA3): the
+ * Phase V centred cube grid gains the replica-style chain — copy i
+ * rotates by rotationDeg * i and scales by scaleStep^i — and a
+ * 'radial' layout that places the copies on a circle of radius
+ * OBJ_MESH_REPEAT_SPACING, each rotated to face outward plus its
+ * chain rotation. With mode 'grid', rotation 0 and scaleStep 1 the
+ * result is exactly the Phase V layout (offsets identical, no
+ * rotation, unit scale).
+ */
+export function objMeshRepeatTransforms(
+  repeat: number,
+  mode: ObjMeshRepeatMode,
+  rotationDeg: number,
+  scaleStep: number,
+): ObjMeshCopyTransform[] {
+  const n = clampObjMeshRepeat(repeat);
+  const rot = Number.isFinite(rotationDeg) ? rotationDeg : 0;
+  const step = Number.isFinite(scaleStep) && scaleStep > 0 ? scaleStep : 1;
+  const out: ObjMeshCopyTransform[] = [];
+  if (mode === 'radial') {
+    for (let i = 0; i < n; i++) {
+      const a = n === 1 ? 0 : (i * Math.PI * 2) / n;
+      out.push({
+        offset: n === 1
+          ? [0, 0, 0]
+          : [Math.cos(a) * OBJ_MESH_REPEAT_SPACING, 0, Math.sin(a) * OBJ_MESH_REPEAT_SPACING],
+        rotYDeg: (n === 1 ? 0 : (-a * 180) / Math.PI) + rot * i,
+        scale: Math.pow(step, i),
+      });
+    }
+    return out;
+  }
+  const offsets = objMeshRepeatOffsets(n);
+  for (let i = 0; i < n; i++) {
+    out.push({
+      offset: [offsets[i * 3], offsets[i * 3 + 1], offsets[i * 3 + 2]],
+      rotYDeg: rot * i,
+      scale: Math.pow(step, i),
+    });
+  }
+  return out;
+}
+
 /**
  * World scale of one OBJ mesh copy: the morph bake's world scale
  * (gpgpuMorphScale * gpgpuBounceRadius * 0.48 — the same formula

@@ -345,7 +345,10 @@ export function buildMorphBakeData(
   const pathGeometry = config.gpgpuMorphTarget === 'svg' && config.gpgpuMorphPathMode !== 'off'
     ? parseSvgPathGeometry(config.gpgpuMorphSvgSource)
     : null;
+  // Phase AA3: in 'stamp' path mode with the 'obj' stamp shape, the
+  // OBJ cloud is also sampled on the svg target (as a stamp pattern).
   const objSample = config.gpgpuMorphTarget === 'obj'
+    || (config.gpgpuMorphTarget === 'svg' && config.gpgpuMorphPathMode === 'stamp' && config.gpgpuMorphStampShape === 'obj')
     ? sampleObjPointCloudWithNormals(config.gpgpuMorphObjSource, config.gpgpuMorphObjSampleMode)
     : null;
   return buildGpgpuMorphTargetDataWithNormals({
@@ -364,6 +367,19 @@ export function buildMorphBakeData(
       taper: config.gpgpuMorphPathTaper,
       taperShape: config.gpgpuMorphPathTaperShape,
       subpathMode: config.gpgpuMorphPathSubpathMode,
+      stampSpacing: config.gpgpuMorphStampSpacing,
+      stampSize: config.gpgpuMorphStampSize,
+      stampShape: config.gpgpuMorphStampShape,
+      stampAlign: config.gpgpuMorphStampAlign,
+    },
+    form: {
+      disperseAmount: config.gpgpuMorphDisperseAmount,
+      disperseDirection: config.gpgpuMorphDisperseDirection,
+      twistAmount: config.gpgpuMorphTwistAmount,
+      twistAxis: config.gpgpuMorphTwistAxis,
+      fractalAmount: config.gpgpuMorphFractalAmount,
+      fractalFrequency: config.gpgpuMorphFractalFrequency,
+      fractalEvolution: config.gpgpuMorphFractalEvolution,
     },
     objPoints: objSample ? objSample.points : null,
     objNormals: objSample ? objSample.normals : null,
@@ -756,6 +772,17 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphPathTaper = config.gpgpuMorphPathTaper;
   const morphPathTaperShape = config.gpgpuMorphPathTaperShape;
   const morphPathSubpathMode = config.gpgpuMorphPathSubpathMode;
+  const morphStampSpacing = config.gpgpuMorphStampSpacing;
+  const morphStampSize = config.gpgpuMorphStampSize;
+  const morphStampShape = config.gpgpuMorphStampShape;
+  const morphStampAlign = config.gpgpuMorphStampAlign;
+  const morphDisperseAmount = config.gpgpuMorphDisperseAmount;
+  const morphDisperseDirection = config.gpgpuMorphDisperseDirection;
+  const morphTwistAmount = config.gpgpuMorphTwistAmount;
+  const morphTwistAxis = config.gpgpuMorphTwistAxis;
+  const morphFractalAmount = config.gpgpuMorphFractalAmount;
+  const morphFractalFrequency = config.gpgpuMorphFractalFrequency;
+  const morphFractalEvolution = config.gpgpuMorphFractalEvolution;
   const morphMaskMode = config.gpgpuMaskMode;
   const morphMaskMap = config.gpgpuMaskMap;
   const morphMaskWidth = config.gpgpuMaskMapWidth;
@@ -799,7 +826,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // a missing media map. The 'surface' mode's points are
     // bit-identical to the Phase J sampler; the parallel normal cloud
     // feeds the companion normal texture below.
-    const objSample = morphTarget === 'obj' ? sampleObjPointCloudWithNormals(morphObjSource, morphObjSampleMode) : null;
+    const objSample = morphTarget === 'obj'
+      || (morphTarget === 'svg' && morphPathMode === 'stamp' && morphStampShape === 'obj')
+      ? sampleObjPointCloudWithNormals(morphObjSource, morphObjSampleMode) : null;
     const objPoints = objSample ? objSample.points : null;
     const objNormals = objSample ? objSample.normals : null;
     const { data, normalData } = buildGpgpuMorphTargetDataWithNormals({
@@ -818,6 +847,19 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         taper: morphPathTaper,
         taperShape: morphPathTaperShape,
         subpathMode: morphPathSubpathMode,
+        stampSpacing: morphStampSpacing,
+        stampSize: morphStampSize,
+        stampShape: morphStampShape,
+        stampAlign: morphStampAlign,
+      },
+      form: {
+        disperseAmount: morphDisperseAmount,
+        disperseDirection: morphDisperseDirection,
+        twistAmount: morphTwistAmount,
+        twistAxis: morphTwistAxis,
+        fractalAmount: morphFractalAmount,
+        fractalFrequency: morphFractalFrequency,
+        fractalEvolution: morphFractalEvolution,
       },
       objPoints,
       objNormals,
@@ -910,6 +952,17 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphPathTaper,
     morphPathTaperShape,
     morphPathSubpathMode,
+    morphStampSpacing,
+    morphStampSize,
+    morphStampShape,
+    morphStampAlign,
+    morphDisperseAmount,
+    morphDisperseDirection,
+    morphTwistAmount,
+    morphTwistAxis,
+    morphFractalAmount,
+    morphFractalFrequency,
+    morphFractalEvolution,
     morphMaskMode,
     morphMaskMap,
     morphMaskWidth,

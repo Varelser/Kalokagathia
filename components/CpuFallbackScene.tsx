@@ -104,6 +104,7 @@ function computeMorphBakeExtras(config: ParticleConfig): CpuMorphBakeExtras {
     ? parseSvgPathGeometry(config.gpgpuMorphSvgSource)
     : null;
   const objSample = config.gpgpuMorphTarget === 'obj'
+    || (config.gpgpuMorphTarget === 'svg' && config.gpgpuMorphPathMode === 'stamp' && config.gpgpuMorphStampShape === 'obj')
     ? sampleObjPointCloudWithNormals(config.gpgpuMorphObjSource, config.gpgpuMorphObjSampleMode)
     : null;
   return {

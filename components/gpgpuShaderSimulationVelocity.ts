@@ -44,6 +44,13 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uParticleLifeFriction;
   uniform int   uParticleLifeSpecies;
   uniform float uParticleLifeMatrix[36];
+  uniform float uParticleLifePursue;
+  uniform float uParticleLifeEvade;
+  uniform float uParticleLifeVisionRange;
+  uniform float uParticleLifeVisionAngle;
+  uniform float uParticleLifeMaxSpeed;
+  uniform float uParticleLifeMeanderAmount;
+  uniform float uParticleLifeMeanderScale;
   uniform bool  uVortexEnabled;
   uniform float uVortexStrength;
   uniform float uVortexTilt;
@@ -377,6 +384,11 @@ export const SIM_VEL_FRAG = /* glsl */ `
     if (uParticleLifeEnabled) {
       int selfSpecies = plSpecies(vUv);
       vec3 plForce = vec3(0.0);
+      // Behaviour force (Phase AA1): pursue / evade over the cyclic
+      // predator chain, vision-gated. Zero when both coefficients
+      // are 0, which keeps the legacy block bit-identical.
+      vec3 behForce = vec3(0.0);
+      bool behActive = uParticleLifePursue > 0.0 || uParticleLifeEvade > 0.0;
       float plStride = uTexSizeF / 64.0;
       float plRadius = max(uParticleLifeRadius, 1.0);
       const float plBeta = 0.3;
@@ -395,12 +407,55 @@ export const SIM_VEL_FRAG = /* glsl */ `
           } else {
             int otherSpecies = plSpecies(sUv);
             float a = uParticleLifeMatrix[selfSpecies * 6 + otherSpecies];
-            plForce += dir * a * (1.0 - abs(2.0 * r - 1.0 - plBeta) / (1.0 - plBeta));
+            float band = 1.0 - abs(2.0 * r - 1.0 - plBeta) / (1.0 - plBeta);
+            plForce += dir * a * band;
+            if (behActive) {
+              int prey = int(mod(float(selfSpecies + 1), float(uParticleLifeSpecies)));
+              int predator = int(mod(float(selfSpecies - 1 + uParticleLifeSpecies), float(uParticleLifeSpecies)));
+              float pc = otherSpecies == prey ? 1.0 : 0.0;
+              float ec = otherSpecies == predator ? 1.0 : 0.0;
+              if (pc > 0.0 || ec > 0.0) {
+                // Vision gate (TS twin: visionSees in
+                // lib/particleLifeBehavior.ts): range, then the
+                // cone around the velocity direction.
+                float vRange = uParticleLifeVisionRange > 0.0 ? uParticleLifeVisionRange : plRadius;
+                bool sees = d <= vRange;
+                if (sees && uParticleLifeVisionAngle < 360.0) {
+                  float spd = length(vel);
+                  if (spd >= 0.01) {
+                    float cosA = dot(dir, vel / spd);
+                    sees = cosA >= cos(radians(uParticleLifeVisionAngle) * 0.5);
+                  }
+                }
+                if (sees) behForce += dir * (uParticleLifePursue * pc - uParticleLifeEvade * ec) * band;
+              }
+            }
           }
         }
       }
       vel += plForce * uParticleLifeStrength * uDelta * 45.0;
+      vel += behForce * uDelta * 45.0;
+      // Meander (Phase AA1): per-particle wander — the phase is the
+      // particle's own (plHash family), the sines sample its own
+      // position, so neighbours wander differently. Amount 0 skips
+      // the term entirely. TS twin: meanderVector.
+      if (uParticleLifeMeanderAmount > 0.0) {
+        float selfIdx = floor(vUv.y * uTexSizeF) * uTexSizeF + floor(vUv.x * uTexSizeF);
+        float mPhase = plHash(selfIdx + 17.17) * 6.2831853;
+        float mScale = 0.02 * max(uParticleLifeMeanderScale, 0.001);
+        float mTime = uTime * 0.7;
+        vec3 mVec = vec3(
+          sin(pos.y * mScale + mPhase + mTime),
+          sin(pos.z * mScale + mPhase * 1.7 + mTime),
+          sin(pos.x * mScale + mPhase * 2.3 + mTime));
+        vel += mVec * uParticleLifeMeanderAmount * uDelta * 30.0;
+      }
       vel *= pow(clamp(uParticleLifeFriction, 0.0, 1.0), uDelta * 60.0);
+      // Max speed (Phase AA1): 0 = uncapped (legacy).
+      if (uParticleLifeMaxSpeed > 0.0) {
+        float spd2 = length(vel);
+        if (spd2 > uParticleLifeMaxSpeed) vel *= uParticleLifeMaxSpeed / spd2;
+      }
     }
 
     // Strange Attractor
