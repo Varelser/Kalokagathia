@@ -235,6 +235,83 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             </div>
           </>
         )}
+        <div className="mb-1 mt-4 text-[9px] uppercase tracking-widest opacity-60">Tone Grade / Edge / Displace (Phase AD)</div>
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          印刷的な階調仕上げと輪郭・変位のポスト段（Phase AD）。全て既定 OFF で、OFF の間は段自体が無く従来出力と同一です。Displace はグラデーション画像（GPGPU の Image ドライバと同じ入力）を変位マップに使います。
+        </div>
+        <Toggle
+          label="Posterize (階調圧縮)"
+          value={config.postPosterizeEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postPosterizeEnabled', v)}
+        />
+        {config.postPosterizeEnabled && (
+          <Slider label="Posterize Levels" value={config.postPosterizeLevels} min={2} max={64} step={1} onChange={(v) => updateConfig('postPosterizeLevels', v)} />
+        )}
+        <Toggle
+          label="Ordered Dither (規則ディザ)"
+          value={config.postDitherEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postDitherEnabled', v)}
+        />
+        {config.postDitherEnabled && (
+          <Slider label="Dither Strength" value={config.postDitherStrength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postDitherStrength', v)} />
+        )}
+        <Toggle
+          label="Halftone (網点)"
+          value={config.postHalftoneEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postHalftoneEnabled', v)}
+        />
+        {config.postHalftoneEnabled && (
+          <>
+            <Slider label="Halftone Cell Size (px)" value={config.postHalftoneCellSize} min={3} max={64} step={1} onChange={(v) => updateConfig('postHalftoneCellSize', v)} />
+            <Slider label="Halftone Angle (deg)" value={config.postHalftoneAngle} min={0} max={90} step={1} onChange={(v) => updateConfig('postHalftoneAngle', v)} />
+          </>
+        )}
+        <Toggle
+          label="Edge Detect (輪郭抽出)"
+          value={config.postEdgeEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postEdgeEnabled', v)}
+        />
+        {config.postEdgeEnabled && (
+          <>
+            <Slider label="Edge Threshold" value={config.postEdgeThreshold} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postEdgeThreshold', v)} />
+            <Toggle
+              label="Edge Mode"
+              value={config.postEdgeMode}
+              options={[{ label: 'Overlay', val: 'overlay' }, { label: 'Edge Only', val: 'only' }]}
+              onChange={(v) => updateConfig('postEdgeMode', v)}
+            />
+          </>
+        )}
+        <Toggle
+          label="Displace (画像変位)"
+          value={config.postDisplaceEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postDisplaceEnabled', v)}
+        />
+        {config.postDisplaceEnabled && (
+          <>
+            <Slider label="Displace Amount" value={config.postDisplaceAmount} min={-1} max={1} step={0.01} onChange={(v) => updateConfig('postDisplaceAmount', v)} />
+            <Toggle
+              label="Displace Channel"
+              value={config.postDisplaceChannel}
+              options={[
+                { label: 'R→X / G→Y', val: 'red-green' },
+                { label: 'Luma', val: 'luma' },
+                { label: 'Red', val: 'red' },
+                { label: 'Green', val: 'green' },
+                { label: 'Blue', val: 'blue' },
+              ]}
+              onChange={(v) => updateConfig('postDisplaceChannel', v)}
+            />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              変位マップはグラデーション画像（未設定の間は変位なし＝素通し）。Feedback より前に適用されるので、残像は変位した画面をなぞります。
+            </div>
+          </>
+        )}
         <div className="mb-1 mt-4 text-[9px] uppercase tracking-widest opacity-60">Output Grade</div>
         <Toggle
           label="Tone Mapping"

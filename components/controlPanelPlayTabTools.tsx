@@ -3,7 +3,7 @@ import { Database, Gamepad2, Grid3x3, History, Search } from 'lucide-react';
 import type { ParticleConfig } from '../types';
 import { PARAMETER_CATALOG, searchParameters, type ParameterCatalogEntry } from '../lib/parameterCatalog';
 import { buildDataLumaMap, buildSampleDataPoints, getDataSourceUpdates, parseDataPoints, type ParsedData } from '../lib/dataSource';
-import { TEXTURE_DEFINITIONS, TEXTURE_MAP_SIZE, getTextureDefinition } from '../lib/texturePack';
+import { TEXTURE_DEFINITIONS, TEXTURE_MAP_SIZE, generateTextureMap, getTextureDefinition, type NoiseTextureKind } from '../lib/texturePack';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { SectionTitle, TAB_SHORT_LABELS } from './controlPanelPlayTabShared';
 
@@ -359,9 +359,17 @@ export const TexturePackSection: React.FC<{
   const write = updateConfig as (key: keyof ParticleConfig, value: ParticleConfig[keyof ParticleConfig]) => void;
   const [layer, setLayer] = React.useState<2 | 3>(2);
   const [applied, setApplied] = React.useState('');
+  // Phase AD: the cloud-noise tile is generated from the config
+  // parameters (kind / period / octaves); every other tile is a
+  // fixed pattern. The defaults reproduce the pre-AD noise map
+  // bit-for-bit.
+  const noiseParams = React.useMemo(
+    () => ({ kind: config.textureNoiseKind, period: config.textureNoisePeriod, octaves: config.textureNoiseOctaves }),
+    [config.textureNoiseKind, config.textureNoisePeriod, config.textureNoiseOctaves],
+  );
   const maps = React.useMemo(
-    () => TEXTURE_DEFINITIONS.map((definition) => ({ definition, map: definition.generate() })),
-    [],
+    () => TEXTURE_DEFINITIONS.map((definition) => ({ definition, map: generateTextureMap(definition.id, noiseParams) })),
+    [noiseParams],
   );
 
   const applyTexture = (id: string, map: number[]) => {
@@ -386,6 +394,48 @@ export const TexturePackSection: React.FC<{
           <option value={3} className="bg-neutral-900">Layer 3 に適用</option>
         </select>
         {applied && <p className="text-[11px] text-white/55">{applied}</p>}
+      </div>
+      <div className="mb-3 rounded border border-white/10 bg-black/20 p-2">
+        <div className="mb-2 text-[9px] uppercase tracking-widest text-white/40">雲ノイズの生成パラメータ（Phase AD）</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={config.textureNoiseKind}
+            onChange={(event) => write('textureNoiseKind', event.target.value as NoiseTextureKind)}
+            disabled={isPublicLibrary}
+            className="bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] outline-none focus:border-white/40 disabled:opacity-40"
+          >
+            <option value="value" className="bg-neutral-900">Value（なめらか）</option>
+            <option value="ridge" className="bg-neutral-900">Ridge（稜線）</option>
+            <option value="turbulence" className="bg-neutral-900">Turbulence（乱流）</option>
+          </select>
+          <label className="flex items-center gap-1 text-[10px] text-white/50">
+            周期
+            <input
+              type="number"
+              min={1}
+              max={16}
+              step={1}
+              value={config.textureNoisePeriod}
+              disabled={isPublicLibrary}
+              onChange={(event) => write('textureNoisePeriod', Number(event.target.value))}
+              className="w-14 bg-white/5 border border-white/10 rounded px-1.5 py-1 text-[11px] outline-none focus:border-white/40 disabled:opacity-40"
+            />
+          </label>
+          <label className="flex items-center gap-1 text-[10px] text-white/50">
+            オクターブ
+            <input
+              type="number"
+              min={1}
+              max={5}
+              step={1}
+              value={config.textureNoiseOctaves}
+              disabled={isPublicLibrary}
+              onChange={(event) => write('textureNoiseOctaves', Number(event.target.value))}
+              className="w-14 bg-white/5 border border-white/10 rounded px-1.5 py-1 text-[11px] outline-none focus:border-white/40 disabled:opacity-40"
+            />
+          </label>
+        </div>
+        <p className="mt-1 text-[10px] text-white/35">既定（Value／周期4／オクターブ3）は従来の雲ノイズと完全一致します。</p>
       </div>
       <div className="grid grid-cols-4 gap-2">
         {maps.map(({ definition, map }) => (

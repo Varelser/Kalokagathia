@@ -9,6 +9,7 @@ import { getGradImageTexture } from '../lib/gradImageTexture';
 import { getMapImageTexture } from '../lib/mapImageTexture';
 import { resolveMapSource } from '../lib/layerMask';
 import { getSpriteImageTexture } from '../lib/spriteImageTexture';
+import { normalizeSpriteFrameFps, normalizeSpriteSheetDimension, spriteFrameModeIndex } from '../lib/spriteSheet';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { normalizeLightDir } from '../lib/gpgpuLight';
 import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
@@ -306,6 +307,13 @@ export function syncVisualUniforms(args: {
     const spriteState = getSpriteImageTexture(config.gpgpuSpriteImage);
     drawMat.uniforms.uSpriteImageTex.value = spriteState.texture;
     if (drawMat.uniforms.uSpriteImageReady) drawMat.uniforms.uSpriteImageReady.value = spriteState.ready;
+    // Sprite sheet (Phase AD): sanitized through the same pure
+    // normalizers the unit tests pin (lib/spriteSheet.ts).
+    if (drawMat.uniforms.uSpriteSheetCols) drawMat.uniforms.uSpriteSheetCols.value = normalizeSpriteSheetDimension(config.gpgpuSpriteSheetCols);
+    if (drawMat.uniforms.uSpriteSheetRows) drawMat.uniforms.uSpriteSheetRows.value = normalizeSpriteSheetDimension(config.gpgpuSpriteSheetRows);
+    if (drawMat.uniforms.uSpriteSheetMode) drawMat.uniforms.uSpriteSheetMode.value = spriteFrameModeIndex(config.gpgpuSpriteFrameMode);
+    if (drawMat.uniforms.uSpriteSheetFps) drawMat.uniforms.uSpriteSheetFps.value = normalizeSpriteFrameFps(config.gpgpuSpriteFrameFps);
+    if (drawMat.uniforms.uSpriteSheetLoop) drawMat.uniforms.uSpriteSheetLoop.value = config.gpgpuSpriteLoop;
   }
   // 3D light (Phase T): position / intensity / radius are plain
   // values; the cone direction is normalised on the way in (a zero

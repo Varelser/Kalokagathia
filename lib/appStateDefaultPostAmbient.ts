@@ -70,6 +70,26 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postLuxConeLength: 0,
   postLuxConeAngle: 270,
   postLuxConeSpread: 32,
+  // Phase AD: tone grade / edge / displace — all OFF by default
+  // so no stage is inserted and the output is unchanged.
+  postPosterizeEnabled: false,
+  postPosterizeLevels: 8,
+  postDitherEnabled: false,
+  postDitherStrength: 1,
+  postHalftoneEnabled: false,
+  postHalftoneCellSize: 8,
+  postHalftoneAngle: 45,
+  postEdgeEnabled: false,
+  postEdgeThreshold: 0.12,
+  postEdgeMode: 'overlay' as const,
+  postDisplaceEnabled: false,
+  postDisplaceAmount: 0.1,
+  postDisplaceChannel: 'red-green' as const,
+  // Texture Pack noise (Phase AD): defaults reproduce the
+  // pre-AD cloud-noise map bit-for-bit.
+  textureNoiseKind: 'value' as const,
+  textureNoisePeriod: 4,
+  textureNoiseOctaves: 3,
   executionDiagnosticsEnabled: false,
   executionDiagnosticsVerbose: false,
   hybridSdfEnabled: false,

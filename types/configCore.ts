@@ -213,6 +213,35 @@ export interface ParticleConfigCore {
   postLuxConeLength: number;
   postLuxConeAngle: number;
   postLuxConeSpread: number;
+  // Tone grade + edge + displace (Phase AD): five more post
+  // stages in the same opt-in shape — every one defaults OFF, so
+  // the stack is unchanged and the output is identical until the
+  // user enables them. Posterize / ordered dither / halftone are
+  // the print-style tonal finishes (lib/postFxMath.ts holds the
+  // CPU twins of the shader math); edge is a Sobel pass that can
+  // overlay on or replace the frame; displace warps the frame by
+  // the gradient image (red/green channels by default, the
+  // TouchDesigner Displace convention).
+  postPosterizeEnabled: boolean;
+  postPosterizeLevels: number;
+  postDitherEnabled: boolean;
+  postDitherStrength: number;
+  postHalftoneEnabled: boolean;
+  postHalftoneCellSize: number;
+  postHalftoneAngle: number;
+  postEdgeEnabled: boolean;
+  postEdgeThreshold: number;
+  postEdgeMode: 'overlay' | 'only';
+  postDisplaceEnabled: boolean;
+  postDisplaceAmount: number;
+  postDisplaceChannel: 'red-green' | 'luma' | 'red' | 'green' | 'blue';
+  // Texture Pack noise generation (Phase AD): the cloud-noise
+  // tile in the Tools tab is generated from these parameters.
+  // The defaults reproduce the pre-AD map bit-for-bit, so every
+  // existing applied texture keeps its exact values.
+  textureNoiseKind: 'value' | 'ridge' | 'turbulence';
+  textureNoisePeriod: number;
+  textureNoiseOctaves: number;
   executionDiagnosticsEnabled: boolean;
   executionDiagnosticsVerbose: boolean;
   hybridSdfEnabled: boolean;

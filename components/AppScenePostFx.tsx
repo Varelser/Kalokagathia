@@ -10,6 +10,11 @@ import { SlitScanPass } from './slitScanPass';
 import { RadialBlurPass } from './radialBlurPass';
 import { LightFxPass } from './lightFxPass';
 import { OutputGradePass } from './outputGradePass';
+import { PosterizePass, OrderedDitherPass, HalftonePass } from './toneGradePasses';
+import { EdgeDetectPass } from './edgeDetectPass';
+import { DisplacePass } from './displacePass';
+import { getGradImageTexture } from '../lib/gradImageTexture';
+import { displaceChannelIndex } from '../lib/postFxMath';
 
 export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config }) => {
   const orderedPostFxStages = React.useMemo(() => getOrderedActivePostFxStageIds(config), [config]);
@@ -55,6 +60,33 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   outputGradePass.aces = config.postToneMapping === 'aces';
   outputGradePass.brandEnabled = config.postBrandColorEnabled;
   outputGradePass.brandColor.set(config.postBrandColor || '#000000');
+  // Phase AD passes: tone grade trio, Sobel edge, image displace.
+  const posterizePass = React.useMemo(() => new PosterizePass(), []);
+  React.useEffect(() => () => posterizePass.dispose(), [posterizePass]);
+  posterizePass.levels = config.postPosterizeLevels;
+  const ditherPass = React.useMemo(() => new OrderedDitherPass(), []);
+  React.useEffect(() => () => ditherPass.dispose(), [ditherPass]);
+  ditherPass.strength = config.postDitherStrength;
+  const halftonePass = React.useMemo(() => new HalftonePass(), []);
+  React.useEffect(() => () => halftonePass.dispose(), [halftonePass]);
+  halftonePass.cellSize = config.postHalftoneCellSize;
+  halftonePass.angle = config.postHalftoneAngle;
+  const edgeDetectPass = React.useMemo(() => new EdgeDetectPass(), []);
+  React.useEffect(() => () => edgeDetectPass.dispose(), [edgeDetectPass]);
+  edgeDetectPass.threshold = config.postEdgeThreshold;
+  edgeDetectPass.mode = config.postEdgeMode;
+  const displacePass = React.useMemo(() => new DisplacePass(), []);
+  React.useEffect(() => () => displacePass.dispose(), [displacePass]);
+  displacePass.amount = config.postDisplaceAmount;
+  displacePass.channelIndex = displaceChannelIndex(config.postDisplaceChannel);
+  if (config.postDisplaceEnabled) {
+    const gradState = getGradImageTexture(config.gpgpuGradImageSource);
+    displacePass.mapTexture = gradState.texture;
+    displacePass.mapReady = gradState.ready;
+  } else {
+    displacePass.mapTexture = null;
+    displacePass.mapReady = false;
+  }
 
   if (orderedPostFxStages.length === 0) {
     return null;
@@ -124,8 +156,18 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
             return <primitive key={stage} object={kaleidoscopePass} />;
           case 'slit-scan':
             return <primitive key={stage} object={slitScanPass} />;
+          case 'displace':
+            return <primitive key={stage} object={displacePass} />;
           case 'feedback':
             return <primitive key={stage} object={feedbackPass} />;
+          case 'posterize':
+            return <primitive key={stage} object={posterizePass} />;
+          case 'ordered-dither':
+            return <primitive key={stage} object={ditherPass} />;
+          case 'halftone':
+            return <primitive key={stage} object={halftonePass} />;
+          case 'edge-detect':
+            return <primitive key={stage} object={edgeDetectPass} />;
           case 'radial-blur':
             return <primitive key={stage} object={radialBlurPass} />;
           case 'light-fx':

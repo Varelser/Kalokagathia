@@ -181,6 +181,31 @@ const SpriteImageBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, u
           ? 'スプライト画像を設定済み: 粒子の形は Point Shape より優先され、画像の輝度（×透明度）がそのまま粒子の濃淡になります（モノクロ）。画像は 256px 以下に縮小され、config に保持されます。'
           : 'スプライト画像が未設定のため、粒子の形は上の Point Shape の手続き形状です。画像を設定すると、画像そのものが粒子の形になります。'}
       </div>
+      {source && (
+        <div className="mt-2 border-t border-white/10 pt-2">
+          <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Sprite Sheet（フリップブック）</div>
+          <Slider label="Sheet Columns" value={config.gpgpuSpriteSheetCols} min={1} max={16} step={1} onChange={(v) => updateConfig('gpgpuSpriteSheetCols', v)} />
+          <Slider label="Sheet Rows" value={config.gpgpuSpriteSheetRows} min={1} max={16} step={1} onChange={(v) => updateConfig('gpgpuSpriteSheetRows', v)} />
+          <Toggle
+            label="Frame Drive"
+            value={config.gpgpuSpriteFrameMode}
+            options={[{ label: 'Age', val: 'age' }, { label: 'FPS', val: 'fps' }, { label: 'Random', val: 'random' }]}
+            onChange={(v) => updateConfig('gpgpuSpriteFrameMode', v)}
+          />
+          {config.gpgpuSpriteFrameMode === 'fps' && (
+            <Slider label="Frame FPS" value={config.gpgpuSpriteFrameFps} min={0.1} max={60} step={0.1} onChange={(v) => updateConfig('gpgpuSpriteFrameFps', v)} />
+          )}
+          <Toggle
+            label="Loop"
+            value={config.gpgpuSpriteLoop}
+            options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+            onChange={(v) => updateConfig('gpgpuSpriteLoop', v)}
+          />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            画像を列×行のシートとして分割し、フレームを進めます（左上から右へ、下の行へ）。1×1 が従来の単一画像と完全一致です。年齢駆動は寿命でシートを一周、FPS は固定レート、Random は粒子ごとに1枚固定です。
+          </div>
+        </div>
+      )}
     </div>
   );
 };

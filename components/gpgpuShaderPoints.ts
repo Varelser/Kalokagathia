@@ -1,5 +1,31 @@
 import { PARTICLE_SHAPE_GLSL } from './particleShapeGlsl';
 
+// Sprite sheet (Phase AD): GLSL twins of lib/spriteSheet.ts
+// (spriteFrameIndex / spriteSheetUv — same formulas, so the
+// unit tests pin the shader too). Mode: 0 age, 1 fps, 2 random.
+const SPRITE_SHEET_GLSL = /* glsl */ `
+  float kaloSpriteFrame(float cols, float rows, float mode, float fps, bool loop, float normAge, float timeSeconds, float seed) {
+    float total = cols * rows;
+    if (total <= 1.0) return 0.0;
+    if (mode > 1.5) {
+      return floor(clamp(seed, 0.0, 0.999999) * total);
+    }
+    float raw;
+    if (mode > 0.5) {
+      raw = floor(max(timeSeconds, 0.0) * fps);
+    } else {
+      raw = floor(clamp(normAge, 0.0, 1.0) * total);
+    }
+    if (loop) return mod(raw, total);
+    return min(raw, total - 1.0);
+  }
+  vec2 kaloSpriteSheetUv(vec2 pointCoord, float cols, float rows, float frame) {
+    float col = mod(frame, cols);
+    float row = floor(frame / cols);
+    return vec2((col + pointCoord.x) / cols, 1.0 - (row + pointCoord.y) / rows);
+  }
+`;
+
 // Phase U shared helpers: the 5-point age curve (GLSL twin of
 // lib/ageCurve.ts evaluateAgeCurve — same knots at t = 0/.25/.5/.75/1,
 // same piecewise-linear blend, so an all-ones curve is exactly 1.0)
@@ -295,6 +321,15 @@ export const DRAW_FRAG = /* glsl */ `
   // of the procedural point shapes.
   uniform sampler2D uSpriteImageTex;
   uniform bool      uSpriteImageReady;
+  // Sprite sheet (Phase AD): cols x rows flipbook over the sprite
+  // image. Mode 0 = age, 1 = fps clock (uGradTime), 2 = per-
+  // particle seed. At 1x1 the frame is 0 and the UV remap is the
+  // exact identity (see SPRITE_SHEET_GLSL below).
+  uniform float     uSpriteSheetCols;
+  uniform float     uSpriteSheetRows;
+  uniform float     uSpriteSheetMode;
+  uniform float     uSpriteSheetFps;
+  uniform bool      uSpriteSheetLoop;
   varying float vSpeed;
   varying float vNormAge;
   varying float vPhaseMix;
@@ -307,6 +342,8 @@ export const DRAW_FRAG = /* glsl */ `
   ${PARTICLE_SHAPE_GLSL}
 
   ${AGE_CURVE_GLSL}
+
+  ${SPRITE_SHEET_GLSL}
 
   vec3 hsv2rgb(float h, float s, float v) {
     vec3 p = abs(fract(vec3(h) + vec3(1.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);
@@ -438,7 +475,11 @@ export const DRAW_FRAG = /* glsl */ `
     if (uSpriteImageReady) {
       // gl_PointCoord y grows downward; the sprite texture holds the
       // image top at v=1, so v = 1 - y draws the image upright.
-      shapeAlpha = texture2D(uSpriteImageTex, vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y)).r;
+      // Phase AD: the sheet remap generalises that UV — at 1x1 it
+      // is exactly the legacy expression (frame 0, (0+x)/1,
+      // 1-(0+y)/1), so single-image sprites are bit-identical.
+      float spriteFrame = kaloSpriteFrame(uSpriteSheetCols, uSpriteSheetRows, uSpriteSheetMode, uSpriteSheetFps, uSpriteSheetLoop, vNormAge, uGradTime, vSeed);
+      shapeAlpha = texture2D(uSpriteImageTex, kaloSpriteSheetUv(gl_PointCoord, uSpriteSheetCols, uSpriteSheetRows, spriteFrame)).r;
       if (shapeAlpha < 0.01) discard;
     } else if (uPointShape == 0) {
       shapeAlpha = smoothstep(0.5, 0.12, d);

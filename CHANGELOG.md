@@ -4,6 +4,43 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.35.0] — 2026-11-17
+
+Phase AD (fifth period, third phase): 2D post & sprites —
+flipbook sprite sheets, the print-style tonal post trio
+(posterize / ordered dither / halftone), a Sobel edge pass, an
+image-driven displace pass, and parameterized texture-pack
+noise. Base is the actually-shipped v1.34.0. With all new keys
+at their defaults the render is bit-identical to v1.34.0
+(verified on the iMac real-GPU gate: FROZEN deterministic
+render, all 12 frames at 0.00000). 21 new config keys (1,095
+total), starters +2 (533 total).
+
+### Added
+- **Flipbook sprite sheets** (`gpgpuSpriteSheetCols/Rows`,
+  `gpgpuSpriteFrameMode`, `gpgpuSpriteFrameFps`,
+  `gpgpuSpriteLoop`; `lib/spriteSheet.ts`): the sprite image
+  can be a cols x rows sheet; the frame advances by normalised
+  age, by a fixed fps clock, or sits fixed per particle seed.
+  At 1x1 the UV remap is the exact identity, so existing
+  single-image sprites are bit-identical.
+- **Posterize / Ordered Dither / Halftone post stages**
+  (`postPosterize*`, `postDither*`, `postHalftone*`;
+  `lib/postFxMath.ts` CPU twins): print-style tonal finishes
+  in the post stack, after feedback and before output grade.
+- **Edge Detect post stage** (`postEdge*`): Sobel gradient
+  with a threshold and overlay / edge-only modes — the entry
+  point to outline extraction (vectorising is Phase AF).
+- **Displace post stage** (`postDisplace*`): the gradient
+  image warps the frame (channel pair selectable, red/green
+  by default), placed before feedback so feedback smears the
+  displaced frame. No image ready = exact pass-through.
+- **Parameterized texture-pack noise** (`textureNoiseKind`,
+  `textureNoisePeriod`, `textureNoiseOctaves`): the cloud
+  noise tile gains kind (value / ridge / turbulence), period
+  and octave controls. The defaults reproduce the pre-AD map
+  bit-for-bit.
+
 ## [1.34.0] — 2026-11-17
 
 Phase AC (fifth period, second phase): the signal & time grammar —

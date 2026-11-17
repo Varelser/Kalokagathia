@@ -558,6 +558,18 @@ export interface ParticleConfigGpgpu {
   // Held as a data URL (downscaled to <=256px by the UI) so it
   // persists with presets / projects like the gradient image does.
   gpgpuSpriteImage: string;
+  // Sprite sheet / flipbook (Phase AD): the sprite image can be
+  // a cols x rows sheet whose frame advances per particle —
+  // driven by normalised age (one sweep per life), by a fixed
+  // fps clock, or fixed randomly per particle seed. The defaults
+  // (1x1) make the sheet UV remap an exact identity, so existing
+  // single-image sprites are bit-identical. See
+  // lib/spriteSheet.ts for the pure frame math.
+  gpgpuSpriteSheetCols: number;
+  gpgpuSpriteSheetRows: number;
+  gpgpuSpriteFrameMode: 'age' | 'fps' | 'random';
+  gpgpuSpriteFrameFps: number;
+  gpgpuSpriteLoop: boolean;
   // Point material blending (Kinetix integration B2): 'additive' is the
   // legacy default; 'normal' is the Kinetix Normal blend. The sort-based
   // transparency path still forces Normal while sorting is on.

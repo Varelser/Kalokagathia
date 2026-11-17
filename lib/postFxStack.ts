@@ -9,7 +9,12 @@ export type PostFxStageId =
   | 'vignette'
   | 'kaleidoscope'
   | 'slit-scan'
+  | 'displace'
   | 'feedback'
+  | 'posterize'
+  | 'ordered-dither'
+  | 'halftone'
+  | 'edge-detect'
   | 'radial-blur'
   | 'light-fx'
   | 'output-grade';
@@ -23,12 +28,19 @@ export type PostFxStackProfile = ParticleConfig['postFxStackProfile'];
 // profile so streaks and glints are extracted from the bloomed
 // highlights, and before 'output-grade' so the brand duotone and
 // exposure grade the finished light as well.
+// Phase AD stages: 'displace' is a spatial warp, so it sits
+// with the other spatial stages immediately before 'feedback'
+// (feedback then smears the displaced frame, the TouchDesigner
+// idiom). The tonal finishes (posterize / ordered-dither /
+// halftone) and the Sobel edge pass are print-style treatments
+// of the finished frame, so they sit after 'feedback' and
+// before 'output-grade', which still grades last.
 const STACK_ORDERS: Record<PostFxStackProfile, PostFxStageId[]> = {
-  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
-  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
-  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
-  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
-  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'feedback', 'output-grade'],
+  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade'],
+  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade'],
+  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade'],
+  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade'],
+  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade'],
 };
 
 export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[] {
@@ -59,6 +71,23 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   }
   if (config.postFeedbackEnabled) {
     active.add('feedback');
+  }
+  // Phase AD stages follow the same rule as the rest of the
+  // stack: a stage exists only when it would change a pixel.
+  if (config.postDisplaceEnabled && Math.abs(config.postDisplaceAmount) > 0.0001) {
+    active.add('displace');
+  }
+  if (config.postPosterizeEnabled) {
+    active.add('posterize');
+  }
+  if (config.postDitherEnabled && config.postDitherStrength > 0.001) {
+    active.add('ordered-dither');
+  }
+  if (config.postHalftoneEnabled) {
+    active.add('halftone');
+  }
+  if (config.postEdgeEnabled) {
+    active.add('edge-detect');
   }
   if (config.postRadialBlurEnabled && config.postRadialBlurStrength > 0.001) {
     active.add('radial-blur');

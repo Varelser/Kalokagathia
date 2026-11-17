@@ -60,6 +60,67 @@ function valueNoise(u: number, v: number, cells: number): number {
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
 
+/**
+ * Parameterized noise generation (Phase AD): the cloud-noise
+ * definition used to bake its period / octave structure into a
+ * fixed formula (4 / 8 / 16 cells at weights 0.55 / 0.3 / 0.15).
+ * The weights now come from a table normalised by their sum, so
+ * the DEFAULT parameters (kind 'value', period 4, octaves 3)
+ * reproduce the legacy map bit-for-bit — the first three weights
+ * sum to exactly 1.0 — while other settings reshape the cloud:
+ * 'ridge' creases each octave (1 - |2n - 1|), 'turbulence' folds
+ * it (|2n - 1|), period sets the base cell count and octaves
+ * the number of summed octaves.
+ */
+export type NoiseTextureKind = 'value' | 'ridge' | 'turbulence';
+
+export interface NoiseTextureParams {
+  kind: NoiseTextureKind;
+  period: number;
+  octaves: number;
+}
+
+export const DEFAULT_NOISE_TEXTURE_PARAMS: NoiseTextureParams = {
+  kind: 'value',
+  period: 4,
+  octaves: 3,
+};
+
+export const NOISE_OCTAVE_WEIGHTS: readonly number[] = [0.55, 0.3, 0.15, 0.075, 0.0375];
+
+export function normalizeNoiseTextureParams(params: Partial<NoiseTextureParams> | null | undefined): NoiseTextureParams {
+  const kind = params?.kind === 'ridge' || params?.kind === 'turbulence' ? params.kind : 'value';
+  const period = typeof params?.period === 'number' && Number.isFinite(params.period)
+    ? Math.min(16, Math.max(1, Math.round(params.period)))
+    : DEFAULT_NOISE_TEXTURE_PARAMS.period;
+  const octaves = typeof params?.octaves === 'number' && Number.isFinite(params.octaves)
+    ? Math.min(NOISE_OCTAVE_WEIGHTS.length, Math.max(1, Math.round(params.octaves)))
+    : DEFAULT_NOISE_TEXTURE_PARAMS.octaves;
+  return { kind, period, octaves };
+}
+
+export function generateNoiseTextureMap(params?: Partial<NoiseTextureParams> | null): number[] {
+  const { kind, period, octaves } = normalizeNoiseTextureParams(params ?? DEFAULT_NOISE_TEXTURE_PARAMS);
+  const weights = NOISE_OCTAVE_WEIGHTS.slice(0, octaves);
+  const weightSum = weights.reduce((sum, w) => sum + w, 0);
+  return buildMap((u, v) => {
+    let n = 0;
+    for (let i = 0; i < octaves; i++) {
+      const s = valueNoise(u, v, period * 2 ** i);
+      const shaped = kind === 'ridge' ? 1 - Math.abs(2 * s - 1) : kind === 'turbulence' ? Math.abs(2 * s - 1) : s;
+      n += (weights[i] / weightSum) * shaped;
+    }
+    return smoothstep(0.25, 0.8, n);
+  });
+}
+
+/** Map for any definition; only the noise definition takes parameters. */
+export function generateTextureMap(id: string, noiseParams?: Partial<NoiseTextureParams> | null): number[] {
+  if (id === 'noise') return generateNoiseTextureMap(noiseParams);
+  const definition = getTextureDefinition(id);
+  return definition ? definition.generate() : generateNoiseTextureMap(noiseParams);
+}
+
 export const TEXTURE_DEFINITIONS: TextureDefinition[] = [
   {
     id: 'halftone',
@@ -137,13 +198,8 @@ export const TEXTURE_DEFINITIONS: TextureDefinition[] = [
   {
     id: 'noise',
     label: '雲ノイズ',
-    description: '雲のような有機的な濃淡（決定的生成）',
-    generate: () =>
-      buildMap((u, v) => {
-        const n =
-          valueNoise(u, v, 4) * 0.55 + valueNoise(u, v, 8) * 0.3 + valueNoise(u, v, 16) * 0.15;
-        return smoothstep(0.25, 0.8, n);
-      }),
+    description: '雲のような有機的な濃淡（決定的生成、種別／周期／オクターブ調整可）',
+    generate: () => generateNoiseTextureMap(),
   },
 ];
 

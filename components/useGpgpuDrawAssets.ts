@@ -60,6 +60,14 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uMaskInvert:             { value: false },
       uSpriteImageTex:         { value: null },
       uSpriteImageReady:       { value: false },
+      // Sprite sheet (Phase AD): 1x1 / age / 12fps / loop — the
+      // frame is always 0 and the UV remap is the exact identity,
+      // so single-image sprites stay bit-identical.
+      uSpriteSheetCols:        { value: 1 },
+      uSpriteSheetRows:        { value: 1 },
+      uSpriteSheetMode:        { value: 0 },
+      uSpriteSheetFps:         { value: 12 },
+      uSpriteSheetLoop:        { value: true },
       // 3D light (Phase T): disabled by default; the vertex shader
       // then yields exactly 1.0 and the fragment multiply is the
       // identity, so the legacy draw is bit-identical.

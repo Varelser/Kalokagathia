@@ -320,6 +320,13 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGradImageSource: '',
   // Sprite image (Phase U): empty = procedural point shapes as before.
   gpgpuSpriteImage: '',
+  // Sprite sheet (Phase AD): 1x1 = the legacy single image,
+  // bit-identical; age-driven frames are the default mode.
+  gpgpuSpriteSheetCols: 1,
+  gpgpuSpriteSheetRows: 1,
+  gpgpuSpriteFrameMode: 'age' as const,
+  gpgpuSpriteFrameFps: 12,
+  gpgpuSpriteLoop: true,
   gpgpuBlendMode: 'additive' as const,
   // Size over Lifetime
   gpgpuAgeSizeEnabled: false,
