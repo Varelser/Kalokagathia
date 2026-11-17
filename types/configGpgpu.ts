@@ -389,6 +389,33 @@ export interface ParticleConfigGpgpu {
   gpgpuLightDirX: number;
   gpgpuLightDirY: number;
   gpgpuLightDirZ: number;
+  // Visible light volume + light trail (Phase Y): a volumetric
+  // cone / sphere drawn IN the scene at the 3D light's position
+  // (lib/lightVolume.ts), plus a ribbon along the light's movement
+  // history (lib/lightTrail.ts). Both are draw-only — they never
+  // touch the simulation. Disabled by default and, for the volume,
+  // intensity 0 is also an exact identity: with both off the scene
+  // mounts nothing extra and the render is bit-identical to
+  // v1.29.0. Honest limit: the volume does NOT intersect scene
+  // depth (no occlusion / shadowing) — edges are softened by the
+  // softness key instead; the UI and the changelog say so.
+  gpgpuLightVolumeEnabled: boolean;
+  gpgpuLightVolumeShape: 'cone' | 'sphere';
+  /** Volume brightness; 0 draws nothing even when enabled. */
+  gpgpuLightVolumeIntensity: number;
+  /** Cone length / sphere radius, in world units. */
+  gpgpuLightVolumeLength: number;
+  /** Cone half angle in degrees (sphere ignores it). */
+  gpgpuLightVolumeAngle: number;
+  /** Raymarch-style axial steps (1..32): smoothness vs cost. */
+  gpgpuLightVolumeSteps: number;
+  /** Edge softness 0..1 (depth-fade substitute; no depth test). */
+  gpgpuLightVolumeSoftness: number;
+  gpgpuLightTrailEnabled: boolean;
+  /** Trail ribbon full width in world units. */
+  gpgpuLightTrailWidth: number;
+  /** Trail fade exponent: alpha ~ u^fade along old -> new. */
+  gpgpuLightTrailFade: number;
   // Color over Lifetime
   gpgpuAgeColorEnabled: boolean;
   gpgpuAgeColorYoung: string;

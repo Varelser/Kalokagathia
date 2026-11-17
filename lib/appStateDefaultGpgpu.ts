@@ -237,6 +237,19 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuLightDirX: 0,
   gpgpuLightDirY: -1,
   gpgpuLightDirZ: 0,
+  // Visible light volume + trail (Phase Y): both off by default
+  // (and volume intensity 0) — the scene mounts nothing extra and
+  // the render is bit-identical to v1.29.0 until opted in.
+  gpgpuLightVolumeEnabled: false,
+  gpgpuLightVolumeShape: 'cone' as const,
+  gpgpuLightVolumeIntensity: 0,
+  gpgpuLightVolumeLength: 120,
+  gpgpuLightVolumeAngle: 28,
+  gpgpuLightVolumeSteps: 12,
+  gpgpuLightVolumeSoftness: 0.5,
+  gpgpuLightTrailEnabled: false,
+  gpgpuLightTrailWidth: 6,
+  gpgpuLightTrailFade: 1.5,
   // Color over Lifetime
   gpgpuAgeColorEnabled: false,
   gpgpuAgeColorYoung: '#00aaff',
