@@ -62,6 +62,16 @@ export const SIM_POS_FRAG = /* glsl */ `
   // lib/gpgpuLifecycle.ts.
   uniform float uSpawnPulseInterval;
   uniform float uSpawnPulseDuty;
+  // Emission curve (Phase AJ): the free control-point curve asset
+  // (lib/freeCurve.ts) as two padded float arrays — unused slots
+  // repeat the last point, so the loop below needs no count. The
+  // passes resolve the uniform OFF when the key is disabled or the
+  // curve is the identity, which keeps the legacy respawn path
+  // verbatim. GLSL twin of evaluateFreeCurve.
+  uniform bool  uEmissionCurveEnabled;
+  uniform float uEmissionCurvePeriod;
+  uniform float uEmissionCurveT[8];
+  uniform float uEmissionCurveV[8];
   uniform bool  uKillBoundary;
   uniform bool  uKillMask;
   uniform sampler2D uKillMaskTex;
@@ -86,6 +96,29 @@ export const SIM_POS_FRAG = /* glsl */ `
     float whole = floor(cyc);
     float fracPart = cyc - whole;
     return (whole * uSpawnPulseDuty + min(fracPart, uSpawnPulseDuty)) * uSpawnPulseInterval;
+  }
+
+  // Free curve evaluation (Phase AJ): piecewise-linear over the
+  // padded knot arrays — the GLSL twin of evaluateFreeCurve in
+  // lib/freeCurve.ts (same clamping, same endpoint hold).
+  float kaloEvalFreeCurve(float x) {
+    float xx = clamp(x, 0.0, 1.0);
+    if (xx <= uEmissionCurveT[0]) return uEmissionCurveV[0];
+    for (int i = 1; i < 8; i++) {
+      if (xx <= uEmissionCurveT[i]) {
+        float span = uEmissionCurveT[i] - uEmissionCurveT[i - 1];
+        float f = span > 0.0 ? (xx - uEmissionCurveT[i - 1]) / span : 0.0;
+        return mix(uEmissionCurveV[i - 1], uEmissionCurveV[i], f);
+      }
+    }
+    return uEmissionCurveV[7];
+  }
+
+  // Emission gate hash (Phase AJ): the pointer-paint gate's form —
+  // a per-tick (30 Hz) deterministic hash, so a deterministic
+  // render reproduces the gate bit-for-bit.
+  float emissionHash(vec2 uv, float tick) {
+    return fract(sin(dot(uv * 913.7 + vec2(tick * 17.31, tick * 7.77), vec2(12.9898, 78.233))) * 43758.5453);
   }
 
   // Gyroid SDF (B3) — identical formulation to the velocity shader.
@@ -240,10 +273,28 @@ export const SIM_POS_FRAG = /* glsl */ `
     // same respawn block below, so every (re)birth in the pool
     // shares one placement law (and one Aux birth signal).
     bool doRespawn = spawnActivating;
+    bool ageRespawn = false;
     if (uAgeEnabled) {
       age += uDelta;
-      if (age > uAgeMax) doRespawn = true;
+      if (age > uAgeMax) ageRespawn = true;
     }
+    // Emission curve gate (Phase AJ): only the age respawn is
+    // gated — spawn activation and the kill conditions below are
+    // lifecycle events, not emission. When the curve value at the
+    // current cycle phase is c < 1, a deterministic per-tick hash
+    // below c lets the respawn through and the rest are postponed
+    // (age keeps advancing; the age curves clamp at t = 1, so the
+    // particle waits at its end-of-life appearance). c = 1 always
+    // passes, so an identity curve is the legacy behaviour.
+    if (ageRespawn && uEmissionCurveEnabled) {
+      float phase = fract(uTime / max(uEmissionCurvePeriod, 0.001));
+      float c = kaloEvalFreeCurve(phase);
+      if (c < 1.0) {
+        float tick = floor(uTime * 30.0);
+        if (emissionHash(vUv, tick) >= c) ageRespawn = false;
+      }
+    }
+    if (ageRespawn) doRespawn = true;
     // Kill conditions (Phase AB): leave the bounce sphere, or sit
     // in a rejected raster-mask region, and the particle respawns
     // now instead of bouncing / living on. Both default off. The

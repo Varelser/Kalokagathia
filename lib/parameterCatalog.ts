@@ -157,6 +157,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuMorphFiberCurl', label: "Morph Fiber Curl", tab: 'global', min: 0, max: 1, step: 0.05 },
   { key: 'gpgpuSpawnPulseInterval', label: "Spawn Pulse Interval", tab: 'global', min: 0, max: 30, step: 0.1 },
   { key: 'gpgpuSpawnPulseDuty', label: "Spawn Pulse Duty", tab: 'global', min: 0.05, max: 1, step: 0.01 },
+  { key: 'gpgpuEmissionCurvePeriod', label: "Emission Curve Period", tab: 'global', min: 0.5, max: 120, step: 0.5 },
   { key: 'gpgpuGeomSpinRandom', label: "Geom Spin Random", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'textureNoiseSeed', label: "Texture Noise Seed", tab: 'global', min: 0, max: 999, step: 1 },
   { key: 'layer1LineJitter', label: "Line Jitter", tab: 'layer1', min: 0, max: 10, step: 0.05 },

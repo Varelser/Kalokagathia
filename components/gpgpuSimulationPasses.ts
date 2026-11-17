@@ -7,6 +7,7 @@ import {
 } from '../lib/webgpuCompute';
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
+import { isFreeCurveIdentity, normalizeFreeCurvePoints, FREE_CURVE_MAX_POINTS } from '../lib/freeCurve';
 import {
   getTerrainSlopeGradientTexture,
   terrainSlopeWorldExtent,
@@ -541,6 +542,26 @@ export function runSimulationPasses(args: {
   if (posSimMat.uniforms.uSpawnTime) posSimMat.uniforms.uSpawnTime.value = args.spawnTime ?? time;
   if (posSimMat.uniforms.uSpawnPulseInterval) posSimMat.uniforms.uSpawnPulseInterval.value = Math.max(0, Math.min(30, config.gpgpuSpawnPulseInterval ?? 0));
   if (posSimMat.uniforms.uSpawnPulseDuty) posSimMat.uniforms.uSpawnPulseDuty.value = Math.max(0.05, Math.min(1, config.gpgpuSpawnPulseDuty ?? 0.3));
+  // Emission curve (Phase AJ): resolved like the age curves —
+  // disabled OR an identity curve keeps the legacy respawn path.
+  // The knot arrays are padded to FREE_CURVE_MAX_POINTS by
+  // repeating the last point (the shader's padded-loop form).
+  {
+    const freePoints = normalizeFreeCurvePoints(config.gpgpuFreeCurvePoints);
+    const emissionActive = !!config.gpgpuEmissionCurveEnabled && !isFreeCurveIdentity(freePoints);
+    if (posSimMat.uniforms.uEmissionCurveEnabled) posSimMat.uniforms.uEmissionCurveEnabled.value = emissionActive;
+    if (posSimMat.uniforms.uEmissionCurvePeriod) posSimMat.uniforms.uEmissionCurvePeriod.value = Math.max(0.5, Math.min(120, config.gpgpuEmissionCurvePeriod ?? 8));
+    if (posSimMat.uniforms.uEmissionCurveT) {
+      const padded: number[] = [];
+      for (let i = 0; i < FREE_CURVE_MAX_POINTS; i++) padded.push(freePoints[Math.min(i, freePoints.length - 1)].t);
+      posSimMat.uniforms.uEmissionCurveT.value = padded;
+    }
+    if (posSimMat.uniforms.uEmissionCurveV) {
+      const padded: number[] = [];
+      for (let i = 0; i < FREE_CURVE_MAX_POINTS; i++) padded.push(freePoints[Math.min(i, freePoints.length - 1)].v);
+      posSimMat.uniforms.uEmissionCurveV.value = padded;
+    }
+  }
   if (posSimMat.uniforms.uKillBoundary) posSimMat.uniforms.uKillBoundary.value = !!config.gpgpuKillBoundary;
   if (posSimMat.uniforms.uKillMask) posSimMat.uniforms.uKillMask.value = !!config.gpgpuKillMask && !!args.killMaskTex;
   if (posSimMat.uniforms.uKillMaskTex) posSimMat.uniforms.uKillMaskTex.value = args.killMaskTex ?? null;

@@ -50,6 +50,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSpawnBurst: 1.0,
   gpgpuSpawnPulseInterval: 0,
   gpgpuSpawnPulseDuty: 0.3,
+  // Emission curve (Phase AJ): disabled, identity curve, 8 s period.
+  gpgpuFreeCurvePoints: [0, 1, 1, 1],
+  gpgpuEmissionCurveEnabled: false,
+  gpgpuEmissionCurvePeriod: 8,
   gpgpuKillBoundary: false,
   gpgpuKillMask: false,
   gpgpuDrag: 1.1,

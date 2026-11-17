@@ -3,7 +3,9 @@ import { Activity, ArrowLeftRight, Monitor } from 'lucide-react';
 import type { ParticleConfig, PresetRecord } from '../types';
 import { PARAMETER_CATALOG } from '../lib/parameterCatalog';
 import { getNoiseLinkStatus, type NoiseLinkStatus } from '../lib/noiseLink';
-import { AUDIO_BAND_OPTIONS, ENVELOPE_TRIGGER_OPTIONS, LFO_WAVEFORM_OPTIONS, NOISE_SOURCE_OPTIONS, createStarterModulationRoutes, describeModulationSource, evaluateLfo, fireModulationEnvelope, setModulationSetup, useModulationSetup, type EnvelopeTrigger, type LfoWaveform, type ModulationRoute, type ModulationSetup, type ModulationSource, type NoiseSourceId } from '../lib/modulation';
+import { AUDIO_BAND_OPTIONS, ENVELOPE_TRIGGER_OPTIONS, LFO_WAVEFORM_OPTIONS, NOISE_SOURCE_OPTIONS, createStarterModulationRoutes, describeModulationSource, evaluateLfo, fireModulationEnvelope, setModulationSetup, useModulationSetup, type EnvelopeTrigger, type LfoWaveform, type ModulationChainOp, type ModulationRoute, type ModulationSetup, type ModulationSource, type NoiseSourceId } from '../lib/modulation';
+import { compileExpression } from '../lib/expression';
+import { useDataTable } from '../lib/dataTable';
 import { closeCleanOutput, isCleanOutputOpen, openCleanOutput } from '../lib/cleanOutput';
 import { collectGpuDiagnostics, type GpuDiagnosticsReport } from '../lib/gpuDiagnostics';
 import { GPU_TIER_LABELS_JA, redetectGpuTier, setGpuTierOverride, type GpuTier } from '../lib/gpuTier';
@@ -428,6 +430,172 @@ export const StageSection: React.FC<{
   );
 };
 
+const MOD_SELECT_CLASS =
+  'w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] outline-none focus:border-white/40';
+
+/**
+ * Parameter editors for one modulation source (Phase AJ refactor:
+ * shared by the route's own source and an expression's wrapped
+ * input, so both levels expose the same fields).
+ */
+const SourceParamEditors: React.FC<{
+  source: ModulationSource;
+  onChange: (source: ModulationSource) => void;
+  routeId?: string;
+}> = ({ source, onChange, routeId }) => {
+  const dataTable = useDataTable();
+  if (source.kind === 'vnoise') {
+    return (
+      <div className="grid grid-cols-3 gap-2">
+        <Slider label="Seed" value={source.seed} min={0} max={9999} step={1} onChange={(v) => onChange({ ...source, seed: Math.round(v) })} />
+        <Slider label="Rate" value={source.rate} min={0.02} max={4} step={0.01} onChange={(v) => onChange({ ...source, rate: v })} />
+        <Slider label="Octaves" value={source.octaves} min={1} max={4} step={1} onChange={(v) => onChange({ ...source, octaves: Math.round(v) })} />
+      </div>
+    );
+  }
+  if (source.kind === 'envelope') {
+    return (
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2 items-start">
+          <select
+            value={source.trigger}
+            onChange={(event) => onChange({ ...source, trigger: event.target.value as EnvelopeTrigger })}
+            className={MOD_SELECT_CLASS}
+            aria-label="エンベロープのトリガ"
+          >
+            {ENVELOPE_TRIGGER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value} className="bg-neutral-900">
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {source.trigger === 'manual' ? (
+            <button
+              onClick={() => routeId && fireModulationEnvelope(routeId, performance.now() / 1000)}
+              className="px-3 py-1.5 rounded bg-white text-black text-[11px] font-bold hover:bg-gray-200 transition-colors"
+            >
+              トリガ Trigger
+            </button>
+          ) : (
+            <span className="text-[10px] text-white/40 leading-relaxed">
+              {source.trigger === 'audio' ? '音声パルスの立ち上がりで発火します' : 'MIDI ノートオンで発火します'}
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Slider label="Attack (s)" value={source.attack} min={0.005} max={1} step={0.005} onChange={(v) => onChange({ ...source, attack: v })} />
+          <Slider label="Decay (s)" value={source.decay} min={0.05} max={4} step={0.05} onChange={(v) => onChange({ ...source, decay: v })} />
+        </div>
+      </div>
+    );
+  }
+  if (source.kind === 'data') {
+    return (
+      <div className="space-y-2">
+        {dataTable ? (
+          <select
+            value={source.column}
+            onChange={(event) => onChange({ ...source, column: event.target.value })}
+            className={MOD_SELECT_CLASS}
+            aria-label="データ列"
+          >
+            {dataTable.columns.map((name) => (
+              <option key={name} value={name} className="bg-neutral-900">
+                列 {name}（{dataTable.rows.length} 行）
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="text-[10px] text-white/40 leading-relaxed">
+            データ列が未登録です。Play タブの Data Source で CSV／JSON を「信号列として登録」すると、ここで列を選べます（未登録の間は無影響）。
+          </p>
+        )}
+        <Slider label="読取速度 Rate（行/秒）" value={source.rate} min={0.05} max={60} step={0.05} onChange={(v) => onChange({ ...source, rate: v })} />
+      </div>
+    );
+  }
+  return null;
+};
+
+/** CHOP chain editor (Phase AJ): up to four stages per route. */
+const ChainEditor: React.FC<{
+  route: ModulationRoute;
+  onChange: (chain: ModulationChainOp[] | undefined) => void;
+}> = ({ route, onChange }) => {
+  const chain = route.chain ?? [];
+  const [pendingOp, setPendingOp] = React.useState<'spring' | 'trim' | 'filter'>('spring');
+  const updateOp = (index: number, patch: Partial<ModulationChainOp>) => {
+    onChange(chain.map((op, i) => (i === index ? ({ ...op, ...patch } as ModulationChainOp) : op)));
+  };
+  const addOp = () => {
+    const op: ModulationChainOp =
+      pendingOp === 'spring'
+        ? { op: 'spring', freq: 2, damping: 0.35 }
+        : pendingOp === 'filter'
+          ? { op: 'filter', cutoff: 4 }
+          : { op: 'trim', low: 0, high: 1, invert: false };
+    onChange([...chain, op]);
+  };
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] uppercase tracking-widest text-white/40">連鎖 Chain（CHOP）— 源 → 連鎖 → ラグ → 変調先</p>
+      {chain.map((op, index) => (
+        <div key={index} className="rounded-lg border border-white/10 bg-black/20 p-2 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold">
+              {index + 1}. {op.op === 'spring' ? 'Spring ばね' : op.op === 'filter' ? 'Filter ローパス' : 'Trim 範囲'}
+            </span>
+            <button
+              onClick={() => onChange(chain.filter((_, i) => i !== index))}
+              className="text-white/35 hover:text-white/80 text-[10px] uppercase tracking-widest"
+            >
+              段を削除
+            </button>
+          </div>
+          {op.op === 'spring' && (
+            <div className="grid grid-cols-2 gap-2">
+              <Slider label="周波数 Freq (Hz)" value={op.freq} min={0.1} max={10} step={0.1} onChange={(v) => updateOp(index, { freq: v })} />
+              <Slider label="減衰比 Damping" value={op.damping} min={0} max={2} step={0.05} onChange={(v) => updateOp(index, { damping: v })} />
+            </div>
+          )}
+          {op.op === 'filter' && (
+            <Slider label="カットオフ Cutoff (Hz)" value={op.cutoff} min={0.1} max={40} step={0.1} onChange={(v) => updateOp(index, { cutoff: v })} />
+          )}
+          {op.op === 'trim' && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <Slider label="下限 Low" value={op.low} min={0} max={1} step={0.01} onChange={(v) => updateOp(index, { low: v })} />
+                <Slider label="上限 High" value={op.high} min={0} max={1} step={0.01} onChange={(v) => updateOp(index, { high: v })} />
+              </div>
+              <label className="flex items-center gap-2 text-[11px] text-white/60">
+                <input
+                  type="checkbox"
+                  checked={op.invert}
+                  onChange={(event) => updateOp(index, { invert: event.target.checked })}
+                  className="accent-white"
+                />
+                反転 Invert
+              </label>
+            </div>
+          )}
+        </div>
+      ))}
+      {chain.length < 4 && (
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <select value={pendingOp} onChange={(event) => setPendingOp(event.target.value as 'spring' | 'trim' | 'filter')} className={MOD_SELECT_CLASS} aria-label="追加する段">
+            <option value="spring" className="bg-neutral-900">Spring ばね</option>
+            <option value="trim" className="bg-neutral-900">Trim 範囲リマップ</option>
+            <option value="filter" className="bg-neutral-900">Filter ローパス</option>
+          </select>
+          <button onClick={addOp} className="px-3 py-1.5 rounded bg-white/10 text-white/70 text-[11px] hover:bg-white/20 transition-colors">
+            段を追加
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ModulationSection: React.FC<{
   isPublicLibrary: boolean;
 }> = ({ isPublicLibrary }) => {
@@ -485,6 +653,14 @@ export const ModulationSection: React.FC<{
     if (kind === 'envelope') {
       return { kind: 'envelope', trigger: 'manual', attack: 0.01, decay: 0.6 };
     }
+    if (kind === 'expr') {
+      // Expression (Phase AJ): wraps an LFO by default; the wrapped
+      // source is chosen in the expression block below.
+      return { kind: 'expr', text: 'x', input: { kind: 'lfo', index: 0 } };
+    }
+    if (kind === 'data') {
+      return { kind: 'data', column: 'col1', rate: 2 };
+    }
     return { kind: 'lfo', index: Number(rest) || 0 };
   };
 
@@ -497,7 +673,11 @@ export const ModulationSection: React.FC<{
           ? 'vnoise:internal'
           : source.kind === 'envelope'
             ? 'envelope:oneshot'
-            : `audio:${source.band}`;
+            : source.kind === 'expr'
+              ? 'expr:formula'
+              : source.kind === 'data'
+                ? 'data:column'
+                : `audio:${source.band}`;
 
   const addRoute = () => {
     const route: ModulationRoute = {
@@ -642,6 +822,14 @@ export const ModulationSection: React.FC<{
                       エンベロープ (Envelope)
                     </option>
                   </optgroup>
+                  <optgroup label="文法 Grammar">
+                    <option value="expr:formula" className="bg-neutral-900">
+                      式 Expression
+                    </option>
+                    <option value="data:column" className="bg-neutral-900">
+                      データ列 Data Column
+                    </option>
+                  </optgroup>
                 </select>
                 <select
                   value={route.target}
@@ -684,86 +872,87 @@ export const ModulationSection: React.FC<{
                 step={0.05}
                 onChange={(v) => updateRoute(route.id, { lag: v })}
               />
-              {route.source.kind === 'vnoise' && (
-                <div className="grid grid-cols-3 gap-2">
-                  <Slider
-                    label="Seed"
-                    value={route.source.seed}
-                    min={0}
-                    max={9999}
-                    step={1}
-                    onChange={(v) => updateRoute(route.id, { source: { ...route.source, seed: Math.round(v) } as ModulationSource })}
-                  />
-                  <Slider
-                    label="Rate"
-                    value={route.source.rate}
-                    min={0.02}
-                    max={4}
-                    step={0.01}
-                    onChange={(v) => updateRoute(route.id, { source: { ...route.source, rate: v } as ModulationSource })}
-                  />
-                  <Slider
-                    label="Octaves"
-                    value={route.source.octaves}
-                    min={1}
-                    max={4}
-                    step={1}
-                    onChange={(v) => updateRoute(route.id, { source: { ...route.source, octaves: Math.round(v) } as ModulationSource })}
-                  />
-                </div>
-              )}
-              {route.source.kind === 'envelope' && (
+              {route.source.kind === 'expr' ? (
                 <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2 items-start">
-                    <select
-                      value={route.source.trigger}
-                      onChange={(event) =>
-                        updateRoute(route.id, {
-                          source: { ...route.source, trigger: event.target.value as EnvelopeTrigger } as ModulationSource,
-                        })
-                      }
-                      className={selectClass}
-                      aria-label="エンベロープのトリガ"
-                    >
-                      {ENVELOPE_TRIGGER_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value} className="bg-neutral-900">
-                          {option.label}
+                  <select
+                    value={sourceValue(route.source.input)}
+                    onChange={(event) =>
+                      updateRoute(route.id, {
+                        source: { ...route.source, input: parseSource(event.target.value) } as ModulationSource,
+                      })
+                    }
+                    className={selectClass}
+                    aria-label="式の入力信号"
+                  >
+                    <optgroup label="LFO">
+                      {setup.lfos.map((_, index) => (
+                        <option key={index} value={`lfo:${index}`} className="bg-neutral-900">
+                          入力: LFO {index + 1}
                         </option>
                       ))}
-                    </select>
-                    {route.source.trigger === 'manual' ? (
-                      <button
-                        onClick={() => fireModulationEnvelope(route.id, performance.now() / 1000)}
-                        className="px-3 py-1.5 rounded bg-white text-black text-[11px] font-bold hover:bg-gray-200 transition-colors"
-                      >
-                        トリガ Trigger
-                      </button>
+                    </optgroup>
+                    <optgroup label="音声">
+                      {AUDIO_BAND_OPTIONS.map((option) => (
+                        <option key={option.value} value={`audio:${option.value}`} className="bg-neutral-900">
+                          入力: {option.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Noise連携">
+                      {NOISE_SOURCE_OPTIONS.map((option) => (
+                        <option key={option.value} value={`noise:${option.value}`} className="bg-neutral-900">
+                          入力: {option.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="生成 Generated">
+                      <option value="vnoise:internal" className="bg-neutral-900">
+                        入力: 内部ノイズ (Value Noise)
+                      </option>
+                      <option value="envelope:oneshot" className="bg-neutral-900">
+                        入力: エンベロープ (Envelope)
+                      </option>
+                      <option value="data:column" className="bg-neutral-900">
+                        入力: データ列 Data Column
+                      </option>
+                    </optgroup>
+                  </select>
+                  <SourceParamEditors
+                    source={route.source.input}
+                    routeId={route.id}
+                    onChange={(input) => updateRoute(route.id, { source: { ...route.source, input } as ModulationSource })}
+                  />
+                  <input
+                    value={route.source.text}
+                    onChange={(event) =>
+                      updateRoute(route.id, { source: { ...route.source, text: event.target.value } as ModulationSource })
+                    }
+                    className="w-full bg-black/30 border border-white/10 rounded px-2 py-1.5 font-mono text-[11px] outline-none focus:border-white/40"
+                    placeholder="x*x, smoothstep(0.2, 0.8, x), 0.5+0.5*sin(t)…"
+                    aria-label="式"
+                    spellCheck={false}
+                  />
+                  {(() => {
+                    const compiled = compileExpression(route.source.text);
+                    return compiled.ok ? (
+                      <p className="text-[10px] text-white/40 leading-relaxed">
+                        変数 x = 入力信号（0..1）、t = 時刻（秒）。結果は 0..1 に収められます。
+                      </p>
                     ) : (
-                      <span className="text-[10px] text-white/40 leading-relaxed">
-                        {route.source.trigger === 'audio' ? '音声パルスの立ち上がりで発火します' : 'MIDI ノートオンで発火します'}
-                      </span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Slider
-                      label="Attack (s)"
-                      value={route.source.attack}
-                      min={0.005}
-                      max={1}
-                      step={0.005}
-                      onChange={(v) => updateRoute(route.id, { source: { ...route.source, attack: v } as ModulationSource })}
-                    />
-                    <Slider
-                      label="Decay (s)"
-                      value={route.source.decay}
-                      min={0.05}
-                      max={4}
-                      step={0.05}
-                      onChange={(v) => updateRoute(route.id, { source: { ...route.source, decay: v } as ModulationSource })}
-                    />
-                  </div>
+                      <p className="text-[10px] text-amber-300/90 leading-relaxed">
+                        式エラー: {compiled.error} — 修正されるまで入力信号がそのまま通ります。
+                      </p>
+                    );
+                  })()}
                 </div>
+              ) : (
+                <SourceParamEditors
+                  source={route.source}
+                  routeId={route.id}
+                  onChange={(source) => updateRoute(route.id, { source })}
+                />
               )}
+              <ChainEditor route={route} onChange={(chain) => updateRoute(route.id, { chain })} />
             </div>
           ))}
           <button

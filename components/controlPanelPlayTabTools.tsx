@@ -3,6 +3,7 @@ import { Database, Gamepad2, Grid3x3, History, Search } from 'lucide-react';
 import type { ParticleConfig } from '../types';
 import { PARAMETER_CATALOG, searchParameters, type ParameterCatalogEntry } from '../lib/parameterCatalog';
 import { buildDataLumaMap, buildSampleDataPoints, getDataSourceUpdates, parseDataPoints, type ParsedData } from '../lib/dataSource';
+import { parseDataTable, setDataTable, useDataTable } from '../lib/dataTable';
 import { TEXTURE_DEFINITIONS, TEXTURE_MAP_SIZE, generateTextureMap, getTextureDefinition, type NoiseTextureKind } from '../lib/texturePack';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { SectionTitle, TAB_SHORT_LABELS } from './controlPanelPlayTabShared';
@@ -252,6 +253,22 @@ export const DataSourceSection: React.FC<{
     applyParsed(data);
   };
 
+  // Signal columns (Phase AJ): the same text, parsed again with
+  // the column structure preserved, registered for the modulation
+  // engine's data-column sources. The shape flow above is untouched.
+  const registeredTable = useDataTable();
+  const registerColumns = () => {
+    const table = parseDataTable(text);
+    if (!table) {
+      setStatus('列として読み取れませんでした。数値の列が必要です。');
+      return;
+    }
+    setDataTable(table);
+    setStatus(
+      `信号列として登録しました（列: ${table.columns.join(' / ')}、${table.rows.length.toLocaleString()} 行）。Modulation の「データ列」から列を選んで配線できます。`,
+    );
+  };
+
   return (
     <section>
       <SectionTitle icon={<Database size={12} />}>Data Source · データ発生源</SectionTitle>
@@ -312,6 +329,25 @@ export const DataSourceSection: React.FC<{
         >
           サンプル（渦巻銀河）
         </button>
+        <button
+          onClick={registerColumns}
+          disabled={!text.trim() || isPublicLibrary}
+          className="px-3 py-2 rounded-full border border-white/20 text-[10px] uppercase tracking-widest text-white/70 hover:bg-white/10 disabled:opacity-30"
+        >
+          信号列として登録
+        </button>
+        {registeredTable && (
+          <button
+            onClick={() => {
+              setDataTable(null);
+              setStatus('信号列の登録を解除しました。');
+            }}
+            disabled={isPublicLibrary}
+            className="px-3 py-2 rounded-full text-[10px] uppercase tracking-widest text-white/35 hover:text-white/80 disabled:opacity-30"
+          >
+            信号列を解除（{registeredTable.columns.length}列・{registeredTable.rows.length.toLocaleString()}行）
+          </button>
+        )}
       </div>
       {status && <p className="text-[11px] text-white/55">{status}</p>}
       {isPublicLibrary && <p className="text-[11px] text-white/35 mt-1">公開ビルドでは適用できません。</p>}

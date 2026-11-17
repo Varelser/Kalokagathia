@@ -73,6 +73,15 @@ export interface ParticleConfigGpgpu {
   // off (the legacy linear release, bit-identical).
   gpgpuSpawnPulseInterval: number;
   gpgpuSpawnPulseDuty: number;
+  // Emission curve (Phase AJ): a free control-point curve asset
+  // (lib/freeCurve.ts, flat [t, v, …] pairs) whose value over a
+  // repeating period gates the age respawn probabilistically, so
+  // the rebirth rate itself follows the drawn curve. Disabled =
+  // the legacy respawn, bit-identical; an all-ones curve is the
+  // identity even while enabled.
+  gpgpuFreeCurvePoints: number[];
+  gpgpuEmissionCurveEnabled: boolean;
+  gpgpuEmissionCurvePeriod: number;
   gpgpuKillBoundary: boolean;
   gpgpuKillMask: boolean;
   gpgpuDrag: number;

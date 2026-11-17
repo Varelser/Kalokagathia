@@ -4,6 +4,46 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.42.0] — 2026-11-18
+
+Sixth-term Phase AJ: the signal grammar completed — expressions,
+data columns, CHOP-style chains, and the remaining curve DI.
+Three new config keys (1,138 → 1,141), two new starters
+(545 → 547). The modulation-side grammar lives in the modulation
+setup (performance state, not config keys), so it does not move
+the key count. Every default reproduces the legacy behaviour:
+the modulation engine is off by default and routes without the
+new fields take the pre-AJ path bit-for-bit, and the emission
+curve is disabled with an identity curve asset.
+
+### Added
+- **Expression sources** (modulation): a route's source can now
+  be a sandboxed expression over a wrapped source — a hand-written
+  recursive-descent evaluator (no eval) with variables x (input)
+  and t (time), arithmetic, comparisons, ternary, and a function
+  set (sin / clamp / smoothstep / …). Invalid expressions and
+  non-finite results fall back to the raw input value.
+- **Data column sources** (modulation): CSV / JSON loaded in the
+  Data Source section can also be registered as a column table
+  (columns preserved, `lib/dataTable.ts`); a route can then read
+  a named column as a time-series signal, normalised by the
+  column's range.
+- **CHOP-style chains** (modulation): each route can carry up to
+  four chain stages — spring (a driven 2nd-order stage), trim
+  (range remap), filter (one-pole lowpass in Hz) — applied in
+  order between the source and the existing lag, with the same
+  deterministic state discipline as the lag.
+- **Free curve asset + emission curve drive**
+  (`gpgpuFreeCurvePoints` / `gpgpuEmissionCurveEnabled` /
+  `gpgpuEmissionCurvePeriod`): a curve with freely placed control
+  points (2–8 knots, piecewise-linear) stored as a config asset.
+  Its first drive target is emission: over a repeating period,
+  the curve value probabilistically gates the age respawn (a
+  deterministic per-tick hash, the pointer-paint form), so the
+  rebirth rate follows the drawn curve. Declared to the WebGPU
+  capability registry (`emission-curve`) so enabled sessions
+  route to WebGL.
+
 ## [1.41.0] — 2026-11-18
 
 Sixth-term Phase AI: the terrain completed — the three items the

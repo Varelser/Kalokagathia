@@ -3,6 +3,69 @@ import React from 'react';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
 
 import { Slider, Toggle } from './controlPanelParts';
+import {
+  FREE_CURVE_MAX_POINTS,
+  FREE_CURVE_MIN_POINTS,
+  flattenFreeCurvePoints,
+  normalizeFreeCurvePoints,
+  type FreeCurvePoint,
+} from '../lib/freeCurve';
+
+/** Free curve editor (Phase AJ): per-point t / value sliders with
+ *  add / remove, plus shape presets. Controlled entirely by the
+ *  config value (the flat [t, v, …] asset). */
+const FreeCurveEditor: React.FC<{
+  points: FreeCurvePoint[];
+  onChange: (points: FreeCurvePoint[]) => void;
+}> = ({ points, onChange }) => {
+  const updatePoint = (index: number, patch: Partial<FreeCurvePoint>) => {
+    const next = points.map((point, i) => (i === index ? { ...point, ...patch } : point));
+    onChange(normalizeFreeCurvePoints(flattenFreeCurvePoints(next)));
+  };
+  const presets: { label: string; points: FreeCurvePoint[] }[] = [
+    { label: 'Flat（恒等）', points: [{ t: 0, v: 1 }, { t: 1, v: 1 }] },
+    { label: 'Ramp（上昇）', points: [{ t: 0, v: 0 }, { t: 1, v: 1 }] },
+    { label: 'Pulse（山）', points: [{ t: 0, v: 0 }, { t: 0.5, v: 1 }, { t: 1, v: 0 }] },
+    { label: 'Gate（開閉）', points: [{ t: 0, v: 1 }, { t: 0.4, v: 1 }, { t: 0.5, v: 0 }, { t: 0.9, v: 0 }, { t: 1, v: 1 }] },
+  ];
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1">
+        {presets.map((preset) => (
+          <button
+            key={preset.label}
+            onClick={() => onChange(preset.points)}
+            className="px-2 py-1 rounded-full border border-white/20 text-[9px] uppercase tracking-widest text-white/60 hover:bg-white/10"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+      {points.map((point, index) => (
+        <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+          <Slider label={`点 ${index + 1} 位置 t`} value={point.t} min={0} max={1} step={0.01} onChange={(v) => updatePoint(index, { t: v })} />
+          <Slider label={`点 ${index + 1} 値`} value={point.v} min={0} max={4} step={0.05} onChange={(v) => updatePoint(index, { v })} />
+          {points.length > FREE_CURVE_MIN_POINTS && (
+            <button
+              onClick={() => onChange(points.filter((_, i) => i !== index))}
+              className="pb-1 text-white/35 hover:text-white/80 text-[10px] uppercase tracking-widest"
+            >
+              削除
+            </button>
+          )}
+        </div>
+      ))}
+      {points.length < FREE_CURVE_MAX_POINTS && (
+        <button
+          onClick={() => onChange(normalizeFreeCurvePoints(flattenFreeCurvePoints([...points, { t: 0.5, v: 1 }])))}
+          className="w-full py-1.5 rounded border border-dashed border-white/20 text-white/60 text-[10px] hover:bg-white/5"
+        >
+          ＋ 制御点を追加（最大 {FREE_CURVE_MAX_POINTS} 点）
+        </button>
+      )}
+    </div>
+  );
+};
 
 export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
@@ -54,6 +117,20 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       <Slider label="Spawn Pulse Interval （周期バースト間隔・秒、0でOFF）" value={config.gpgpuSpawnPulseInterval} min={0} max={30} step={0.1} onChange={(v) => updateConfig('gpgpuSpawnPulseInterval', v)} />
       {config.gpgpuSpawnPulseInterval > 0 && (
         <Slider label="Spawn Pulse Duty （周期内の放出割合）" value={config.gpgpuSpawnPulseDuty} min={0.05} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnPulseDuty', v)} />
+      )}
+      <Toggle label="Emission Curve （放出カーブ駆動 — Phase AJ）" value={config.gpgpuEmissionCurveEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuEmissionCurveEnabled', v)} />
+      {config.gpgpuEmissionCurveEnabled && (
+        <>
+          <Slider label="Emission Curve Period （周期・秒）" value={config.gpgpuEmissionCurvePeriod} min={0.5} max={120} step={0.5} onChange={(v) => updateConfig('gpgpuEmissionCurvePeriod', v)} />
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Free Curve （自由制御点カーブ — 放出の資産）</div>
+          <FreeCurveEditor
+            points={normalizeFreeCurvePoints(config.gpgpuFreeCurvePoints)}
+            onChange={(points) => updateConfig('gpgpuFreeCurvePoints', flattenFreeCurvePoints(points))}
+          />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            年齢リスポーン（寿命での生まれ直し）を、周期の中でカーブの値の割合だけ通します。値 0 の区間は生まれ直しが止まり、寿命末尾の粒子が滞留します。Life System が OFF の間はリスポーン自体がないため無効です。全点 1（Flat）は有効でも従来同一です。
+          </div>
+        </>
       )}
       <Toggle label="Boundary Kill （境界キル）" value={config.gpgpuKillBoundary} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuKillBoundary', v)} />
       <Toggle label="Mask Kill （マスクキル）" value={config.gpgpuKillMask} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuKillMask', v)} />

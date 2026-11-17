@@ -231,6 +231,12 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uSpawnTime:   { value: 0 },
       uSpawnPulseInterval: { value: 0 },
       uSpawnPulseDuty:     { value: 0.3 },
+      // Emission curve (Phase AJ): off + identity arrays is the
+      // exact legacy respawn path.
+      uEmissionCurveEnabled: { value: false },
+      uEmissionCurvePeriod:  { value: 8 },
+      uEmissionCurveT:       { value: [0, 1, 1, 1, 1, 1, 1, 1] },
+      uEmissionCurveV:       { value: [1, 1, 1, 1, 1, 1, 1, 1] },
       uKillBoundary: { value: false },
       uKillMask:     { value: false },
       uKillMaskTex:  { value: null },

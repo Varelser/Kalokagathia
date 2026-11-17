@@ -8,6 +8,8 @@ import {
   getNoiseLinkValues,
   type NoiseSourceId,
 } from './noiseLink';
+import { compileExpressionCached, evaluateCompiledExpression, EXPRESSION_MAX_LENGTH } from './expression';
+import { getDataTable, sampleDataColumn } from './dataTable';
 
 export { NOISE_SOURCE_OPTIONS };
 export type { NoiseSourceId };
@@ -53,7 +55,29 @@ export type ModulationSource =
   // Generalised envelope (Phase AC): the audioPulse idea as a
   // source of its own — attack/decay one-shot fired by a manual
   // button, the audio pulse band, or any MIDI note-on.
-  | { kind: 'envelope'; trigger: EnvelopeTrigger; attack: number; decay: number };
+  | { kind: 'envelope'; trigger: EnvelopeTrigger; attack: number; decay: number }
+  // Expression (Phase AJ): a sandboxed expression over the wrapped
+  // source's value (x) and time (t), evaluated by lib/expression.ts
+  // (no eval). Invalid expressions / non-finite results fall back
+  // to the raw input value.
+  | { kind: 'expr'; text: string; input: ModulationSource }
+  // Data column (Phase AJ): a named column of the registered data
+  // table (lib/dataTable.ts) read as a time series — row index is
+  // floor(time × rate), values normalised by the column's range.
+  | { kind: 'data'; column: string; rate: number };
+
+/**
+ * One stage of a route's CHOP-style signal chain (Phase AJ).
+ * Stages apply in array order after the source is evaluated and
+ * before the route's lag. spring / filter hold per-route state
+ * outside the setup (the lag discipline); trim is stateless.
+ */
+export type ModulationChainOp =
+  | { op: 'spring'; freq: number; damping: number }
+  | { op: 'trim'; low: number; high: number; invert: boolean }
+  | { op: 'filter'; cutoff: number };
+
+export const MODULATION_CHAIN_MAX_OPS = 4;
 
 export interface ModulationRoute {
   id: string;
@@ -69,6 +93,12 @@ export interface ModulationRoute {
    * state section below) so presets stay pure data.
    */
   lag?: number;
+  /**
+   * CHOP-style chain stages (Phase AJ), applied in order after the
+   * source and before `lag`. Absent / empty = the pre-AJ path,
+   * bit-identical.
+   */
+  chain?: ModulationChainOp[];
 }
 
 export interface ModulationSetup {
@@ -123,6 +153,21 @@ export function createStarterModulationRoutes(): ModulationRoute[] {
     // modulation system's own starter set (presets cannot carry a
     // modulation setup — it is performance state, not config).
     { id: 'starter-4', source: { kind: 'vnoise', seed: 7, rate: 0.3, octaves: 3 }, target: 'layer3BaseSize', depth: 0.4 },
+    // Phase AJ: expression shaping (x*x softens the LFO's low end)
+    // and a spring-chained LFO (the CHOP chain showcase).
+    {
+      id: 'starter-5',
+      source: { kind: 'expr', text: 'x*x', input: { kind: 'lfo', index: 2 } },
+      target: 'layer2BaseSize',
+      depth: 0.3,
+    },
+    {
+      id: 'starter-6',
+      source: { kind: 'lfo', index: 3 },
+      target: 'layer3FlowSpeed',
+      depth: 0.35,
+      chain: [{ op: 'spring', freq: 1.6, damping: 0.3 }],
+    },
   ];
 }
 
@@ -203,6 +248,91 @@ export function lagStepValue(prev: number, raw: number, dt: number, lag: number)
   return prev + (raw - prev) * alpha;
 }
 
+/* ------------------------------------------------------------------ */
+/* Phase AJ chain stages: spring / trim / filter.                     */
+/*                                                                    */
+/* The stateful stages follow the lag discipline exactly: state      */
+/* lives outside the setup, initialises to the first sampled input,  */
+/* re-initialises when time runs backwards, and is a pure function   */
+/* of the (time, input) sequence since then — so a deterministic     */
+/* render reproduces the chain bit-for-bit.                          */
+/* ------------------------------------------------------------------ */
+
+export interface ChainStageState {
+  /** Current stage output. */
+  y: number;
+  /** Spring velocity (unused by filter). */
+  v: number;
+  /** Time of the last step. */
+  time: number;
+  init: boolean;
+}
+
+export function createChainStageState(): ChainStageState {
+  return { y: 0, v: 0, time: 0, init: false };
+}
+
+/** Stateless trim: remap [low, high] onto [0, 1] with clamping. */
+export function trimValue(raw: number, low: number, high: number, invert: boolean): number {
+  const span = high - low;
+  const mapped = span === 0 ? (raw < low ? 0 : 1) : Math.min(1, Math.max(0, (raw - low) / span));
+  return invert ? 1 - mapped : mapped;
+}
+
+/**
+ * Advance one stateful chain stage (spring / filter) toward `raw`
+ * over `dt` seconds, mutating `state`. Callers initialise the
+ * state to the first input and skip the call when dt <= 0.
+ */
+export function stepChainStage(
+  op: Extract<ModulationChainOp, { op: 'spring' } | { op: 'filter' }>,
+  state: ChainStageState,
+  raw: number,
+  dt: number,
+): number {
+  if (!(dt > 0)) return state.y;
+  if (op.op === 'filter') {
+    const alpha = 1 - Math.exp(-2 * Math.PI * Math.max(0.05, op.cutoff) * dt);
+    state.y = state.y + (raw - state.y) * alpha;
+    state.time += dt;
+    return state.y;
+  }
+  // Spring: semi-implicit Euler with substeps of at most 1/240 s
+  // (capped), the standard stable form for a driven oscillator.
+  const omega = 2 * Math.PI * Math.max(0.05, op.freq);
+  const zeta = Math.max(0, op.damping);
+  const steps = Math.min(64, Math.max(1, Math.ceil(dt / (1 / 240))));
+  const h = dt / steps;
+  for (let i = 0; i < steps; i++) {
+    const accel = omega * omega * (raw - state.y) - 2 * zeta * omega * state.v;
+    state.v += accel * h;
+    state.y += state.v * h;
+  }
+  state.time += dt;
+  return state.y;
+}
+
+/** Apply one chain stage (any kind) for a single sample. */
+export function applyChainStage(
+  op: ModulationChainOp,
+  state: ChainStageState,
+  raw: number,
+  time: number,
+): number {
+  if (op.op === 'trim') return trimValue(raw, op.low, op.high, op.invert);
+  if (!state.init || time < state.time) {
+    state.y = raw;
+    state.v = 0;
+    state.time = time;
+    state.init = true;
+    return state.y;
+  }
+  if (time > state.time) {
+    return stepChainStage(op, state, raw, time - state.time);
+  }
+  return state.y;
+}
+
 interface RouteSignalState {
   /** Last lag output; null until the first sample initialises it. */
   lagValue: number | null;
@@ -211,6 +341,8 @@ interface RouteSignalState {
   envLastTrigger: number;
   /** Previous audio pulse level for edge detection. */
   envPrevAudio: number;
+  /** Per-stage state for the route's chain (Phase AJ), by index. */
+  chainStates: ChainStageState[];
 }
 
 const routeSignalStates = new Map<string, RouteSignalState>();
@@ -219,7 +351,13 @@ let midiTriggerTime = Number.NEGATIVE_INFINITY;
 function getRouteSignalState(routeId: string): RouteSignalState {
   let state = routeSignalStates.get(routeId);
   if (!state) {
-    state = { lagValue: null, lagTime: 0, envLastTrigger: Number.NEGATIVE_INFINITY, envPrevAudio: 0 };
+    state = {
+      lagValue: null,
+      lagTime: 0,
+      envLastTrigger: Number.NEGATIVE_INFINITY,
+      envPrevAudio: 0,
+      chainStates: [],
+    };
     routeSignalStates.set(routeId, state);
   }
   return state;
@@ -305,6 +443,29 @@ export function evaluateSource(
     }
     return { value01: envelopeShape(time - lastTrigger, source.attack, source.decay), center: 0 };
   }
+  if (source.kind === 'data') {
+    // Data column (Phase AJ): a pure function of time given the
+    // registered table. The row index wraps around the table
+    // (floor(time × rate) mod rows). No table / unknown column
+    // samples neutral (sampleDataColumn returns 0.5), so the
+    // route is inert until data is registered.
+    const table = getDataTable();
+    const rowCount = table ? table.rows.length : 0;
+    const rawIndex = Math.floor(time * Math.max(0, source.rate));
+    const index = rowCount > 0 ? ((rawIndex % rowCount) + rowCount) % rowCount : 0;
+    return { value01: sampleDataColumn(table, source.column, index), center: 0.5 };
+  }
+  if (source.kind === 'expr') {
+    // Expression (Phase AJ): the wrapped source supplies x; the
+    // expression shapes it. Invalid expressions and non-finite
+    // results fall back to the raw input value.
+    const inner = evaluateSource(source.input, setup, time, audio, routeId);
+    const compiled = compileExpressionCached(source.text);
+    if (!compiled.ok) return { value01: inner.value01, center: 0.5 };
+    const value = evaluateCompiledExpression(compiled.ast, inner.value01, time);
+    if (!Number.isFinite(value)) return { value01: inner.value01, center: 0.5 };
+    return { value01: Math.min(1, Math.max(0, value)), center: 0.5 };
+  }
   const level = audio ? audio[source.band] : 0;
   return { value01: Math.min(1, Math.max(0, Number.isFinite(level) ? level : 0)), center: 0 };
 }
@@ -326,6 +487,8 @@ export function describeModulationSource(source: ModulationSource): string {
     const trigger = ENVELOPE_TRIGGER_OPTIONS.find((option) => option.value === source.trigger);
     return `エンベロープ (${trigger ? trigger.label : source.trigger})`;
   }
+  if (source.kind === 'expr') return `式 [${source.text}]`;
+  if (source.kind === 'data') return `データ列 ${source.column}`;
   const band = AUDIO_BAND_OPTIONS.find((option) => option.value === source.band);
   return band ? band.label : `Audio · ${source.band}`;
 }
@@ -361,6 +524,20 @@ export function applyModulation(
     const evaluated = evaluateSource(route.source, setup, time, audio, route.id);
     let { value01 } = evaluated;
     const { center } = evaluated;
+    // CHOP chain (Phase AJ): stages apply in order between the
+    // source and the lag. Stateful stages follow the lag state
+    // discipline, so the chain output is a pure function of the
+    // (time, input) sequence since the last re-initialisation.
+    // No chain = this block is skipped entirely (pre-AJ path).
+    if (route.chain && route.chain.length > 0) {
+      const state = getRouteSignalState(route.id);
+      if (state.chainStates.length !== route.chain.length) {
+        state.chainStates = route.chain.map(() => createChainStageState());
+      }
+      route.chain.forEach((op, stageIndex) => {
+        value01 = applyChainStage(op, state.chainStates[stageIndex], value01, time);
+      });
+    }
     // First-order lag (Phase AC): state initialises to the first
     // sampled input and re-initialises when time runs backwards,
     // so the output is a pure function of the (time, input)
@@ -399,6 +576,85 @@ const STORAGE_KEY = 'kalokagathia.modulation.v1';
 const WAVEFORMS: LfoWaveform[] = ['sine', 'triangle', 'saw', 'square', 'drift'];
 const AUDIO_BANDS: (keyof AudioLevels)[] = ['bass', 'treble', 'pulse', 'bandA', 'bandB', 'sub', 'low', 'mid', 'high', 'presence', 'level'];
 
+const clampNumber = (value: unknown, min: number, max: number, fallbackValue: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallbackValue;
+
+/**
+ * Rebuild one stored source field by field (Phase AJ refactor of
+ * the inline AC-era logic, extended with the expr / data kinds).
+ * Returns null when the shape is unusable. `allowExpr` is false
+ * for an expression's wrapped input, so expressions cannot nest.
+ */
+function sanitizeSource(rawSource: unknown, allowExpr: boolean): ModulationSource | null {
+  if (!rawSource || typeof rawSource !== 'object') return null;
+  const source = rawSource as ModulationSource;
+  switch (source.kind) {
+    case 'lfo':
+      return typeof source.index === 'number' && source.index >= 0 && source.index < MODULATION_LFO_COUNT
+        ? { kind: 'lfo', index: Math.floor(source.index) }
+        : null;
+    case 'audio':
+      return AUDIO_BANDS.includes(source.band) ? { kind: 'audio', band: source.band } : null;
+    case 'noise':
+      return NOISE_SOURCE_IDS.includes(source.source) ? { kind: 'noise', source: source.source } : null;
+    case 'vnoise':
+      return {
+        kind: 'vnoise',
+        seed: Math.min(9999, Math.max(0, Math.round(clampNumber(source.seed, 0, 9999, 1)))),
+        rate: clampNumber(source.rate, 0.02, 4, 0.35),
+        octaves: Math.min(4, Math.max(1, Math.round(clampNumber(source.octaves, 1, 4, 2)))),
+      };
+    case 'envelope':
+      return {
+        kind: 'envelope',
+        trigger: source.trigger === 'audio' || source.trigger === 'midi' ? source.trigger : 'manual',
+        attack: clampNumber(source.attack, 0.005, 1, 0.01),
+        decay: clampNumber(source.decay, 0.05, 4, 0.6),
+      };
+    case 'data':
+      return {
+        kind: 'data',
+        column: typeof source.column === 'string' && source.column.length > 0 ? source.column.slice(0, 64) : 'col1',
+        rate: clampNumber(source.rate, 0.05, 60, 2),
+      };
+    case 'expr': {
+      if (!allowExpr) return null;
+      const input = sanitizeSource(source.input, false);
+      if (!input) return null;
+      return {
+        kind: 'expr',
+        text: typeof source.text === 'string' ? source.text.slice(0, EXPRESSION_MAX_LENGTH) : 'x',
+        input,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+/** Rebuild a stored chain: known stages only, params clamped. */
+function sanitizeChain(rawChain: unknown): ModulationChainOp[] | undefined {
+  if (!Array.isArray(rawChain)) return undefined;
+  const ops: ModulationChainOp[] = [];
+  rawChain.slice(0, MODULATION_CHAIN_MAX_OPS).forEach((rawOp) => {
+    if (!rawOp || typeof rawOp !== 'object') return;
+    const op = rawOp as ModulationChainOp;
+    if (op.op === 'spring') {
+      ops.push({ op: 'spring', freq: clampNumber(op.freq, 0.1, 10, 2), damping: clampNumber(op.damping, 0, 2, 0.35) });
+    } else if (op.op === 'filter') {
+      ops.push({ op: 'filter', cutoff: clampNumber(op.cutoff, 0.1, 40, 4) });
+    } else if (op.op === 'trim') {
+      ops.push({
+        op: 'trim',
+        low: clampNumber(op.low, 0, 1, 0),
+        high: clampNumber(op.high, 0, 1, 1),
+        invert: op.invert === true,
+      });
+    }
+  });
+  return ops.length > 0 ? ops : undefined;
+}
+
 function sanitizeSetup(value: unknown): ModulationSetup {
   const fallback = createDefaultModulationSetup();
   if (!value || typeof value !== 'object') return fallback;
@@ -419,38 +675,17 @@ function sanitizeSetup(value: unknown): ModulationSetup {
       const route = entry as Partial<ModulationRoute>;
       const targetOk = typeof route.target === 'string' && PARAMETER_CATALOG.some((c) => c.key === route.target);
       if (!targetOk || !route.source || typeof route.source !== 'object') return;
-      const rawSource = route.source as ModulationSource;
-      const sourceOk =
-        (rawSource.kind === 'lfo' && typeof rawSource.index === 'number' && rawSource.index >= 0 && rawSource.index < MODULATION_LFO_COUNT) ||
-        (rawSource.kind === 'audio' && AUDIO_BANDS.includes(rawSource.band)) ||
-        (rawSource.kind === 'noise' && NOISE_SOURCE_IDS.includes(rawSource.source)) ||
-        rawSource.kind === 'vnoise' ||
-        rawSource.kind === 'envelope';
-      if (!sourceOk) return;
-      // Phase AC sources are rebuilt field by field so malformed
-      // stored values can never reach the evaluator.
-      let source: ModulationSource = rawSource;
-      if (rawSource.kind === 'vnoise') {
-        source = {
-          kind: 'vnoise',
-          seed: typeof rawSource.seed === 'number' && Number.isFinite(rawSource.seed) ? Math.min(9999, Math.max(0, Math.round(rawSource.seed))) : 1,
-          rate: typeof rawSource.rate === 'number' && Number.isFinite(rawSource.rate) ? Math.min(4, Math.max(0.02, rawSource.rate)) : 0.35,
-          octaves: typeof rawSource.octaves === 'number' && Number.isFinite(rawSource.octaves) ? Math.min(4, Math.max(1, Math.round(rawSource.octaves))) : 2,
-        };
-      } else if (rawSource.kind === 'envelope') {
-        source = {
-          kind: 'envelope',
-          trigger: rawSource.trigger === 'audio' || rawSource.trigger === 'midi' ? rawSource.trigger : 'manual',
-          attack: typeof rawSource.attack === 'number' && Number.isFinite(rawSource.attack) ? Math.min(1, Math.max(0.005, rawSource.attack)) : 0.01,
-          decay: typeof rawSource.decay === 'number' && Number.isFinite(rawSource.decay) ? Math.min(4, Math.max(0.05, rawSource.decay)) : 0.6,
-        };
-      }
+      // Sources are rebuilt field by field so malformed stored
+      // values can never reach the evaluator.
+      const source = sanitizeSource(route.source, true);
+      if (!source) return;
       routes.push({
         id: typeof route.id === 'string' ? route.id : `route-${i}`,
         source,
         target: route.target as keyof ParticleConfig,
         depth: typeof route.depth === 'number' && Number.isFinite(route.depth) ? Math.min(1, Math.max(-1, route.depth)) : 0.3,
         lag: typeof route.lag === 'number' && Number.isFinite(route.lag) ? Math.min(5, Math.max(0, route.lag)) : 0,
+        chain: sanitizeChain(route.chain),
       });
     });
   }

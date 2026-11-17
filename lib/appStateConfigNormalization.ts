@@ -8,6 +8,7 @@ const CONFIG_ARRAY_KEYS = [
   'gpgpuAgeCurveVelocityPoints',
   'gpgpuAgeCurveForcePoints',
   'gpgpuAgeCurveRotationPoints',
+  'gpgpuFreeCurvePoints',
   'synthPattern',
   'layer1SourcePositions',
   'layer1Counts',
