@@ -70,6 +70,14 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uLightConeEnabled:  { value: false },
       uLightConeAngleDeg: { value: 30 },
       uLightConeDir:      { value: new THREE.Vector3(0, -1, 0) },
+      // Occlusion-map shadow (Phase Z): no bake, strength 0 — the
+      // vertex sample yields exactly 1.0, bit-identical legacy.
+      uShadowEnabled:     { value: false },
+      uShadowStrength:    { value: 0 },
+      uShadowMap:         { value: null },
+      uShadowReady:       { value: false },
+      uShadowExtent:      { value: 1 },
+      uShadowHeightScale: { value: 1 },
       uPointShape:        { value: 0 },
       uGradEnabled:       { value: false },
       uGradDriver:        { value: 0 },

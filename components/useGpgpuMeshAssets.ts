@@ -79,6 +79,10 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       uDensity: { value: config.gpgpuVolumetricDensity },
       uOpacity: { value: config.gpgpuVolumetricOpacity },
       uSteps:   { value: config.gpgpuVolumetricSteps },
+      // Fog self-shadow (Phase Z): strength 0 = legacy identity.
+      uFogSelfShadow:  { value: 0 },
+      uFogShadowSteps: { value: 4 },
+      uLightPos:       { value: new THREE.Vector3(0, 0, 0) },
     },
     vertexShader: VOLUMETRIC_VERT, fragmentShader: VOLUMETRIC_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,

@@ -28,6 +28,14 @@ export const VOLUMETRIC_FRAG = /* glsl */ `
   uniform float uDensity;
   uniform float uOpacity;
   uniform float uSteps;
+  // Fog self-shadow (Phase Z): secondary march from each sample
+  // toward the Phase T light position through the same analytic
+  // density — the GLSL twin of fogSampleTransmittance /
+  // fogSelfShadowFactor in lib/shadowOcclusion.ts. Strength 0
+  // skips the march entirely (legacy bit-identical).
+  uniform float uFogSelfShadow;
+  uniform float uFogShadowSteps;
+  uniform vec3  uLightPos;
   varying vec3 vWorldCenter;
   varying vec3 vQuadPos;
   void main() {
@@ -49,7 +57,26 @@ export const VOLUMETRIC_FRAG = /* glsl */ `
       float t   = t0 + (float(i) + 0.5) * segLen;
       vec3 p    = cameraPosition + rayDir * t;
       float d   = length(p - vWorldCenter) / uRadius;
-      accumulated += exp(-d * d * 4.0) * segLen;
+      float w   = exp(-d * d * 4.0);
+      if (uFogSelfShadow > 0.0) {
+        vec3 toLightW = uLightPos - p;
+        float ll = length(toLightW);
+        vec3 toLight = ll > 0.0001 ? toLightW / ll : vec3(0.0, 1.0, 0.0);
+        vec3 sampleN = (p - vWorldCenter) / uRadius;
+        int nShadow = int(uFogShadowSteps);
+        float seg2 = 1.0 / uFogShadowSteps;
+        float acc2 = 0.0;
+        for (int j = 0; j < 16; j++) {
+          if (j >= nShadow) break;
+          vec3 q = sampleN + toLight * ((float(j) + 0.5) * seg2);
+          acc2 += exp(-dot(q, q) * 4.0) * seg2;
+        }
+        float tr = exp(-acc2 * uDensity);
+        float mixed = mix(1.0, tr, min(uFogSelfShadow, 1.0));
+        float factor = uFogSelfShadow > 1.0 ? mixed * pow(tr, uFogSelfShadow - 1.0) : mixed;
+        w *= factor;
+      }
+      accumulated += w * segLen;
     }
     float alpha = (1.0 - exp(-accumulated * uDensity)) * uOpacity;
     if (alpha < 0.005) discard;

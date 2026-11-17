@@ -104,6 +104,18 @@ export const DRAW_VERT = /* glsl */ `
   uniform bool  uLightConeEnabled;
   uniform float uLightConeAngleDeg;
   uniform vec3  uLightConeDir;
+  // Occlusion-map shadow (Phase Z): the baked occlusion grid
+  // (lib/shadowOcclusion.ts) sampled by world XZ; the G channel
+  // holds the baked surface height so the vertex can attenuate
+  // the occlusion by height above the surface — the same formula
+  // as shadowHeightAttenuation / bakedShadowMultiplier in the TS
+  // reference. Disabled / strength 0 yields exactly 1.0.
+  uniform bool      uShadowEnabled;
+  uniform float     uShadowStrength;
+  uniform sampler2D uShadowMap;
+  uniform bool      uShadowReady;
+  uniform float     uShadowExtent;
+  uniform float     uShadowHeightScale;
   uniform bool  uParticleLifeEnabled;
   uniform int   uParticleLifeSpecies;
   uniform float uTexSizeF;
@@ -115,10 +127,23 @@ export const DRAW_VERT = /* glsl */ `
   varying float vSeed;
   varying vec3 vWorldPos;
   varying float vLightMul;
+  varying float vShadowMul;
 
   ${AGE_CURVE_GLSL}
 
   ${LIGHT_GLSL}
+
+  // Phase Z shadow sample: occlusion from the bake, attenuated
+  // by height above the baked terrain surface.
+  float kaloShadowMultiplier(vec3 worldPos) {
+    if (!uShadowEnabled || !uShadowReady || uShadowStrength <= 0.0) return 1.0;
+    vec2 uv = clamp(worldPos.xz / (2.0 * uShadowExtent) + 0.5, 0.0, 1.0);
+    vec4 baked = texture2D(uShadowMap, uv);
+    float surfaceH = (baked.g - 0.5) * uShadowHeightScale;
+    float above = max(worldPos.y - surfaceH, 0.0);
+    float atten = exp(-above / max(1.0, uShadowExtent * 0.35));
+    return 1.0 - uShadowStrength * baked.r * atten;
+  }
 
   // Particle Life species helpers — must match the velocity sim exactly.
   float plHash(float n) {
@@ -168,6 +193,7 @@ export const DRAW_VERT = /* glsl */ `
     vLightMul = uLightEnabled
       ? kaloLightMultiplier(worldPos, uLightPos, uLightIntensity, uLightRadius, uLightConeEnabled, uLightConeAngleDeg, uLightConeDir)
       : 1.0;
+    vShadowMul = kaloShadowMultiplier(worldPos);
     vec3 vel      = texture2D(uVelTex, particleUv).xyz;
     vSpeed   = clamp(length(vel) / 80.0, 0.0, 1.0);
     vNormAge = uAgeEnabled ? clamp(posData.w / max(uAgeMax, 0.001), 0.0, 1.0) : 0.5;
@@ -276,6 +302,7 @@ export const DRAW_FRAG = /* glsl */ `
   varying float vSeed;
   varying vec3 vWorldPos;
   varying float vLightMul;
+  varying float vShadowMul;
 
   ${PARTICLE_SHAPE_GLSL}
 
@@ -366,6 +393,10 @@ export const DRAW_FRAG = /* glsl */ `
     // particle sits outside its radius), so this multiply is a
     // bit-exact identity on the legacy path.
     col *= vLightMul;
+    // Occlusion-map shadow (Phase Z): exactly 1.0 while the
+    // shadow is disabled or strength is 0, so this multiply is a
+    // bit-exact identity on the legacy path.
+    col *= vShadowMul;
 
     float ageFade = 1.0;
     if (uAgeEnabled) {

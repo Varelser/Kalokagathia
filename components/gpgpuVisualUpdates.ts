@@ -11,6 +11,45 @@ import { resolveMapSource } from '../lib/layerMask';
 import { getSpriteImageTexture } from '../lib/spriteImageTexture';
 import { normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { normalizeLightDir } from '../lib/gpgpuLight';
+import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
+
+// Occlusion-map shadow (Phase Z): the bake is a pure function of
+// the shadow-relevant config, so it is cached by that config's
+// fingerprint and rebuilt only when the fingerprint changes. The
+// DataTexture is shared by the point draw; the terrain mesh and
+// the light volume bake the same scene on their own side.
+let shadowCacheKey = '';
+let shadowCacheTex: THREE.DataTexture | null = null;
+let shadowCacheExtent = 1;
+let shadowCacheHeightScale = 1;
+function getShadowOcclusionTexture(config: ParticleConfig): THREE.DataTexture | null {
+  if (!config.gpgpuShadowEnabled || !(config.gpgpuShadowStrength > 0)) return null;
+  const key = JSON.stringify([
+    config.gpgpuMorphTerrainAmplitude, config.gpgpuMorphTerrainFrequency,
+    config.gpgpuMorphTerrainOctaves, config.gpgpuMorphTerrainSeed, config.gpgpuSeed,
+    config.gpgpuMorphScale, config.gpgpuBounceRadius, config.gpgpuTerrainMeshScale,
+    config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ,
+    config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuShadowSoftness,
+    config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat,
+    config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ,
+    config.gpgpuMorphObjSource,
+  ]);
+  if (key !== shadowCacheKey) {
+    const bake = bakeShadowOcclusionMap(buildShadowScene(config), 64);
+    const tex = new THREE.DataTexture(bake.data, bake.resolution, bake.resolution, THREE.RGBAFormat);
+    tex.needsUpdate = true;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    shadowCacheTex?.dispose();
+    shadowCacheTex = tex;
+    shadowCacheExtent = bake.extent;
+    shadowCacheHeightScale = bake.heightScale;
+    shadowCacheKey = key;
+  }
+  return shadowCacheTex;
+}
 
 const GRAD_DRIVER_IDS: Record<ParticleConfig['gpgpuGradDriver'], number> = {
   life: 0,
@@ -281,6 +320,18 @@ export function syncVisualUniforms(args: {
     const dir = normalizeLightDir(config.gpgpuLightDirX, config.gpgpuLightDirY, config.gpgpuLightDirZ);
     (drawMat.uniforms.uLightConeDir.value as THREE.Vector3).set(dir[0], dir[1], dir[2]);
   }
+  // Occlusion-map shadow (Phase Z): the baked grid for the point
+  // receiver. Inactive (no texture) yields exactly 1.0 in the
+  // vertex shader, so the legacy draw stays bit-identical.
+  if (drawMat.uniforms.uShadowEnabled) {
+    const shadowTex = getShadowOcclusionTexture(config);
+    drawMat.uniforms.uShadowEnabled.value = shadowTex !== null;
+    drawMat.uniforms.uShadowStrength.value = config.gpgpuShadowStrength;
+    drawMat.uniforms.uShadowMap.value = shadowTex;
+    if (drawMat.uniforms.uShadowReady) drawMat.uniforms.uShadowReady.value = shadowTex !== null;
+    if (drawMat.uniforms.uShadowExtent) drawMat.uniforms.uShadowExtent.value = shadowCacheExtent;
+    if (drawMat.uniforms.uShadowHeightScale) drawMat.uniforms.uShadowHeightScale.value = shadowCacheHeightScale;
+  }
   if (drawMat.uniforms.uPointShape) drawMat.uniforms.uPointShape.value = { soft: 0, sphere: 1, ring: 2, star: 3, hexagon: 4, diamond: 5, flare: 6, cloud: 7, bokeh: 8, crosshair: 9, iris: 10, lightning: 11 }[config.gpgpuPointShape] ?? 0;
   drawMat.uniforms.uSortEnabled.value = config.gpgpuSortEnabled && finalSortTex !== null;
   drawMat.uniforms.uSortTex.value = finalSortTex;
@@ -376,5 +427,12 @@ export function syncVisualUniforms(args: {
     volumetricMat.uniforms.uDensity.value = config.gpgpuVolumetricDensity;
     volumetricMat.uniforms.uOpacity.value = config.gpgpuVolumetricOpacity;
     volumetricMat.uniforms.uSteps.value = config.gpgpuVolumetricSteps;
+    // Fog self-shadow (Phase Z): strength 0 skips the secondary
+    // march in the shader (legacy bit-identical).
+    if (volumetricMat.uniforms.uFogSelfShadow) volumetricMat.uniforms.uFogSelfShadow.value = config.gpgpuFogSelfShadow;
+    if (volumetricMat.uniforms.uFogShadowSteps) volumetricMat.uniforms.uFogShadowSteps.value = config.gpgpuFogShadowSteps;
+    if (volumetricMat.uniforms.uLightPos) {
+      (volumetricMat.uniforms.uLightPos.value as THREE.Vector3).set(config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ);
+    }
   }
 }
