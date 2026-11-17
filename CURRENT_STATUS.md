@@ -1,3 +1,32 @@
+# Current Status — Kalokagathia (Monosphere)
+
+**現行バージョン: v1.33.0**（2026-11-17 出荷、第5期 Phase AB＝ライフサイクル文法）
+本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
+
+## 現在の正本はここを見ること
+
+- 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
+  （最新: PHASE_AB_REPORT.md / PHASE_AB_GATE_REPORT.md、前: PHASE_AA_REPORT.md）
+- 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
+  — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
+- 変更履歴: `CHANGELOG.md`（[1.33.0] が最新項）
+
+## 資産の実数（2026-11-17 実測）
+
+- config キー: **1,067件** ／ 内蔵スターター: **529件**
+- 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
+- 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
+
+## 残件（2026-11-17 時点）
+
+- Gumroad Pro Pack は v1.9 世代の旧版・下書き未公開のまま（差し替え・公開は利用者の判断待ち）
+- 視覚確認の残り: 煙の自己影、Smooth Tube テーパー（いずれも実装・単体検証は完了）
+- 本ファイル以下の旧記述は履歴として保持する（Phase 4/5 世代の完了判定は当時のまま有効）
+
+---
+以下は履歴（2026-03〜2026-11 の追記ログ）。現況は上記ヘッダが正。
+---
+
 Current Status
 
 Phase 4 は完了扱いを維持する。

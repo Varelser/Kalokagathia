@@ -4,6 +4,63 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.33.0] — 2026-11-17
+
+Phase AB (fifth period, first phase): the lifecycle grammar —
+spawn / kill / global drag & max speed — plus obstacle avoidance
+and SPH surface tension. Base is the actually-shipped v1.32.0.
+With all new keys at their defaults the render is bit-identical
+to v1.32.0 (verified on the iMac real-GPU gate: FROZEN
+deterministic render, all 12 frames at 0.00000). 8 new config
+keys (1,067 total), starters +2 (529 total).
+
+### Added
+- **Spawn gate** (`gpgpuSpawnBurst` / `gpgpuSpawnRate`;
+  `lib/gpgpuLifecycle.ts` + GLSL twins in both sim passes): the
+  fixed pool no longer has to start whole. Burst is the fraction
+  live at t = 0; the remainder is released linearly at Rate
+  (pool fraction per second) under a deterministic per-particle
+  hash, so deterministic renders reproduce the release exactly.
+  Unreleased particles are parked off-screen with zero velocity
+  and frozen age; the release frame respawns them through the
+  shared respawn block.
+- **Birth Burst aux event** (`gpgpuAuxMode` / `gpgpuAux2Mode`
+  gain `birthBurst`): a main (or aux) particle that (re)spawned
+  on the previous frame — age wrap, spawn-gate activation or a
+  kill — emits a gentle burst at its new position. The three
+  existing event modes are byte-untouched.
+- **Kill conditions** (`gpgpuKillBoundary` / `gpgpuKillMask`):
+  a particle that leaves the bounce sphere, or sits in a
+  rejected raster-mask region (the Phase X mask, evaluated with
+  the draw clip's own UV rule, threshold and invert keys),
+  respawns immediately instead of bouncing / living on.
+- **Global drag & max speed** (`gpgpuDrag` / `gpgpuMaxSpeed`):
+  the Particle Life block's semantics promoted to the whole
+  pool. Drag is the rate of the global damping factor
+  (1 − rate × dt); the default 1.1 is the legacy fixed damping,
+  value for value. Max speed (0 = off) clamps after the legacy
+  350 hard clamp, before damping.
+- **Obstacle avoidance** (`gpgpuParticleLifeAvoid`;
+  `lib/particleLifeBehavior.ts` + GLSL twin): the third Steering
+  term — a push along the SDF collider's normal, quadratic in
+  the proximity inside the vision range, so swarms bend around
+  an obstacle before contact. Completes the Steering set
+  (pursue / evade / avoid).
+- **SPH surface tension** (`gpgpuSphSurfaceTension`): a cohesion
+  term in the SPH force sum — neighbours pull the particle
+  toward themselves with the kernel weight, so droplets hold
+  together. This is a cohesion APPROXIMATION, not a full
+  surface-tension model.
+
+### Notes
+- The new lifecycle features live in the WebGL passes. On the
+  WebGPU path they are declared in the capability registry
+  (spawn-gate / kill-conditions / global-velocity-limit /
+  particle-life-avoid / sph-surface-tension), so a config using
+  them routes to WebGL instead of silently losing the effect.
+  The mask kill also stays off in the replica-stack path (no
+  mask texture is threaded there) and on the CPU fallback.
+
 ## [1.32.0] — 2026-11-17
 
 Phase AA (fourth period, final phase): behaviour semantics and
