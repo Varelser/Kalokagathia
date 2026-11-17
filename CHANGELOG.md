@@ -4,6 +4,42 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.30.0] — 2026-11-17
+
+Phase Y (fourth period): visible light — a volumetric beam for
+the Phase T 3D light (Lux) and a ribbon along the light's
+trajectory (Tao light-trajectory path). Both are draw-only and
+mount only when enabled, so with the defaults off the render is
+bit-identical to v1.29.0 (verified on the iMac real-GPU gate:
+FROZEN deterministic render, all 12 frames at 0.00000).
+
+### Added
+- **Volumetric light cone / sphere** (`gpgpuLightVolume*`, 7 new
+  keys): a dedicated mesh at the 3D light's position, shaded by
+  accumulating an analytic density over a keyed number of axial
+  steps (1–32, smoothness vs cost) — the beam is visible in
+  empty space, follows the light's direction key (cone) and
+  reads the light's position live. Sphere shape gives a point
+  glow volume with the volume length as its radius.
+- **Light trail ribbon** (`gpgpuLightTrail*`, 3 new keys): the
+  light's per-frame position history is resampled by arc length
+  through the Phase S path basis (chord table + taper) into a
+  fading ribbon — width and fade are keyed. Pure and
+  deterministic: the same history rebuilds bit-identically.
+- Starters +2 (520 total): a volumetric cone example and a
+  light-trail ribbon example.
+
+### Honest limits
+- The volume does **not** intersect scene depth: there is no
+  occlusion or shadowing, and edges are softened by the
+  softness key instead of a depth fade. The UI says so next to
+  the controls.
+- The trail ribbon is planar (built in the XY plane the camera
+  faces; a purely vertical, XY-degenerate history draws
+  nothing) and has no tube cross-section.
+- The volume/trail draw does not affect particles — particle
+  lighting remains Phase T's brightness multiplier.
+
 ## [1.29.0] — 2026-11-17
 
 Phase X3 (fourth period, leftover #3): the WebGPU compute path
