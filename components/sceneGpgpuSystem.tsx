@@ -9,6 +9,7 @@ import { scaleFrameDelta } from '../lib/playbackTime';
 import { useGpgpuAssets } from './useGpgpuAssets';
 import { getTexSize, useGpgpuRuntime } from './useGpgpuRuntime';
 import { GpgpuRenderOutputs } from './gpgpuRenderOutputs';
+import { GpgpuFieldGlyphs } from './sceneGpgpuFieldGlyphs';
 import {
   createGpgpuFrameDiagnosticSnapshot,
   readbackParticlePositions,
@@ -525,7 +526,17 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
 
   });
 
-  return <GpgpuRenderOutputs config={config} assets={assets} />;
+  // Flow-field glyph overlay (Phase AF2): mounted inside the
+  // system so it shares the simulation clock (timeRef) exactly;
+  // display-only, default off.
+  return (
+    <>
+      <GpgpuRenderOutputs config={config} assets={assets} />
+      {config.gpgpuFieldGlyphEnabled && (
+        <GpgpuFieldGlyphs config={config} timeRef={timeRef} />
+      )}
+    </>
+  );
 });
 
 GpgpuSystem.displayName = 'GpgpuSystem';

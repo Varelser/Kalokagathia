@@ -14,6 +14,9 @@ import {
   getPathRasterLuma,
   isAfMapSource,
   parseAfMapSource,
+  parsePathRasterFillMode,
+  PATH_RASTER_FILL_EVENODD_SOURCE,
+  PATH_RASTER_FILL_NONZERO_SOURCE,
   type AfMapSourceKind,
 } from '../lib/mapSourceSupply';
 import {
@@ -122,6 +125,16 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             カール場のサンプリング座標を対称化します（Kinetix の対称サンプリングの移植）。粒子の位置や画面の対称とは別物で、場そのものが万華鏡状になります。
           </div>
+          <Toggle label="Field Glyphs （場のグリフ表示）" value={config.gpgpuFieldGlyphEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuFieldGlyphEnabled', v)} />
+          {config.gpgpuFieldGlyphEnabled && (
+            <>
+              <Slider label="Glyph Grid （格子数）" value={config.gpgpuFieldGlyphGrid} min={4} max={40} step={1} onChange={(v) => updateConfig('gpgpuFieldGlyphGrid', Math.round(v))} />
+              <Slider label="Glyph Length （長さ）" value={config.gpgpuFieldGlyphLength} min={0.05} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuFieldGlyphLength', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                Curl 場そのものを z=0 平面の線分グリフ格子で重ね描きします（向き＝場の方向、長さ＝場の強さ）。シミュレーションと同じ式・同じ時計で評価する表示専用オーバーレイです。
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
@@ -385,6 +398,20 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
                   )}
                   {config.gpgpuMorphPathTaper > 0 && (
                     <Toggle label="Taper Shape （形状）" value={config.gpgpuMorphPathTaperShape} options={[{ label: 'Linear', val: 'linear' as const }, { label: 'Smooth', val: 'smooth' as const }, { label: 'Bell', val: 'bell' as const }]} onChange={(v) => updateConfig('gpgpuMorphPathTaperShape', v)} />
+                  )}
+                  {(config.gpgpuMorphPathMode === 'along' || config.gpgpuMorphPathMode === 'writeOn') && (
+                    <>
+                      <Toggle label="Text on Path （パス上文字）" value={config.gpgpuMorphTextOnPathEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphTextOnPathEnabled', v)} />
+                      {config.gpgpuMorphTextOnPathEnabled && (
+                        <>
+                          <Slider label="Text Delay （文字ごとの遅延）" value={config.gpgpuMorphTextOnPathDelay} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTextOnPathDelay', v)} />
+                          <Slider label="Text Size （グリフの大きさ）" value={config.gpgpuMorphTextOnPathSize} min={0.25} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTextOnPathSize', v)} />
+                          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                            レイヤー2 TextMap の文字列を1文字ずつパス上に並べます（文字の形に粒子を配置）。Delay は文字ごとの弧長スロットをずらし、Write-on の窓を動かすと文字が順に現れます。文字列は TextMap の Text で編集します。
+                          </div>
+                        </>
+                      )}
+                    </>
                   )}
                 </>
               )}
@@ -829,21 +856,29 @@ export const GlobalDisplayGpgpuForcesSection: React.FC<GlobalDisplayEffectsShare
         title="Size Map（サイズ専用）"
         source={config.gpgpuMapSizeSource}
         onSource={(v) => updateConfig('gpgpuMapSizeSource', v)}
+        config={config}
+        updateConfig={updateConfig}
       />
       <MapSourceBlock
         title="Opacity Map（不透明度専用）"
         source={config.gpgpuMapOpacitySource}
         onSource={(v) => updateConfig('gpgpuMapOpacitySource', v)}
+        config={config}
+        updateConfig={updateConfig}
       />
       <MapSourceBlock
         title="Color Map（色専用）"
         source={config.gpgpuMapColorSource}
         onSource={(v) => updateConfig('gpgpuMapColorSource', v)}
+        config={config}
+        updateConfig={updateConfig}
       />
       <MapSourceBlock
         title="Displace Map（変位専用）"
         source={config.gpgpuMapDisplaceSource}
         onSource={(v) => updateConfig('gpgpuMapDisplaceSource', v)}
+        config={config}
+        updateConfig={updateConfig}
       />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         専用画像が未設定のプロパティは共通マップにフォールバックします。Color Map を設定すると、Image ドライバの入力はその画像になります（色は輝度ドライバとして消費されます）。
@@ -1039,11 +1074,16 @@ const AF_SOURCE_KINDS: readonly AfMapSourceKind[] = ['text', 'path', 'edge'];
 const AfSourceButtons: React.FC<{
   source: string;
   onPick: (kind: AfMapSourceKind) => void;
-}> = ({ source, onPick }) => (
+  /** Phase AF2: fill variants of the path supply. Optional —
+   *  blocks that cannot capture a numeric grid for the fill
+   *  still offer them through the plain source string. */
+  onPickFill?: (mode: 'evenodd' | 'nonzero') => void;
+}> = ({ source, onPick, onPickFill }) => (
   <div className="mt-2 flex flex-wrap items-center gap-1.5">
     <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">内部供給</span>
     {AF_SOURCE_KINDS.map((kind) => {
-      const active = parseAfMapSource(source) === kind;
+      const active = parseAfMapSource(source) === kind
+        && (kind !== 'path' || parsePathRasterFillMode(source) === 'none');
       return (
         <button
           key={kind}
@@ -1054,6 +1094,23 @@ const AfSourceButtons: React.FC<{
         </button>
       );
     })}
+    {onPickFill && (
+      <>
+        {(['evenodd', 'nonzero'] as const).map((mode) => {
+          const fillSource = mode === 'evenodd' ? PATH_RASTER_FILL_EVENODD_SOURCE : PATH_RASTER_FILL_NONZERO_SOURCE;
+          const active = source === fillSource;
+          return (
+            <button
+              key={mode}
+              onClick={() => onPickFill(mode)}
+              className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest transition-colors ${active ? 'border-white/70 bg-white/20 text-white' : 'border-white/15 text-white/60 hover:bg-white/10'}`}
+            >
+              {mode === 'evenodd' ? 'パス塗り（偶奇）' : 'パス塗り（非ゼロ）'}
+            </button>
+          );
+        })}
+      </>
+    )}
   </div>
 );
 
@@ -1147,7 +1204,9 @@ const MapSourceBlock: React.FC<{
   title: string;
   source: string;
   onSource: (v: string) => void;
-}> = ({ title, source, onSource }) => {
+  config: ParticleConfig;
+  updateConfig: GlobalDisplayEffectsSharedProps['updateConfig'];
+}> = ({ title, source, onSource, config, updateConfig }) => {
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
     try {
@@ -1187,7 +1246,14 @@ const MapSourceBlock: React.FC<{
         )}
       </div>
       <DerivedSourceButtons source={source} onPick={(kind) => onSource(terrainDerivedSource(kind))} />
-      <AfSourceButtons source={source} onPick={(kind) => onSource(afMapSource(kind))} />
+      <AfSourceButtons
+        source={source}
+        onPick={(kind) => onSource(afMapSource(kind))}
+        onPickFill={(mode) => onSource(mode === 'evenodd' ? PATH_RASTER_FILL_EVENODD_SOURCE : PATH_RASTER_FILL_NONZERO_SOURCE)}
+      />
+      {parseAfMapSource(source) === 'path' && (
+        <Slider label="Path Stroke Width （パスの線幅）" value={config.gpgpuPathRasterStrokeWidth} min={0.005} max={0.2} step={0.005} onChange={(v) => updateConfig('gpgpuPathRasterStrokeWidth', v)} />
+      )}
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         {isTerrainDerivedSource(source)
           ? `地形派生マップ（${DERIVED_KIND_LABELS[parseTerrainDerivedSource(source) ?? 'slope']}）を設定済み: 地形パラメータに追随する内部供給です。`
@@ -1195,7 +1261,9 @@ const MapSourceBlock: React.FC<{
           ? parseAfMapSource(source) === 'text'
             ? '文字ラスタを設定済み: 現在のテキスト設定（レイヤー2 TextMap）に追随する内部供給です。'
             : parseAfMapSource(source) === 'path'
-              ? 'パスラスタを設定済み: 現在の SVG パス（モーフの SVG ソース）に追随する内部供給です。SVG が未設定の間は効きません。'
+              ? parsePathRasterFillMode(source) !== 'none'
+                ? `パス塗り（${parsePathRasterFillMode(source) === 'evenodd' ? '偶奇' : '非ゼロ'}ルール）を設定済み: SVG パスの閉領域を塗った内部供給です。線幅は輪郭の太さとして効きます。`
+                : 'パスラスタを設定済み: 現在の SVG パス（モーフの SVG ソース）に追随する内部供給です。SVG が未設定の間は効きません。'
               : 'エッジ出力を設定済み: ポストの輪郭（前フレームのエッジ場）を供給する内部供給です。エッジ表示の ON/OFF とは独立に働きます。'
           : source ? '専用画像を設定済み: このプロパティは共通マップではなくこの画像を使います。' : '未設定: このプロパティは共通マップを使います。'}
       </div>
@@ -1293,6 +1361,22 @@ const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, up
       updateConfig('gpgpuMaskMapHeight', 0);
     }
   };
+  // Path fill supply (Phase AF2): same capture convention as the
+  // stroke raster, with the fill mode carried by the source
+  // string and the numeric grid rasterised with that fill rule.
+  const applyAfFill = (mode: 'evenodd' | 'nonzero') => {
+    updateConfig('gpgpuMaskSource', mode === 'evenodd' ? PATH_RASTER_FILL_EVENODD_SOURCE : PATH_RASTER_FILL_NONZERO_SOURCE);
+    const luma = getPathRasterLuma(config, 128, mode);
+    if (luma) {
+      updateConfig('gpgpuMaskMap', Array.from(luma));
+      updateConfig('gpgpuMaskMapWidth', 128);
+      updateConfig('gpgpuMaskMapHeight', 128);
+    } else {
+      updateConfig('gpgpuMaskMap', []);
+      updateConfig('gpgpuMaskMapWidth', 0);
+      updateConfig('gpgpuMaskMapHeight', 0);
+    }
+  };
   return (
     <div className="mb-2 mt-2 rounded border border-white/10 bg-white/5 p-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -1321,7 +1405,10 @@ const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, up
         )}
       </div>
       <DerivedSourceButtons source={source} onPick={applyDerived} />
-      <AfSourceButtons source={source} onPick={applyAf} />
+      <AfSourceButtons source={source} onPick={applyAf} onPickFill={applyAfFill} />
+      {parseAfMapSource(source) === 'path' && (
+        <Slider label="Path Stroke Width （パスの線幅）" value={config.gpgpuPathRasterStrokeWidth} min={0.005} max={0.2} step={0.005} onChange={(v) => updateConfig('gpgpuPathRasterStrokeWidth', v)} />
+      )}
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         {isTerrainDerivedSource(source)
           ? `地形派生マップ（${DERIVED_KIND_LABELS[parseTerrainDerivedSource(source) ?? 'slope']}）をマスクに供給中: 描画 clip と Kill は地形パラメータに追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点の地形から抽出済みです。`
@@ -1329,7 +1416,11 @@ const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, up
           ? parseAfMapSource(source) === 'text'
             ? `文字ラスタをマスクに供給中: 描画 clip と Kill は現在のテキスト設定に追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点の文字から抽出済みです。文字を変えたら選び直してください。`
             : parseAfMapSource(source) === 'path'
-              ? config.gpgpuMaskMap.length > 0
+              ? parsePathRasterFillMode(source) !== 'none'
+                ? config.gpgpuMaskMap.length > 0
+                  ? `パス塗り（${parsePathRasterFillMode(source) === 'evenodd' ? '偶奇' : '非ゼロ'}ルール）をマスクに供給中: 描画 clip と Kill は現在の SVG パスの閉領域に追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点のパスから抽出済みです。パスを変えたら選び直してください。`
+                  : 'パス塗りをマスクに供給中: ただし SVG ソースが未設定（または図形なし）のため、パスが設定されるまでマスクは効きません。'
+                : config.gpgpuMaskMap.length > 0
                 ? `パスラスタをマスクに供給中: 描画 clip と Kill は現在の SVG パスに追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点のパスから抽出済みです。パスを変えたら選び直してください。`
                 : 'パスラスタをマスクに供給中: ただし SVG ソースが未設定（または図形なし）のため、パスが設定されるまでマスクは効きません。'
               : 'エッジ出力をマスクに供給中: 描画 clip と Kill はポストの輪郭（前フレームのエッジ場、閾値はエッジ表示と共用）に追随します。生きたフレーム由来のため輝度マップは無く、ベイクとメディア配置には効きません。エッジ表示の ON/OFF とは独立です。'

@@ -19,11 +19,14 @@
  *  - `path-raster` rasterises the authored path geometry
  *    (lib/pathGeometry.ts over gpgpuMorphSvgSource, normalised
  *    cloud space) with a pure distance-field function: same SVG
- *    in, bit-identical grid out, on any runtime. The stroke
- *    radius is a fixed raster convention (like
- *    PATH_TAPER_MAX_WIDTH, deliberately not a config key). The
- *    supply reads the SVG document itself, independent of the
- *    morph target / path mode selection.
+ *    in, bit-identical grid out, on any runtime. The supply
+ *    reads the SVG document itself, independent of the morph
+ *    target / path mode selection. Phase AF2 adds fill modes
+ *    (source suffixes `path-raster:fill-evenodd` /
+ *    `path-raster:fill-nonzero`: the closed subpaths are filled
+ *    by the SVG fill rules and the stroke composited over them)
+ *    and turns the stroke radius into the config key
+ *    gpgpuPathRasterStrokeWidth (default = the AF constant).
  *  - `edge-output` exposes the post chain's Sobel field. A
  *    dedicated capture pass (components/edgeCapturePass.ts)
  *    copies the finished frame's edge field into a persistent
@@ -51,11 +54,27 @@ export const TEXT_RASTER_SOURCE = 'text-raster';
 export const PATH_RASTER_SOURCE = 'path-raster';
 export const EDGE_OUTPUT_SOURCE = 'edge-output';
 
+/** Fill modes of the path raster supply (Phase AF2), carried as
+ *  source-string suffixes on the path-raster sentinel — the AE
+ *  sentinel convention, so no new source key is needed. The bare
+ *  'path-raster' source stays the Phase AF stroke-only raster. */
+export type PathFillMode = 'none' | 'evenodd' | 'nonzero';
+export const PATH_RASTER_FILL_EVENODD_SOURCE = 'path-raster:fill-evenodd';
+export const PATH_RASTER_FILL_NONZERO_SOURCE = 'path-raster:fill-nonzero';
+
+export function parsePathRasterFillMode(source: string): PathFillMode {
+  if (source === PATH_RASTER_FILL_EVENODD_SOURCE) return 'evenodd';
+  if (source === PATH_RASTER_FILL_NONZERO_SOURCE) return 'nonzero';
+  return 'none';
+}
+
 export type AfMapSourceKind = 'text' | 'path' | 'edge';
 
 export function parseAfMapSource(source: string): AfMapSourceKind | null {
   if (source === TEXT_RASTER_SOURCE) return 'text';
-  if (source === PATH_RASTER_SOURCE) return 'path';
+  if (source === PATH_RASTER_SOURCE
+    || source === PATH_RASTER_FILL_EVENODD_SOURCE
+    || source === PATH_RASTER_FILL_NONZERO_SOURCE) return 'path';
   if (source === EDGE_OUTPUT_SOURCE) return 'edge';
   return null;
 }
@@ -209,10 +228,11 @@ export function getTextRasterTexture(config: ParticleConfig): MapImageTextureSta
 // ---------------------------------------------------------------------------
 // Path raster supply (pure)
 
-/** Stroke radius of the path raster, in normalised cloud units.
- *  A fixed raster convention (like PATH_TAPER_MAX_WIDTH), not a
- *  config key: the mask reads as a band along the curve at any
- *  grid size. */
+/** Default stroke radius of the path raster, in normalised
+ *  cloud units. Phase AF fixed this as a raster convention; Phase
+ *  AF2 turned it into the config key gpgpuPathRasterStrokeWidth
+ *  with THIS value as its default, so existing renders stay
+ *  bit-identical. */
 export const PATH_RASTER_STROKE_RADIUS = 0.045;
 
 function smooth01(t: number): number {
@@ -220,23 +240,108 @@ function smooth01(t: number): number {
   return x * x * (3 - 2 * x);
 }
 
+/** Fill edges of one subpath: consecutive point pairs plus the
+ *  closing pair (SVG fills implicitly close subpaths). */
+function collectFillEdges(geometry: PathGeometry): Float32Array {
+  let total = 0;
+  for (const sub of geometry.subpaths) {
+    const count = Math.floor(sub.points.length / 2);
+    if (count >= 2) total += count;
+  }
+  const edges = new Float32Array(total * 4);
+  let o = 0;
+  for (const sub of geometry.subpaths) {
+    const pts = sub.points;
+    const count = Math.floor(pts.length / 2);
+    if (count < 2) continue;
+    for (let k = 0; k < count; k++) {
+      const k2 = (k + 1) % count;
+      edges[o++] = pts[k * 2];
+      edges[o++] = pts[k * 2 + 1];
+      edges[o++] = pts[k2 * 2];
+      edges[o++] = pts[k2 * 2 + 1];
+    }
+  }
+  return edges;
+}
+
+/**
+ * Point-in-fill test over every subpath edge (Phase AF2).
+ * 'evenodd' counts ray crossings; 'nonzero' sums the winding
+ * number — the two SVG fill rules. Pure and deterministic.
+ */
+export function pathFillContains(
+  edges: ArrayLike<number>,
+  px: number,
+  py: number,
+  mode: 'evenodd' | 'nonzero',
+): boolean {
+  const count = Math.floor(edges.length / 4);
+  if (mode === 'evenodd') {
+    let inside = false;
+    for (let e = 0; e < count; e++) {
+      const ax = edges[e * 4];
+      const ay = edges[e * 4 + 1];
+      const bx = edges[e * 4 + 2];
+      const by = edges[e * 4 + 3];
+      if ((ay > py) !== (by > py)) {
+        const xInt = ax + ((py - ay) / (by - ay)) * (bx - ax);
+        if (px < xInt) inside = !inside;
+      }
+    }
+    return inside;
+  }
+  let wn = 0;
+  for (let e = 0; e < count; e++) {
+    const ax = edges[e * 4];
+    const ay = edges[e * 4 + 1];
+    const bx = edges[e * 4 + 2];
+    const by = edges[e * 4 + 3];
+    const isLeft = (bx - ax) * (py - ay) - (px - ax) * (by - ay);
+    if (ay <= py) {
+      if (by > py && isLeft > 0) wn++;
+    } else if (by <= py && isLeft < 0) {
+      wn--;
+    }
+  }
+  return wn !== 0;
+}
+
 /**
  * Rasterise path geometry into a luma grid (row 0 = top, y up,
  * normalised [-1, 1]² space): each cell takes the smooth falloff
  * of its distance to the nearest path segment, max-composited
- * across subpaths. Pure and deterministic — the same geometry
- * rasterises bit-identically anywhere.
+ * across subpaths. With a fill mode (Phase AF2), cells inside
+ * the (implicitly closed) subpaths take 1 before the stroke is
+ * composited over them, so the supply reads as a filled vector
+ * mask with the stroke as its outline weight. Pure and
+ * deterministic — the same geometry rasterises bit-identically
+ * anywhere. fillMode 'none' with the default radius reproduces
+ * the Phase AF raster bit-for-bit.
  */
 export function rasterizePathGeometryLuma(
   geometry: PathGeometry,
   size: number,
   radius: number = PATH_RASTER_STROKE_RADIUS,
+  fillMode: PathFillMode = 'none',
 ): Float32Array {
   const n = Math.max(2, Math.floor(size));
   const out = new Float32Array(n * n);
   const r = Math.max(radius, 1e-9);
   const cell = 2 / n;
   const pad = r + cell;
+  if (fillMode !== 'none') {
+    const edges = collectFillEdges(geometry);
+    if (edges.length > 0) {
+      for (let cy = 0; cy < n; cy++) {
+        const py = 1 - ((cy + 0.5) / n) * 2;
+        for (let cx = 0; cx < n; cx++) {
+          const px = ((cx + 0.5) / n) * 2 - 1;
+          if (pathFillContains(edges, px, py, fillMode)) out[cy * n + cx] = 1;
+        }
+      }
+    }
+  }
   for (const sub of geometry.subpaths) {
     const pts = sub.points;
     const count = Math.floor(pts.length / 2);
@@ -282,8 +387,8 @@ export const PATH_RASTER_TEXTURE_SIZE = 256;
 interface PathRasterEntry {
   hash: string;
   geometry: PathGeometry;
-  texture: THREE.DataTexture | null;
-  lumaBySize: Map<number, Float32Array>;
+  textureByKey: Map<string, THREE.DataTexture>;
+  lumaByKey: Map<string, Float32Array>;
 }
 
 let pathEntry: PathRasterEntry | null = null;
@@ -294,33 +399,56 @@ function getPathEntry(config: ParticleConfig): PathRasterEntry | null {
   const geometry = parseSvgPathGeometry(source);
   if (!geometry || geometry.totalLength <= 0) return null;
   if (pathEntry && pathEntry.hash === geometry.sourceHash) return pathEntry;
-  if (pathEntry) pathEntry.texture?.dispose();
-  pathEntry = { hash: geometry.sourceHash, geometry, texture: null, lumaBySize: new Map() };
+  if (pathEntry) pathEntry.textureByKey.forEach((tex) => tex.dispose());
+  pathEntry = { hash: geometry.sourceHash, geometry, textureByKey: new Map(), lumaByKey: new Map() };
   return pathEntry;
 }
 
-export function getPathRasterLuma(config: ParticleConfig, size: number): Float32Array | null {
+/** The stroke radius the config asks for (Phase AF2 key; the AF
+ *  constant when unset / invalid). */
+export function pathRasterStrokeRadius(config: ParticleConfig): number {
+  const v = config.gpgpuPathRasterStrokeWidth;
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : PATH_RASTER_STROKE_RADIUS;
+}
+
+function pathRasterCacheKey(size: number, radius: number, fillMode: PathFillMode): string {
+  return `${size}|${radius}|${fillMode}`;
+}
+
+export function getPathRasterLuma(
+  config: ParticleConfig,
+  size: number,
+  fillMode: PathFillMode = 'none',
+): Float32Array | null {
   const entry = getPathEntry(config);
   if (!entry) return null;
   const n = Math.max(2, Math.floor(size));
-  let luma = entry.lumaBySize.get(n);
+  const radius = pathRasterStrokeRadius(config);
+  const key = pathRasterCacheKey(n, radius, fillMode);
+  let luma = entry.lumaByKey.get(key);
   if (!luma) {
-    luma = rasterizePathGeometryLuma(entry.geometry, n);
-    entry.lumaBySize.set(n, luma);
+    luma = rasterizePathGeometryLuma(entry.geometry, n, radius, fillMode);
+    entry.lumaByKey.set(key, luma);
   }
   return luma;
 }
 
-export function getPathRasterTexture(config: ParticleConfig): MapImageTextureState {
+export function getPathRasterTexture(
+  config: ParticleConfig,
+  fillMode: PathFillMode = 'none',
+): MapImageTextureState {
   const entry = getPathEntry(config);
   if (!entry) return NOT_READY;
-  if (!entry.texture) {
-    const size = PATH_RASTER_TEXTURE_SIZE;
-    const luma = getPathRasterLuma(config, size);
+  const size = PATH_RASTER_TEXTURE_SIZE;
+  const key = pathRasterCacheKey(size, pathRasterStrokeRadius(config), fillMode);
+  let texture = entry.textureByKey.get(key);
+  if (!texture) {
+    const luma = getPathRasterLuma(config, size, fillMode);
     if (!luma) return NOT_READY;
-    entry.texture = makeSupplyDataTexture(lumaGridToTextureData(luma, size, size), size, size);
+    texture = makeSupplyDataTexture(lumaGridToTextureData(luma, size, size), size, size);
+    entry.textureByKey.set(key, texture);
   }
-  return { texture: entry.texture, ready: true };
+  return { texture, ready: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -349,7 +477,7 @@ export function getEdgeCaptureTextureState(): MapImageTextureState {
 export function resolveAfMapSourceTexture(source: string, config: ParticleConfig): MapImageTextureState | null {
   const kind = parseAfMapSource(source);
   if (kind === 'text') return getTextRasterTexture(config);
-  if (kind === 'path') return getPathRasterTexture(config);
+  if (kind === 'path') return getPathRasterTexture(config, parsePathRasterFillMode(source));
   if (kind === 'edge') return getEdgeCaptureTextureState();
   return null;
 }

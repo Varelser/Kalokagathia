@@ -4,6 +4,52 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.38.0] — 2026-11-17
+
+Phase AF2 (fifth period, the Phase AF original-plan items):
+the four grammar pieces the AF wiring phase left behind — a
+sweep section profile, text laid out on the morph path, a
+filled vector mask, and a glyph view of the flow field. Base is
+the actually-shipped v1.37.0. With all new keys at their
+defaults the render is bit-identical to v1.37.0 (verified on
+the iMac real-GPU gate: FROZEN deterministic render, all 12
+frames at 0.00000). 10 new config keys (1,109 total), starters
++2 (539 total).
+
+### Added
+- **Sweep / Loft section profile** (`gpgpuSmoothTubeSectionShape`
+  / `SectionSides` / `SectionInnerRatio`, pure ring generation
+  in `lib/tubeSectionProfile.ts`): the Smooth Tube's swept ring
+  can be a circle with a chosen vertex count, a polygon, or a
+  star (alternating inner radius). 'circle' with 6 sides is the
+  legacy ring, bit-identical; the length profile stays with the
+  existing tube taper.
+- **Text on path** (`gpgpuMorphTextOnPathEnabled` / `Delay` /
+  `Size`, layout in `lib/gpgpuTextOnPath.ts`): with the svg
+  morph target in 'along' or 'writeOn' path mode, the layer-2
+  TextMap string is laid out glyph by glyph along the authored
+  path — each character's luma raster becomes a particle block
+  centred on the path. Delay staggers the glyphs' arc-length
+  slots (virtual-slot layout; gap particles keep the plain path
+  placement), so a write-on window sweep reveals the characters
+  one by one. Deterministic for a given seed.
+- **Vector mask fill** (source suffixes `path-raster:fill-evenodd`
+  / `path-raster:fill-nonzero` on the Phase AF path supply, in
+  `lib/mapSourceSupply.ts`): the authored SVG's closed subpaths
+  are filled by the SVG fill rules and composited with the
+  stroke, so the path supply works as a filled vector mask for
+  every map / mask consumer. The stroke radius is now the key
+  `gpgpuPathRasterStrokeWidth` (default 0.045, the Phase AF
+  fixed convention — existing renders unchanged).
+- **Flow-field glyphs** (`gpgpuFieldGlyphEnabled` / `Grid` /
+  `Length`): the curl field drawn as line glyphs on a z = 0
+  grid inside the bounce radius — direction follows the field,
+  length scales with its strength. The overlay's vertex shader
+  reuses the velocity shader's curl GLSL chunk verbatim and
+  shares the simulation clock, so the glyphs show the field
+  the particles actually feel; TS twins of the field live in
+  `lib/fieldGlyphSampling.ts`. Display only.
+
 ## [1.37.0] — 2026-11-17
 
 Phase AF (fifth period, fifth phase): paths, text and masks,

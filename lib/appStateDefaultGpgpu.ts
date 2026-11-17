@@ -177,6 +177,9 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphPathTaper: 0,
   gpgpuMorphPathTaperShape: 'linear' as const,
   gpgpuMorphPathSubpathMode: 'proportional' as const,
+  gpgpuMorphTextOnPathEnabled: false,
+  gpgpuMorphTextOnPathDelay: 0,
+  gpgpuMorphTextOnPathSize: 1,
   // Shape stamping (Phase AA3): only read in path mode 'stamp'.
   gpgpuMorphStampSpacing: 0.125,
   gpgpuMorphStampSize: 0.18,
@@ -369,6 +372,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMaskMap: [],
   gpgpuMaskMapWidth: 0,
   gpgpuMaskMapHeight: 0,
+  gpgpuPathRasterStrokeWidth: 0.045,
   // Mouse Force
   gpgpuMouseEnabled: false,
   gpgpuMouseStrength: 2.0,
@@ -424,6 +428,12 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSmoothTubeHistory: 12,
   gpgpuSmoothTubeColor: '#aaccff',
   gpgpuSmoothTubeOpacity: 0.7,
+  gpgpuSmoothTubeSectionShape: 'circle' as const,
+  gpgpuSmoothTubeSectionSides: 6,
+  gpgpuSmoothTubeSectionInnerRatio: 0.6,
+  gpgpuFieldGlyphEnabled: false,
+  gpgpuFieldGlyphGrid: 16,
+  gpgpuFieldGlyphLength: 0.5,
   // Volumetric Ray Marching
   gpgpuVolumetricEnabled: false,
   gpgpuVolumetricRadius: 12.0,

@@ -27,6 +27,7 @@ import type { ParticleConfig } from '../types';
 import { buildGpgpuMorphTargetDataWithNormals } from './gpgpuMorphTargets';
 import type { MorphMediaMap } from './gpgpuMorphTargets';
 import type { PathGeometry } from './pathGeometry';
+import type { TextGlyphRaster } from './gpgpuTextOnPath';
 
 export const CPU_PARTICLE_CAP = 4000;
 const CPU_PARTICLE_MIN = 240;
@@ -137,6 +138,10 @@ export interface CpuMorphBakeExtras {
   mediaMap?: MorphMediaMap | null;
   svgPoints?: ArrayLike<number> | null;
   pathGeometry?: PathGeometry | null;
+  /** Text on path (Phase AF2): glyph rasters for the bake's
+   *  textOnPath option, assembled by the caller like the GPU
+   *  paths assemble theirs. */
+  textOnPath?: { glyphs: TextGlyphRaster[]; delay: number; size: number } | null;
   objPoints?: ArrayLike<number> | null;
   /** Per-sample unit normals parallel to objPoints (Phase O). */
   objNormals?: ArrayLike<number> | null;
@@ -185,6 +190,7 @@ export function buildCpuMorphData(
       stampShape: config.gpgpuMorphStampShape,
       stampAlign: config.gpgpuMorphStampAlign,
     },
+    textOnPath: extras.textOnPath ?? null,
     form: {
       disperseAmount: config.gpgpuMorphDisperseAmount,
       disperseDirection: config.gpgpuMorphDisperseDirection,

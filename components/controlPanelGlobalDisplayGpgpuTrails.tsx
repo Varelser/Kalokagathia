@@ -57,6 +57,11 @@ export const GlobalDisplayGpgpuTrailsSection: React.FC<GlobalDisplayEffectsShare
           <Slider label="History Frames" value={config.gpgpuSmoothTubeHistory} min={4} max={32} step={2} onChange={(v) => updateConfig('gpgpuSmoothTubeHistory', Math.round(v))} />
           <Slider label="Tube Radius" value={config.gpgpuSmoothTubeRadius} min={0.5} max={15} step={0.5} onChange={(v) => updateConfig('gpgpuSmoothTubeRadius', v)} />
           <Slider label="Tube Taper （断面テーパー）" value={config.gpgpuSmoothTubeTaper} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuSmoothTubeTaper', v)} />
+          <Toggle label="Section Shape （断面形状）" value={config.gpgpuSmoothTubeSectionShape} options={[{ label: 'Circle', val: 'circle' as const }, { label: 'Polygon', val: 'polygon' as const }, { label: 'Star', val: 'star' as const }]} onChange={(v) => updateConfig('gpgpuSmoothTubeSectionShape', v)} />
+          <Slider label="Section Sides （断面の頂点数）" value={config.gpgpuSmoothTubeSectionSides} min={3} max={12} step={1} onChange={(v) => updateConfig('gpgpuSmoothTubeSectionSides', Math.round(v))} />
+          {config.gpgpuSmoothTubeSectionShape === 'star' && (
+            <Slider label="Section Inner Ratio （星形の内側比）" value={config.gpgpuSmoothTubeSectionInnerRatio} min={0.1} max={0.95} step={0.01} onChange={(v) => updateConfig('gpgpuSmoothTubeSectionInnerRatio', v)} />
+          )}
           <Slider label="Opacity" value={config.gpgpuSmoothTubeOpacity} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSmoothTubeOpacity', v)} />
           <div className="mt-2 flex items-center gap-3">
             <label className="text-[10px] text-white/60 uppercase tracking-wider">Color</label>

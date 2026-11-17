@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
+import { splitTextOnPathGlyphs, type TextGlyphRaster } from '../lib/gpgpuTextOnPath';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
@@ -307,6 +308,49 @@ export function morphMaskOption(config: ParticleConfig) {
   };
 }
 
+/**
+ * Text on path (Phase AF2): build the bake's textOnPath option
+ * from primitive inputs — per-glyph luma rasters of the TextMap
+ * string, extracted with the same settings the 'text' target
+ * bakes with (each character centred in its own 64×64 cell).
+ * Shared by buildMorphBakeData (WebGPU path) and the morph
+ * texture effect (WebGL path) so the two routings can never
+ * drift apart; returns null unless the feature is on and a path
+ * mode can consume it, so the default bake pays nothing for it.
+ */
+export function buildTextOnPathOption(args: {
+  target: string;
+  enabled: boolean;
+  pathMode: string;
+  text: string;
+  fontFamily: string;
+  weight: number;
+  size: number;
+  padding: number;
+  invert: boolean;
+  delay: number;
+  glyphSize: number;
+}): { glyphs: TextGlyphRaster[]; delay: number; size: number } | null {
+  if (args.target !== 'svg' || !args.enabled) return null;
+  if (args.pathMode !== 'along' && args.pathMode !== 'writeOn') return null;
+  const chars = splitTextOnPathGlyphs(args.text || 'TEXT');
+  if (chars.length === 0) return null;
+  const glyphs = chars.map((ch) => ({
+    map: extractTextLumaMap(
+      ch,
+      64,
+      64,
+      args.fontFamily,
+      args.weight,
+      args.size,
+      args.padding,
+      args.invert,
+    ),
+    size: 64,
+  }));
+  return { glyphs, delay: args.delay, size: args.glyphSize };
+}
+
 export function buildMorphBakeData(
   config: ParticleConfig,
   texSize: number,
@@ -345,6 +389,21 @@ export function buildMorphBakeData(
   const pathGeometry = config.gpgpuMorphTarget === 'svg' && config.gpgpuMorphPathMode !== 'off'
     ? parseSvgPathGeometry(config.gpgpuMorphSvgSource)
     : null;
+  // Text on path (Phase AF2): shared builder — see
+  // buildTextOnPathOption above.
+  const textOnPath = buildTextOnPathOption({
+    target: config.gpgpuMorphTarget,
+    enabled: config.gpgpuMorphTextOnPathEnabled,
+    pathMode: config.gpgpuMorphPathMode,
+    text: config.layer2TextMapText,
+    fontFamily: config.layer2TextMapFontFamily,
+    weight: config.layer2TextMapWeight,
+    size: config.layer2TextMapSize,
+    padding: config.layer2TextMapPadding,
+    invert: config.layer2TextMapInvert,
+    delay: config.gpgpuMorphTextOnPathDelay,
+    glyphSize: config.gpgpuMorphTextOnPathSize,
+  });
   // Phase AA3: in 'stamp' path mode with the 'obj' stamp shape, the
   // OBJ cloud is also sampled on the svg target (as a stamp pattern).
   const objSample = config.gpgpuMorphTarget === 'obj'
@@ -372,6 +431,7 @@ export function buildMorphBakeData(
       stampShape: config.gpgpuMorphStampShape,
       stampAlign: config.gpgpuMorphStampAlign,
     },
+    textOnPath,
     form: {
       disperseAmount: config.gpgpuMorphDisperseAmount,
       disperseDirection: config.gpgpuMorphDisperseDirection,
@@ -767,6 +827,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphTerrainOctaves = config.gpgpuMorphTerrainOctaves;
   const morphTerrainSeed = config.gpgpuMorphTerrainSeed;
   const morphPathMode = config.gpgpuMorphPathMode;
+  const morphTextOnPathEnabled = config.gpgpuMorphTextOnPathEnabled;
+  const morphTextOnPathDelay = config.gpgpuMorphTextOnPathDelay;
+  const morphTextOnPathSize = config.gpgpuMorphTextOnPathSize;
   const morphPathWriteOnStart = config.gpgpuMorphPathWriteOnStart;
   const morphPathWriteOnEnd = config.gpgpuMorphPathWriteOnEnd;
   const morphPathTaper = config.gpgpuMorphPathTaper;
@@ -820,6 +883,21 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     const pathGeometry = morphTarget === 'svg' && morphPathMode !== 'off'
       ? parseSvgPathGeometry(morphSvgSource)
       : null;
+    // Text on path (Phase AF2): same shared builder the WebGPU
+    // bake builder uses, from this effect's captured values.
+    const textOnPath = buildTextOnPathOption({
+      target: morphTarget,
+      enabled: morphTextOnPathEnabled,
+      pathMode: morphPathMode,
+      text: morphText,
+      fontFamily: morphTextFont,
+      weight: morphTextWeight,
+      size: morphTextSize,
+      padding: morphTextPadding,
+      invert: morphTextInvert,
+      delay: morphTextOnPathDelay,
+      glyphSize: morphTextOnPathSize,
+    });
     // obj (Phase J, modes + normals in Phase O): re-sample the
     // imported OBJ source text in the selected mode; null (no usable
     // geometry) falls back to the shell inside the bake, exactly like
@@ -852,6 +930,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         stampShape: morphStampShape,
         stampAlign: morphStampAlign,
       },
+      textOnPath,
       form: {
         disperseAmount: morphDisperseAmount,
         disperseDirection: morphDisperseDirection,
@@ -947,6 +1026,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTerrainOctaves,
     morphTerrainSeed,
     morphPathMode,
+    morphTextOnPathEnabled,
+    morphTextOnPathDelay,
+    morphTextOnPathSize,
     morphPathWriteOnStart,
     morphPathWriteOnEnd,
     morphPathTaper,

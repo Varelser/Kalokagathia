@@ -13,6 +13,7 @@ import {
 } from '../lib/cpuParticleSim';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
+import { buildTextOnPathOption } from './useGpgpuRuntime';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
 import { parseSvgPathGeometry } from '../lib/pathGeometry';
 import { sampleObjPointCloudWithNormals } from '../lib/objMorph';
@@ -107,10 +108,26 @@ function computeMorphBakeExtras(config: ParticleConfig): CpuMorphBakeExtras {
     || (config.gpgpuMorphTarget === 'svg' && config.gpgpuMorphPathMode === 'stamp' && config.gpgpuMorphStampShape === 'obj')
     ? sampleObjPointCloudWithNormals(config.gpgpuMorphObjSource, config.gpgpuMorphObjSampleMode)
     : null;
+  // Text on path (Phase AF2): same shared builder the GPU paths
+  // use, so the CPU bake places glyphs identically.
+  const textOnPath = buildTextOnPathOption({
+    target: config.gpgpuMorphTarget,
+    enabled: config.gpgpuMorphTextOnPathEnabled,
+    pathMode: config.gpgpuMorphPathMode,
+    text: config.layer2TextMapText,
+    fontFamily: config.layer2TextMapFontFamily,
+    weight: config.layer2TextMapWeight,
+    size: config.layer2TextMapSize,
+    padding: config.layer2TextMapPadding,
+    invert: config.layer2TextMapInvert,
+    delay: config.gpgpuMorphTextOnPathDelay,
+    glyphSize: config.gpgpuMorphTextOnPathSize,
+  });
   return {
     mediaMap,
     svgPoints,
     pathGeometry,
+    textOnPath,
     objPoints: objSample ? objSample.points : null,
     // Phase X2: the sample's normals feed the OBJ normal kick.
     objNormals: objSample ? objSample.normals : null,

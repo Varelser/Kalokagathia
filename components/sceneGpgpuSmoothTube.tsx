@@ -7,6 +7,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { smoothTubeRadiusAt } from '../lib/smoothTubeProfile';
+import { buildTubeSection, tubeSectionPointCount } from '../lib/tubeSectionProfile';
 
 type Props = {
   config: ParticleConfig;
@@ -14,7 +15,6 @@ type Props = {
   isPlaying: boolean;
 };
 
-const SMOOTH_TUBE_SIDES = 6;
 // Scratch vectors reused across frames
 const _dir   = new THREE.Vector3();
 const _up    = new THREE.Vector3();
@@ -25,7 +25,22 @@ const _center = new THREE.Vector3();
 export const GpgpuSmoothTube: React.FC<Props> = React.memo(({ config, posReadbackRef, isPlaying }) => {
   const N       = Math.max(4, Math.min(256, config.gpgpuSmoothTubeCount));
   const histLen = Math.max(4, Math.min(32, config.gpgpuSmoothTubeHistory));
-  const sides   = SMOOTH_TUBE_SIDES;
+  // Cross-section profile (Phase AF2, lib/tubeSectionProfile.ts):
+  // 'circle' with 6 sides reproduces the legacy SMOOTH_TUBE_SIDES
+  // ring bit-for-bit; other shapes change the ring's vertex count,
+  // which is why `sides` joins the geometry memo deps below.
+  const section = useMemo(
+    () => buildTubeSection(
+      config.gpgpuSmoothTubeSectionShape,
+      config.gpgpuSmoothTubeSectionSides,
+      config.gpgpuSmoothTubeSectionInnerRatio,
+    ),
+    [config.gpgpuSmoothTubeSectionShape, config.gpgpuSmoothTubeSectionSides, config.gpgpuSmoothTubeSectionInnerRatio],
+  );
+  const sides   = tubeSectionPointCount(
+    config.gpgpuSmoothTubeSectionShape,
+    config.gpgpuSmoothTubeSectionSides,
+  );
 
   // CPU ring buffer: histLen snapshots × N particles × 3 floats
   const history = useRef<Float32Array[]>([]);
@@ -63,7 +78,7 @@ export const GpgpuSmoothTube: React.FC<Props> = React.memo(({ config, posReadbac
       return geo;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [N, histLen]);
+  }, [N, histLen, sides]);
 
   // Single shared material
   const mat = useMemo(() => new THREE.MeshStandardMaterial({
@@ -120,7 +135,6 @@ export const GpgpuSmoothTube: React.FC<Props> = React.memo(({ config, posReadbac
 
     const baseRadius = config.gpgpuSmoothTubeRadius;
     const taper = config.gpgpuSmoothTubeTaper;
-    const PI2 = Math.PI * 2;
 
     for (let p = 0; p < N; p++) {
       const geo = geos[p];
@@ -154,9 +168,9 @@ export const GpgpuSmoothTube: React.FC<Props> = React.memo(({ config, posReadbac
         // newest history; taper 0 keeps the constant legacy radius.
         const radius = smoothTubeRadiusAt(baseRadius, histLen <= 1 ? 1 : r / (histLen - 1), taper);
         for (let s = 0; s < sides; s++) {
-          const angle = (PI2 * s) / sides;
-          const cos = Math.cos(angle) * radius;
-          const sin = Math.sin(angle) * radius;
+          const sv = section[s];
+          const cos = sv.nx * sv.scale * radius;
+          const sin = sv.ny * sv.scale * radius;
           const vi = (r * sides + s) * 3;
           posArr[vi]     = _center.x + _right.x * cos + _up2.x * sin;
           posArr[vi + 1] = _center.y + _right.y * cos + _up2.y * sin;

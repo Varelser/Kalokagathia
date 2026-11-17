@@ -277,6 +277,18 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphPathTaper: number;
   gpgpuMorphPathTaperShape: 'linear' | 'smooth' | 'bell';
   gpgpuMorphPathSubpathMode: 'proportional' | 'even' | 'first';
+  // Text on path (Phase AF2, lib/gpgpuTextOnPath.ts): with the
+  // path target active, the layer-2 TextMap string is laid out
+  // glyph by glyph along the authored path — each glyph's luma
+  // raster becomes a particle block centred on the path, in
+  // reading order. Delay staggers the glyphs' arc-length slots
+  // (0 = evenly spaced, the plain along placement); Size scales
+  // the glyph cell against the path pitch. Deterministic: glyph
+  // blocks never consume the shared bake RNG stream. Default off
+  // = the legacy path bake, bit-identical.
+  gpgpuMorphTextOnPathEnabled: boolean;
+  gpgpuMorphTextOnPathDelay: number;
+  gpgpuMorphTextOnPathSize: number;
   // Shape stamping (Phase AA3, lib/stampPlacement.ts): path mode
   // 'stamp' places a small shape at equal arc-length intervals
   // along the authored path instead of distributing points along
@@ -640,6 +652,13 @@ export interface ParticleConfigGpgpu {
   gpgpuMaskMap: number[];
   gpgpuMaskMapWidth: number;
   gpgpuMaskMapHeight: number;
+  // Path raster supply stroke width (Phase AF2): the stroke
+  // radius of the 'path-raster' internal supply, in normalised
+  // cloud units. 0.045 is the Phase AF fixed convention, so the
+  // default keeps every existing render bit-identical; the fill
+  // modes are source-string suffixes (path-raster:fill-evenodd /
+  // path-raster:fill-nonzero), not keys.
+  gpgpuPathRasterStrokeWidth: number;
   // Mouse Force ('paint' added by Kinetix integration B3: particles
   // are continuously re-emitted at the pointer position — a
   // deterministic per-tick hash gate in the velocity/position passes
@@ -703,6 +722,23 @@ export interface ParticleConfigGpgpu {
   gpgpuSmoothTubeHistory: number;
   gpgpuSmoothTubeColor: string;
   gpgpuSmoothTubeOpacity: number;
+  // Cross-section profile (Phase AF2, lib/tubeSectionProfile.ts):
+  // the ring shape swept along the tube. 'circle' with 6 sides is
+  // the legacy ring, bit-identical; 'polygon' uses Sides vertices;
+  // 'star' alternates outer / inner (InnerRatio) vertices, 2 x
+  // Sides points. The length profile stays with Taper above.
+  gpgpuSmoothTubeSectionShape: 'circle' | 'polygon' | 'star';
+  gpgpuSmoothTubeSectionSides: number;
+  gpgpuSmoothTubeSectionInnerRatio: number;
+  // Flow-field glyph overlay (Phase AF2,
+  // lib/fieldGlyphSampling.ts + components/
+  // sceneGpgpuFieldGlyphs.tsx): the curl field drawn as line
+  // glyphs on a z=0 grid inside the bounce radius — segment
+  // direction follows the field, length scales with its strength
+  // times Length. Display-only overlay; default off.
+  gpgpuFieldGlyphEnabled: boolean;
+  gpgpuFieldGlyphGrid: number;
+  gpgpuFieldGlyphLength: number;
   // Volumetric Ray Marching
   gpgpuVolumetricEnabled: boolean;
   gpgpuVolumetricRadius: number;

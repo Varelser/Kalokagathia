@@ -69,6 +69,12 @@ import {
   stampCountForSpacing,
   stampLocalPoint,
 } from './stampPlacement';
+import {
+  sampleTextGlyphPoint,
+  textOnPathGlyphS,
+  textOnPathSlotAt,
+  type TextGlyphRaster,
+} from './gpgpuTextOnPath';
 
 export type GpgpuMorphTargetKind = ParticleConfig['gpgpuMorphTarget'];
 
@@ -205,6 +211,21 @@ export interface GpgpuMorphTargetBuildOptions {
    * changes.
    */
   path?: MorphPathOptions | null;
+  /**
+   * Text on path (Phase AF2, lib/gpgpuTextOnPath.ts): per-glyph
+   * luma rasters of the TextMap string. Only consulted when the
+   * path branch is active with mode 'along' or 'writeOn'; null
+   * (the default) keeps the plain path placement bit-identical.
+   * Glyph particles sample their glyph raster with the bake RNG
+   * (the media grammar), so an enabled bake is deterministic for
+   * a given seed but does not share the plain branch's draw
+   * pattern — identity is only promised with the feature off.
+   */
+  textOnPath?: {
+    glyphs: TextGlyphRaster[];
+    delay: number;
+    size: number;
+  } | null;
   /**
    * Raster mask (Phase X, lib/layerMask.ts): a luminance map plus
    * its mode. 'shape' replaces the placement sampling with the
@@ -374,7 +395,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   data: Float32Array;
   normalData: Float32Array;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path, mask, form } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path, mask, form, textOnPath } = options;
   const formActive = isFormDeformationActive(form);
   // Raster mask (Phase X): resolved once; null unless the mode is
   // on and the map is usable, in which case the placement branches
@@ -428,6 +449,16 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   const stampSize = path ? clampStampSize(path.stampSize ?? 0.18) : 0.18;
   const stampShape = path?.stampShape ?? 'disc';
   const stampAlign = path?.stampAlign !== false;
+  // Text on path (Phase AF2): active only with a usable glyph set
+  // on the along / writeOn path modes (stamp keeps its own
+  // grammar). Glyph count 0 (empty string) disables it.
+  const textOnPathActive =
+    pathActive && textOnPath != null && textOnPath.glyphs.length > 0
+    && (pathMode === 'along' || pathMode === 'writeOn');
+  const topGlyphs = textOnPathActive && textOnPath ? textOnPath.glyphs : [];
+  const topGlyphCount = topGlyphs.length;
+  const topDelay = textOnPath ? textOnPath.delay : 0;
+  const topSize = textOnPath ? textOnPath.size : 1;
 
   for (let i = 0; i < count; i++) {
     const s = rng();
@@ -528,6 +559,48 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
         tx = placed.x;
         ty = placed.y;
         tz = 0;
+      }
+    } else if (textOnPathActive && pathGeometry) {
+      // Text on path (Phase AF2, lib/gpgpuTextOnPath.ts): the
+      // particle's ordered path parameter p (the same replica
+      // block mapping as the plain path branch) selects a virtual
+      // slot. A glyph slot places the particle inside that
+      // glyph's luma raster — sampled with the bake RNG under the
+      // media grammar — centred on the path point at the sampled
+      // horizontal fraction, offset along the path normal by the
+      // sampled vertical fraction (glyph top toward +normal). A
+      // delay gap, or a glyph without ink (a space), keeps the
+      // plain path placement below, taper included.
+      const r = Math.min(replicaCount - 1, Math.floor((i * replicaCount) / count));
+      const blockStart = Math.ceil((r * count) / replicaCount);
+      const blockEnd = Math.ceil(((r + 1) * count) / replicaCount);
+      const f = (i - blockStart + 0.5) / Math.max(1, blockEnd - blockStart);
+      const p = (r + f) / replicaCount;
+      const hit = textOnPathSlotAt(p, topGlyphCount, topDelay);
+      const glyphPoint = hit.glyph >= 0 ? sampleTextGlyphPoint(topGlyphs[hit.glyph], rng) : null;
+      if (hit.glyph >= 0 && glyphPoint) {
+        const sRaw = textOnPathGlyphS(hit.glyph, glyphPoint.lx, topGlyphCount, topDelay);
+        const s01 = pathMode === 'writeOn' ? pathWinStart + (pathWinEnd - pathWinStart) * sRaw : sRaw;
+        const resolved = resolvePathPoint(pathGeometry, s01, pathSubpathMode);
+        const cellH = (pathGeometry.totalLength / topGlyphCount) * topSize;
+        const off = (0.5 - glyphPoint.ly) * cellH;
+        tx = resolved.x + -resolved.tangentY * off;
+        ty = resolved.y + resolved.tangentX * off;
+        tz = 0;
+      } else {
+        const s01 = pathMode === 'writeOn' ? pathWinStart + (pathWinEnd - pathWinStart) * p : p;
+        const resolved = resolvePathPoint(pathGeometry, s01, pathSubpathMode);
+        tx = resolved.x;
+        ty = resolved.y;
+        tz = 0;
+        if (pathTaper > 0) {
+          const w = taperWidthAt(p, pathTaper, pathTaperShape) * PATH_TAPER_MAX_WIDTH;
+          if (w > 0) {
+            const off = (h2 - 0.5) * w;
+            tx += -resolved.tangentY * off;
+            ty += resolved.tangentX * off;
+          }
+        }
       }
     } else if (pathActive && pathGeometry) {
       // Authored path placement (Phase S): particle i owns the path
