@@ -4,6 +4,7 @@ import { resolveMotionChainCodes } from '../lib/motionChain';
 import { resolveMotionRoute } from '../lib/motionRoute';
 import { resolveMotionGraphVec4s } from '../lib/motionGraph';
 import { resolveMotionDagPacked } from '../lib/motionDag';
+import { clampLineJitter } from '../lib/lineJitter';
 import { resolveLayerParams } from './sceneParticleSystemShared';
 import { getLayerRuntimeLineSnapshot } from '../lib/sceneRenderRouting';
 import type { ShaderUniformMap } from './sceneShared';
@@ -97,6 +98,16 @@ export function updateLineMaterial(mat: THREE.ShaderMaterial | null | undefined,
   mat.uniforms.uGlobalOctaveMult.value = uniforms.uGlobalOctaveMult.value;
   mat.uniforms.uGlobalFreq.value = uniforms.uGlobalFreq.value;
   mat.uniforms.uGlobalRadius.value = uniforms.uGlobalRadius.value;
+  if (mat.uniforms.uLineJitter && uniforms.uLineJitter) mat.uniforms.uLineJitter.value = uniforms.uLineJitter.value;
+  // Hand-drawn line jitter (Phase AH fix): the config value below
+  // is authoritative and overrides the shared-uniforms copy above.
+  // That copy cannot carry the value: R3F clones each uniform
+  // entry when assigning `uniforms` to a ShaderMaterial, so the
+  // particle runtime (applyParticleLayerUniforms) writes only the
+  // particle material's own clone and the shared prop object
+  // passed here keeps its initial 0 forever (and that runtime
+  // path is also gated by a layer key that excludes this value).
+  if (mat.uniforms.uLineJitter) mat.uniforms.uLineJitter.value = clampLineJitter(config.layer1LineJitter ?? 0);
   mat.uniforms.uGravity.value = uniforms.uGravity.value;
   mat.uniforms.uViscosity.value = uniforms.uViscosity.value;
   mat.uniforms.uFluidForce.value = uniforms.uFluidForce.value;

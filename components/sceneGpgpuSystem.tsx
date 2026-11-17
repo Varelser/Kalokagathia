@@ -253,7 +253,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // Spawn epoch (Phase AB): restart the release clock whenever
     // the gate's inputs change (same placement discipline as the
     // morph kick above).
-    const spawnEpochKey = `${config.gpgpuSpawnBurst}|${config.gpgpuSpawnRate}|${config.gpgpuCount}|${config.gpgpuSeed}`;
+    const spawnEpochKey = `${config.gpgpuSpawnBurst}|${config.gpgpuSpawnRate}|${config.gpgpuSpawnPulseInterval}|${config.gpgpuSpawnPulseDuty}|${config.gpgpuCount}|${config.gpgpuSeed}`;
     if (spawnEpochKey !== spawnEpochKeyRef.current) {
       spawnEpochKeyRef.current = spawnEpochKey;
       if (spawnEpochInitRef.current) spawnEpochStartRef.current = timeRef.current;

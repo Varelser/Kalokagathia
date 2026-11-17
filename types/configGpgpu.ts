@@ -29,6 +29,10 @@ export interface ParticleConfigGpgpu {
   // All default to 0 = legacy geometry behaviour.
   gpgpuGeomEnvReflect: number;
   gpgpuGeomSpinSpeed: number;
+  // Spin random range (Phase AH): per-particle multiplier spread
+  // around the spin speed. 0 = every instance at exactly the base
+  // speed (bit-identical legacy spin).
+  gpgpuGeomSpinRandom: number;
   gpgpuGeomStretch: number;
   // Point sprite shape (Kinetix integration B1b): 'soft' keeps the legacy
   // gaussian disc; the other values select the shared SDF/mask shape set
@@ -64,6 +68,11 @@ export interface ParticleConfigGpgpu {
   // promotes the Particle Life cap semantics to the whole pool.
   gpgpuSpawnRate: number;
   gpgpuSpawnBurst: number;
+  // Spawn pulse (Phase AH): the release clock advances only during
+  // the first duty fraction of each interval cycle. Interval 0 =
+  // off (the legacy linear release, bit-identical).
+  gpgpuSpawnPulseInterval: number;
+  gpgpuSpawnPulseDuty: number;
   gpgpuKillBoundary: boolean;
   gpgpuKillMask: boolean;
   gpgpuDrag: number;
@@ -582,6 +591,11 @@ export interface ParticleConfigGpgpu {
   gpgpuGradStart: string;
   gpgpuGradMid: string;
   gpgpuGradEnd: string;
+  // Extra gradient stops (Phase AH): fixed positions 0.25 / 0.75.
+  // Empty string = unspecified; both empty reproduces the legacy
+  // 3-stop LUT bit-for-bit.
+  gpgpuGradQuarter: string;
+  gpgpuGradThreeQuarter: string;
   gpgpuGradPreset: string;
   gpgpuGradSpatialScale: number;
   // Source image for the 'image' gradient driver, held in the config

@@ -59,6 +59,12 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uSpawnRate;
   uniform float uSpawnBurst;
   uniform float uSpawnTime;
+  // Spawn pulse (Phase AH): interval 0 = off — spawnPulseTime then
+  // returns max(t, 0) and the threshold expression below is the
+  // legacy one verbatim. TS twin: spawnPulseTime in
+  // lib/gpgpuLifecycle.ts.
+  uniform float uSpawnPulseInterval;
+  uniform float uSpawnPulseDuty;
   uniform float uDragRate;
   uniform float uMaxSpeed;
   // Signal & time grammar (Phase AC): the curl field's evolution
@@ -278,6 +284,19 @@ export const SIM_VEL_FRAG = /* glsl */ `
     return fract(sin(dot(uv + vec2(7.77, 3.13), vec2(127.1, 311.7))) * 43758.5453);
   }
 
+  // Pulse time (Phase AH): live seconds inside t wall seconds —
+  // the clock advances only during the first uSpawnPulseDuty
+  // fraction of each uSpawnPulseInterval cycle. Interval 0 returns
+  // max(t, 0) unchanged (the legacy clock).
+  float spawnPulseTime(float t) {
+    float tt = max(t, 0.0);
+    if (uSpawnPulseInterval <= 0.0) return tt;
+    float cyc = tt / uSpawnPulseInterval;
+    float whole = floor(cyc);
+    float fracPart = cyc - whole;
+    return (whole * uSpawnPulseDuty + min(fracPart, uSpawnPulseDuty)) * uSpawnPulseInterval;
+  }
+
   // SDF distance for obstacle avoidance (Phase AB): the same field
   // formulas the collider block at the bottom of main() evaluates
   // (gyroid uses the gradient-normalised approximation above).
@@ -349,7 +368,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
     // this entirely. TS twin: spawnStateForIndex in
     // lib/gpgpuLifecycle.ts.
     if (uSpawnBurst < 1.0) {
-      float sThr = min(1.0, uSpawnBurst + uSpawnRate * max(uSpawnTime, 0.0));
+      float sThr = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTime(uSpawnTime));
       if (spawnHash(vUv) >= sThr) {
         gl_FragColor = vec4(0.0, 0.0, 0.0, phaseState);
         return;

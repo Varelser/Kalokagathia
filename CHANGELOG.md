@@ -4,6 +4,50 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.40.0] — 2026-11-17
+
+Sixth-term Phase AH: the remaining small grammar of emission,
+rotation, generation, colour and lines. Seven new config keys
+(1,119 → 1,126), two new starters (541 → 543). Every new key
+defaults to the legacy behaviour — with all keys at their
+defaults the render is bit-identical to v1.39.1 by construction
+(each feature keeps the legacy expression on its default branch).
+
+### Added
+- **Periodic spawn bursts** (`gpgpuSpawnPulseInterval` /
+  `gpgpuSpawnPulseDuty`): the spawn gate's release clock now
+  advances only during the first duty fraction of each interval
+  cycle (pulse time is a pure function in `lib/gpgpuLifecycle.ts`
+  with GLSL twins in both simulation passes), so a held-back
+  pool is released in waves. Interval 0 = off.
+- **Geometry spin random range** (`gpgpuGeomSpinRandom`): each
+  geometry instance's spin speed is multiplied by a per-particle
+  factor in [1 − r, 1 + r] from a second texel hash, applied
+  before both the plain spin and the age-curve integral path.
+  0 = uniform speed, as before.
+- **Noise texture seed** (`textureNoiseSeed`): the texture
+  pack's cloud-noise lattice is offset by a seed-derived shift.
+  Seed 0 reproduces the legacy map bit-for-bit. (Time evolution
+  of the noise was evaluated and deferred: applied maps are
+  config snapshots, so per-frame regeneration has no natural
+  ride on the existing path.)
+- **Five-stop gradient ramp** (`gpgpuGradQuarter` /
+  `gpgpuGradThreeQuarter`): the GPGPU gradient LUT gains
+  optional stops at 1/4 and 3/4. Both unspecified = the legacy
+  3-stop LUT, bit-identical.
+- **Hand-drawn line jitter** (`layer1LineJitter`): the Classic
+  and Brush line shaders displace each endpoint by a static
+  deterministic hash offset (no time term, so strokes never
+  boil). 0 = legacy lines.
+- Starters: `starter-spawn-pulse-waves`,
+  `starter-gradient-five-stop`.
+
+### Not in this release
+- Parallax layer coefficients were evaluated and deferred:
+  all layers render inside a single SceneGroup with no
+  per-layer transform node, so coefficients have no natural
+  insertion point without restructuring the scene graph.
+
 ## [1.39.1] — 2026-11-17
 
 Maintenance release: no new features, no new config keys, no

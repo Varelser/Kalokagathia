@@ -44,7 +44,7 @@ function hash2(ix: number, iy: number): number {
   return (h >>> 0) / 4294967296;
 }
 
-function valueNoise(u: number, v: number, cells: number): number {
+function valueNoise(u: number, v: number, cells: number, seed = 0): number {
   const fx = u * cells;
   const fy = v * cells;
   const ix = Math.floor(fx);
@@ -53,10 +53,16 @@ function valueNoise(u: number, v: number, cells: number): number {
   const ty = fy - iy;
   const sx = tx * tx * (3 - 2 * tx);
   const sy = ty * ty * (3 - 2 * ty);
-  const a = hash2(ix, iy);
-  const b = hash2(ix + 1, iy);
-  const c = hash2(ix, iy + 1);
-  const d = hash2(ix + 1, iy + 1);
+  // Seed (Phase AH): the lattice is offset by a seed-derived
+  // integer shift before hashing. Seed 0 gives offset (0, 0), so
+  // the four hash calls below are the legacy ones verbatim and the
+  // default map stays bit-identical.
+  const ox = seed * 157;
+  const oy = seed * 311;
+  const a = hash2(ix + ox, iy + oy);
+  const b = hash2(ix + 1 + ox, iy + oy);
+  const c = hash2(ix + ox, iy + 1 + oy);
+  const d = hash2(ix + 1 + ox, iy + 1 + oy);
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
 
@@ -78,12 +84,15 @@ export interface NoiseTextureParams {
   kind: NoiseTextureKind;
   period: number;
   octaves: number;
+  /** Phase AH: lattice seed. 0 = the legacy map, bit-identical. */
+  seed: number;
 }
 
 export const DEFAULT_NOISE_TEXTURE_PARAMS: NoiseTextureParams = {
   kind: 'value',
   period: 4,
   octaves: 3,
+  seed: 0,
 };
 
 export const NOISE_OCTAVE_WEIGHTS: readonly number[] = [0.55, 0.3, 0.15, 0.075, 0.0375];
@@ -96,17 +105,20 @@ export function normalizeNoiseTextureParams(params: Partial<NoiseTextureParams> 
   const octaves = typeof params?.octaves === 'number' && Number.isFinite(params.octaves)
     ? Math.min(NOISE_OCTAVE_WEIGHTS.length, Math.max(1, Math.round(params.octaves)))
     : DEFAULT_NOISE_TEXTURE_PARAMS.octaves;
-  return { kind, period, octaves };
+  const seed = typeof params?.seed === 'number' && Number.isFinite(params.seed)
+    ? Math.min(999, Math.max(0, Math.round(params.seed)))
+    : DEFAULT_NOISE_TEXTURE_PARAMS.seed;
+  return { kind, period, octaves, seed };
 }
 
 export function generateNoiseTextureMap(params?: Partial<NoiseTextureParams> | null): number[] {
-  const { kind, period, octaves } = normalizeNoiseTextureParams(params ?? DEFAULT_NOISE_TEXTURE_PARAMS);
+  const { kind, period, octaves, seed } = normalizeNoiseTextureParams(params ?? DEFAULT_NOISE_TEXTURE_PARAMS);
   const weights = NOISE_OCTAVE_WEIGHTS.slice(0, octaves);
   const weightSum = weights.reduce((sum, w) => sum + w, 0);
   return buildMap((u, v) => {
     let n = 0;
     for (let i = 0; i < octaves; i++) {
-      const s = valueNoise(u, v, period * 2 ** i);
+      const s = valueNoise(u, v, period * 2 ** i, seed);
       const shaped = kind === 'ridge' ? 1 - Math.abs(2 * s - 1) : kind === 'turbulence' ? Math.abs(2 * s - 1) : s;
       n += (weights[i] / weightSum) * shaped;
     }

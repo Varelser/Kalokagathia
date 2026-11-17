@@ -51,6 +51,10 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Lifecycle — Spawn / Kill / Drag （ライフサイクル文法 — Phase AB）</div>
       <Slider label="Spawn Burst （開始バースト）" value={config.gpgpuSpawnBurst} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnBurst', v)} />
       <Slider label="Spawn Rate （放出レート）" value={config.gpgpuSpawnRate} min={0.01} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnRate', v)} />
+      <Slider label="Spawn Pulse Interval （周期バースト間隔・秒、0でOFF）" value={config.gpgpuSpawnPulseInterval} min={0} max={30} step={0.1} onChange={(v) => updateConfig('gpgpuSpawnPulseInterval', v)} />
+      {config.gpgpuSpawnPulseInterval > 0 && (
+        <Slider label="Spawn Pulse Duty （周期内の放出割合）" value={config.gpgpuSpawnPulseDuty} min={0.05} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnPulseDuty', v)} />
+      )}
       <Toggle label="Boundary Kill （境界キル）" value={config.gpgpuKillBoundary} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuKillBoundary', v)} />
       <Toggle label="Mask Kill （マスクキル）" value={config.gpgpuKillMask} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuKillMask', v)} />
       <Slider label="Global Drag （全体ドラッグ）" value={config.gpgpuDrag} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuDrag', v)} />

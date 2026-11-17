@@ -83,11 +83,87 @@ export function fillGradientLutData(data: Uint8Array, start: string, mid: string
   }
 }
 
+interface GradientStop {
+  pos: number;
+  color: THREE.Color;
+}
+
+function fillGradientLutFromStops(data: Uint8Array, stops: GradientStop[]): void {
+  const tmp = new THREE.Color();
+  for (let i = 0; i < GRADIENT_LUT_SIZE; i++) {
+    const t = i / (GRADIENT_LUT_SIZE - 1);
+    let s = 0;
+    while (s < stops.length - 2 && t > stops[s + 1].pos) s++;
+    const a = stops[s];
+    const b = stops[s + 1];
+    const f = b.pos > a.pos ? (t - a.pos) / (b.pos - a.pos) : 0;
+    tmp.copy(a.color).lerp(b.color, Math.min(1, Math.max(0, f)));
+    const o = i * 4;
+    data[o] = Math.round(THREE.MathUtils.clamp(tmp.r, 0, 1) * 255);
+    data[o + 1] = Math.round(THREE.MathUtils.clamp(tmp.g, 0, 1) * 255);
+    data[o + 2] = Math.round(THREE.MathUtils.clamp(tmp.b, 0, 1) * 255);
+    data[o + 3] = 255;
+  }
+}
+
+/**
+ * Fill `data` with the 5-stop gradient (Phase AH): start at 0,
+ * quarter at 0.25, mid at 0.5, threeQuarter at 0.75, end at 1,
+ * piecewise-linear between stops. Pure apart from THREE.Color
+ * parsing, so the interpolation is unit-testable.
+ */
+export function fillGradientLutData5(
+  data: Uint8Array,
+  start: string,
+  quarter: string,
+  mid: string,
+  threeQuarter: string,
+  end: string,
+): void {
+  fillGradientLutFromStops(data, [
+    { pos: 0, color: new THREE.Color(start) },
+    { pos: 0.25, color: new THREE.Color(quarter) },
+    { pos: 0.5, color: new THREE.Color(mid) },
+    { pos: 0.75, color: new THREE.Color(threeQuarter) },
+    { pos: 1, color: new THREE.Color(end) },
+  ]);
+}
+
+/**
+ * Fill with the optional extra stops (Phase AH): an empty-string
+ * stop is "unspecified". When BOTH extra stops are unspecified
+ * this calls the legacy 3-stop fill verbatim, so the LUT stays
+ * bit-identical; with one or both specified it builds the stop
+ * list (start / [quarter] / mid / [threeQuarter] / end) and fills
+ * piecewise-linearly.
+ */
+export function fillGradientLutDataAuto(
+  data: Uint8Array,
+  start: string,
+  mid: string,
+  end: string,
+  quarter?: string,
+  threeQuarter?: string,
+): void {
+  const q = typeof quarter === 'string' && quarter.trim() !== '' ? quarter : null;
+  const tq = typeof threeQuarter === 'string' && threeQuarter.trim() !== '' ? threeQuarter : null;
+  if (!q && !tq) {
+    fillGradientLutData(data, start, mid, end);
+    return;
+  }
+  const stops: GradientStop[] = [{ pos: 0, color: new THREE.Color(start) }];
+  if (q) stops.push({ pos: 0.25, color: new THREE.Color(q) });
+  stops.push({ pos: 0.5, color: new THREE.Color(mid) });
+  if (tq) stops.push({ pos: 0.75, color: new THREE.Color(tq) });
+  stops.push({ pos: 1, color: new THREE.Color(end) });
+  fillGradientLutFromStops(data, stops);
+}
+
 /** Create the LUT texture the draw shader samples (LinearFilter so the
  *  two segments blend smoothly; ClampToEdge on both axes). */
-export function createGradientLutTexture(start: string, mid: string, end: string): THREE.DataTexture {
+export function createGradientLutTexture(start: string, mid: string, end: string, quarter?: string, threeQuarter?: string): THREE.DataTexture {
   const data = new Uint8Array(GRADIENT_LUT_SIZE * 4);
-  fillGradientLutData(data, start, mid, end);
+  fillGradientLutDataAuto(data, start, mid, end, quarter, threeQuarter);
   const tex = new THREE.DataTexture(data, GRADIENT_LUT_SIZE, 1, THREE.RGBAFormat);
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;

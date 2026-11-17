@@ -20,6 +20,9 @@ export interface ParticleConfigLayer1 {
   sphereRadius: number;
   layer1Volume: number;
   jitter: number;
+  // Hand-drawn line jitter (Phase AH): deterministic per-endpoint
+  // displacement in the line shaders. 0 = legacy lines.
+  layer1LineJitter: number;
   pulseSpeed: number;
   pulseAmplitude: number;
   // Per-layer SDF

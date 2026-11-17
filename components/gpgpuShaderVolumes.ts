@@ -94,6 +94,11 @@ export const GEOM_VERT = /* glsl */ `
   uniform float uVelocityAlign;
   uniform float uTime;
   uniform float uSpinSpeed;
+  // Spin random range (Phase AH): per-instance speed multiplier in
+  // [1 - r, 1 + r] from a second texel hash. 0 = multiplier exactly
+  // 1 (the hash is skipped), so the default spin is bit-identical.
+  // TS twin: lib/gpgpuSpinRandom.ts.
+  uniform float uSpinRandom;
   uniform float uMeshStretch;
   // Rotation over Lifetime (Phase AC): the age curve multiplies
   // the spin RATE; the angle is the curve's closed-form integral
@@ -153,8 +158,18 @@ export const GEOM_VERT = /* glsl */ `
     // not rotate in lockstep. spinSpeed == 0 yields angle 0 exactly,
     // i.e. the legacy un-rotated geometry.
     float phase = fract(sin(dot(aTexCoord, vec2(127.1, 311.7))) * 43758.5453123);
-    float spinAng = uSpinSpeed == 0.0 ? 0.0 : uTime * uSpinSpeed + phase * 6.2831853;
-    if (uSpinSpeed != 0.0 && uAgeCurveRotationEnabled) {
+    // Spin random range (Phase AH): fold the per-instance
+    // multiplier into the speed once, so the plain path and the
+    // age-curve integral path below both consume the same
+    // effective speed. uSpinRandom == 0 keeps effSpin == uSpinSpeed
+    // exactly (multiplier branch skipped).
+    float effSpin = uSpinSpeed;
+    if (uSpinRandom > 0.0) {
+      float spinHash2 = fract(sin(dot(aTexCoord + vec2(19.19, 7.77), vec2(269.5, 183.3))) * 43758.5453123);
+      effSpin = uSpinSpeed * mix(1.0 - uSpinRandom, 1.0 + uSpinRandom, spinHash2);
+    }
+    float spinAng = effSpin == 0.0 ? 0.0 : uTime * effSpin + phase * 6.2831853;
+    if (effSpin != 0.0 && uAgeCurveRotationEnabled) {
       if (uAgeEnabled) {
         // Integrate the rate over the particle's own age: the
         // angle is spinSpeed × [ageMax × C(age/ageMax)] plus the
@@ -167,11 +182,11 @@ export const GEOM_VERT = /* glsl */ `
         float integ = ageSec <= ageMax
           ? ageMax * kaloCurveIntegral5(ageSec / ageMax, uAgeCurveRotation[0], uAgeCurveRotation[1], uAgeCurveRotation[2], uAgeCurveRotation[3], uAgeCurveRotation[4])
           : whole + (ageSec - ageMax) * uAgeCurveRotation[4];
-        spinAng = uSpinSpeed * integ + phase * 6.2831853;
+        spinAng = effSpin * integ + phase * 6.2831853;
       } else {
         // Age tracking off: the midpoint value as a constant rate
         // multiplier (the points shader's 0.5 convention).
-        spinAng = uTime * uSpinSpeed * kaloEvalCurve5(0.5, uAgeCurveRotation[0], uAgeCurveRotation[1], uAgeCurveRotation[2], uAgeCurveRotation[3], uAgeCurveRotation[4]) + phase * 6.2831853;
+        spinAng = uTime * effSpin * kaloEvalCurve5(0.5, uAgeCurveRotation[0], uAgeCurveRotation[1], uAgeCurveRotation[2], uAgeCurveRotation[3], uAgeCurveRotation[4]) + phase * 6.2831853;
       }
     }
     mat3 spin = rotYMat(spinAng);

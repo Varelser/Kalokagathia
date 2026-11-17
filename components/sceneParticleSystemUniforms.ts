@@ -44,6 +44,9 @@ export function createParticleUniforms(config: ParticleConfig, isAux: boolean) {
     uGlobalOctaveMult: { value: 1.0 },
     uGlobalFreq: { value: 1.0 },
     uGlobalRadius: { value: 100.0 },
+    // Hand-drawn line jitter (Phase AH): consumed only by the
+    // line shaders; 0 = no displacement.
+    uLineJitter: { value: 0 },
     uMotionChainType2: { value: -1 },
     uMotionChainType3: { value: -1 },
     uWarpEnabled: { value: 0 },

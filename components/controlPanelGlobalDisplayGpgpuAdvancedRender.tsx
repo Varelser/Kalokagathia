@@ -46,6 +46,7 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
           <Toggle label="Velocity Align" value={config.gpgpuGeomVelocityAlign} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGeomVelocityAlign', v)} />
           <Slider label="Env Reflect (Crystal)" value={config.gpgpuGeomEnvReflect} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGeomEnvReflect', v)} />
           <Slider label="Spin Speed" value={config.gpgpuGeomSpinSpeed} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuGeomSpinSpeed', v)} />
+          <Slider label="Spin Random （自転ランダム範囲）" value={config.gpgpuGeomSpinRandom} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGeomSpinRandom', v)} />
           <Slider label="Mesh Stretch" value={config.gpgpuGeomStretch} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuGeomStretch', v)} />
         </>
       )}

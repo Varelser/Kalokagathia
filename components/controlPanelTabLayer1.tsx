@@ -72,6 +72,7 @@ export const Layer1TabContent: React.FC<ControlPanelContentProps> = ({ config, l
         <Slider label="Chaos (Global Jitter)" value={config.jitter} min={0} max={500} step={0.1} onChange={(v) => updateConfig('jitter', v)} />
         <Slider label="Pulse Speed" value={config.pulseSpeed} min={0} max={10.0} step={0.001} onChange={(v) => updateConfig('pulseSpeed', v)} />
         <Slider label="Pulse Depth" value={config.pulseAmplitude} min={0} max={5000} step={1} onChange={(v) => updateConfig('pulseAmplitude', v)} />
+        <Slider label="Line Jitter （筆致ジッタ・手描き風）" value={config.layer1LineJitter} min={0} max={10} step={0.05} onChange={(v) => updateConfig('layer1LineJitter', v)} />
       </div>
     )}
     {config.layer1Enabled && (

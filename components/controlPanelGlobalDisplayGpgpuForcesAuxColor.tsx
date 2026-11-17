@@ -164,6 +164,29 @@ export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffe
               <input type="color" value={config.gpgpuGradEnd} onChange={(e) => { updateConfig('gpgpuGradEnd', e.target.value); updateConfig('gpgpuGradPreset', 'custom'); }} className="h-8 w-full cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
             </div>
           </div>
+          <div className="mt-2 flex gap-3">
+            <div className="flex-1">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[9px] uppercase tracking-widest opacity-60">1/4 Stop （追加）</span>
+                {config.gpgpuGradQuarter
+                  ? <button type="button" onClick={() => updateConfig('gpgpuGradQuarter', '')} className="text-[9px] text-white/50 underline hover:text-white">未指定に戻す</button>
+                  : <span className="text-[9px] text-white/35">未指定</span>}
+              </div>
+              <input type="color" value={config.gpgpuGradQuarter || '#000000'} onChange={(e) => { updateConfig('gpgpuGradQuarter', e.target.value); updateConfig('gpgpuGradPreset', 'custom'); }} className="h-8 w-full cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
+            </div>
+            <div className="flex-1">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[9px] uppercase tracking-widest opacity-60">3/4 Stop （追加）</span>
+                {config.gpgpuGradThreeQuarter
+                  ? <button type="button" onClick={() => updateConfig('gpgpuGradThreeQuarter', '')} className="text-[9px] text-white/50 underline hover:text-white">未指定に戻す</button>
+                  : <span className="text-[9px] text-white/35">未指定</span>}
+              </div>
+              <input type="color" value={config.gpgpuGradThreeQuarter || '#000000'} onChange={(e) => { updateConfig('gpgpuGradThreeQuarter', e.target.value); updateConfig('gpgpuGradPreset', 'custom'); }} className="h-8 w-full cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
+            </div>
+          </div>
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            追加ストップ（Phase AH）: 1/4・3/4 位置に色を足して5点グラデーションにできます。両方とも未指定のときは従来の3点グラデーションと完全一致します。
+          </div>
           {config.gpgpuGradDriver === 'spatial' && (
             <Slider label="Spatial Scale" value={config.gpgpuGradSpatialScale} min={0.001} max={0.05} step={0.001} onChange={(v) => updateConfig('gpgpuGradSpatialScale', v)} />
           )}

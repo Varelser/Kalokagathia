@@ -364,8 +364,8 @@ export const TexturePackSection: React.FC<{
   // fixed pattern. The defaults reproduce the pre-AD noise map
   // bit-for-bit.
   const noiseParams = React.useMemo(
-    () => ({ kind: config.textureNoiseKind, period: config.textureNoisePeriod, octaves: config.textureNoiseOctaves }),
-    [config.textureNoiseKind, config.textureNoisePeriod, config.textureNoiseOctaves],
+    () => ({ kind: config.textureNoiseKind, period: config.textureNoisePeriod, octaves: config.textureNoiseOctaves, seed: config.textureNoiseSeed }),
+    [config.textureNoiseKind, config.textureNoisePeriod, config.textureNoiseOctaves, config.textureNoiseSeed],
   );
   const maps = React.useMemo(
     () => TEXTURE_DEFINITIONS.map((definition) => ({ definition, map: generateTextureMap(definition.id, noiseParams) })),
@@ -434,8 +434,21 @@ export const TexturePackSection: React.FC<{
               className="w-14 bg-white/5 border border-white/10 rounded px-1.5 py-1 text-[11px] outline-none focus:border-white/40 disabled:opacity-40"
             />
           </label>
+          <label className="flex items-center gap-1 text-[10px] text-white/50">
+            シード
+            <input
+              type="number"
+              min={0}
+              max={999}
+              step={1}
+              value={config.textureNoiseSeed}
+              disabled={isPublicLibrary}
+              onChange={(event) => write('textureNoiseSeed', Number(event.target.value))}
+              className="w-14 bg-white/5 border border-white/10 rounded px-1.5 py-1 text-[11px] outline-none focus:border-white/40 disabled:opacity-40"
+            />
+          </label>
         </div>
-        <p className="mt-1 text-[10px] text-white/35">既定（Value／周期4／オクターブ3）は従来の雲ノイズと完全一致します。</p>
+        <p className="mt-1 text-[10px] text-white/35">既定（Value／周期4／オクターブ3／シード0）は従来の雲ノイズと完全一致します。シードを変えると雲の配置が変わります（適用はタイルの再クリックで反映）。</p>
       </div>
       <div className="grid grid-cols-4 gap-2">
         {maps.map(({ definition, map }) => (

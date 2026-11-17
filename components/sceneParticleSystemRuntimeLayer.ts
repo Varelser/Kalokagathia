@@ -263,6 +263,10 @@ export function applyParticleLayerUniforms(
   mat.uniforms.uGlobalSpeed.value = state.speed;
   mat.uniforms.uGlobalAmp.value = state.amp;
   mat.uniforms.uGlobalFreq.value = state.freq;
+  // Hand-drawn line jitter (Phase AH): a single global key for
+  // the line draw (the line shaders are shared by the line
+  // systems); clamped like lib/lineJitter.ts.
+  if (mat.uniforms.uLineJitter) mat.uniforms.uLineJitter.value = Math.max(0, Math.min(10, config.layer1LineJitter ?? 0));
   mat.uniforms.uGlobalNoiseScale.value = state.noise;
   mat.uniforms.uGlobalComplexity.value = state.complexity;
   mat.uniforms.uGlobalEvolution.value = state.evol;

@@ -19,6 +19,7 @@ export const APP_STATE_DEFAULT_LAYER_1: Partial<ParticleConfig> = {
   sphereRadius: 50,
   layer1Volume: 0.0,
   jitter: 0.0,
+  layer1LineJitter: 0,
   pulseSpeed: 0.003,
   pulseAmplitude: 0.5,
   layer1SdfEnabled: false,

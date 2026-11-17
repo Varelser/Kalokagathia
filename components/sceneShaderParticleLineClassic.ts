@@ -25,6 +25,11 @@ export const LINE_VERTEX_SHADER = `
   uniform float uInterLayerEnabled; uniform int uInterLayerColliderCount; uniform vec4 uInterLayerColliders[MAX_INTER_LAYER_COLLIDERS]; uniform float uInterLayerStrength; uniform float uInterLayerPadding;
   uniform float uConnectDistance;
   uniform float uOpacity;
+  // Hand-drawn jitter (Phase AH): static per-endpoint displacement
+  // from the particle's own phase/random hash. 0 = exact zero
+  // offset (early-out), so the default line is bit-identical.
+  // TS twin: lib/lineJitter.ts.
+  uniform float uLineJitter;
   uniform float uLife; uniform float uLifeSpread; uniform float uBurst; uniform float uBurstPhase; uniform float uBurstWaveform;
   attribute vec3 aPosA; attribute vec3 aOffA; attribute vec4 aData1A; attribute vec4 aData2A; attribute vec4 aData3A;
   attribute vec3 aPosB; attribute vec3 aOffB; attribute vec4 aData1B; attribute vec4 aData2B; attribute vec4 aData3B;
@@ -70,6 +75,16 @@ export const LINE_VERTEX_SHADER = `
     return burstEnvelope;
   }
 
+  vec3 lineJitterOffset(float phase, float random) {
+    if (uLineJitter <= 0.0) return vec3(0.0);
+    float scale = uLineJitter * max(uGlobalRadius, 1.0) * 0.02;
+    vec3 h = vec3(
+      fract(sin(phase * 12.9898 + random * 78.233) * 43758.5453),
+      fract(sin(phase * 26.651 + random * 41.317 + 19.19) * 43758.5453),
+      fract(sin(phase * 7.233 + random * 12.9898 + 43.71) * 43758.5453));
+    return (h - 0.5) * 2.0 * scale;
+  }
+
   vec3 getPos(vec3 p, vec3 off, vec4 d1, vec4 d2, vec4 d3) {
     float aPhase = d1.x; float aRandom = d1.y; float aMotionType = d1.z;
     float aBaseRadiusFactor = d1.w; float aSpeedFactor = d2.x; float aAmpFactor = d2.y;
@@ -112,7 +127,7 @@ export const LINE_VERTEX_SHADER = `
       float morphMix = clamp(uAudioMorph * (0.22 + aVariant * 0.48), 0.0, 0.92);
       result = mix(result, morphResult, morphMix);
     }
-    return applyAudioSpatialWarp(result, off, uTime, amp, aPhase, aVariant);
+    return applyAudioSpatialWarp(result, off, uTime, amp, aPhase, aVariant) + lineJitterOffset(aPhase, aRandom);
   }
 
   void main() {

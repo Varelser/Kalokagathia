@@ -4,7 +4,7 @@ import type { ParticleConfig } from '../types';
 import type { LodSystem } from '../lib/lodSystem';
 import type { GpgpuAssetBundle } from './useGpgpuAssets';
 import { MAX_TRAIL } from './gpgpuShaders';
-import { fillGradientLutData } from '../lib/kinetixGradients';
+import { fillGradientLutDataAuto } from '../lib/kinetixGradients';
 import { getGradImageTexture } from '../lib/gradImageTexture';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { resolveMapSource } from '../lib/layerMask';
@@ -218,10 +218,10 @@ export function syncVisualUniforms(args: {
     drawMat.uniforms.uGradTime.value = time ?? 0;
     const lut = drawMat.uniforms.uGradLut.value as THREE.DataTexture | null;
     if (lut) {
-      const lutKey = `${config.gpgpuGradStart}|${config.gpgpuGradMid}|${config.gpgpuGradEnd}`;
+      const lutKey = `${config.gpgpuGradStart}|${config.gpgpuGradQuarter}|${config.gpgpuGradMid}|${config.gpgpuGradThreeQuarter}|${config.gpgpuGradEnd}`;
       if (drawMat.userData.gradLutKey !== lutKey) {
         drawMat.userData.gradLutKey = lutKey;
-        fillGradientLutData(lut.image.data as Uint8Array, config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd);
+        fillGradientLutDataAuto(lut.image.data as Uint8Array, config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd, config.gpgpuGradQuarter, config.gpgpuGradThreeQuarter);
         lut.needsUpdate = true;
       }
     }
@@ -423,6 +423,7 @@ export function syncVisualUniforms(args: {
     geomMat.uniforms.uVelocityAlign.value = config.gpgpuGeomVelocityAlign ? 1 : 0;
     if (geomMat.uniforms.uTime) geomMat.uniforms.uTime.value = time ?? 0;
     if (geomMat.uniforms.uSpinSpeed) geomMat.uniforms.uSpinSpeed.value = config.gpgpuGeomSpinSpeed;
+    if (geomMat.uniforms.uSpinRandom) geomMat.uniforms.uSpinRandom.value = Math.max(0, Math.min(1, config.gpgpuGeomSpinRandom ?? 0));
     // Rotation over Lifetime (Phase AC): an all-ones curve is
     // suppressed here too, so a flat curve keeps the legacy spin.
     if (geomMat.uniforms.uAgeEnabled) geomMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled;

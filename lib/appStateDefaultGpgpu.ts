@@ -27,6 +27,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // Geometry material extras + point shape (Kinetix integration B1b)
   gpgpuGeomEnvReflect: 0.0,
   gpgpuGeomSpinSpeed: 0.0,
+  gpgpuGeomSpinRandom: 0,
   gpgpuGeomStretch: 0.0,
   gpgpuPointShape: 'soft' as const,
   gpgpuNBodyEnabled: false,
@@ -47,6 +48,8 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // drag 1.1 is the legacy fixed damping; max speed 0 = uncapped.
   gpgpuSpawnRate: 1.0,
   gpgpuSpawnBurst: 1.0,
+  gpgpuSpawnPulseInterval: 0,
+  gpgpuSpawnPulseDuty: 0.3,
   gpgpuKillBoundary: false,
   gpgpuKillMask: false,
   gpgpuDrag: 1.1,
@@ -332,6 +335,8 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGradStart: '#e0f2fe',
   gpgpuGradMid: '#38bdf8',
   gpgpuGradEnd: '#8b5cf6',
+  gpgpuGradQuarter: '',
+  gpgpuGradThreeQuarter: '',
   gpgpuGradPreset: 'nebula',
   gpgpuGradSpatialScale: 0.008,
   gpgpuGradImageSource: '',

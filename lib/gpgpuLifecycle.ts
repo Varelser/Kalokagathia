@@ -90,6 +90,60 @@ export function spawnThresholdAt(time: number, rate: number, burst: number): num
   return Math.min(1, b + r * t);
 }
 
+// ── Spawn pulse (Phase AH) ────────────────────────────────────────
+// The release clock can run in pulses: within each `interval`
+// seconds of wall time, the spawn clock advances only during the
+// first `duty` fraction of the cycle and freezes for the rest, so
+// particles are released in periodic bursts instead of a steady
+// stream. Pulse time pt(t) is the amount of "live" time inside t:
+//   pt(t) = (floor(t / interval) * duty + min(fract(t / interval), duty)) * interval
+// duty = 1 makes pt(t) = t exactly (identity), and interval = 0
+// disables pulsing entirely — the threshold functions below then
+// reduce to spawnThresholdAt verbatim, and the GLSL twins keep the
+// legacy expression on the same branch, so the default render is
+// bit-identical.
+
+export function clampSpawnPulseInterval(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(30, v));
+}
+
+export function clampSpawnPulseDuty(v: number): number {
+  if (!Number.isFinite(v)) return 0.3;
+  return Math.max(0.05, Math.min(1, v));
+}
+
+/** Pulse time pt(t): live seconds inside `time` wall seconds. */
+export function spawnPulseTime(time: number, interval: number, duty: number): number {
+  const t = Math.max(0, time);
+  const iv = clampSpawnPulseInterval(interval);
+  if (iv <= 0) return t;
+  const d = clampSpawnPulseDuty(duty);
+  const cyc = t / iv;
+  const whole = Math.floor(cyc);
+  const frac = cyc - whole;
+  return (whole * d + Math.min(frac, d)) * iv;
+}
+
+/**
+ * The spawn threshold with the pulse applied to the release clock.
+ * With interval = 0 this IS spawnThresholdAt (same code path, not
+ * an approximation); the GLSL twins branch the same way.
+ */
+export function spawnThresholdWithPulse(
+  time: number,
+  rate: number,
+  burst: number,
+  interval: number,
+  duty: number,
+): number {
+  if (clampSpawnPulseInterval(interval) <= 0) return spawnThresholdAt(time, rate, burst);
+  const b = clampSpawnBurst(burst);
+  if (b >= 1) return 1;
+  const r = clampSpawnRate(rate);
+  return Math.min(1, b + r * spawnPulseTime(time, interval, duty));
+}
+
 /**
  * Per-texel spawn hash in [0, 1): the position shader's hash1
  * (fract(sin(dot(p, (127.1, 311.7))) * 43758.5453)) evaluated at

@@ -92,6 +92,7 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   textureNoiseKind: 'value' as const,
   textureNoisePeriod: 4,
   textureNoiseOctaves: 3,
+  textureNoiseSeed: 0,
   executionDiagnosticsEnabled: false,
   executionDiagnosticsVerbose: false,
   hybridSdfEnabled: false,

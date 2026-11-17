@@ -46,6 +46,12 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform float uSpawnRate;
   uniform float uSpawnBurst;
   uniform float uSpawnTime;
+  // Spawn pulse (Phase AH): interval 0 = off — spawnPulseTime then
+  // returns max(t, 0) and the threshold expressions below are the
+  // legacy ones verbatim. TS twin: spawnPulseTime in
+  // lib/gpgpuLifecycle.ts.
+  uniform float uSpawnPulseInterval;
+  uniform float uSpawnPulseDuty;
   uniform bool  uKillBoundary;
   uniform bool  uKillMask;
   uniform sampler2D uKillMaskTex;
@@ -59,6 +65,17 @@ export const SIM_POS_FRAG = /* glsl */ `
   // to spawnHashForUv in lib/gpgpuLifecycle.ts.
   float spawnHash(vec2 uv) {
     return fract(sin(dot(uv + vec2(7.77, 3.13), vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  // Pulse time (Phase AH): identical to the velocity pass and to
+  // spawnPulseTime in lib/gpgpuLifecycle.ts.
+  float spawnPulseTime(float t) {
+    float tt = max(t, 0.0);
+    if (uSpawnPulseInterval <= 0.0) return tt;
+    float cyc = tt / uSpawnPulseInterval;
+    float whole = floor(cyc);
+    float fracPart = cyc - whole;
+    return (whole * uSpawnPulseDuty + min(fracPart, uSpawnPulseDuty)) * uSpawnPulseInterval;
   }
 
   // Gyroid SDF (B3) — identical formulation to the velocity shader.
@@ -96,12 +113,12 @@ export const SIM_POS_FRAG = /* glsl */ `
     bool spawnActivating = false;
     if (uSpawnBurst < 1.0) {
       float sHash = spawnHash(vUv);
-      float thrNow = min(1.0, uSpawnBurst + uSpawnRate * max(uSpawnTime, 0.0));
+      float thrNow = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTime(uSpawnTime));
       if (sHash >= thrNow) {
         gl_FragColor = vec4(0.0, -99999.0, 0.0, age);
         return;
       }
-      float thrPrev = min(1.0, uSpawnBurst + uSpawnRate * max(uSpawnTime - uDelta, 0.0));
+      float thrPrev = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTime(uSpawnTime - uDelta));
       spawnActivating = sHash >= thrPrev;
     }
 

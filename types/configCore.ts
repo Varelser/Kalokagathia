@@ -246,6 +246,7 @@ export interface ParticleConfigCore {
   textureNoiseKind: 'value' | 'ridge' | 'turbulence';
   textureNoisePeriod: number;
   textureNoiseOctaves: number;
+  textureNoiseSeed: number;
   executionDiagnosticsEnabled: boolean;
   executionDiagnosticsVerbose: boolean;
   hybridSdfEnabled: boolean;

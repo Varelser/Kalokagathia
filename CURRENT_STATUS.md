@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.39.1**（2026-11-17 出荷、保守リリース＝Forces パネル分割＋CPU テストハーネス復旧。機能・キー・スターターは v1.39.0 から無変更）
+**現行バージョン: v1.40.0**（2026-11-17、第6期 Phase AH＝周期バースト／自転ランダム範囲／ノイズシード／ランプ5点化／筆致ジッタ。新規7キー・スターター+2。iMac ゲート・出荷は PHASE_AH_REPORT.md 参照）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -13,7 +13,7 @@
 
 ## 資産の実数（2026-11-17 実測）
 
-- config キー: **1,119件** ／ 内蔵スターター: **541件**
+- config キー: **1,126件** ／ 内蔵スターター: **543件**
 - 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 
