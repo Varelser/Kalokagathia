@@ -138,6 +138,21 @@ export interface ParticleConfigGpgpu {
   gpgpuParticleLifeRadius: number;
   gpgpuParticleLifeFriction: number;
   gpgpuParticleLifeSeed: number;
+  // Behaviour semantics (Phase AA1, lib/particleLifeBehavior.ts):
+  // a cyclic predator chain over the species — species i pursues
+  // species (i+1) mod n and evades species (i-1) mod n — gated by a
+  // vision cone (range + angle around the velocity direction), a
+  // per-particle Meander wander term, and an optional max-speed
+  // clamp applied inside the Particle Life block. Every default
+  // (pursue / evade / meander 0, max speed 0 = uncapped) leaves the
+  // legacy matrix-only behaviour bit-identical.
+  gpgpuParticleLifePursue: number;
+  gpgpuParticleLifeEvade: number;
+  gpgpuParticleLifeVisionRange: number;
+  gpgpuParticleLifeVisionAngle: number;
+  gpgpuParticleLifeMaxSpeed: number;
+  gpgpuParticleLifeMeanderAmount: number;
+  gpgpuParticleLifeMeanderScale: number;
   // Spring (to spawn pos)
   gpgpuSpringEnabled: boolean;
   gpgpuSpringStrength: number;
@@ -223,12 +238,41 @@ export interface ParticleConfigGpgpu {
   // widens the placement band along the path normal (0 = on-path).
   // SubpathMode distributes s across multiple subpaths. Only the svg
   // target reads these keys; every other target ignores them.
-  gpgpuMorphPathMode: 'off' | 'along' | 'writeOn';
+  gpgpuMorphPathMode: 'off' | 'along' | 'writeOn' | 'stamp';
   gpgpuMorphPathWriteOnStart: number;
   gpgpuMorphPathWriteOnEnd: number;
   gpgpuMorphPathTaper: number;
   gpgpuMorphPathTaperShape: 'linear' | 'smooth' | 'bell';
   gpgpuMorphPathSubpathMode: 'proportional' | 'even' | 'first';
+  // Shape stamping (Phase AA3, lib/stampPlacement.ts): path mode
+  // 'stamp' places a small shape at equal arc-length intervals
+  // along the authored path instead of distributing points along
+  // it. Spacing is the path fraction per stamp (count =
+  // round(1/spacing), 1..64); size is the shape radius in
+  // normalised cloud units; shape 'obj' stamps the imported OBJ
+  // sample cloud (falling back to 'disc' without a usable source);
+  // align rotates each stamp onto the path tangent. Only read in
+  // 'stamp' mode, so every other mode is untouched.
+  gpgpuMorphStampSpacing: number;
+  gpgpuMorphStampSize: number;
+  gpgpuMorphStampShape: 'disc' | 'ring' | 'star' | 'diamond' | 'obj';
+  gpgpuMorphStampAlign: boolean;
+  // Form-dedicated deformation (Phase AA2, lib/formDeformation.ts):
+  // a placement deformation over the baked base form — Disperse
+  // (per-point loosening, radial or along an axis), Twist (rotation
+  // around an axis proportional to the coordinate along it) and
+  // Fractal Field (seeded fBm displacement with an evolution
+  // offset). Applied in the bake before the replica grammar; all
+  // amounts 0 (the defaults) skip it entirely and the bake is
+  // bit-identical to before. This is a dedicated Form grammar,
+  // separate from the Flow / Vortex motion systems.
+  gpgpuMorphDisperseAmount: number;
+  gpgpuMorphDisperseDirection: 'radial' | 'x' | 'y' | 'z';
+  gpgpuMorphTwistAmount: number;
+  gpgpuMorphTwistAxis: 'x' | 'y' | 'z';
+  gpgpuMorphFractalAmount: number;
+  gpgpuMorphFractalFrequency: number;
+  gpgpuMorphFractalEvolution: number;
   // Terrain Mesh (Phase P, Mir-style): a polygon mesh system that
   // shares the terrain height field above (terrainHeightAt with the
   // same field-seed mixing as the morph bake, so the mesh landscape
@@ -299,6 +343,16 @@ export interface ParticleConfigGpgpu {
   /** Y rotation in degrees. */
   gpgpuObjMeshRotY: number;
   gpgpuObjMeshOpacity: number;
+  // OBJ repetition grammar (Phase AA3, lib/objMesh.ts): the repeat
+  // layout gains a 'radial' mode (copies on a circle, each facing
+  // outward) next to the legacy centred cube 'grid', plus the
+  // replica-style per-copy chain — each copy i additionally rotates
+  // by RepeatRotation * i degrees and scales by
+  // RepeatScaleStep^i. Defaults ('grid' / 0 / 1) reproduce the
+  // Phase V layout exactly.
+  gpgpuObjMeshRepeatMode: 'grid' | 'radial';
+  gpgpuObjMeshRepeatRotation: number;
+  gpgpuObjMeshRepeatScaleStep: number;
   // Verlet Integration
   gpgpuVerletEnabled: boolean;
   // SDF Collider ('gyroid' added by Kinetix integration B3: the TPMS
@@ -578,6 +632,11 @@ export interface ParticleConfigGpgpu {
   gpgpuSmoothTubeEnabled: boolean;
   gpgpuSmoothTubeCount: number;
   gpgpuSmoothTubeRadius: number;
+  // Cross-section taper (Phase AA3, lib/smoothTubeProfile.ts):
+  // the oldest history ring thins toward (1 - taper) of the base
+  // radius; the newest ring always keeps it. 0 = constant radius
+  // (legacy).
+  gpgpuSmoothTubeTaper: number;
   gpgpuSmoothTubeHistory: number;
   gpgpuSmoothTubeColor: string;
   gpgpuSmoothTubeOpacity: number;

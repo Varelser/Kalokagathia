@@ -113,6 +113,15 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuParticleLifeRadius: 60,
   gpgpuParticleLifeFriction: 0.85,
   gpgpuParticleLifeSeed: 1,
+  // Behaviour semantics (Phase AA1): all behaviour terms off /
+  // uncapped by default — the matrix-only legacy behaviour.
+  gpgpuParticleLifePursue: 0,
+  gpgpuParticleLifeEvade: 0,
+  gpgpuParticleLifeVisionRange: 120,
+  gpgpuParticleLifeVisionAngle: 360,
+  gpgpuParticleLifeMaxSpeed: 0,
+  gpgpuParticleLifeMeanderAmount: 0,
+  gpgpuParticleLifeMeanderScale: 1,
   // Spring (to spawn pos)
   gpgpuSpringEnabled: false,
   gpgpuSpringStrength: 1.0,
@@ -153,6 +162,20 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphPathTaper: 0,
   gpgpuMorphPathTaperShape: 'linear' as const,
   gpgpuMorphPathSubpathMode: 'proportional' as const,
+  // Shape stamping (Phase AA3): only read in path mode 'stamp'.
+  gpgpuMorphStampSpacing: 0.125,
+  gpgpuMorphStampSize: 0.18,
+  gpgpuMorphStampShape: 'disc' as const,
+  gpgpuMorphStampAlign: true,
+  // Form-dedicated deformation (Phase AA2): all amounts 0 = the
+  // bake skips the deformation entirely (bit-identical legacy).
+  gpgpuMorphDisperseAmount: 0,
+  gpgpuMorphDisperseDirection: 'radial' as const,
+  gpgpuMorphTwistAmount: 0,
+  gpgpuMorphTwistAxis: 'y' as const,
+  gpgpuMorphFractalAmount: 0,
+  gpgpuMorphFractalFrequency: 1.5,
+  gpgpuMorphFractalEvolution: 0,
   // Terrain Mesh (Phase P): disabled by default — mounts nothing.
   gpgpuTerrainMeshEnabled: false,
   gpgpuTerrainMeshDisplay: 'shaded' as const,
@@ -179,6 +202,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuObjMeshPosZ: 0,
   gpgpuObjMeshRotY: 0,
   gpgpuObjMeshOpacity: 1,
+  // OBJ repetition grammar (Phase AA3): grid / 0 / 1 = Phase V layout.
+  gpgpuObjMeshRepeatMode: 'grid' as const,
+  gpgpuObjMeshRepeatRotation: 0,
+  gpgpuObjMeshRepeatScaleStep: 1,
   // Verlet Integration
   gpgpuVerletEnabled: false,
   // SDF Collider
@@ -359,6 +386,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSmoothTubeEnabled: false,
   gpgpuSmoothTubeCount: 32,
   gpgpuSmoothTubeRadius: 2.0,
+  gpgpuSmoothTubeTaper: 0,
   gpgpuSmoothTubeHistory: 12,
   gpgpuSmoothTubeColor: '#aaccff',
   gpgpuSmoothTubeOpacity: 0.7,
