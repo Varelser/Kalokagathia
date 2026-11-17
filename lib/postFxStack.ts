@@ -1,4 +1,5 @@
 import type { ParticleConfig } from '../types';
+import { configUsesEdgeSupply } from './mapSourceSupply';
 
 export type PostFxStageId =
   | 'brightness-contrast'
@@ -15,6 +16,7 @@ export type PostFxStageId =
   | 'ordered-dither'
   | 'halftone'
   | 'edge-detect'
+  | 'edge-capture'
   | 'radial-blur'
   | 'light-fx'
   | 'output-grade';
@@ -35,12 +37,16 @@ export type PostFxStackProfile = ParticleConfig['postFxStackProfile'];
 // halftone) and the Sobel edge pass are print-style treatments
 // of the finished frame, so they sit after 'feedback' and
 // before 'output-grade', which still grades last.
+// Phase AF: 'edge-capture' is last in every profile — it copies
+// the FINISHED frame's Sobel field into the edge supply target
+// and passes the frame through bit-identically, so it runs after
+// 'output-grade' and changes no pixel itself.
 const STACK_ORDERS: Record<PostFxStackProfile, PostFxStageId[]> = {
-  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade'],
-  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade'],
-  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade'],
-  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade'],
-  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade'],
+  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
+  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
+  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
+  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
+  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'output-grade', 'edge-capture'],
 };
 
 export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[] {
@@ -88,6 +94,12 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   }
   if (config.postEdgeEnabled) {
     active.add('edge-detect');
+  }
+  // Phase AF edge supply: the capture stage exists only while
+  // some map / mask source actually requests the edge field; it
+  // is independent of the display edge pass above.
+  if (configUsesEdgeSupply(config)) {
+    active.add('edge-capture');
   }
   if (config.postRadialBlurEnabled && config.postRadialBlurStrength > 0.001) {
     active.add('radial-blur');

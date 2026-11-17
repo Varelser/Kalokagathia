@@ -8,7 +8,14 @@ import { SAMPLE_SVG_STAR, sampleSvgPointCloud } from '../lib/svgMorph';
 import { AGE_CURVE_POINT_MAX, AGE_CURVE_PRESETS, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT, parseObjGeometry, isObjClosedMesh } from '../lib/objMorph';
 import { setModulationSetup, useModulationSetup } from '../lib/modulation';
-import { extractLumaMap } from './controlPanelPartsSourceMediaUtils';
+import { extractLumaMap, extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
+import {
+  afMapSource,
+  getPathRasterLuma,
+  isAfMapSource,
+  parseAfMapSource,
+  type AfMapSourceKind,
+} from '../lib/mapSourceSupply';
 import {
   TERRAIN_DERIVED_KINDS,
   getTerrainDerivedMapCanvas,
@@ -1014,6 +1021,42 @@ const DERIVED_KIND_LABELS: Record<TerrainDerivedMapKind, string> = {
   curvature: '曲率',
 };
 
+const AF_SOURCE_KIND_LABELS: Record<AfMapSourceKind, string> = {
+  text: '文字',
+  path: 'パス',
+  edge: 'エッジ',
+};
+
+const AF_SOURCE_KINDS: readonly AfMapSourceKind[] = ['text', 'path', 'edge'];
+
+/** Internal supply picker (Phase AF): the current text, the
+ *  authored SVG path and the post chain's edge field as map /
+ *  mask sources. Like the terrain derived supply, choosing one
+ *  stores a sentinel that resolves live — the assignment tracks
+ *  the text / path / frame instead of freezing a picture. The
+ *  edge supply reads the previous frame's field (one frame of
+ *  lag) and works whether or not the edge display is on. */
+const AfSourceButtons: React.FC<{
+  source: string;
+  onPick: (kind: AfMapSourceKind) => void;
+}> = ({ source, onPick }) => (
+  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+    <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">内部供給</span>
+    {AF_SOURCE_KINDS.map((kind) => {
+      const active = parseAfMapSource(source) === kind;
+      return (
+        <button
+          key={kind}
+          onClick={() => onPick(kind)}
+          className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest transition-colors ${active ? 'border-white/70 bg-white/20 text-white' : 'border-white/15 text-white/60 hover:bg-white/10'}`}
+        >
+          {AF_SOURCE_KIND_LABELS[kind]}
+        </button>
+      );
+    })}
+  </div>
+);
+
 /** Small picker row for the terrain derived maps (Phase AE):
  *  choosing one stores the sentinel source, which resolves to
  *  the live bake — the assignment tracks the terrain parameters
@@ -1133,7 +1176,7 @@ const MapSourceBlock: React.FC<{
         </label>
         {source && (
           <>
-            {!isTerrainDerivedSource(source) && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
+            {!isTerrainDerivedSource(source) && !isAfMapSource(source) && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
             <button
               onClick={() => onSource('')}
               className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
@@ -1144,9 +1187,16 @@ const MapSourceBlock: React.FC<{
         )}
       </div>
       <DerivedSourceButtons source={source} onPick={(kind) => onSource(terrainDerivedSource(kind))} />
+      <AfSourceButtons source={source} onPick={(kind) => onSource(afMapSource(kind))} />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         {isTerrainDerivedSource(source)
           ? `地形派生マップ（${DERIVED_KIND_LABELS[parseTerrainDerivedSource(source) ?? 'slope']}）を設定済み: 地形パラメータに追随する内部供給です。`
+          : isAfMapSource(source)
+          ? parseAfMapSource(source) === 'text'
+            ? '文字ラスタを設定済み: 現在のテキスト設定（レイヤー2 TextMap）に追随する内部供給です。'
+            : parseAfMapSource(source) === 'path'
+              ? 'パスラスタを設定済み: 現在の SVG パス（モーフの SVG ソース）に追随する内部供給です。SVG が未設定の間は効きません。'
+              : 'エッジ出力を設定済み: ポストの輪郭（前フレームのエッジ場）を供給する内部供給です。エッジ表示の ON/OFF とは独立に働きます。'
           : source ? '専用画像を設定済み: このプロパティは共通マップではなくこの画像を使います。' : '未設定: このプロパティは共通マップを使います。'}
       </div>
     </div>
@@ -1202,6 +1252,47 @@ const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, up
       updateConfig('gpgpuMaskMapHeight', 128);
     }
   };
+  // Internal supply (Phase AF): text and path capture their
+  // numeric luma grid at assignment time (128px, the image-import
+  // convention) for the bake / placement consumers, exactly like
+  // the terrain derived supply; the GPU consumers (draw clip /
+  // kill / Layer Maps) resolve the live sentinel texture. The
+  // edge field is a live frame product and has no numeric grid:
+  // bake / placement consumers keep their legacy behaviour while
+  // the GPU consumers sample the captured field.
+  const applyAf = (kind: AfMapSourceKind) => {
+    updateConfig('gpgpuMaskSource', afMapSource(kind));
+    if (kind === 'text') {
+      const map = extractTextLumaMap(
+        config.layer2TextMapText,
+        128,
+        128,
+        config.layer2TextMapFontFamily,
+        config.layer2TextMapWeight,
+        config.layer2TextMapSize,
+        config.layer2TextMapPadding,
+        config.layer2TextMapInvert,
+      );
+      updateConfig('gpgpuMaskMap', map);
+      updateConfig('gpgpuMaskMapWidth', 128);
+      updateConfig('gpgpuMaskMapHeight', 128);
+    } else if (kind === 'path') {
+      const luma = getPathRasterLuma(config, 128);
+      if (luma) {
+        updateConfig('gpgpuMaskMap', Array.from(luma));
+        updateConfig('gpgpuMaskMapWidth', 128);
+        updateConfig('gpgpuMaskMapHeight', 128);
+      } else {
+        updateConfig('gpgpuMaskMap', []);
+        updateConfig('gpgpuMaskMapWidth', 0);
+        updateConfig('gpgpuMaskMapHeight', 0);
+      }
+    } else {
+      updateConfig('gpgpuMaskMap', []);
+      updateConfig('gpgpuMaskMapWidth', 0);
+      updateConfig('gpgpuMaskMapHeight', 0);
+    }
+  };
   return (
     <div className="mb-2 mt-2 rounded border border-white/10 bg-white/5 p-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -1219,7 +1310,7 @@ const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, up
         </label>
         {(source || config.gpgpuMaskMap.length > 0) && (
           <>
-            {source && !isTerrainDerivedSource(source) && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
+            {source && !isTerrainDerivedSource(source) && !isAfMapSource(source) && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
             <button
               onClick={clear}
               className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
@@ -1230,9 +1321,18 @@ const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, up
         )}
       </div>
       <DerivedSourceButtons source={source} onPick={applyDerived} />
+      <AfSourceButtons source={source} onPick={applyAf} />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         {isTerrainDerivedSource(source)
           ? `地形派生マップ（${DERIVED_KIND_LABELS[parseTerrainDerivedSource(source) ?? 'slope']}）をマスクに供給中: 描画 clip と Kill は地形パラメータに追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点の地形から抽出済みです。`
+          : isAfMapSource(source)
+          ? parseAfMapSource(source) === 'text'
+            ? `文字ラスタをマスクに供給中: 描画 clip と Kill は現在のテキスト設定に追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点の文字から抽出済みです。文字を変えたら選び直してください。`
+            : parseAfMapSource(source) === 'path'
+              ? config.gpgpuMaskMap.length > 0
+                ? `パスラスタをマスクに供給中: 描画 clip と Kill は現在の SVG パスに追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点のパスから抽出済みです。パスを変えたら選び直してください。`
+                : 'パスラスタをマスクに供給中: ただし SVG ソースが未設定（または図形なし）のため、パスが設定されるまでマスクは効きません。'
+              : 'エッジ出力をマスクに供給中: 描画 clip と Kill はポストの輪郭（前フレームのエッジ場、閾値はエッジ表示と共用）に追随します。生きたフレーム由来のため輝度マップは無く、ベイクとメディア配置には効きません。エッジ表示の ON/OFF とは独立です。'
           : source
           ? `マスク設定済み（輝度マップ ${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight} を取り込み時に抽出）。白い領域が残り、黒い領域が間引かれます。`
           : config.gpgpuMaskMap.length > 0

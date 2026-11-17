@@ -27,6 +27,13 @@ uniform float uDecay;
 uniform float uZoom;
 uniform float uRotation;
 uniform vec2 uTexel;
+// Feedback mask (Phase AF): the raster mask source modulates the
+// decay spatially — white mask keeps the full decay, black kills
+// the trail. uMaskStrength 0 (or no ready texture, signalled by
+// strength 0 from the host) reproduces the legacy decay exactly:
+// mix(decay, decay * luma, 0.0) == decay bit for bit.
+uniform sampler2D tMask;
+uniform float uMaskStrength;
 varying vec2 vUv;
 
 vec3 samplePrev(vec2 uv) {
@@ -44,9 +51,11 @@ void main() {
   float sn = sin(uRotation);
   vec2 rotated = mat2(cs, -sn, sn, cs) * centered;
   vec2 prevUv = rotated / max(uZoom, 0.0001) + 0.5;
+  float maskLuma = dot(texture2D(tMask, vUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+  float decay = mix(uDecay, uDecay * maskLuma, clamp(uMaskStrength, 0.0, 1.0));
   vec3 prev = vec3(0.0);
   if (prevUv.x >= 0.0 && prevUv.x <= 1.0 && prevUv.y >= 0.0 && prevUv.y <= 1.0) {
-    prev = samplePrev(prevUv) * uDecay;
+    prev = samplePrev(prevUv) * decay;
   }
   vec3 current = texture2D(tDiffuse, vUv).rgb;
   gl_FragColor = vec4(max(current, prev), 1.0);
@@ -78,6 +87,12 @@ export class FeedbackPass extends Pass {
 
   rotation = 0;
 
+  /** Feedback mask (Phase AF): texture + strength; a null
+   *  texture or 0 strength leaves the decay unmodulated. */
+  maskTexture: THREE.Texture | null = null;
+
+  maskStrength = 0;
+
   private readTarget: THREE.WebGLRenderTarget;
 
   private writeTarget: THREE.WebGLRenderTarget;
@@ -100,6 +115,8 @@ export class FeedbackPass extends Pass {
         uZoom: { value: this.zoom },
         uRotation: { value: this.rotation },
         uTexel: { value: new THREE.Vector2(1, 1) },
+        tMask: { value: null },
+        uMaskStrength: { value: 0 },
       },
       depthTest: false,
       depthWrite: false,
@@ -127,6 +144,8 @@ export class FeedbackPass extends Pass {
     compositeUniforms.uDecay.value = this.decay;
     compositeUniforms.uZoom.value = this.zoom;
     compositeUniforms.uRotation.value = this.rotation;
+    compositeUniforms.tMask.value = this.maskTexture;
+    compositeUniforms.uMaskStrength.value = this.maskTexture ? this.maskStrength : 0;
     this.fullscreenMaterial = this.compositeMaterial;
     renderer.setRenderTarget(this.writeTarget);
     renderer.render(this.scene, this.camera);

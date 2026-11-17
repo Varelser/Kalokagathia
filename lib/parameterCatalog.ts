@@ -74,6 +74,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'postFeedbackDecay', label: "Feedback Decay", tab: 'global', min: 0, max: 0.97, step: 0.01 },
   { key: 'postFeedbackZoom', label: "Feedback Zoom", tab: 'global', min: 0.95, max: 1.05, step: 0.001 },
   { key: 'postFeedbackRotation', label: "Feedback Rotation", tab: 'global', min: -0.1, max: 0.1, step: 0.001 },
+  { key: 'postFeedbackMaskStrength', label: "Feedback Mask Strength", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'postKaleidoscopeSegments', label: "Kaleidoscope Segments", tab: 'global', min: 2, max: 16, step: 1 },
   { key: 'postKaleidoscopeRotation', label: "Kaleidoscope Rotation", tab: 'global', min: -3.14, max: 3.14, step: 0.01 },
   { key: 'postSlitScanBands', label: "Slit Scan Bands", tab: 'global', min: 4, max: 64, step: 1 },

@@ -12,8 +12,10 @@ import { LightFxPass } from './lightFxPass';
 import { OutputGradePass } from './outputGradePass';
 import { PosterizePass, OrderedDitherPass, HalftonePass } from './toneGradePasses';
 import { EdgeDetectPass } from './edgeDetectPass';
+import { EdgeCapturePass } from './edgeCapturePass';
 import { DisplacePass } from './displacePass';
 import { getGradImageTexture } from '../lib/gradImageTexture';
+import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { displaceChannelIndex } from '../lib/postFxMath';
 
 export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config }) => {
@@ -23,6 +25,17 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   feedbackPass.decay = config.postFeedbackDecay;
   feedbackPass.zoom = config.postFeedbackZoom;
   feedbackPass.rotation = config.postFeedbackRotation;
+  // Feedback mask (Phase AF): the raster mask source (image /
+  // terrain-derived / text / path / edge) modulates the decay
+  // spatially. Unready source → no modulation (legacy decay).
+  if (config.postFeedbackMaskEnabled && config.gpgpuMaskSource) {
+    const maskState = resolveMapSourceTexture(config.gpgpuMaskSource, config);
+    feedbackPass.maskTexture = maskState.ready ? maskState.texture : null;
+    feedbackPass.maskStrength = config.postFeedbackMaskStrength;
+  } else {
+    feedbackPass.maskTexture = null;
+    feedbackPass.maskStrength = 0;
+  }
   const kaleidoscopePass = React.useMemo(() => new KaleidoscopePass(), []);
   React.useEffect(() => () => kaleidoscopePass.dispose(), [kaleidoscopePass]);
   kaleidoscopePass.segments = config.postKaleidoscopeSegments;
@@ -75,6 +88,12 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   React.useEffect(() => () => edgeDetectPass.dispose(), [edgeDetectPass]);
   edgeDetectPass.threshold = config.postEdgeThreshold;
   edgeDetectPass.mode = config.postEdgeMode;
+  // Edge supply capture (Phase AF): pass-through Sobel capture
+  // feeding the `edge-output` map source; threshold shared with
+  // the display edge pass, activation independent of it.
+  const edgeCapturePass = React.useMemo(() => new EdgeCapturePass(), []);
+  React.useEffect(() => () => edgeCapturePass.dispose(), [edgeCapturePass]);
+  edgeCapturePass.threshold = config.postEdgeThreshold;
   const displacePass = React.useMemo(() => new DisplacePass(), []);
   React.useEffect(() => () => displacePass.dispose(), [displacePass]);
   displacePass.amount = config.postDisplaceAmount;
@@ -168,6 +187,8 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
             return <primitive key={stage} object={halftonePass} />;
           case 'edge-detect':
             return <primitive key={stage} object={edgeDetectPass} />;
+          case 'edge-capture':
+            return <primitive key={stage} object={edgeCapturePass} />;
           case 'radial-blur':
             return <primitive key={stage} object={radialBlurPass} />;
           case 'light-fx':

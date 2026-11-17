@@ -44,6 +44,7 @@ import {
 } from './gpgpuMorphTargets';
 import { TERRAIN_MESH_EXTENT, TERRAIN_MESH_RESOLUTION } from './terrainMesh';
 import { getMapImageTexture, type MapImageTextureState } from './mapImageTexture';
+import { resolveAfMapSourceTexture } from './mapSourceSupply';
 import type { ParticleConfig } from '../types';
 
 export type TerrainDerivedMapKind = 'normal' | 'slope' | 'curvature';
@@ -309,6 +310,10 @@ export function getTerrainDerivedTexture(kind: TerrainDerivedMapKind, config: Pa
 export function resolveMapSourceTexture(source: string, config: ParticleConfig): MapImageTextureState {
   const kind = parseTerrainDerivedSource(source);
   if (kind) return getTerrainDerivedTexture(kind, config);
+  // Phase AF supplies (text / path / edge sentinels) resolve in
+  // lib/mapSourceSupply.ts; everything else is an image source.
+  const af = resolveAfMapSourceTexture(source, config);
+  if (af) return af;
   return getMapImageTexture(source);
 }
 

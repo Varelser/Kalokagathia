@@ -1944,4 +1944,66 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuMapSizeAmount: 1.0,
         gpgpuTrailEnabled: false,
       }),
+  // Phase AF: text mask — the current text (layer-2 TextMap
+  // settings) is rasterised and supplied to the raster mask
+  // through the internal supply, so the cloud survives only
+  // inside the letters. The draw clip / kill resolve the live
+  // text texture; the numeric bake map is captured when the
+  // source is picked in the UI (the terrain-derived convention).
+  createStarterPreset('starter-text-raster-mask', 'Text Raster Mask (Internal Supply)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.5,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.08,
+        layer2TextMapText: 'VARELSER',
+        gpgpuMaskSource: 'text-raster',
+        gpgpuMaskMode: 'clip',
+        gpgpuMaskThreshold: 0.5,
+        gpgpuMaskInvert: false,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase AF: edge mask — the post chain's edge field (the
+  // letters' contours) is supplied to the raster mask, so
+  // particles remain along the outlines. The edge DISPLAY stays
+  // off: supply and display are independent, and the capture
+  // reads the previous frame's field.
+  createStarterPreset('starter-edge-output-mask', 'Edge Output Mask (Contour Supply)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.5,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.5,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.04,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'text',
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.02,
+        gpgpuMorphOrbitSpeed: 0.0,
+        layer2TextMapText: 'VARELSER',
+        gpgpuMaskSource: 'edge-output',
+        gpgpuMaskMode: 'clip',
+        gpgpuMaskThreshold: 0.5,
+        gpgpuMaskInvert: false,
+        postEdgeEnabled: false,
+        gpgpuTrailEnabled: false,
+      }),
 ];

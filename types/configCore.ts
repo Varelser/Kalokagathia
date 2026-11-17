@@ -161,6 +161,10 @@ export interface ParticleConfigCore {
   postFeedbackDecay: number;
   postFeedbackZoom: number;
   postFeedbackRotation: number;
+  // Feedback mask (Phase AF): the raster mask source modulates
+  // the feedback decay spatially (mask white = full decay).
+  postFeedbackMaskEnabled: boolean;
+  postFeedbackMaskStrength: number;
   postKaleidoscopeEnabled: boolean;
   postKaleidoscopeSegments: number;
   postKaleidoscopeRotation: number;

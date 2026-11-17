@@ -34,6 +34,8 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postFeedbackDecay: 0.85,
   postFeedbackZoom: 1,
   postFeedbackRotation: 0,
+  postFeedbackMaskEnabled: false,
+  postFeedbackMaskStrength: 1,
   postKaleidoscopeEnabled: false,
   postKaleidoscopeSegments: 6,
   postKaleidoscopeRotation: 0,

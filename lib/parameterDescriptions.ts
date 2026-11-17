@@ -51,6 +51,8 @@ const DESCRIPTIONS: Record<string, string> = {
   postBrightness: '画面全体の明るさ（±）',
   postContrastAmount: '画面全体のコントラスト（±）',
   postFeedbackDecay: 'GPUフィードバック残像の残り方。1に近いほど長く残る',
+  postFeedbackMaskEnabled: 'フィードバックマスク（Phase AF）: ラスタマスクのソース（画像／地形派生／文字／パス／エッジ）で残像の残り方を空間変調する。マスク未準備時は変調なし。既定OFFで従来同一',
+  postFeedbackMaskStrength: 'フィードバックマスクの効き量（1でマスク輝度どおり、白い所だけ残像が残る）',
   postFeedbackZoom: 'フィードバック残像の拡縮。1より大で拡大しながら残る',
   postFeedbackRotation: 'フィードバック残像の回転ずれ',
   postKaleidoscopeSegments: '万華鏡の分割数（対称の枚数）',

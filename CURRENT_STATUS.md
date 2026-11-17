@@ -1,15 +1,15 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.36.0**（2026-11-17 出荷、第5期 Phase AE＝地形の使い切り）
+**現行バージョン: v1.37.0**（2026-11-17 出荷、第5期 Phase AF＝パスと文字とマスクの結線）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_AE_REPORT.md / PHASE_AE_GATE_REPORT.md、前: PHASE_AD_REPORT.md）
+  （最新: PHASE_AF_REPORT.md / PHASE_AF_GATE_REPORT.md、前: PHASE_AE_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.36.0] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.37.0] が最新項）
 
 ## 資産の実数（2026-11-17 実測）
 

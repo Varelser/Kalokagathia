@@ -511,6 +511,8 @@ const BOOLS: BoolDef[] = [
   ['postBloomEnabled', '光のにじみ（ブルーム）'],
   ['postKaleidoscopeEnabled', '万華鏡エフェクト'],
   ['postFeedbackEnabled', '画面残像エフェクト'],
+  ['postFeedbackMaskEnabled', 'フィードバックマスク（ラスタマスクで残像の残り方を空間変調、Phase AF）'],
+  ['postFeedbackMaskStrength', 'フィードバックマスクの効き量'],
   ['postNoiseEnabled', 'ノイズ（ grain）エフェクト'],
   ['postVignetteEnabled', '周辺減光（ビネット）'],
   // --- Expansion 2026-11-11: feature toggles ---

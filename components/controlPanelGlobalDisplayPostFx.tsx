@@ -138,6 +138,22 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             <Slider label="Feedback Decay" value={config.postFeedbackDecay} min={0} max={0.97} step={0.01} onChange={(v) => updateConfig('postFeedbackDecay', v)} />
             <Slider label="Feedback Zoom" value={config.postFeedbackZoom} min={0.95} max={1.05} step={0.001} onChange={(v) => updateConfig('postFeedbackZoom', v)} />
             <Slider label="Feedback Rotation" value={config.postFeedbackRotation} min={-0.1} max={0.1} step={0.001} onChange={(v) => updateConfig('postFeedbackRotation', v)} />
+            <Toggle
+              label="Feedback Mask （マスクで残像を変調・Phase AF）"
+              value={config.postFeedbackMaskEnabled}
+              options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+              onChange={(v) => updateConfig('postFeedbackMaskEnabled', v)}
+            />
+            {config.postFeedbackMaskEnabled && (
+              <>
+                <Slider label="Feedback Mask Strength" value={config.postFeedbackMaskStrength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postFeedbackMaskStrength', v)} />
+                <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                  {config.gpgpuMaskSource
+                    ? 'ラスタマスクのソースで残像の残り方を空間変調します（白い領域だけ残像が残ります）。ソースはマスク節で設定します。'
+                    : 'マスクソースが未設定のため変調は効きません。マスク節で画像／地形派生／文字／パス／エッジのいずれかを設定してください。'}
+                </div>
+              </>
+            )}
           </>
         )}
         <Toggle

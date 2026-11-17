@@ -4,6 +4,49 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.37.0] — 2026-11-17
+
+Phase AF (fifth period, fifth phase): paths, text and masks,
+wired together — the shapes the app already authors become
+sources for the consumers that already read maps. No new
+generator is added; the phase is wiring, following the Phase AE
+sentinel-supply pattern. Base is the actually-shipped v1.36.0.
+With all new keys at their defaults the render is bit-identical
+to v1.36.0 (verified on the iMac real-GPU gate: FROZEN
+deterministic render, all 12 frames at 0.00000). 2 new config
+keys (1,099 total), starters +2 (537 total).
+
+### Added
+- **Text raster supply** (`text-raster` sentinel,
+  `lib/mapSourceSupply.ts`): the current layer-2 TextMap text
+  and font settings — the same raster the 'text' morph target
+  bakes — can be assigned to any Layer Map or to the raster /
+  kill mask. The supply tracks text edits live; the mask block
+  also captures the numeric luma grid at assignment time for
+  the bake / placement consumers.
+- **Path raster supply** (`path-raster` sentinel): the authored
+  SVG path geometry (gpgpuMorphSvgSource, normalised cloud
+  space) is rasterised by a pure distance-field function —
+  same SVG in, bit-identical grid out — and supplied the same
+  way, independent of the morph target / path mode selection.
+  The captured numeric grid also feeds the morph bake and
+  placement, so the path doubles as a placement density source.
+- **Edge output supply** (`edge-output` sentinel): a new
+  pass-through capture stage (components/edgeCapturePass.ts,
+  active only while some source requests it, last in every
+  stack profile) copies the finished frame's Sobel field into
+  a persistent target that the map / mask consumers sample.
+  Display and supply are independent — the edge display need
+  not be on, and supplying edges changes no pixel. Consumers
+  read the previous frame's field (one frame of lag); the
+  field has no numeric bake grid, so the bake / placement
+  consumers keep their legacy behaviour for this source.
+- **Feedback mask** (`postFeedbackMaskEnabled`,
+  `postFeedbackMaskStrength`): the raster mask source — image,
+  terrain-derived, text, path or edge — modulates the feedback
+  decay spatially (white mask = full decay). An unready source
+  leaves the decay unmodulated.
+
 ## [1.36.0] — 2026-11-17
 
 Phase AE (fifth period, fourth phase): terrain, put to work —
