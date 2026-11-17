@@ -13,6 +13,7 @@ import { normalizeSpriteFrameFps, normalizeSpriteSheetDimension, spriteFrameMode
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { normalizeLightDir } from '../lib/gpgpuLight';
 import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
+import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 
 // Occlusion-map shadow (Phase Z): the bake is a pure function of
 // the shadow-relevant config, so it is cached by that config's
@@ -170,6 +171,10 @@ export function syncVisualUniforms(args: {
   posTexture: THREE.Texture;
   velTexture: THREE.Texture;
   finalSortTex: THREE.Texture | null;
+  // Named attributes (Phase AK): the attribute texture, or null
+  // while no consumer is active — null resolves the draw drives
+  // off and keeps the legacy draw bit-identical.
+  attrTexture?: THREE.Texture | null;
   texSize?: number;
   time?: number;
 }): void {
@@ -189,6 +194,19 @@ export function syncVisualUniforms(args: {
 
   drawMat.uniforms.uPosTex.value = posTexture;
   drawMat.uniforms.uVelTex.value = velTexture;
+  // Named attributes (Phase AK): the draw drives engage only
+  // when the attribute texture exists (the runtime builds it
+  // only while a consumer is active).
+  {
+    const attrConsumers = resolveAttrConsumers(config);
+    const attrTexture = args.attrTexture ?? null;
+    if (drawMat.uniforms.uAttrTex) drawMat.uniforms.uAttrTex.value = attrTexture;
+    if (drawMat.uniforms.uAttrEnabled) drawMat.uniforms.uAttrEnabled.value = !!attrTexture && (attrConsumers.sizeActive || attrConsumers.brightActive);
+    if (drawMat.uniforms.uAttrSizeSlot) drawMat.uniforms.uAttrSizeSlot.value = normalizeAttrSlot(config.gpgpuAttrSizeSlot);
+    if (drawMat.uniforms.uAttrSizeAmount) drawMat.uniforms.uAttrSizeAmount.value = Math.max(0, Math.min(1, config.gpgpuAttrSizeAmount ?? 1));
+    if (drawMat.uniforms.uAttrBrightSlot) drawMat.uniforms.uAttrBrightSlot.value = normalizeAttrSlot(config.gpgpuAttrBrightSlot);
+    if (drawMat.uniforms.uAttrBrightAmount) drawMat.uniforms.uAttrBrightAmount.value = Math.max(0, Math.min(1, config.gpgpuAttrBrightAmount ?? 1));
+  }
   drawMat.uniforms.uColor.value.setStyle(config.gpgpuColor);
   drawMat.uniforms.uSize.value = config.gpgpuSize;
   if (drawMat.uniforms.uKuramotoEnabled) drawMat.uniforms.uKuramotoEnabled.value = config.gpgpuKuramotoEnabled;

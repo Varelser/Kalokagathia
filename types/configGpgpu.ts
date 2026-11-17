@@ -82,6 +82,32 @@ export interface ParticleConfigGpgpu {
   gpgpuFreeCurvePoints: number[];
   gpgpuEmissionCurveEnabled: boolean;
   gpgpuEmissionCurvePeriod: number;
+  // Named point attributes (Phase AK): four named scalar channels
+  // per particle (lib/gpgpuAttributes.ts), baked at generation
+  // time into a static texture and read by the velocity pass (the
+  // force drive / the group gate) and the points readout (the
+  // size / brightness drives). The position / velocity layout is
+  // untouched; every drive defaults to off, and while no consumer
+  // is active the attribute texture is not even built, so the
+  // legacy behaviour is bit-identical. Slot selectors are -1 (off)
+  // or 0..3; a drive also needs a non-zero amount.
+  gpgpuAttrNames: string[];
+  gpgpuAttrSources: string[];
+  gpgpuAttrSizeSlot: number;
+  gpgpuAttrSizeAmount: number;
+  gpgpuAttrBrightSlot: number;
+  gpgpuAttrBrightAmount: number;
+  gpgpuAttrForceSlot: number;
+  gpgpuAttrForceAmount: number;
+  // Attribute groups (Phase AK): a membership test on one slot's
+  // value gates the selected built-in forces per particle.
+  gpgpuGroupEnabled: boolean;
+  gpgpuGroupSlot: number;
+  gpgpuGroupMode: 'below' | 'above' | 'band';
+  gpgpuGroupLow: number;
+  gpgpuGroupHigh: number;
+  gpgpuGroupTarget: 'all' | 'gravity' | 'turbulence' | 'curl' | 'wind' | 'morph';
+  gpgpuGroupInvert: boolean;
   gpgpuKillBoundary: boolean;
   gpgpuKillMask: boolean;
   gpgpuDrag: number;
@@ -211,7 +237,7 @@ export interface ParticleConfigGpgpu {
   // baked into a float texture; the velocity shader pulls each particle
   // toward its assigned target with the Kinetix morph spring law.
   gpgpuMorphEnabled: boolean;
-  gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj' | 'terrain';
+  gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj' | 'terrain' | 'data';
   // SVG import (Pro-2): the imported SVG document's source text. Like
   // the TextMap text it lives in the config so it persists with
   // projects / presets; the point cloud is re-sampled from it

@@ -10,6 +10,13 @@ import {
   normalizeFreeCurvePoints,
   type FreeCurvePoint,
 } from '../lib/freeCurve';
+import { useAttrPointCloud } from '../lib/attrPointCloud';
+import {
+  ATTR_SOURCES,
+  ATTR_SOURCE_LABELS,
+  normalizeAttrNames,
+  normalizeAttrSources,
+} from '../lib/gpgpuAttributes';
 
 /** Free curve editor (Phase AJ): per-point t / value sliders with
  *  add / remove, plus shape presets. Controlled entirely by the
@@ -63,6 +70,130 @@ const FreeCurveEditor: React.FC<{
           ＋ 制御点を追加（最大 {FREE_CURVE_MAX_POINTS} 点）
         </button>
       )}
+    </div>
+  );
+};
+
+/** Labeled native select in the Morph Target Shape's styling
+ *  (Phase AK): used by the attribute section's enum controls. */
+const AttrSelect: React.FC<{
+  label?: string;
+  value: string;
+  options: { label: string; val: string }[];
+  onChange: (value: string) => void;
+}> = ({ label, value, options, onChange }) => (
+  <div>
+    {label && <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">{label}</div>}
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="mb-2 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+    >
+      {options.map((option) => (
+        <option key={option.val} value={option.val}>{option.label}</option>
+      ))}
+    </select>
+  </div>
+);
+
+/** Named attributes (Phase AK): the four attribute slots with
+ *  their names and sources, the three drives (size / brightness /
+ *  force) and the attribute group gate. Every control resolves
+ *  off by default, so the section costs nothing while unused. */
+const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const cloud = useAttrPointCloud();
+  const names = normalizeAttrNames(config.gpgpuAttrNames);
+  const sources = normalizeAttrSources(config.gpgpuAttrSources);
+  const slotOptions = [
+    { label: 'OFF', val: '-1' },
+    { label: `Slot 1（${names[0]}）`, val: '0' },
+    { label: `Slot 2（${names[1]}）`, val: '1' },
+    { label: `Slot 3（${names[2]}）`, val: '2' },
+    { label: `Slot 4（${names[3]}）`, val: '3' },
+  ];
+  const groupSlotOptions = slotOptions.slice(1);
+  const setName = (slot: number, value: string) => {
+    const next = [...names];
+    next[slot] = value;
+    updateConfig('gpgpuAttrNames', next);
+  };
+  const setSource = (slot: number, value: string) => {
+    const next = [...sources];
+    next[slot] = value as (typeof sources)[number];
+    updateConfig('gpgpuAttrSources', next);
+  };
+  return (
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Attributes — 名前付き属性とグループ（Phase AK）</div>
+      {[0, 1, 2, 3].map((slot) => (
+        <div key={slot} className="mt-2 flex items-center gap-2">
+          <span className="w-10 shrink-0 text-[9px] uppercase tracking-widest opacity-60">Slot {slot + 1}</span>
+          <input
+            type="text"
+            value={names[slot]}
+            onChange={(e) => setName(slot, e.target.value)}
+            className="w-24 shrink-0 rounded border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/90 outline-none focus:border-white/40"
+            aria-label={`Attribute name slot ${slot + 1}`}
+          />
+          <div className="min-w-0 flex-1 [&_select]:mb-0">
+            <AttrSelect
+              value={sources[slot]}
+              options={ATTR_SOURCES.map((source) => ({ label: ATTR_SOURCE_LABELS[source], val: source }))}
+              onChange={(v) => setSource(slot, v)}
+            />
+          </div>
+        </div>
+      ))}
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        属性は粒子ごとの数値（0..1）で、生成時に固定されます。Data 源は Play タブで登録した属性点群の同名列（名前が一致しない場合は 0）を使います。属性点群: {cloud ? `登録済み（${cloud.table.rows.length} 行）` : '未登録（Play タブ → Data Source）'}。
+      </div>
+      <AttrSelect label="Attr → Size（サイズ駆動）" value={String(config.gpgpuAttrSizeSlot)} options={slotOptions} onChange={(v) => updateConfig('gpgpuAttrSizeSlot', Number(v))} />
+      {config.gpgpuAttrSizeSlot >= 0 && (
+        <Slider label="Size Amount（サイズ駆動の量）" value={config.gpgpuAttrSizeAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuAttrSizeAmount', v)} />
+      )}
+      <AttrSelect label="Attr → Brightness（明るさ駆動）" value={String(config.gpgpuAttrBrightSlot)} options={slotOptions} onChange={(v) => updateConfig('gpgpuAttrBrightSlot', Number(v))} />
+      {config.gpgpuAttrBrightSlot >= 0 && (
+        <Slider label="Brightness Amount（明るさ駆動の量）" value={config.gpgpuAttrBrightAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuAttrBrightAmount', v)} />
+      )}
+      <AttrSelect label="Attr → Force（フォース駆動）" value={String(config.gpgpuAttrForceSlot)} options={slotOptions} onChange={(v) => updateConfig('gpgpuAttrForceSlot', Number(v))} />
+      {config.gpgpuAttrForceSlot >= 0 && (
+        <Slider label="Force Amount（フォース駆動の量）" value={config.gpgpuAttrForceAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuAttrForceAmount', v)} />
+      )}
+      <Toggle label="Attribute Group（属性グループ — Phase AK）" value={config.gpgpuGroupEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGroupEnabled', v)} />
+      {config.gpgpuGroupEnabled && (
+        <>
+          <AttrSelect label="Group Slot（条件に使う属性）" value={String(config.gpgpuGroupSlot)} options={groupSlotOptions} onChange={(v) => updateConfig('gpgpuGroupSlot', Number(v))} />
+          <AttrSelect
+            label="Group Mode（条件の型）"
+            value={config.gpgpuGroupMode}
+            options={[
+              { label: 'Below（上限以下）', val: 'below' },
+              { label: 'Above（下限以上）', val: 'above' },
+              { label: 'Band（区間内）', val: 'band' },
+            ]}
+            onChange={(v) => updateConfig('gpgpuGroupMode', v as typeof config.gpgpuGroupMode)}
+          />
+          <Slider label="Group Low（下限）" value={config.gpgpuGroupLow} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGroupLow', v)} />
+          <Slider label="Group High（上限）" value={config.gpgpuGroupHigh} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGroupHigh', v)} />
+          <AttrSelect
+            label="Group Target（ゲートするフォース）"
+            value={config.gpgpuGroupTarget}
+            options={[
+              { label: 'All Forces（全フォース）', val: 'all' },
+              { label: 'Gravity（重力）', val: 'gravity' },
+              { label: 'Turbulence（乱流）', val: 'turbulence' },
+              { label: 'Curl（カール）', val: 'curl' },
+              { label: 'Wind（風）', val: 'wind' },
+              { label: 'Morph（モーフ）', val: 'morph' },
+            ]}
+            onChange={(v) => updateConfig('gpgpuGroupTarget', v as typeof config.gpgpuGroupTarget)}
+          />
+          <Toggle label="Group Invert（条件の反転）" value={config.gpgpuGroupInvert} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGroupInvert', v)} />
+        </>
+      )}
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        駆動は「属性値で係数を mix する」形で、Amount 0 は無効です。グループは条件を満たす粒子だけ（Invert でその逆だけ）に Target のフォースを効かせます。全て OFF が従来同一です。
+      </div>
     </div>
   );
 };
@@ -140,6 +271,9 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
         粒子の「生まれ方・消え方」の文法です。Spawn Burst は開始時に有効な粒子の割合（1＝全粒子で従来同一）、残りは Spawn Rate（プール割合/秒）で順に放出されます。境界キルは球境界の外へ出た粒子を跳ね返さず消滅→リスポーンさせます。マスクキルはラスタマスク（Morph の Mask 画像）の拒否域にいる粒子を消滅→リスポーンさせます（マスク画像が読み込めていない間は無効）。Global Drag 1.1・Max Speed 0 が従来同一です。
       </div>
     </div>
+
+    {/* Named attributes + group gate (Phase AK) */}
+    <AttrSection config={config} updateConfig={updateConfig} />
 
     {/* Curl Noise */}
     <div className="mt-4 border-t border-white/10 pt-4">

@@ -6,6 +6,7 @@ import {
   readbackWebGPUPositions,
 } from '../lib/webgpuCompute';
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
+import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { isFreeCurveIdentity, normalizeFreeCurvePoints, FREE_CURVE_MAX_POINTS } from '../lib/freeCurve';
 import {
@@ -143,6 +144,12 @@ export function runSimulationPasses(args: {
   velSimMat: THREE.ShaderMaterial;
   posSimMat: THREE.ShaderMaterial;
   initPosTex: THREE.Texture | null;
+  // Named attributes (Phase AK): the static attribute texture in
+  // the global texel layout, or null while no consumer is active
+  // (the runtime builds it on demand) — null keeps every
+  // attribute uniform off and the velocity pass on its exact
+  // legacy path.
+  attrTex?: THREE.Texture | null;
   morphTex: THREE.Texture | null;
   morphNormalTex: THREE.Texture | null;
   morphKickStart: number;
@@ -423,6 +430,27 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uTerrainTexSize) velSimMat.uniforms.uTerrainTexSize.value = TERRAIN_DERIVED_SIZE;
   if (velSimMat.uniforms.uTerrainBounce) velSimMat.uniforms.uTerrainBounce.value = Math.max(0, Math.min(1, config.gpgpuTerrainColliderBounce ?? 0.5));
   if (velSimMat.uniforms.uTerrainFriction) velSimMat.uniforms.uTerrainFriction.value = Math.max(0, Math.min(1, config.gpgpuTerrainColliderFriction ?? 0.25));
+  // Named attributes (Phase AK): resolved CPU-side like the
+  // terrain collider — the velocity consumers (force drive /
+  // group gate) engage only when the attribute texture exists,
+  // so a missing texture keeps the exact legacy path. The draw
+  // drives resolve separately in syncVisualUniforms.
+  {
+    const attrConsumers = resolveAttrConsumers(config);
+    const attrTex = args.attrTex ?? null;
+    if (velSimMat.uniforms.uAttrTex) velSimMat.uniforms.uAttrTex.value = attrTex;
+    if (velSimMat.uniforms.uAttrEnabled) velSimMat.uniforms.uAttrEnabled.value = !!attrTex && (attrConsumers.forceActive || attrConsumers.groupActive);
+    if (velSimMat.uniforms.uAttrForceEnabled) velSimMat.uniforms.uAttrForceEnabled.value = !!attrTex && attrConsumers.forceActive;
+    if (velSimMat.uniforms.uAttrForceSlot) velSimMat.uniforms.uAttrForceSlot.value = normalizeAttrSlot(config.gpgpuAttrForceSlot);
+    if (velSimMat.uniforms.uAttrForceAmount) velSimMat.uniforms.uAttrForceAmount.value = Math.max(0, Math.min(1, config.gpgpuAttrForceAmount ?? 1));
+    if (velSimMat.uniforms.uGroupEnabled) velSimMat.uniforms.uGroupEnabled.value = !!attrTex && attrConsumers.groupActive;
+    if (velSimMat.uniforms.uGroupSlot) velSimMat.uniforms.uGroupSlot.value = Math.max(0, Math.min(3, Math.round(config.gpgpuGroupSlot ?? 0)));
+    if (velSimMat.uniforms.uGroupMode) velSimMat.uniforms.uGroupMode.value = { below: 0, above: 1, band: 2 }[config.gpgpuGroupMode] ?? 1;
+    if (velSimMat.uniforms.uGroupLow) velSimMat.uniforms.uGroupLow.value = Math.max(0, Math.min(1, config.gpgpuGroupLow ?? 0.25));
+    if (velSimMat.uniforms.uGroupHigh) velSimMat.uniforms.uGroupHigh.value = Math.max(0, Math.min(1, config.gpgpuGroupHigh ?? 0.75));
+    if (velSimMat.uniforms.uGroupTarget) velSimMat.uniforms.uGroupTarget.value = { all: 0, gravity: 1, turbulence: 2, curl: 3, wind: 4, morph: 5 }[config.gpgpuGroupTarget] ?? 0;
+    if (velSimMat.uniforms.uGroupInvert) velSimMat.uniforms.uGroupInvert.value = !!config.gpgpuGroupInvert;
+  }
   velSimMat.uniforms.uWellEnabled.value = config.gpgpuWellEnabled;
   velSimMat.uniforms.uWellStrength.value = config.gpgpuWellStrength;
   velSimMat.uniforms.uWellSoftening.value = config.gpgpuWellSoftening;
@@ -842,6 +870,7 @@ export function runReplicaStackPasses(args: {
   mergeMat: THREE.ShaderMaterial;
   blitMat: THREE.ShaderMaterial;
   initPosTex: THREE.Texture | null;
+  attrTex?: THREE.Texture | null;
   morphTex: THREE.Texture | null;
   morphNormalTex: THREE.Texture | null;
   morphKickStart: number;
@@ -931,6 +960,7 @@ export function runReplicaStackPasses(args: {
       velSimMat: stack.velMat,
       posSimMat: stack.posMat,
       initPosTex,
+      attrTex: args.attrTex ?? null,
       morphTex,
       morphNormalTex,
       morphKickStart,

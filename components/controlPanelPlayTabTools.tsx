@@ -4,6 +4,7 @@ import type { ParticleConfig } from '../types';
 import { PARAMETER_CATALOG, searchParameters, type ParameterCatalogEntry } from '../lib/parameterCatalog';
 import { buildDataLumaMap, buildSampleDataPoints, getDataSourceUpdates, parseDataPoints, type ParsedData } from '../lib/dataSource';
 import { parseDataTable, setDataTable, useDataTable } from '../lib/dataTable';
+import { parseAttrPointCloud, setAttrPointCloud, useAttrPointCloud } from '../lib/attrPointCloud';
 import { TEXTURE_DEFINITIONS, TEXTURE_MAP_SIZE, generateTextureMap, getTextureDefinition, type NoiseTextureKind } from '../lib/texturePack';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { SectionTitle, TAB_SHORT_LABELS } from './controlPanelPlayTabShared';
@@ -269,6 +270,24 @@ export const DataSourceSection: React.FC<{
     );
   };
 
+  // Attribute point cloud (Phase AK): the same text, registered
+  // as the attribute cloud — x/y/z columns become positions
+  // (Morph target 'data'), every column rides the attribute
+  // texture for the 'data' attribute source. Independent of the
+  // signal-column registration above.
+  const registeredCloud = useAttrPointCloud();
+  const registerAttrCloud = () => {
+    const cloud = parseAttrPointCloud(text);
+    if (!cloud) {
+      setStatus('属性点群として読み取れませんでした。x, y の2列（数値）が必要です。');
+      return;
+    }
+    setAttrPointCloud(cloud);
+    setStatus(
+      `属性点群として登録しました（列: ${cloud.table.columns.join(' / ')}、${cloud.table.rows.length.toLocaleString()} 行）。Morph の Data ターゲットと、属性の Data 源で使えます。`,
+    );
+  };
+
   return (
     <section>
       <SectionTitle icon={<Database size={12} />}>Data Source · データ発生源</SectionTitle>
@@ -346,6 +365,25 @@ export const DataSourceSection: React.FC<{
             className="px-3 py-2 rounded-full text-[10px] uppercase tracking-widest text-white/35 hover:text-white/80 disabled:opacity-30"
           >
             信号列を解除（{registeredTable.columns.length}列・{registeredTable.rows.length.toLocaleString()}行）
+          </button>
+        )}
+        <button
+          onClick={registerAttrCloud}
+          disabled={!text.trim() || isPublicLibrary}
+          className="px-3 py-2 rounded-full border border-white/20 text-[10px] uppercase tracking-widest text-white/70 hover:bg-white/10 disabled:opacity-30"
+        >
+          属性点群として登録
+        </button>
+        {registeredCloud && (
+          <button
+            onClick={() => {
+              setAttrPointCloud(null);
+              setStatus('属性点群の登録を解除しました。');
+            }}
+            disabled={isPublicLibrary}
+            className="px-3 py-2 rounded-full text-[10px] uppercase tracking-widest text-white/35 hover:text-white/80 disabled:opacity-30"
+          >
+            属性点群を解除（{registeredCloud.table.columns.length}列・{registeredCloud.table.rows.length.toLocaleString()}行）
           </button>
         )}
       </div>

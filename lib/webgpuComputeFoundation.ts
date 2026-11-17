@@ -124,6 +124,14 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // Emission curve (Phase AJ): the respawn gate lives in the
   // WebGL position pass only — declaring it routes to WebGL.
   if (config.gpgpuEmissionCurveEnabled) features.push('emission-curve');
+  // Named attributes (Phase AK): the velocity-side consumers
+  // (force drive / group gate) read the attribute texture in
+  // the WebGL velocity pass only — declaring them routes to
+  // WebGL. The draw-side drives (size / brightness) need no
+  // entry: they live in the draw shader, which is WebGL on
+  // every path already.
+  if (config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) features.push('attr-force');
+  if (config.gpgpuGroupEnabled) features.push('attr-group');
   return features;
 }
 

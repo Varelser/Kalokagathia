@@ -145,17 +145,39 @@ export const DRAW_VERT = /* glsl */ `
   uniform bool  uParticleLifeEnabled;
   uniform int   uParticleLifeSpecies;
   uniform float uTexSizeF;
+  // Named attributes (Phase AK): the static attribute texture
+  // (lib/gpgpuAttributes.ts) in the global texel layout. The
+  // passes resolve uAttrEnabled off unless the texture exists
+  // and a draw drive is active, so the default draw is
+  // bit-identical (vAttrBright stays exactly 1.0).
+  uniform sampler2D uAttrTex;
+  uniform bool      uAttrEnabled;
+  uniform int       uAttrSizeSlot;
+  uniform float     uAttrSizeAmount;
+  uniform int       uAttrBrightSlot;
+  uniform float     uAttrBrightAmount;
   attribute vec2 aTexCoord;
   varying float vSpeed;
   varying float vNormAge;
   varying float vPhaseMix;
   varying float vPlBright;
+  varying float vAttrBright;
   varying float vSeed;
   varying vec3 vWorldPos;
   varying float vLightMul;
   varying float vShadowMul;
 
   ${AGE_CURVE_GLSL}
+
+  // Attribute channel picker (Phase AK): identical to the
+  // velocity pass's copy — R/G/B/A are attribute slots 0/1/2/3
+  // (buildAttributeData in lib/gpgpuAttributes.ts).
+  float kaloAttrChannel(vec4 a, int slot) {
+    if (slot == 0) return a.r;
+    if (slot == 1) return a.g;
+    if (slot == 2) return a.b;
+    return a.a;
+  }
 
   ${LIGHT_GLSL}
 
@@ -237,6 +259,22 @@ export const DRAW_VERT = /* glsl */ `
     // path — flat (all-ones) points keep the legacy size bit-exact.
     if (uAgeCurveSizeEnabled) {
       sizeMul *= kaloEvalCurve5(vNormAge, uAgeCurveSize[0], uAgeCurveSize[1], uAgeCurveSize[2], uAgeCurveSize[3], uAgeCurveSize[4]);
+    }
+    // Named attributes (Phase AK): the size / brightness drives
+    // read the particle's own texel of the attribute texture
+    // (particleUv — the post-sort texel, like every other
+    // per-particle read above). The factor form is mix(1, attr,
+    // amount): amount 0 or slot -1 is resolved off CPU-side, and
+    // vAttrBright is exactly 1.0 while the drive is off.
+    vAttrBright = 1.0;
+    if (uAttrEnabled) {
+      vec4 attrData = texture2D(uAttrTex, particleUv);
+      if (uAttrSizeSlot >= 0) {
+        sizeMul *= mix(1.0, kaloAttrChannel(attrData, uAttrSizeSlot), uAttrSizeAmount);
+      }
+      if (uAttrBrightSlot >= 0) {
+        vAttrBright = mix(1.0, kaloAttrChannel(attrData, uAttrBrightSlot), uAttrBrightAmount);
+      }
     }
     // Layer Map (Phase U): size modulated by the gradient image's
     // luminance at the particle's own position. Amount 0 (default)
@@ -334,6 +372,7 @@ export const DRAW_FRAG = /* glsl */ `
   varying float vNormAge;
   varying float vPhaseMix;
   varying float vPlBright;
+  varying float vAttrBright;
   varying float vSeed;
   varying vec3 vWorldPos;
   varying float vLightMul;
@@ -434,6 +473,10 @@ export const DRAW_FRAG = /* glsl */ `
     // shadow is disabled or strength is 0, so this multiply is a
     // bit-exact identity on the legacy path.
     col *= vShadowMul;
+    // Named attributes (Phase AK): the brightness drive —
+    // exactly 1.0 while the drive is off, so this multiply is a
+    // bit-exact identity on the legacy path.
+    col *= vAttrBright;
 
     float ageFade = 1.0;
     if (uAgeEnabled) {

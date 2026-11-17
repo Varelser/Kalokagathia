@@ -4,6 +4,55 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.43.0] — 2026-11-18
+
+Sixth-term Phase AK: the attribute foundation — named point
+attributes, an attribute-conditioned group gate, and an external
+point cloud kept with its columns. Fifteen new config keys
+(1,141 → 1,156), two new starters (547 → 549), and one new morph
+target ('data', appended to the enumeration so every seeded
+target keeps its identity). The position / velocity texture
+layouts are untouched: attributes ride a new static RGBA float
+texture in the same supply form as the initial-position texture,
+baked deterministically at generation time. The texture is built
+only while a consumer is active; with every drive off and the
+group disabled, no texture exists and every path runs the legacy
+code verbatim.
+
+### Added
+- **Named point attributes** (`gpgpuAttrNames` /
+  `gpgpuAttrSources`): four attribute slots, each with a user
+  name and a generation source — hash (the shader species hash's
+  TS twin), index, species, radius, height, age, target (the
+  morph bake's radial distance) and data (a named column of the
+  registered attribute point cloud). All values are 0..1 and
+  fixed at generation time.
+- **Attribute drives**: size (`gpgpuAttrSizeSlot` /
+  `gpgpuAttrSizeAmount`) and brightness
+  (`gpgpuAttrBrightSlot` / `gpgpuAttrBrightAmount`) in the draw
+  pass, and a force drive (`gpgpuAttrForceSlot` /
+  `gpgpuAttrForceAmount`) that scales only the built-in force
+  delta in the velocity pass (the Phase AC capture discipline).
+  The factor form is mix(1, attribute, amount); slot −1 or
+  amount 0 resolves off.
+- **Attribute group gate** (`gpgpuGroupEnabled` /
+  `gpgpuGroupSlot` / `gpgpuGroupMode` / `gpgpuGroupLow` /
+  `gpgpuGroupHigh` / `gpgpuGroupTarget` / `gpgpuGroupInvert`):
+  a below / above / band condition (inclusive boundaries) on
+  one attribute decides per-particle membership; the chosen
+  force family (all / gravity / turbulence / curl / wind /
+  morph) applies only to members.
+- **Attribute point cloud** (Play tab → Data Source): CSV /
+  JSON registered as a point cloud keeps its positions and its
+  columns (`lib/attrPointCloud.ts`, persisted like the signal
+  table). Positions feed the new morph target 'data' (shell
+  fallback while unregistered); columns feed the 'data'
+  attribute source by name (case-insensitive).
+- Velocity-side attribute consumers route WebGPU-preference
+  sessions to WebGL (capability registry: attr-force /
+  attr-group); the draw drives work on every path. The CPU
+  fallback does not read the new keys.
+
 ## [1.42.0] — 2026-11-18
 
 Sixth-term Phase AJ: the signal grammar completed — expressions,

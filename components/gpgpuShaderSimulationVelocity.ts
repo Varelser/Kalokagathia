@@ -108,6 +108,23 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uTerrainTexSize;
   uniform float uTerrainBounce;
   uniform float uTerrainFriction;
+  // Named attributes + group gate (Phase AK): the static
+  // attribute texture (lib/gpgpuAttributes.ts) in the global
+  // texel layout. Resolved CPU-side (texture built AND a
+  // velocity consumer active), so false uniforms are the exact
+  // legacy path.
+  uniform sampler2D uAttrTex;
+  uniform bool  uAttrEnabled;
+  uniform bool  uAttrForceEnabled;
+  uniform int   uAttrForceSlot;
+  uniform float uAttrForceAmount;
+  uniform bool  uGroupEnabled;
+  uniform int   uGroupSlot;
+  uniform int   uGroupMode;
+  uniform float uGroupLow;
+  uniform float uGroupHigh;
+  uniform int   uGroupTarget;
+  uniform bool  uGroupInvert;
   uniform bool  uWellEnabled;
   uniform float uWellStrength;
   uniform float uWellSoftening;
@@ -384,6 +401,29 @@ export const SIM_VEL_FRAG = /* glsl */ `
     return vec3((h * 2.0 - 1.0) * uTerrainHeightWorld, g * uTerrainGradScale);
   }
 
+  // Attribute channel picker (Phase AK): the slot layout of
+  // buildAttributeData in lib/gpgpuAttributes.ts (R/G/B/A = slots
+  // 0/1/2/3). An identical copy lives in the points shader.
+  float kaloAttrChannel(vec4 a, int slot) {
+    if (slot == 0) return a.r;
+    if (slot == 1) return a.g;
+    if (slot == 2) return a.b;
+    return a.a;
+  }
+
+  // Group membership (Phase AK): inclusive boundaries, composed
+  // from step() so it matches groupMembership in
+  // lib/gpgpuAttributes.ts exactly — step(av, high) is 1 exactly
+  // when av <= high, step(low, av) is 1 exactly when av >= low.
+  // Modes: 0 below (av <= high), 1 above (av >= low), 2 band.
+  float kaloGroupMembership(float av, int mode, float low, float high, bool invert) {
+    float m;
+    if (mode == 0) m = step(av, high);
+    else if (mode == 1) m = step(low, av);
+    else m = step(low, av) * step(av, high);
+    return invert ? 1.0 - m : m;
+  }
+
   // Age curve evaluation (Phase AC): the same 5-point piecewise-
   // linear blend as the points shader's kaloEvalCurve5 (and the TS
   // twin, lib/ageCurve.ts evaluateAgeCurve) — an all-ones curve is
@@ -438,6 +478,34 @@ export const SIM_VEL_FRAG = /* glsl */ `
       globalUv = (vec2(mod(globalIdx, uStackGlobalTexSizeF), floor(globalIdx / uStackGlobalTexSizeF)) + 0.5) / uStackGlobalTexSizeF;
     }
 
+    // Named attributes (Phase AK): one fetch per texel while a
+    // velocity consumer is active (the texture lives in the
+    // global layout, hence globalUv). The per-force group scales
+    // stay literal 1.0 while the gate is off, so every gated
+    // statement below reduces to its legacy form (x * 1.0 is an
+    // exact IEEE identity, the Phase AC curl-speed precedent).
+    // Targets: 0 all, 1 gravity, 2 turbulence, 3 curl, 4 wind,
+    // 5 morph.
+    vec4 attrData = vec4(0.0);
+    float grpGravity = 1.0;
+    float grpTurbulence = 1.0;
+    float grpCurl = 1.0;
+    float grpWind = 1.0;
+    float grpMorph = 1.0;
+    if (uAttrEnabled) {
+      attrData = texture2D(uAttrTex, globalUv);
+      if (uGroupEnabled) {
+        float grp = kaloGroupMembership(kaloAttrChannel(attrData, uGroupSlot), uGroupMode, uGroupLow, uGroupHigh, uGroupInvert);
+        if (uGroupTarget == 0) {
+          grpGravity = grp; grpTurbulence = grp; grpCurl = grp; grpWind = grp; grpMorph = grp;
+        } else if (uGroupTarget == 1) grpGravity = grp;
+        else if (uGroupTarget == 2) grpTurbulence = grp;
+        else if (uGroupTarget == 3) grpCurl = grp;
+        else if (uGroupTarget == 4) grpWind = grp;
+        else if (uGroupTarget == 5) grpMorph = grp;
+      }
+    }
+
     // Age ratio for the Phase AC sim curves — the points shader's
     // convention (0.5 while age tracking is off).
     float ageNorm = uAgeEnabled ? clamp(posData.w / max(uAgeMax, 0.001), 0.0, 1.0) : 0.5;
@@ -448,13 +516,13 @@ export const SIM_VEL_FRAG = /* glsl */ `
     // uCurlSpeed 1 multiplies it by exactly 1.0.
     float curlTime = replicaTime * 0.15 * uCurlSpeed;
 
-    vel.y -= uGravity * uDelta * 9.8;
+    vel.y -= uGravity * uDelta * 9.8 * grpGravity;
 
     if (uTurbulence > 0.001) {
       float t = replicaTime * 0.25;
       vec3 np = pos * 0.007 + replicaSeed;
       vel += vec3(vnoise(np+vec3(t,0,0)),vnoise(np+vec3(0,t+13.7,0)),vnoise(np+vec3(0,0,t+27.4)))
-             * uTurbulence * 18.0 * uDelta;
+             * uTurbulence * 18.0 * uDelta * grpTurbulence;
     }
 
     if (uAudioBlast > 0.001) {
@@ -496,7 +564,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
           ? curlNoise(pos * uCurlScale + vec3(curlTime) + replicaSeed)
           : symmetricCurl(pos * uCurlScale + replicaSeed, vec3(curlTime)))
         : curlField(pos * uCurlScale + replicaSeed, vec3(curlTime));
-      vel += curl * uCurlStrength * 20.0 * uDelta;
+      vel += curl * uCurlStrength * 20.0 * uDelta * grpCurl;
     }
 
     // Boids
@@ -719,7 +787,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
         vnoise(pos * 0.01 + replicaSeed + vec3(1.7, replicaTime * 0.25, 0.0)),
         vnoise(pos * 0.01 + replicaSeed + vec3(0.0, 3.1, replicaTime * 0.2))
       ) * uWindGust;
-      vel += (normalize(vec3(uWindX, uWindY, uWindZ) + vec3(0.0001)) * uWindStrength + gust) * uDelta * 30.0;
+      vel += (normalize(vec3(uWindX, uWindY, uWindZ) + vec3(0.0001)) * uWindStrength + gust) * uDelta * 30.0 * grpWind;
     }
 
     // Terrain slope flow (Phase AE): run downhill along the
@@ -904,7 +972,7 @@ export const SIM_VEL_FRAG = /* glsl */ `
       );
       float mf = 1.0 - exp(-uMorphStrength * uDelta * 3.0);
       vec3 vWant = (mTarget - pos) * (mf / max(uDelta * uSpeed * 60.0, 0.001));
-      vel += (vWant - vel) * clamp(mf + uDelta * 6.0, 0.0, 1.0);
+      vel += (vWant - vel) * clamp(mf + uDelta * 6.0, 0.0, 1.0) * grpMorph;
 
       // OBJ normal initial velocity (Phase O): an emission-style
       // kick along the particle's baked sample normal (companion
@@ -938,6 +1006,20 @@ export const SIM_VEL_FRAG = /* glsl */ `
     // collider / mouse / paint / floor / fluid / custom blocks
     // below are NOT part of the scaled delta.
     vec3 velAfterForces = vel;
+
+    // Attribute force drive (Phase AK): scale only the built-in
+    // force delta captured above by the particle's own attribute
+    // (the Phase AC capture discipline — a factor of exactly 1
+    // reconstructs vel bit-for-bit). The passes suppress the
+    // block unless a slot is selected with a non-zero amount and
+    // the attribute texture exists, so the default path is the
+    // legacy capture verbatim. velAfterForces is re-captured so
+    // the Phase AC force curve below scales the driven delta.
+    if (uAttrForceEnabled) {
+      float af = mix(1.0, kaloAttrChannel(attrData, uAttrForceSlot), uAttrForceAmount);
+      vel = velForceBase + (vel - velForceBase) * af;
+      velAfterForces = vel;
+    }
 
     // SDF Collider — velocity reflection
     if (uSdfEnabled) {

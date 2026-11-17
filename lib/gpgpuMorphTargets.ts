@@ -104,6 +104,11 @@ export const GPGPU_MORPH_TARGETS: readonly GpgpuMorphTargetKind[] = [
   'obj',
   // 'terrain' (Phase L) appends after 'obj' for the same reason.
   'terrain',
+  // 'data' (Phase AK) appends after 'terrain' for the same reason:
+  // the attribute point cloud (lib/attrPointCloud.ts) as a morph
+  // target — positions only; the columns ride the attribute
+  // texture, not the bake.
+  'data',
 ] as const;
 
 export interface MorphMediaMap {
@@ -247,6 +252,14 @@ export interface GpgpuMorphTargetBuildOptions {
    * defaults in DEFAULT_TERRAIN. Ignored by every other target.
    */
   terrain?: GpgpuMorphTerrainOptions | null;
+  /**
+   * Attribute point cloud positions for the data target (Phase AK,
+   * lib/attrPointCloud.ts): flat xyz triples in the unit-sphere
+   * convention (centred, bounding radius 1), the same convention
+   * as objPoints. Null (no cloud registered) falls back to a
+   * shell, like a missing media map.
+   */
+  dataPoints?: ArrayLike<number> | null;
   /**
    * Path geometry for the svg target (Phase S, lib/pathGeometry.ts):
    * the same SVG document viewed as ordered subpaths with true
@@ -751,7 +764,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   data: Float32Array;
   normalData: Float32Array;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, pathGeometry, path, mask, form, textOnPath, fracture, scatter } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, scatter } = options;
   const formActive = isFormDeformationActive(form);
   // Raster mask (Phase X): resolved once; null unless the mode is
   // on and the map is usable, in which case the placement branches
@@ -769,6 +782,10 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   const media = isMedia && mediaMap && mediaMap.map.length > 0 ? mediaMap : null;
   const svgPointCount = target === 'svg' && svgPoints ? Math.floor(svgPoints.length / 2) : 0;
   const objPointCount = target === 'obj' && objPoints ? Math.floor(objPoints.length / 3) : 0;
+  // Attribute point cloud (Phase AK): the data target's placement
+  // cloud, counted like the obj cloud; 0 (no cloud registered)
+  // takes the shell fallback below, exactly like obj.
+  const dataPointCount = target === 'data' && dataPoints ? Math.floor(dataPoints.length / 3) : 0;
   // Stamp 'obj' shape (Phase AA3): on the svg target the OBJ cloud
   // is a stamp PATTERN source, not the placement itself, so it is
   // counted separately (the obj placement branch above stays gated
@@ -876,6 +893,30 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
       ty = 0.9 * Math.sin(phi) * Math.sin(h1 * TAU);
       tz = 0.9 * Math.cos(phi);
       // Shell fallback normal: the radial direction of the point.
+      const shellLen = Math.hypot(tx, ty, tz);
+      if (shellLen > 1e-9) {
+        nnx = tx / shellLen;
+        nny = ty / shellLen;
+        nnz = tz / shellLen;
+      }
+    } else if (dataPointCount > 0 && dataPoints) {
+      // Attribute point cloud (Phase AK): the registered cloud's
+      // positions, already in the unit-sphere convention — a
+      // seeded uniform pick, the obj branch's exact form (one
+      // extra RNG draw). The cloud's columns do NOT enter the
+      // bake: they reach the particles through the attribute
+      // texture (lib/gpgpuAttributes.ts, source 'data').
+      const pick = Math.floor(rng() * dataPointCount) * 3;
+      tx = dataPoints[pick] ?? 0;
+      ty = dataPoints[pick + 1] ?? 0;
+      tz = dataPoints[pick + 2] ?? 0;
+    } else if (target === 'data') {
+      // data requested but no cloud registered: shell fallback
+      // (as obj / media).
+      const phi = Math.acos(2 * s - 1);
+      tx = 0.9 * Math.sin(phi) * Math.cos(h1 * TAU);
+      ty = 0.9 * Math.sin(phi) * Math.sin(h1 * TAU);
+      tz = 0.9 * Math.cos(phi);
       const shellLen = Math.hypot(tx, ty, tz);
       if (shellLen > 1e-9) {
         nnx = tx / shellLen;

@@ -29,6 +29,13 @@ import {
   resolveReplicaIndependentActive,
 } from '../lib/replicaIndependent';
 import { createPosSimMaterial, createVelSimMaterial } from './useGpgpuSimulationAssets';
+import { getAttrPointCloud, useAttrPointCloud } from '../lib/attrPointCloud';
+import {
+  buildAttributeData,
+  normalizeAttrNames,
+  normalizeAttrSources,
+  resolveAttrConsumers,
+} from '../lib/gpgpuAttributes';
 
 // The GPGPU tex-size caps (MAX_GPGPU_TEX_SIZE / GPGPU_TEX_SIZE_CAPS /
 // getMaxGpgpuTexSize) live in lib/gpuTier.ts since the 2026-11-14 perf
@@ -251,6 +258,7 @@ export type GpgpuRuntimeRefs = {
   initPosTexRef: MutableRefObject<THREE.DataTexture | null>;
   morphTexRef: MutableRefObject<THREE.DataTexture | null>;
   morphNormalTexRef: MutableRefObject<THREE.DataTexture | null>;
+  attrTexRef: MutableRefObject<THREE.DataTexture | null>;
   fluidRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   fluidRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   fluidPingIsA: MutableRefObject<boolean>;
@@ -477,6 +485,12 @@ export function buildMorphBakeData(
       species: config.gpgpuMorphScatterSpecies,
     } : null,
     mask: morphMaskOption(config),
+    // Attribute point cloud (Phase AK): the data target's
+    // placement cloud, read from the shared store at bake time
+    // (null = no cloud registered → shell fallback in the bake).
+    dataPoints: config.gpgpuMorphTarget === 'data'
+      ? getAttrPointCloud()?.unitPositions ?? null
+      : null,
   });
 }
 
@@ -492,6 +506,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const initPosTexRef = useRef<THREE.DataTexture | null>(null);
   const morphTexRef = useRef<THREE.DataTexture | null>(null);
   const morphNormalTexRef = useRef<THREE.DataTexture | null>(null);
+  const attrTexRef = useRef<THREE.DataTexture | null>(null);
+  // Attribute point cloud (Phase AK): subscribing here puts the
+  // cloud's version into the morph bake's dependency set (the
+  // 'data' target) and into the attribute texture's signature.
+  const attrCloud = useAttrPointCloud();
   const fluidRTARef = useRef<THREE.WebGLRenderTarget | null>(null);
   const fluidRTBRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const fluidPingIsA = useRef(true);
@@ -1016,6 +1035,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
           invert: morphMaskInvert,
         }
         : null,
+      // Attribute point cloud (Phase AK): same store read the
+      // shared builder performs; the cloud version is in this
+      // effect's deps so registering a cloud re-bakes the target.
+      dataPoints: morphTarget === 'data'
+        ? getAttrPointCloud()?.unitPositions ?? null
+        : null,
     });
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
@@ -1105,7 +1130,72 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphMaskHeight,
     morphMaskThreshold,
     morphMaskInvert,
+    attrCloud?.version ?? 0,
   ]);
+
+  // Named point attributes (Phase AK): the attribute texture is
+  // baked ONLY while at least one consumer (draw size / brightness,
+  // velocity force drive, group gate) is active — otherwise the
+  // ref stays null, the passes resolve every attribute uniform
+  // off, and the legacy path runs verbatim at zero cost. The bake
+  // is a pure function of the seeded initial data, the morph bake
+  // (for the 'target' source, rebuilt through the shared builder)
+  // and the registered point cloud (for 'data'), keyed by a
+  // signature of exactly those inputs. Declared after the main
+  // and morph effects so a reseed's fresh initial arrays are in
+  // initDataRef before this runs (declaration order).
+  const attrConsumers = resolveAttrConsumers(config);
+  const attrNamesKey = normalizeAttrNames(config.gpgpuAttrNames).join(',');
+  const attrSourcesKey = normalizeAttrSources(config.gpgpuAttrSources).join(',');
+  const attrSignature = attrConsumers.anyActive
+    ? [
+      texSize,
+      config.gpgpuSeed,
+      config.gpgpuBounceRadius,
+      config.gpgpuAgeMax,
+      config.gpgpuEmitShape,
+      config.gpgpuParticleLifeSpecies,
+      attrNamesKey,
+      attrSourcesKey,
+      attrCloud?.version ?? 0,
+      // The initial cloud depends on the light position only for
+      // the 'light' emit shape (the main effect's masking rule).
+      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0,
+      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0,
+      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0,
+      // 'target' source inputs: the morph bake's own signature
+      // (the shared builder is a pure function of the config).
+      attrSourcesKey.includes('target') ? JSON.stringify(config) : '',
+    ].join('|')
+    : '';
+  useEffect(() => {
+    attrTexRef.current?.dispose();
+    attrTexRef.current = null;
+    if (!attrSignature || !initDataRef.current) return;
+    const sources = normalizeAttrSources(config.gpgpuAttrSources);
+    const needsTarget = sources.includes('target');
+    const bake = needsTarget ? buildMorphBakeData(config, texSize) : null;
+    const data = buildAttributeData({
+      texSize,
+      posData: initDataRef.current.posData,
+      ageMax: config.gpgpuAgeMax,
+      bounceRadius: config.gpgpuBounceRadius,
+      speciesCount: config.gpgpuParticleLifeSpecies,
+      morphData: bake ? bake.data : null,
+      morphWorldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,
+      cloud: getAttrPointCloud(),
+      names: normalizeAttrNames(config.gpgpuAttrNames),
+      sources: normalizeAttrSources(config.gpgpuAttrSources),
+    });
+    const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    tex.needsUpdate = true;
+    attrTexRef.current = tex;
+    return () => {
+      tex.dispose();
+      if (attrTexRef.current === tex) attrTexRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attrSignature]);
 
   return {
     rtRef,
@@ -1114,6 +1204,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     initPosTexRef,
     morphTexRef,
     morphNormalTexRef,
+    attrTexRef,
     fluidRTARef,
     fluidRTBRef,
     fluidPingIsA,

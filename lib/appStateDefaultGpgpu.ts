@@ -54,6 +54,25 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuFreeCurvePoints: [0, 1, 1, 1],
   gpgpuEmissionCurveEnabled: false,
   gpgpuEmissionCurvePeriod: 8,
+  // Named point attributes (Phase AK): slot names / generation
+  // sources, every drive off (slot -1), group disabled — while no
+  // consumer is active the attribute texture is never built and
+  // the legacy path runs verbatim.
+  gpgpuAttrNames: ['a', 'b', 'c', 'd'],
+  gpgpuAttrSources: ['hash', 'species', 'radius', 'height'],
+  gpgpuAttrSizeSlot: -1,
+  gpgpuAttrSizeAmount: 1,
+  gpgpuAttrBrightSlot: -1,
+  gpgpuAttrBrightAmount: 1,
+  gpgpuAttrForceSlot: -1,
+  gpgpuAttrForceAmount: 1,
+  gpgpuGroupEnabled: false,
+  gpgpuGroupSlot: 0,
+  gpgpuGroupMode: 'above' as const,
+  gpgpuGroupLow: 0.25,
+  gpgpuGroupHigh: 0.75,
+  gpgpuGroupTarget: 'all' as const,
+  gpgpuGroupInvert: false,
   gpgpuKillBoundary: false,
   gpgpuKillMask: false,
   gpgpuDrag: 1.1,

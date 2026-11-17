@@ -41,7 +41,13 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
             <option value="svg">SVG (取り込んだロゴ/図形)</option>
             <option value="obj">OBJ (取り込んだ3Dメッシュ)</option>
             <option value="terrain">Terrain (地形・フラクタル高度場)</option>
+            <option value="data">Data (属性点群 — Phase AK)</option>
           </select>
+          {config.gpgpuMorphTarget === 'data' && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              Play タブ → Data Source で登録した属性点群の位置をターゲットにします（未登録の間は球殻にフォールバック）。点群の列は属性（Forces の Attributes 節、Data 源）として粒子へ渡ります。
+            </div>
+          )}
           {config.gpgpuMorphTarget === 'svg' && (
             <MorphSvgImportBlock config={config} updateConfig={updateConfig} />
           )}

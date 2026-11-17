@@ -97,6 +97,15 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uGradImageScale:    { value: 1 / 300 },
       uSortTex:           { value: null },
       uSortEnabled:       { value: false },
+      // Named attributes (Phase AK): no texture / drives off is
+      // the identity configuration (vAttrBright exactly 1.0), so
+      // the legacy draw is bit-identical.
+      uAttrTex:           { value: null },
+      uAttrEnabled:       { value: false },
+      uAttrSizeSlot:      { value: -1 },
+      uAttrSizeAmount:    { value: 1 },
+      uAttrBrightSlot:    { value: -1 },
+      uAttrBrightAmount:  { value: 1 },
     },
     vertexShader: DRAW_VERT, fragmentShader: DRAW_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
