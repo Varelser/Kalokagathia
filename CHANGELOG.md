@@ -4,6 +4,47 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.31.0] — 2026-11-17
+
+Phase Z (fourth period): shadows and smoke — an occlusion-map
+shadow approximation and fog self-shadowing. With the defaults
+off (and strength / self-shadow at 0) the render is
+bit-identical to v1.30.0 (verified on the iMac real-GPU gate:
+FROZEN deterministic render, all 12 frames at 0.00000).
+
+### Added
+- **Shadow (occlusion-map approximation)** (`gpgpuShadow*`, 5
+  new keys): occlusion toward the Phase T 3D light is baked
+  from the terrain height field (horizon march) and the OBJ
+  mesh (bounding-sphere approximation) into a deterministic
+  64x64 grid (`lib/shadowOcclusion.ts`), and the SAME bake
+  attenuates three receivers — GPGPU points (vertex sample,
+  height-attenuated), the terrain mesh (per-vertex colours),
+  and the Phase Y light volume (fragment sample). Strength and
+  softness are keyed; each occluder can be toggled. Labelled
+  honestly in the UI as シャドウ（遮蔽マップ近似）— this is
+  NOT a full shadow map.
+- **Fog self-shadow** (`gpgpuFogSelfShadow` /
+  `gpgpuFogShadowSteps`, 2 new keys): each volumetric smoke
+  sample is attenuated by the density integrated from the
+  sample toward the light (secondary march, keyed 1–16 steps),
+  so the far side of a smoke sphere sinks while the lit side
+  stays bright. Strength 0 skips the march entirely.
+- Starters +2 (522 total): a terrain-occlusion shadow example
+  and a self-shadowed fog example.
+
+### Honest limits
+- Occlusion casters are only the terrain height field and the
+  OBJ bounding sphere; particles and volumes receive but never
+  cast. The bake covers the terrain mesh's XZ footprint at
+  64x64; tunnel-mode terrain does not receive (no single light
+  horizon in the wrapped frame). Occlusion applies only
+  against the Phase T light object, never the fixed-direction
+  lights.
+- Flame colour / temperature remain out of scope by design
+  (monochrome policy) — the smoke row of the Maxon audit keeps
+  that as a stated reason.
+
 ## [1.30.0] — 2026-11-17
 
 Phase Y (fourth period): visible light — a volumetric beam for
