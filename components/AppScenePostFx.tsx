@@ -19,6 +19,7 @@ import { CompositePass } from './compositePass';
 import { GlitchPass } from './glitchPass';
 import { PixelSortPass } from './pixelSortPass';
 import { CellularPass } from './cellularPass';
+import { MoirePass } from './moirePass';
 import { getGradImageTexture } from '../lib/gradImageTexture';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { displaceChannelIndex } from '../lib/postFxMath';
@@ -87,6 +88,7 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   const ditherPass = React.useMemo(() => new OrderedDitherPass(), []);
   React.useEffect(() => () => ditherPass.dispose(), [ditherPass]);
   ditherPass.strength = config.postDitherStrength;
+  ditherPass.mode = config.postDitherMode;
   const halftonePass = React.useMemo(() => new HalftonePass(), []);
   React.useEffect(() => () => halftonePass.dispose(), [halftonePass]);
   halftonePass.cellSize = config.postHalftoneCellSize;
@@ -170,6 +172,15 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
     cellularSeedSigRef.current = cellularSeedSig;
     cellularPass.requestSeed();
   }
+  // Moire (Phase AW): stateless pattern-product field; the stage
+  // exists only while enabled with a non-zero mix.
+  const moirePass = React.useMemo(() => new MoirePass(), []);
+  React.useEffect(() => () => moirePass.dispose(), [moirePass]);
+  moirePass.pattern = config.postMoirePattern;
+  moirePass.spacing = config.postMoireSpacing;
+  moirePass.angle = config.postMoireAngle;
+  moirePass.phase = config.postMoirePhase;
+  moirePass.mixAmount = config.postMoireMix;
 
   if (orderedPostFxStages.length === 0) {
     return null;
@@ -249,6 +260,8 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
             return <primitive key={stage} object={pixelSortPass} />;
           case 'cellular':
             return <primitive key={stage} object={cellularPass} />;
+          case 'moire':
+            return <primitive key={stage} object={moirePass} />;
           case 'composite':
             return <primitive key={stage} object={compositePass} />;
           case 'feedback':

@@ -2972,4 +2972,47 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuRigidStartSleeping: false,
         gpgpuTrailEnabled: false,
       }),
+  // Phase AW: polygon morph target — a hexagonal plate (the
+  // polygon grammar at its default side count), thin and still.
+  createStarterPreset('starter-polygon-hex-plate', 'Polygon Hex Plate (Regular Polygon Morph)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#e6ebee',
+        gpgpuSize: 1.6,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.0,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'polygon',
+        gpgpuMorphPolygonSides: 6,
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.02,
+        gpgpuMorphOrbitSpeed: 0.0,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase AW: moire interference — a quiet shell cloud read
+  // through the grid moire field at a small angle, where the
+  // beat bands are widest.
+  createStarterPreset('starter-moire-grid-veil', 'Moire Grid Veil (Pattern Interference)', {
+        renderQuality: 'balanced',
+        layer1Enabled: true,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: false,
+        postMoireEnabled: true,
+        postMoirePattern: 'grid',
+        postMoireSpacing: 5,
+        postMoireAngle: 2.5,
+        postMoirePhase: 0,
+        postMoireMix: 0.45,
+      }),
 ];

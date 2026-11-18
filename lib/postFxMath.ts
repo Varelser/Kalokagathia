@@ -59,6 +59,78 @@ export function ditherValue(value: number, x: number, y: number, strength: numbe
   return clamp01(Math.floor(clamp01(value) * DITHER_STEPS + 0.5 + (t - 0.5) * s) / DITHER_STEPS);
 }
 
+/** Dither modes (Phase AW): the Phase AD ordered dither and the
+ *  error-diffusion approximation below. */
+export type DitherMode = 'bayer' | 'diffusion';
+
+export function resolveDitherMode(mode: string | undefined): DitherMode {
+  return mode === 'diffusion' ? 'diffusion' : 'bayer';
+}
+
+/**
+ * Floyd–Steinberg weights for the already-scanned neighbours —
+ * the error a true sequential diffusion would have pushed INTO
+ * the current pixel from those neighbours. The scan runs
+ * top-to-bottom in texture space, so the neighbours are, in
+ * weight order: (-1, +1), (-1, 0), (0, +1), (+1, +1) — the same
+ * offsets the shader samples.
+ */
+export const FS_NEIGHBOR_WEIGHTS: readonly number[] = [7 / 16, 3 / 16, 5 / 16, 1 / 16];
+
+/** Quantization error of one value at the dither step count. */
+export function quantizationError(value: number): number {
+  const v = clamp01(value);
+  return v - Math.round(v * DITHER_STEPS) / DITHER_STEPS;
+}
+
+/**
+ * Error-diffusion APPROXIMATION (Phase AW): a fragment shader
+ * cannot run the sequential Floyd–Steinberg scan (each pixel
+ * depends on the accumulated error of its predecessors), so the
+ * pass estimates the incoming error from the already-scanned
+ * neighbours' own quantization errors, weighted by the FS
+ * kernel, one tap deep:
+ *
+ *   estErr = Σ wᵢ · quantizationError(neighbourᵢ)
+ *   out    = quantize(value + estErr · strength)
+ *
+ * This reproduces the diffusion look (error pushed into flat
+ * areas breaks them into the characteristic worm patterns) but
+ * it is NOT a true sequential diffusion: the estimate does not
+ * chain (a neighbour's own incoming error is not included), so
+ * long-range error transport differs. `neighborErrors` are the
+ * four FS neighbours' quantization errors in the weight order
+ * above; missing neighbours (frame edges) contribute 0.
+ */
+export function errorDiffusionValue(
+  value: number,
+  neighborErrors: readonly number[],
+  strength: number,
+): number {
+  const s = Math.min(1, Math.max(0, strength));
+  let est = 0;
+  for (let i = 0; i < FS_NEIGHBOR_WEIGHTS.length; i++) {
+    est += FS_NEIGHBOR_WEIGHTS[i] * (neighborErrors[i] ?? 0);
+  }
+  const v = clamp01(value) + est * s;
+  return clamp01(Math.floor(v * DITHER_STEPS + 0.5) / DITHER_STEPS);
+}
+
+/** Mode-dispatching twin of the dither pass: 'bayer' delegates
+ *  to ditherValue verbatim; 'diffusion' uses the approximation
+ *  (the caller supplies the neighbour errors). */
+export function ditherValueMode(
+  mode: DitherMode,
+  value: number,
+  x: number,
+  y: number,
+  strength: number,
+  neighborErrors: readonly number[] = [],
+): number {
+  if (mode === 'diffusion') return errorDiffusionValue(value, neighborErrors, strength);
+  return ditherValue(value, x, y, strength);
+}
+
 export function normalizeHalftoneCellSize(cellSize: number): number {
   if (!Number.isFinite(cellSize)) return 8;
   return Math.min(64, Math.max(3, cellSize));

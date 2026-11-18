@@ -23,6 +23,12 @@ export interface ParticleConfigLayer1 {
   // Hand-drawn line jitter (Phase AH): deterministic per-endpoint
   // displacement in the line shaders. 0 = legacy lines.
   layer1LineJitter: number;
+  // Path application of the line jitter (Phase AW): while ON,
+  // the same jitter amount also displaces path drawing — the
+  // L-System line geometry and the morph bake's path-placed
+  // points (lib/pathJitter.ts). Default OFF = paths render
+  // exactly as before.
+  layer1LineJitterPaths: boolean;
   // Dashed lines (Phase AM): the line shaders discard the gap
   // part of a dash period along each segment. Length 0 = solid
   // (legacy) lines.

@@ -73,6 +73,10 @@ export const Layer1TabContent: React.FC<ControlPanelContentProps> = ({ config, l
         <Slider label="Pulse Speed" value={config.pulseSpeed} min={0} max={10.0} step={0.001} onChange={(v) => updateConfig('pulseSpeed', v)} />
         <Slider label="Pulse Depth" value={config.pulseAmplitude} min={0} max={5000} step={1} onChange={(v) => updateConfig('pulseAmplitude', v)} />
         <Slider label="Line Jitter （筆致ジッタ・手描き風）" value={config.layer1LineJitter} min={0} max={10} step={0.05} onChange={(v) => updateConfig('layer1LineJitter', v)} />
+        <Toggle label="Jitter Paths （筆致ジッタをパス描画にも・Phase AW）" value={config.layer1LineJitterPaths} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('layer1LineJitterPaths', v)} />
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          On で同じジッタ量が L-System の線とモーフのパス配置（SVGパス／輪郭）にも効きます。位置ハッシュなので継ぎ目で線は切れません。Off＝従来同一。
+        </div>
         <Slider label="Line Dash Length （破線のダッシュ長・Phase AM）" value={config.layer1LineDashLength} min={0} max={50} step={0.5} onChange={(v) => updateConfig('layer1LineDashLength', v)} />
         <Slider label="Line Dash Gap （破線の間隔・Phase AM）" value={config.layer1LineDashGap} min={0} max={50} step={0.5} onChange={(v) => updateConfig('layer1LineDashGap', v)} />
         <div className="mt-1 text-[9px] leading-relaxed text-white/40">

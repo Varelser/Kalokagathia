@@ -1,19 +1,19 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.54.0**（2026-11-18、第7期 Phase AV＝保守の締め: テストドリフト2件の解消と速度シェーダの分割。挙動変更なし、新規キー・スターターなし。前版 v1.53.1 は depiction 正直注記の現行化、その前の v1.53.0 は第6期 Phase AU＝RBD（剛体）: 破砕セルの上に立つ CPU 剛体ソルバ（最大64体、固定刻み 1/120 s）。並進＋回転（球近似慣性）＋球近似の剛体間衝突＋接着破断＋スリープまで。凸包・メッシュ衝突・拘束ジョイント・摩擦スタック・地形床は解かない（床は平面）。新規 config キー +6（gpgpuRigid*）・スターター +2。iMac ゲート・出荷は PHASE_AU_REPORT.md 参照。第6期は本フェーズで完走）
+**現行バージョン: v1.55.0**（2026-11-18、第7期 Phase AW＝文法の残り束・描画面: 多角形ターゲット／誤差拡散ディザ／モアレ段／画面遷移の形状文法／ランプの任意位置／筆致のパス適用。新規 config キー +12（全て既定で従来同一）・スターター +2。詳細は PHASE_AW_REPORT.md。iMac ゲート・出荷は統合側で未実施。前版 v1.54.0 は第7期 Phase AV＝保守の締め（テストドリフト2件の解消と速度シェーダの分割、挙動変更なし）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_AU_REPORT.md / PHASE_AU_GATE_REPORT.md、前: PHASE_AT_REPORT.md / PHASE_AT_GATE_REPORT.md）
+  （最新: PHASE_AW_REPORT.md、前: PHASE_AV_REPORT.md / PHASE_AU_REPORT.md / PHASE_AU_GATE_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.54.0] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.55.0] が最新項）
 
 ## 資産の実数（2026-11-18 実測）
 
-- config キー: **1,246件** ／ 内蔵スターター: **567件**
+- config キー: **1,258件** ／ 内蔵スターター: **569件**
 - 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

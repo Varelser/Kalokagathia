@@ -10,6 +10,9 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   sdfSpecularShininess: 16.0,
   sdfAmbientLight: 0.3,
 
+  // Preset transition shape (Phase AW): legacy uniform morph.
+  presetTransitionShape: 'crossfade' as const,
+
   // Post Processing
   postFxStackProfile: 'manual' as const,
   postBloomEnabled: false,
@@ -48,6 +51,13 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postFractalIterations: 64,
   postFractalJuliaX: -0.8,
   postFractalJuliaY: 0.156,
+  // Moire (Phase AW): stage absent while disabled.
+  postMoireEnabled: false,
+  postMoirePattern: 'grid' as const,
+  postMoireSpacing: 6,
+  postMoireAngle: 4,
+  postMoirePhase: 0,
+  postMoireMix: 0.35,
   postFractalMix: 1,
   // Composite / glitch / pixel sort / cellular (Phase AM): all
   // stages absent while disabled.
@@ -108,6 +118,7 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postPosterizeLevels: 8,
   postDitherEnabled: false,
   postDitherStrength: 1,
+  postDitherMode: 'bayer' as const,
   postHalftoneEnabled: false,
   postHalftoneCellSize: 8,
   postHalftoneAngle: 45,

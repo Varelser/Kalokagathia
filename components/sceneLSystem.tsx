@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import type { ParticleConfig } from '../types';
 import type { SceneAudioRef } from './AppSceneTypes';
 import { generateLSystem, type LSystemPresetId } from '../lib/lSystem';
+import { applyPathJitterToPositions } from '../lib/pathJitter';
 
 // L-system recursive generation (Lindenmayer), after Prusinkiewicz &
 // Lindenmayer. Structure is generated on the CPU by lib/lSystem.ts
@@ -69,12 +70,26 @@ export const LSystem: React.FC<LSystemProps> = ({ config, layerIndex, isPlaying 
     [preset, depth, angle, lengthDecay, seed, curvature, customRules],
   );
 
+  // Path jitter (Phase AW): while the paths switch is on, the
+  // line jitter amount also displaces the generated path points
+  // (position-hashed, so shared joints stay glued). The local
+  // scale converts the line jitter's world scale (amount *
+  // sphereRadius * 0.02) into this sheet's local units, which
+  // are multiplied by planeSize at render. Amount 0 returns the
+  // generated array itself, so the default geometry is untouched.
+  // `config` here is the scene's effective (modulated) config,
+  // so a modulation route into layer1LineJitter moves the paths
+  // with the lines.
+  const pathJitterAmount = config.layer1LineJitterPaths ? config.layer1LineJitter : 0;
+  const pathJitterScale = (config.sphereRadius * 0.02)
+    / Math.min(Math.max(config.sphereRadius * 3.1, 160), 900);
   const geometry = React.useMemo(() => {
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(generated.positions, 3));
+    const positions = applyPathJitterToPositions(generated.positions, pathJitterAmount, pathJitterScale);
+    geo.setAttribute('position', new THREE.BufferAttribute(positions as Float32Array, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(generated.colors, 3));
     return geo;
-  }, [generated]);
+  }, [generated, pathJitterAmount, pathJitterScale]);
   React.useEffect(() => () => geometry.dispose(), [geometry]);
 
   const material = React.useMemo(() => new THREE.LineBasicMaterial({

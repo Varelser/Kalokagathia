@@ -89,7 +89,7 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uPointShape:        { value: 0 },
       uGradEnabled:       { value: false },
       uGradDriver:        { value: 0 },
-      uGradLut:           { value: createGradientLutTexture(config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd, config.gpgpuGradQuarter, config.gpgpuGradThreeQuarter) },
+      uGradLut:           { value: createGradientLutTexture(config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd, config.gpgpuGradQuarter, config.gpgpuGradThreeQuarter, config.gpgpuGradQuarterPos, config.gpgpuGradThreeQuarterPos) },
       uGradSpatialScale:  { value: config.gpgpuGradSpatialScale },
       uGradTime:          { value: 0 },
       uGradImageTex:      { value: null },

@@ -547,6 +547,9 @@ export function buildMorphBakeData(
     },
     textOnPath,
     contourGeometry,
+    // Polygon target + path jitter (Phase AW).
+    polygonSides: config.gpgpuMorphPolygonSides,
+    pathJitter: config.layer1LineJitterPaths ? config.layer1LineJitter : 0,
     // Voronoi fracture (Phase AG): shared option builder so the
     // WebGPU bake and the WebGL / CPU routings can never drift.
     fracture: fractureOptionFromConfig(config),
@@ -1117,6 +1120,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphGlyphFade = config.gpgpuMorphTextOnPathGlyphFade;
   const morphContourSource = config.gpgpuMorphContourSource;
   const morphContourThreshold = config.gpgpuMorphContourThreshold;
+  // Polygon sides / path jitter (Phase AW).
+  const morphPolygonSides = config.gpgpuMorphPolygonSides;
+  const morphPathJitter = config.layer1LineJitterPaths ? config.layer1LineJitter : 0;
   const morphDisperseAmount = config.gpgpuMorphDisperseAmount;
   const morphDisperseDirection = config.gpgpuMorphDisperseDirection;
   const morphTwistAmount = config.gpgpuMorphTwistAmount;
@@ -1220,6 +1226,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       },
       textOnPath,
       contourGeometry,
+      // Polygon target + path jitter (Phase AW).
+      polygonSides: morphPolygonSides,
+      pathJitter: morphPathJitter,
       // Voronoi fracture (Phase AG): same shared option builder
       // as the WebGPU bake (buildMorphBakeData above).
       fracture: fractureOptionFromConfig(config),
@@ -1429,6 +1438,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphGlyphFade,
     morphContourSource,
     morphContourThreshold,
+    morphPolygonSides,
+    morphPathJitter,
     morphDisperseAmount,
     morphDisperseDirection,
     morphTwistAmount,

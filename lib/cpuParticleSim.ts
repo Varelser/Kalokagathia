@@ -205,6 +205,13 @@ export function buildCpuMorphData(
     },
     textOnPath: extras.textOnPath ?? null,
     contourGeometry: extras.contourGeometry ?? null,
+    // Polygon target + path jitter (Phase AW): read from config
+    // directly, like the path / form options above. The polygon
+    // side count only matters to the polygon target; the path
+    // jitter amount is the line jitter gated by its paths switch
+    // (0 while off, so the bake stays bit-identical).
+    polygonSides: config.gpgpuMorphPolygonSides,
+    pathJitter: config.layer1LineJitterPaths ? config.layer1LineJitter : 0,
     // Voronoi fracture (Phase AG): read from config directly,
     // like the path / form options above — the shared bake applies
     // it, so the CPU cloud fractures identically to the GPU bakes.
@@ -360,6 +367,10 @@ export function cpuShapeSignature(config: ParticleConfig): string {
     config.layer2TextMapPadding, config.layer2TextMapInvert ? 1 : 0,
     config.layer2MediaMapWidth, config.layer2MediaMapHeight,
     config.layer2MediaLumaMap ? config.layer2MediaLumaMap.length : 0,
+    // Polygon sides / path jitter (Phase AW bake inputs, appended
+    // at the end like the AM fields were).
+    config.gpgpuMorphPolygonSides,
+    config.layer1LineJitterPaths ? config.layer1LineJitter : 0,
     ].join(',')}`;
   }
   // Age lifecycle (Phase X2): the initial age scatter is part of the

@@ -244,10 +244,10 @@ export function syncVisualUniforms(args: {
     drawMat.uniforms.uGradTime.value = time ?? 0;
     const lut = drawMat.uniforms.uGradLut.value as THREE.DataTexture | null;
     if (lut) {
-      const lutKey = `${config.gpgpuGradStart}|${config.gpgpuGradQuarter}|${config.gpgpuGradMid}|${config.gpgpuGradThreeQuarter}|${config.gpgpuGradEnd}`;
+      const lutKey = `${config.gpgpuGradStart}|${config.gpgpuGradQuarter}|${config.gpgpuGradMid}|${config.gpgpuGradThreeQuarter}|${config.gpgpuGradEnd}|${config.gpgpuGradQuarterPos}|${config.gpgpuGradThreeQuarterPos}`;
       if (drawMat.userData.gradLutKey !== lutKey) {
         drawMat.userData.gradLutKey = lutKey;
-        fillGradientLutDataAuto(lut.image.data as Uint8Array, config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd, config.gpgpuGradQuarter, config.gpgpuGradThreeQuarter);
+        fillGradientLutDataAuto(lut.image.data as Uint8Array, config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd, config.gpgpuGradQuarter, config.gpgpuGradThreeQuarter, config.gpgpuGradQuarterPos, config.gpgpuGradThreeQuarterPos);
         lut.needsUpdate = true;
       }
     }

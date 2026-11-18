@@ -184,8 +184,18 @@ export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffe
               <input type="color" value={config.gpgpuGradThreeQuarter || '#000000'} onChange={(e) => { updateConfig('gpgpuGradThreeQuarter', e.target.value); updateConfig('gpgpuGradPreset', 'custom'); }} className="h-8 w-full cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
             </div>
           </div>
+          {(config.gpgpuGradQuarter || config.gpgpuGradThreeQuarter) && (
+            <>
+              {config.gpgpuGradQuarter && (
+                <Slider label="1/4 Stop Position （位置・Phase AW）" value={config.gpgpuGradQuarterPos} min={0.02} max={0.48} step={0.01} onChange={(v) => updateConfig('gpgpuGradQuarterPos', v)} />
+              )}
+              {config.gpgpuGradThreeQuarter && (
+                <Slider label="3/4 Stop Position （位置・Phase AW）" value={config.gpgpuGradThreeQuarterPos} min={0.52} max={0.98} step={0.01} onChange={(v) => updateConfig('gpgpuGradThreeQuarterPos', v)} />
+              )}
+            </>
+          )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            追加ストップ（Phase AH）: 1/4・3/4 位置に色を足して5点グラデーションにできます。両方とも未指定のときは従来の3点グラデーションと完全一致します。
+            追加ストップ（Phase AH）: 1/4・3/4 位置に色を足して5点グラデーションにできます。両方とも未指定のときは従来の3点グラデーションと完全一致します。位置（Phase AW）は既定（0.25／0.75）で従来同一です。
           </div>
           {config.gpgpuGradDriver === 'spatial' && (
             <Slider label="Spatial Scale" value={config.gpgpuGradSpatialScale} min={0.001} max={0.05} step={0.001} onChange={(v) => updateConfig('gpgpuGradSpatialScale', v)} />

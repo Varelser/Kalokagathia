@@ -130,12 +130,32 @@ export function fillGradientLutData5(
 }
 
 /**
+ * Resolve the extra-stop positions (Phase AW): the quarter stop
+ * lives in the first half, the three-quarter stop in the second,
+ * each clamped away from the segment ends so the stop list stays
+ * strictly increasing. The defaults (0.25 / 0.75) pass through
+ * unchanged, so default configs resolve to the Phase AH layout.
+ */
+export function resolveGradientStopPositions(
+  quarterPos?: number,
+  threeQuarterPos?: number,
+): { quarterPos: number; threeQuarterPos: number } {
+  const clamp = (v: number, lo: number, hi: number, fallback: number) =>
+    (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback);
+  return {
+    quarterPos: clamp(quarterPos as number, 0.02, 0.48, 0.25),
+    threeQuarterPos: clamp(threeQuarterPos as number, 0.52, 0.98, 0.75),
+  };
+}
+
+/**
  * Fill with the optional extra stops (Phase AH): an empty-string
  * stop is "unspecified". When BOTH extra stops are unspecified
  * this calls the legacy 3-stop fill verbatim, so the LUT stays
  * bit-identical; with one or both specified it builds the stop
  * list (start / [quarter] / mid / [threeQuarter] / end) and fills
- * piecewise-linearly.
+ * piecewise-linearly. The extra stops sit at the Phase AW
+ * positions (defaults 0.25 / 0.75 = the Phase AH layout).
  */
 export function fillGradientLutDataAuto(
   data: Uint8Array,
@@ -144,6 +164,8 @@ export function fillGradientLutDataAuto(
   end: string,
   quarter?: string,
   threeQuarter?: string,
+  quarterPos?: number,
+  threeQuarterPos?: number,
 ): void {
   const q = typeof quarter === 'string' && quarter.trim() !== '' ? quarter : null;
   const tq = typeof threeQuarter === 'string' && threeQuarter.trim() !== '' ? threeQuarter : null;
@@ -151,19 +173,20 @@ export function fillGradientLutDataAuto(
     fillGradientLutData(data, start, mid, end);
     return;
   }
+  const pos = resolveGradientStopPositions(quarterPos, threeQuarterPos);
   const stops: GradientStop[] = [{ pos: 0, color: new THREE.Color(start) }];
-  if (q) stops.push({ pos: 0.25, color: new THREE.Color(q) });
+  if (q) stops.push({ pos: pos.quarterPos, color: new THREE.Color(q) });
   stops.push({ pos: 0.5, color: new THREE.Color(mid) });
-  if (tq) stops.push({ pos: 0.75, color: new THREE.Color(tq) });
+  if (tq) stops.push({ pos: pos.threeQuarterPos, color: new THREE.Color(tq) });
   stops.push({ pos: 1, color: new THREE.Color(end) });
   fillGradientLutFromStops(data, stops);
 }
 
 /** Create the LUT texture the draw shader samples (LinearFilter so the
  *  two segments blend smoothly; ClampToEdge on both axes). */
-export function createGradientLutTexture(start: string, mid: string, end: string, quarter?: string, threeQuarter?: string): THREE.DataTexture {
+export function createGradientLutTexture(start: string, mid: string, end: string, quarter?: string, threeQuarter?: string, quarterPos?: number, threeQuarterPos?: number): THREE.DataTexture {
   const data = new Uint8Array(GRADIENT_LUT_SIZE * 4);
-  fillGradientLutDataAuto(data, start, mid, end, quarter, threeQuarter);
+  fillGradientLutDataAuto(data, start, mid, end, quarter, threeQuarter, quarterPos, threeQuarterPos);
   const tex = new THREE.DataTexture(data, GRADIENT_LUT_SIZE, 1, THREE.RGBAFormat);
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;

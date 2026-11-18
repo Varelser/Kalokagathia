@@ -20,6 +20,7 @@ export const APP_STATE_DEFAULT_LAYER_1: Partial<ParticleConfig> = {
   layer1Volume: 0.0,
   jitter: 0.0,
   layer1LineJitter: 0,
+  layer1LineJitterPaths: false,
   // Dashed lines (Phase AM): length 0 = solid legacy lines.
   layer1LineDashLength: 0,
   layer1LineDashGap: 0,

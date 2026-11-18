@@ -43,7 +43,16 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
             <option value="terrain">Terrain (地形・フラクタル高度場)</option>
             <option value="data">Data (属性点群 — Phase AK)</option>
             <option value="contour">Contour (輪郭のベクタ線化 — Phase AM)</option>
+            <option value="polygon">Polygon (正多角形プレート — Phase AW)</option>
           </select>
+          {config.gpgpuMorphTarget === 'polygon' && (
+            <>
+              <Slider label="Polygon Sides （辺数）" value={config.gpgpuMorphPolygonSides} min={3} max={12} step={1} onChange={(v) => updateConfig('gpgpuMorphPolygonSides', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                正多角形の内側を面積一様に埋める薄いプレートです。辺数3で三角形、12で円に近づきます。
+              </div>
+            </>
+          )}
           {config.gpgpuMorphTarget === 'data' && (
             <div className="mt-1 text-[9px] leading-relaxed text-white/40">
               Play タブ → Data Source で登録した属性点群の位置をターゲットにします（未登録の間は球殻にフォールバック）。点群の列は属性（Forces の Attributes 節、Data 源）として粒子へ渡ります。

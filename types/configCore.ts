@@ -137,6 +137,12 @@ export interface ParticleConfigCore {
   sdfSpecularShininess: number;
   sdfAmbientLight: number;
 
+  // Preset transition shape (Phase AW): how a preset morph
+  // distributes its progress across the config keys. 'crossfade'
+  // is the legacy uniform morph (the default, bit-identical);
+  // the other shapes stagger the keys (lib/transitionShape.ts).
+  presetTransitionShape: 'crossfade' | 'wipe' | 'dissolve' | 'circle';
+
   // Post Processing
   postFxStackProfile: 'manual' | 'touch-feedback' | 'particular-glow' | 'retro-feedback' | 'dream-smear';
   postBloomEnabled: boolean;
@@ -181,6 +187,17 @@ export interface ParticleConfigCore {
   postFractalJuliaX: number;
   postFractalJuliaY: number;
   postFractalMix: number;
+  // Moire (Phase AW): a post stage overlaying two regular
+  // patterns (grid / rings / lines) whose product is the moire
+  // interference field — the second pattern is the first rotated
+  // by Angle and shifted by Phase. Default off = the stage is
+  // absent from the stack and the output is identical.
+  postMoireEnabled: boolean;
+  postMoirePattern: 'grid' | 'rings' | 'lines';
+  postMoireSpacing: number;
+  postMoireAngle: number;
+  postMoirePhase: number;
+  postMoireMix: number;
   // Composite (Phase AM): a two-layer composite post stage — the
   // frame blended with an AF supply texture (text-raster /
   // path-raster / edge-output) under a blend-mode group. Default
@@ -273,6 +290,12 @@ export interface ParticleConfigCore {
   postPosterizeLevels: number;
   postDitherEnabled: boolean;
   postDitherStrength: number;
+  // Dither mode (Phase AW): 'bayer' is the Phase AD ordered
+  // dither (the default, bit-identical); 'diffusion' switches
+  // the pass to a Floyd–Steinberg-style error-diffusion
+  // approximation (single-pass, neighbour-error estimate — see
+  // lib/postFxMath.ts; not a true sequential scan).
+  postDitherMode: 'bayer' | 'diffusion';
   postHalftoneEnabled: boolean;
   postHalftoneCellSize: number;
   postHalftoneAngle: number;

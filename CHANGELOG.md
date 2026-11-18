@@ -4,6 +4,56 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.55.0] — 2026-11-18
+
+Seventh-term Phase AW: the remaining drawing-side grammar
+bundle. Twelve new config keys, every one defaulting to the
+legacy behaviour; two new starters.
+
+### Added
+- **Polygon morph target** (`gpgpuMorphTarget: 'polygon'`,
+  `gpgpuMorphPolygonSides` 3–12): a regular-polygon plate
+  inscribed in the unit circle, area-uniform fill, appended at
+  the end of the target list so every existing target's bake
+  stays bit-identical.
+- **Error-diffusion dither mode** (`postDitherMode`):
+  'diffusion' switches the ordered-dither pass to a
+  Floyd–Steinberg-style approximation — a fragment shader
+  cannot run the sequential scan, so the incoming error is
+  estimated one tap deep from the already-scanned neighbours'
+  quantization errors (FS weights 7/3/5/1). 'bayer' (default)
+  is the Phase AD pass verbatim.
+- **Moire post stage** (`postMoire*`): two regular patterns
+  (grid / rings / lines), the second rotated by Angle and
+  shifted by Phase, multiplied into the interference field
+  and mixed over the frame. Sits after 'cellular', before
+  'feedback', in every stack profile.
+- **Preset transition shapes** (`presetTransitionShape`):
+  crossfade (default, the legacy uniform morph) / wipe /
+  dissolve / circle stagger the per-key progress of a preset
+  morph (window 0.35, endpoints exact); the target config's
+  shape governs.
+- **Gradient stop positions** (`gpgpuGradQuarterPos` /
+  `gpgpuGradThreeQuarterPos`): the Phase AH extra stops move
+  off their fixed 0.25 / 0.75; at the defaults the 5-stop LUT
+  is bit-identical to Phase AH, and unspecified stops keep the
+  legacy 3-stop fill at any positions.
+- **Path jitter** (`layer1LineJitterPaths`): the Phase AH line
+  jitter amount also displaces path drawing — L-System line
+  geometry and the morph bake's path placements (SVG path /
+  contour) — via a position hash, so shared joints stay glued
+  and polylines never tear. The amount key is modulation-
+  routable, so routes move the paths with the lines.
+
+### Fixed
+- **Stale test expectations (era pins)**: the Phase AU / AR
+  suites' totals pins are brought current (1,258 keys / 569
+  starters); the Phase X2 suite's signature expectation gains
+  AW's two appended bake-input fields; the Phase AM suite's
+  append-only target check now expects 'polygon' last. The
+  Phase AM suite's own totals pins (1,206 / 553) predate this
+  phase and remain stale, untouched.
+
 ## [1.54.0] — 2026-11-18
 
 Seventh-term Phase AV: behaviour-zero maintenance. No behaviour

@@ -387,7 +387,41 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
           onChange={(v) => updateConfig('postDitherEnabled', v)}
         />
         {config.postDitherEnabled && (
-          <Slider label="Dither Strength" value={config.postDitherStrength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postDitherStrength', v)} />
+          <>
+            <Toggle
+              label="Dither Mode （方式・Phase AW）"
+              value={config.postDitherMode}
+              options={[{ label: 'Bayer', val: 'bayer' as const }, { label: 'Diffusion', val: 'diffusion' as const }]}
+              onChange={(v) => updateConfig('postDitherMode', v)}
+            />
+            <Slider label="Dither Strength" value={config.postDitherStrength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postDitherStrength', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              Diffusion は Floyd–Steinberg 誤差拡散の単一パス近似です（シェーダでは逐次走査ができないため、走査済み近傍の量子化誤差から推定します）。Bayer が従来の規則ディザです。
+            </div>
+          </>
+        )}
+        <Toggle
+          label="Moire （モアレ干渉・Phase AW）"
+          value={config.postMoireEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postMoireEnabled', v)}
+        />
+        {config.postMoireEnabled && (
+          <>
+            <Toggle
+              label="Moire Pattern"
+              value={config.postMoirePattern}
+              options={[{ label: 'Grid', val: 'grid' as const }, { label: 'Rings', val: 'rings' as const }, { label: 'Lines', val: 'lines' as const }]}
+              onChange={(v) => updateConfig('postMoirePattern', v)}
+            />
+            <Slider label="Moire Spacing (px)" value={config.postMoireSpacing} min={2} max={64} step={0.5} onChange={(v) => updateConfig('postMoireSpacing', v)} />
+            <Slider label="Moire Angle (deg)" value={config.postMoireAngle} min={-45} max={45} step={0.1} onChange={(v) => updateConfig('postMoireAngle', v)} />
+            <Slider label="Moire Phase" value={config.postMoirePhase} min={0} max={6.2832} step={0.01} onChange={(v) => updateConfig('postMoirePhase', v)} />
+            <Slider label="Moire Mix" value={config.postMoireMix} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postMoireMix', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              規則パターンを角度・位相をずらして重ねた積がモアレ（干渉のうねり）になります。角度0・位相0では干渉は消えます。フレームに乗算で合成します。
+            </div>
+          </>
         )}
         <Toggle
           label="Halftone (網点)"

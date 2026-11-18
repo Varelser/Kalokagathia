@@ -42,6 +42,7 @@
 
 import type { ParticleConfig } from '../types';
 import { createSeededRng } from './seededRng';
+import { pathJitterOffset } from './pathJitter';
 import { applyVoronoiFracture, buildFractureCellData, type FractureCellData } from './voronoiFracture';
 import {
   maskAcceptsAt,
@@ -116,6 +117,9 @@ export const GPGPU_MORPH_TARGETS: readonly GpgpuMorphTargetKind[] = [
   // reason: the traced outline of a luma source
   // (lib/contourTrace.ts) as a path-style placement.
   'contour',
+  // 'polygon' (Phase AW) appends after 'contour' for the same
+  // reason: a regular-polygon plate (lib polygon radius grammar).
+  'polygon',
 ] as const;
 
 export interface MorphMediaMap {
@@ -392,6 +396,23 @@ export interface GpgpuMorphTargetBuildOptions {
    * precedent.
    */
   scatter?: GpgpuMorphTerrainScatterOptions | null;
+  /**
+   * Polygon side count for the polygon target (Phase AW): 3..12,
+   * absent / out of range resolves to the default 6. Only
+   * consulted by the polygon target; it consumes no RNG draws
+   * beyond the shared per-particle draws, like every analytic
+   * target.
+   */
+  polygonSides?: number;
+  /**
+   * Path jitter amount (Phase AW, lib/pathJitter.ts): when > 0
+   * AND the bake places particles along paths (the svg path
+   * branch or the contour target), each finished point is
+   * displaced by the position-hashed path jitter before the
+   * world scale is applied. Absent / 0 = the legacy bake exactly
+   * (the branch is skipped, no extra draws).
+   */
+  pathJitter?: number;
 }
 
 /**
@@ -404,6 +425,31 @@ export interface GpgpuMorphTargetBuildOptions {
  */
 export function terrainFieldSeedFor(seed: number, terrainSeed: number): number {
   return ((seed ^ Math.imul((terrainSeed | 0) + 1, 0x9e3779b1)) | 0);
+}
+
+/**
+ * Polygon target grammar (Phase AW): resolve the side count —
+ * an integer in [3, 12]; anything else (absent, fractional-only,
+ * out of range, non-finite) resolves to the default 6.
+ */
+export function resolvePolygonSides(sides?: number): number {
+  if (typeof sides !== 'number' || !Number.isFinite(sides)) return 6;
+  const n = Math.floor(sides);
+  return n >= 3 && n <= 12 ? n : 6;
+}
+
+/**
+ * The boundary radius of a regular polygon at angle `theta`:
+ * r(θ) = cos(π/n) / cos((θ mod 2π/n) − π/n) — the polygon
+ * inscribed in the unit circle, so r = 1 at the vertices and
+ * r = cos(π/n) at the edge midpoints. Pure and periodic with
+ * period 2π/n.
+ */
+export function polygonRadiusAt(theta: number, sides: number): number {
+  const n = resolvePolygonSides(sides);
+  const sector = (Math.PI * 2) / n;
+  const local = ((theta % sector) + sector) % sector;
+  return Math.cos(Math.PI / n) / Math.cos(local - Math.PI / n);
 }
 
 export const DEFAULT_TERRAIN: GpgpuMorphTerrainOptions = {
@@ -1240,7 +1286,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   normalData: Float32Array;
   fractureCells: FractureCellData | null;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, rigidFracture, scatter, contourGeometry } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, rigidFracture, scatter, contourGeometry, polygonSides, pathJitter } = options;
   const formActive = isFormDeformationActive(form);
   // Raster mask (Phase X): resolved once; null unless the mode is
   // on and the map is usable, in which case the placement branches
@@ -1342,6 +1388,13 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   // branch.
   const contourActive =
     target === 'contour' && contourGeometry != null && contourGeometry.totalLength > 0;
+  // Polygon target (Phase AW): the side count, resolved once.
+  const polygonSideCount = resolvePolygonSides(polygonSides);
+  // Path jitter (Phase AW): only path-placed points move (the
+  // svg path branch and the contour target place the whole cloud
+  // along paths). Amount 0 / absent skips the branch entirely.
+  const pathJitterAmount = typeof pathJitter === 'number' && pathJitter > 0 ? pathJitter : 0;
+  const pathJitterActive = pathJitterAmount > 0 && (pathActive || contourActive);
 
   for (let i = 0; i < count; i++) {
     const s = rng();
@@ -1900,6 +1953,20 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
           }
           break;
         }
+        case 'polygon': {
+          // Regular-polygon plate (Phase AW): points fill the
+          // polygon's disc in the XZ plane — the angle is the
+          // shared s draw, the radius sqrt(h1) (area-uniform)
+          // scaled by the polygon boundary radius at that angle,
+          // so the density stays even out to the vertices. The
+          // plate is thin: ty is a small h2 jitter slab.
+          const theta = s * TAU;
+          const rad = Math.sqrt(h1) * polygonRadiusAt(theta, polygonSideCount) * 0.95;
+          tx = Math.cos(theta) * rad;
+          tz = Math.sin(theta) * rad;
+          ty = (h2 - 0.5) * 0.08;
+          break;
+        }
         case 'shell': {
           // Logarithmic Fibonacci nautilus shell.
           const t = s * Math.PI * 5.2;
@@ -1992,6 +2059,17 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
         else tz += replica.spacing * r;
       }
       alpha = replica.phaseStepDeg * r * DEG_TO_RAD;
+    }
+
+    // Path jitter (Phase AW): displace the finished point by
+    // its position hash (lib/pathJitter.ts), so points sharing a
+    // path joint move together and the polyline never tears.
+    // Only entered for path placements with a positive amount.
+    if (pathJitterActive) {
+      const pj = pathJitterOffset(tx, ty, tz, pathJitterAmount);
+      tx += pj.x;
+      ty += pj.y;
+      tz += pj.z;
     }
 
     const jx = (h1 - 0.5) * jitter;

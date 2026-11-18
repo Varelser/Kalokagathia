@@ -268,6 +268,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // media threshold by default.
   gpgpuMorphContourSource: 'text' as const,
   gpgpuMorphContourThreshold: 0.3,
+  gpgpuMorphPolygonSides: 6,
   // Voronoi fracture (Phase AG): off = legacy bake bit-identical.
   gpgpuMorphFractureEnabled: false,
   gpgpuMorphFractureCells: 12,
@@ -439,6 +440,8 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGradEnd: '#8b5cf6',
   gpgpuGradQuarter: '',
   gpgpuGradThreeQuarter: '',
+  gpgpuGradQuarterPos: 0.25,
+  gpgpuGradThreeQuarterPos: 0.75,
   gpgpuGradPreset: 'nebula',
   gpgpuGradSpatialScale: 0.008,
   gpgpuGradImageSource: '',

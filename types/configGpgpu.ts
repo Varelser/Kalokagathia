@@ -286,7 +286,7 @@ export interface ParticleConfigGpgpu {
   // baked into a float texture; the velocity shader pulls each particle
   // toward its assigned target with the Kinetix morph spring law.
   gpgpuMorphEnabled: boolean;
-  gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj' | 'terrain' | 'data' | 'contour';
+  gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj' | 'terrain' | 'data' | 'contour' | 'polygon';
   // SVG import (Pro-2): the imported SVG document's source text. Like
   // the TextMap text it lives in the config so it persists with
   // projects / presets; the point cloud is re-sampled from it
@@ -460,6 +460,11 @@ export interface ParticleConfigGpgpu {
   // the media grammar's threshold).
   gpgpuMorphContourSource: 'text' | 'image';
   gpgpuMorphContourThreshold: number;
+  // Polygon morph target (Phase AW): the number of sides of the
+  // regular-polygon plate the 'polygon' target bakes (3..12).
+  // Only consulted by the polygon target; every other target
+  // ignores it, so the default changes nothing elsewhere.
+  gpgpuMorphPolygonSides: number;
   // Voronoi fracture (Phase AG, lib/voronoiFracture.ts): a
   // post-pass over the morph bake — the cloud is partitioned
   // into seeded Voronoi cells and each cell is shrunk toward its
@@ -791,6 +796,12 @@ export interface ParticleConfigGpgpu {
   // 3-stop LUT bit-for-bit.
   gpgpuGradQuarter: string;
   gpgpuGradThreeQuarter: string;
+  // Stop positions for the extra stops (Phase AW): defaults are
+  // the Phase AH fixed positions (0.25 / 0.75), so every existing
+  // preset resolves bit-identically. Only consulted while the
+  // matching stop colour is specified.
+  gpgpuGradQuarterPos: number;
+  gpgpuGradThreeQuarterPos: number;
   gpgpuGradPreset: string;
   gpgpuGradSpatialScale: number;
   // Source image for the 'image' gradient driver, held in the config

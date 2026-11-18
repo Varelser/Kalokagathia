@@ -90,6 +90,8 @@ export class PosterizePass extends TonePass {
 const DITHER_FRAG = /* glsl */ `
 uniform sampler2D tDiffuse;
 uniform float uStrength;
+uniform float uMode;
+uniform vec2 uResolution;
 varying vec2 vUv;
 
 // Bayer 4x4 (lib/postFxMath.ts BAYER_4X4), threshold in [0, 1).
@@ -113,8 +115,45 @@ float ditherChannel(float c, float t) {
   return clamp(floor(clamp(c, 0.0, 1.0) * 7.0 + 0.5 + (t - 0.5) * uStrength) / 7.0, 0.0, 1.0);
 }
 
+// Error-diffusion approximation (Phase AW; mirror of
+// errorDiffusionValue in lib/postFxMath.ts). A fragment shader
+// cannot run the sequential Floyd–Steinberg scan, so the
+// incoming error is estimated one tap deep from the
+// already-scanned neighbours' quantization errors (scan runs
+// top-to-bottom in texture space: neighbours at left and the
+// row above), weighted by the FS kernel 7/3/5/1 sixteenths.
+float quantError(float c) {
+  float v = clamp(c, 0.0, 1.0);
+  return v - floor(v * 7.0 + 0.5) / 7.0;
+}
+
+float sampleChannel(vec2 px, int ch) {
+  vec3 c = texture2D(tDiffuse, clamp(px / uResolution, 0.001, 0.999)).rgb;
+  return ch == 0 ? c.r : (ch == 1 ? c.g : c.b);
+}
+
+float diffusionChannel(float c, vec2 p, int ch) {
+  float est = 0.0;
+  est += 0.4375 * quantError(sampleChannel(p + vec2(-1.0, 1.0), ch));
+  est += 0.1875 * quantError(sampleChannel(p + vec2(-1.0, 0.0), ch));
+  est += 0.3125 * quantError(sampleChannel(p + vec2(0.0, 1.0), ch));
+  est += 0.0625 * quantError(sampleChannel(p + vec2(1.0, 1.0), ch));
+  float v = clamp(c, 0.0, 1.0) + est * uStrength;
+  return clamp(floor(v * 7.0 + 0.5) / 7.0, 0.0, 1.0);
+}
+
 void main() {
   vec4 src = texture2D(tDiffuse, vUv);
+  if (uMode > 0.5) {
+    vec2 p = gl_FragCoord.xy;
+    gl_FragColor = vec4(
+      diffusionChannel(src.r, p, 0),
+      diffusionChannel(src.g, p, 1),
+      diffusionChannel(src.b, p, 2),
+      src.a
+    );
+    return;
+  }
   float t = bayerThreshold(gl_FragCoord.xy);
   gl_FragColor = vec4(
     ditherChannel(src.r, t),
@@ -127,13 +166,39 @@ void main() {
 
 export class OrderedDitherPass extends TonePass {
   strength = 1;
+  mode: 'bayer' | 'diffusion' = 'bayer';
+
+  private width = 1;
+  private height = 1;
 
   constructor() {
-    super('OrderedDitherPass', DITHER_FRAG, { uStrength: { value: 1 } });
+    super('OrderedDitherPass', DITHER_FRAG, {
+      uStrength: { value: 1 },
+      uMode: { value: 0 },
+      uResolution: { value: new THREE.Vector2(1, 1) },
+    });
+  }
+
+  override setSize(width: number, height: number): void {
+    this.width = Math.max(1, width);
+    this.height = Math.max(1, height);
+  }
+
+  override render(
+    renderer: THREE.WebGLRenderer,
+    inputBuffer: THREE.WebGLRenderTarget,
+    outputBuffer: THREE.WebGLRenderTarget,
+  ): void {
+    const tex = inputBuffer.texture as THREE.Texture & { image?: { width?: number; height?: number } };
+    if (tex.image?.width) this.width = tex.image.width;
+    if (tex.image?.height) this.height = tex.image.height;
+    super.render(renderer, inputBuffer, outputBuffer);
   }
 
   protected override syncUniforms(): void {
     this.material.uniforms.uStrength.value = this.strength;
+    this.material.uniforms.uMode.value = this.mode === 'diffusion' ? 1 : 0;
+    (this.material.uniforms.uResolution.value as THREE.Vector2).set(this.width, this.height);
   }
 }
 

@@ -7,6 +7,8 @@ import { ControlPanelPresetLibraryIO } from './controlPanelPresetLibraryIO';
 import { ControlPanelContentProps, NoticeBanner } from './controlPanelTabsShared';
 
 export const GlobalPresetsSection: React.FC<ControlPanelContentProps> = ({
+  config,
+  updateConfig,
   activePresetId,
   editingPresetId,
   editingPresetName,
@@ -110,6 +112,20 @@ export const GlobalPresetsSection: React.FC<ControlPanelContentProps> = ({
       step={0.1}
       onChange={onPresetBlendDurationChange}
     />
+    <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Transition Shape （遷移の形状・Phase AW）</div>
+    <select
+      value={config.presetTransitionShape}
+      onChange={(e) => updateConfig('presetTransitionShape', e.target.value as typeof config.presetTransitionShape)}
+      className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+    >
+      <option value="crossfade">Crossfade (全キーが一様に遷移＝従来)</option>
+      <option value="wipe">Wipe (レイヤー→粒子→ポストの順)</option>
+      <option value="dissolve">Dissolve (キーがばらばらに遷移)</option>
+      <option value="circle">Circle (中心＝粒子→周囲→フレームの順)</option>
+    </select>
+    <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+      遷移先プリセットの Shape がモーフの進み方を決めます。パラメータの遷移順の文法で、画面のピクセルを拭う演出ではありません。
+    </div>
     {!isPublicLibrary && (
       <ControlPanelPresetLibraryIO
         handleLibraryFileChange={handleLibraryFileChange}
