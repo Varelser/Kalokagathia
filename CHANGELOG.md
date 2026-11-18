@@ -4,6 +4,45 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.56.0] — 2026-11-18
+
+Seventh-term Phase AX: the remaining emission-side grammar
+bundle. Fifteen new config keys, every one defaulting to the
+legacy behaviour; two new starters.
+
+### Added
+- **Distance-based emission order** (`gpgpuSpawnOrderMode`):
+  'distance' / 'distanceFar' release the spawn gate's pool in
+  order of the particles' initial distance from the origin
+  (the gate value becomes the max-normalised initial distance,
+  baked into a static texture at seed time) instead of the
+  legacy hash order. 'hash' (default) is bit-identical.
+- **Pulse cycles + probability** (`gpgpuSpawnPulseCycles`,
+  `gpgpuSpawnPulseProbability`): the periodic burst can stop
+  after N cycles (0 = unlimited) and each cycle fires only
+  when a deterministic per-cycle hash falls below the
+  probability (1 = every cycle). At the defaults the pulse
+  time delegates to the Phase AH function verbatim.
+- **Spawn burst event** (`gpgpuSpawnEvent*`): a directly
+  authored burst — at the authored time, the authored fraction
+  of the live pool respawns at once and is handed a directly
+  specified initial velocity (magnitude + radial→random spread
+  blend). A single event, not a list; parked (unborn)
+  particles are not touched.
+- **Foliage scatter finishing** (`gpgpuMorphScatterScaleRandom`,
+  `gpgpuMorphScatterRotRandom`, `gpgpuMorphScatterBend`):
+  per-particle scale / azimuth randomisation of the scatter
+  companion normal and a downhill posture bend, on top of the
+  Phase AI grammar. This is an orientation finish on a point
+  cloud — there is no per-species mesh swap and no mesh bend.
+- **Sprite rotation** (`gpgpuSpriteRotInitial`,
+  `gpgpuSpriteRotSpeed`, `gpgpuSpriteRotDamping`,
+  `gpgpuSpriteRotRandom`): the point sprite itself rotates
+  with particle age — initial angle + angular speed with
+  exponential damping and a per-particle seed spread. Applies
+  to sprite images and procedural point shapes alike; all
+  defaults 0 keep the legacy sampling verbatim.
+
 ## [1.55.0] — 2026-11-18
 
 Seventh-term Phase AW: the remaining drawing-side grammar

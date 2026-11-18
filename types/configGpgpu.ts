@@ -78,6 +78,38 @@ export interface ParticleConfigGpgpu {
   // off (the legacy linear release, bit-identical).
   gpgpuSpawnPulseInterval: number;
   gpgpuSpawnPulseDuty: number;
+  // Pulse cycles + probability (Phase AX): the periodic burst can
+  // be limited to a number of cycles (0 = unlimited, the legacy
+  // behaviour) and each cycle can be gated by a deterministic
+  // probability (1 = every cycle fires, the legacy behaviour).
+  // Both live in the pulse-time function (lib/gpgpuLifecycle.ts),
+  // so at the defaults the threshold expressions are the legacy
+  // ones verbatim.
+  gpgpuSpawnPulseCycles: number;
+  gpgpuSpawnPulseProbability: number;
+  // Spawn order (Phase AX): what the spawn gate compares the
+  // release threshold against. 'hash' (default) is the legacy
+  // per-texel hash order. 'distance' releases in order of the
+  // particle's initial distance from the origin (near first),
+  // 'distanceFar' far first — the gate value is the max-normalised
+  // initial distance, baked into a static texture by the runtime
+  // (lib/gpgpuLifecycle.ts, buildSpawnDistanceValues).
+  gpgpuSpawnOrderMode: 'hash' | 'distance' | 'distanceFar';
+  // Spawn burst event (Phase AX): a directly authored burst — at
+  // `gpgpuSpawnEventTime` seconds into the spawn epoch, the
+  // fraction `gpgpuSpawnEventCount` of the LIVE pool (chosen by a
+  // deterministic per-texel hash) respawns at once through the
+  // shared respawn block, and the velocity pass hands those
+  // particles a directly specified initial velocity: magnitude
+  // `gpgpuSpawnEventSpeed` (velocity units, the morph-kick scale),
+  // direction blended from radial-outward to a hash-random sphere
+  // direction by `gpgpuSpawnEventSpread` (which also jitters the
+  // magnitude). Disabled (default) = no event ever fires.
+  gpgpuSpawnEventEnabled: boolean;
+  gpgpuSpawnEventTime: number;
+  gpgpuSpawnEventCount: number;
+  gpgpuSpawnEventSpeed: number;
+  gpgpuSpawnEventSpread: number;
   // Emission curve (Phase AJ): a free control-point curve asset
   // (lib/freeCurve.ts, flat [t, v, …] pairs) whose value over a
   // repeating period gates the age respawn probabilistically, so
@@ -396,6 +428,20 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphScatterSlopeMax: number;
   gpgpuMorphScatterAlignNormal: number;
   gpgpuMorphScatterSpecies: number;
+  // Scatter finishing (Phase AX): per-particle randomisation and
+  // posture bend on top of the Phase AI grammar, all applied to
+  // the companion normal (the engine's per-particle orientation /
+  // class channel). Scale random multiplies the species magnitude
+  // by a deterministic per-particle factor in [1-r, 1+r]; rotation
+  // random spins the normal's azimuth by up to ±r·π; bend leans
+  // the normal toward downhill (and writes a leaning normal even
+  // at alignment 0). All 0 (defaults) = the Phase AI bake verbatim.
+  // NOTE: this is an orientation/posture finish on a point cloud —
+  // there is no per-species mesh swap (the pool draws one geometry
+  // mode) and no mesh deformation.
+  gpgpuMorphScatterScaleRandom: number;
+  gpgpuMorphScatterRotRandom: number;
+  gpgpuMorphScatterBend: number;
   // Terrain collider (Phase AI): particles bounce / rest on the
   // height field itself (velocity reflection with restitution +
   // tangential friction in the velocity pass, surface push-out in
@@ -828,6 +874,18 @@ export interface ParticleConfigGpgpu {
   gpgpuSpriteFrameMode: 'age' | 'fps' | 'random';
   gpgpuSpriteFrameFps: number;
   gpgpuSpriteLoop: boolean;
+  // Sprite rotation (Phase AX, lib/spriteRotation.ts): the point
+  // sprite itself rotates with the particle's age — angle =
+  // initial + speed · ∫exp(−damping·a)da, so damping bleeds the
+  // spin off over the life. Random spreads the per-particle speed
+  // multiplier by the particle seed (×[1−r, 1+r]). All defaults
+  // (0 / 0 / 0 / 0) keep the legacy un-rotated sampling verbatim:
+  // the draw shader only rotates while initial or speed is set.
+  // The geometry spin (gpgpuGeomSpin*) is a separate, older path.
+  gpgpuSpriteRotInitial: number;
+  gpgpuSpriteRotSpeed: number;
+  gpgpuSpriteRotDamping: number;
+  gpgpuSpriteRotRandom: number;
   // Point material blending (Kinetix integration B2): 'additive' is the
   // legacy default; 'normal' is the Kinetix Normal blend. The sort-based
   // transparency path still forces Normal while sorting is on.

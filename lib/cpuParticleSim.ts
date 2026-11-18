@@ -264,6 +264,9 @@ export function buildCpuMorphData(
       slopeMax: config.gpgpuMorphScatterSlopeMax,
       alignNormal: config.gpgpuMorphScatterAlignNormal,
       species: config.gpgpuMorphScatterSpecies,
+      scaleRandom: config.gpgpuMorphScatterScaleRandom,
+      rotRandom: config.gpgpuMorphScatterRotRandom,
+      bend: config.gpgpuMorphScatterBend,
     } : null,
     // Raster mask (Phase X): the CPU path bakes with the same mask
     // option as the GPU paths, so clip / shape apply here too.

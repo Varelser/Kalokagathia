@@ -3015,4 +3015,67 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         postMoirePhase: 0,
         postMoireMix: 0.45,
       }),
+  // Phase AX: distance-ordered emission — the gate holds back
+  // 92% of the pool and releases it near-first, so the sphere
+  // grows outward from the origin in distance order; the pulse
+  // cycles are capped and probabilistic (cycles 6, probability
+  // 0.8), so the growth arrives in uneven waves.
+  createStarterPreset('starter-distance-bloom', 'Distance Bloom (Distance-Ordered Emission)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#e6ebee',
+        gpgpuSize: 1.6,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.2,
+        gpgpuSpawnBurst: 0.08,
+        gpgpuSpawnRate: 0.25,
+        gpgpuSpawnOrderMode: 'distance',
+        gpgpuSpawnPulseInterval: 1.6,
+        gpgpuSpawnPulseDuty: 0.45,
+        gpgpuSpawnPulseCycles: 6,
+        gpgpuSpawnPulseProbability: 0.8,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase AX: authored burst event + sprite rotation — a quiet
+  // shell cloud whose sprites spin up over their lives (speed
+  // 140°/s, damped, seed-spread), and at 2.5 s a burst event
+  // re-births 35% of the live pool with a directly specified
+  // outward initial velocity.
+  createStarterPreset('starter-burst-spin-sprites', 'Burst Spin Sprites (Spawn Event + Sprite Rotation)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'shell',
+        gpgpuColor: '#e6ebee',
+        gpgpuSize: 2.2,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.15,
+        gpgpuPointShape: 'star',
+        gpgpuAgeEnabled: true,
+        gpgpuAgeMax: 8,
+        gpgpuSpriteRotInitial: 15,
+        gpgpuSpriteRotSpeed: 140,
+        gpgpuSpriteRotDamping: 0.35,
+        gpgpuSpriteRotRandom: 0.6,
+        gpgpuSpawnEventEnabled: true,
+        gpgpuSpawnEventTime: 2.5,
+        gpgpuSpawnEventCount: 0.35,
+        gpgpuSpawnEventSpeed: 3,
+        gpgpuSpawnEventSpread: 0.35,
+        gpgpuTrailEnabled: false,
+      }),
 ];

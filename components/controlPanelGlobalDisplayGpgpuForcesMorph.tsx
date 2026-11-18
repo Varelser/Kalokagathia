@@ -169,8 +169,11 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                   <Slider label="Slope Max （斜度上限）" value={config.gpgpuMorphScatterSlopeMax} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterSlopeMax', v)} />
                   <Slider label="Align Normal （法線整列）" value={config.gpgpuMorphScatterAlignNormal} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterAlignNormal', v)} />
                   <Slider label="Species （種別ゾーン数）" value={config.gpgpuMorphScatterSpecies} min={1} max={4} step={1} onChange={(v) => updateConfig('gpgpuMorphScatterSpecies', Math.round(v))} />
+                  <Slider label="Scale Random （スケール無作為化）" value={config.gpgpuMorphScatterScaleRandom} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterScaleRandom', v)} />
+                  <Slider label="Rotation Random （回転無作為化）" value={config.gpgpuMorphScatterRotRandom} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterRotRandom', v)} />
+                  <Slider label="Bend （ベンド・下り方向への倒れ）" value={config.gpgpuMorphScatterBend} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterBend', v)} />
                   <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-                    候補点を最大5回抽選し、密度×高度帯×斜度の受理確率で残す散布文法です（Phase AI）。高度帯と斜度で生息域を作り、法線整列で表面の向きに沿わせ、種別は高度帯ゾーンとして放出キックの強さに効きます。全パラメータ既定（密度1・帯0..1・斜度1・整列0・種別1）のときは散布を有効にしても従来の配置と完全に同一です。
+                    候補点を最大5回抽選し、密度×高度帯×斜度の受理確率で残す散布文法です（Phase AI）。高度帯と斜度で生息域を作り、法線整列で表面の向きに沿わせ、種別は高度帯ゾーンとして放出キックの強さに効きます。全パラメータ既定（密度1・帯0..1・斜度1・整列0・種別1）のときは散布を有効にしても従来の配置と完全に同一です。仕上げ（Phase AX）: Scale/Rotation Random は粒子ごとに法線の大きさ・方位をばらつかせ、Bend は法線を斜面の下り方向へ倒します（点群の姿勢仕上げで、メッシュの曲げや種別ごとのメッシュ差し替えではありません）。全て 0 で従来同一です。
                   </div>
                 </>
               )}

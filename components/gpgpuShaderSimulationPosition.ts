@@ -86,6 +86,18 @@ export const SIM_POS_FRAG = /* glsl */ `
   // lib/gpgpuLifecycle.ts.
   uniform float uSpawnPulseInterval;
   uniform float uSpawnPulseDuty;
+  // Pulse cycles + probability, spawn order and the spawn burst
+  // event (Phase AX): identical semantics to the velocity pass —
+  // cycles 0 with probability 1 delegates to the legacy pulse
+  // time, order mode 0 is the legacy hash, the event is disabled
+  // by default. TS twins: lib/gpgpuLifecycle.ts.
+  uniform float uSpawnPulseCycles;
+  uniform float uSpawnPulseProbability;
+  uniform sampler2D uSpawnOrderTex;
+  uniform int uSpawnOrderMode;
+  uniform bool uSpawnEventEnabled;
+  uniform float uSpawnEventTime;
+  uniform float uSpawnEventCount;
   // Emission curve (Phase AJ): the free control-point curve asset
   // (lib/freeCurve.ts) as two padded float arrays — unused slots
   // repeat the last point, so the loop below needs no count. The
@@ -120,6 +132,53 @@ export const SIM_POS_FRAG = /* glsl */ `
     float whole = floor(cyc);
     float fracPart = cyc - whole;
     return (whole * uSpawnPulseDuty + min(fracPart, uSpawnPulseDuty)) * uSpawnPulseInterval;
+  }
+
+  // Pulse cycles + probability (Phase AX): identical to the
+  // velocity pass and to spawnPulseTimeExtended in
+  // lib/gpgpuLifecycle.ts (same 64-cycle exactness bound, same
+  // delegation at cycles 0 / probability 1).
+  float spawnPulseCycleFires(float k) {
+    return fract(sin(dot(vec2(k + 1.0, 3.13), vec2(127.1, 311.7))) * 43758.5453) < uSpawnPulseProbability ? 1.0 : 0.0;
+  }
+  float spawnPulseTimeEx(float t) {
+    float tt = max(t, 0.0);
+    if (uSpawnPulseInterval <= 0.0) return tt;
+    if (uSpawnPulseCycles <= 0.0 && uSpawnPulseProbability >= 1.0) return spawnPulseTime(tt);
+    float iv = uSpawnPulseInterval;
+    float d = uSpawnPulseDuty;
+    float cyc = tt / iv;
+    float whole = floor(cyc);
+    float fracPart = cyc - whole;
+    bool capped = uSpawnPulseCycles > 0.0;
+    if (capped && whole > uSpawnPulseCycles) whole = uSpawnPulseCycles;
+    float live = 0.0;
+    float exact = min(whole, 64.0);
+    for (int k = 0; k < 64; k++) {
+      if (float(k) >= exact) break;
+      live += spawnPulseCycleFires(float(k)) * d * iv;
+    }
+    if (whole > 64.0) live += uSpawnPulseProbability * (whole - 64.0) * d * iv;
+    if (!capped || cyc < uSpawnPulseCycles) {
+      float cur = whole < 64.0 ? spawnPulseCycleFires(whole) : uSpawnPulseProbability;
+      live += cur * min(fracPart, d) * iv;
+    }
+    return live;
+  }
+
+  // Spawn gate value (Phase AX): identical to the velocity pass —
+  // mode 0 is the legacy spawnHash, mode 1 the baked distance.
+  float spawnGateValue(vec2 uv) {
+    if (uSpawnOrderMode == 0) return spawnHash(uv);
+    float v = texture2D(uSpawnOrderTex, uv).r;
+    return uSpawnOrderMode == 2 ? 1.0 - v : v;
+  }
+
+  // Spawn burst event cohort hash (Phase AX): identical to the
+  // velocity pass and to spawnEventHashForUv in
+  // lib/gpgpuLifecycle.ts.
+  float spawnEventHash(vec2 uv) {
+    return fract(sin(dot(uv + vec2(5.39, 8.17), vec2(127.1, 311.7))) * 43758.5453);
   }
 
   // Free curve evaluation (Phase AJ): piecewise-linear over the
@@ -224,13 +283,13 @@ export const SIM_POS_FRAG = /* glsl */ `
     // shared respawn block below. Burst 1 (default) skips this.
     bool spawnActivating = false;
     if (uSpawnBurst < 1.0) {
-      float sHash = spawnHash(vUv);
-      float thrNow = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTime(uSpawnTime));
+      float sHash = spawnGateValue(vUv);
+      float thrNow = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime));
       if (sHash >= thrNow) {
         gl_FragColor = vec4(0.0, -99999.0, 0.0, age);
         return;
       }
-      float thrPrev = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTime(uSpawnTime - uDelta));
+      float thrPrev = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime - uDelta));
       spawnActivating = sHash >= thrPrev;
     }
 
@@ -356,6 +415,18 @@ export const SIM_POS_FRAG = /* glsl */ `
     // now instead of bouncing / living on. Both default off. The
     // mask test mirrors the draw clip (Phase X): same UV rule,
     // same threshold / invert keys.
+    // Spawn burst event (Phase AX): on the single frame the
+    // spawn clock crosses the authored event time, the event's
+    // cohort respawns through the shared block below (the
+    // velocity pass hands it the authored initial velocity on
+    // the same frame test). Parked particles never reach here —
+    // the gate above returned them off-screen — so the event
+    // re-births only the live pool.
+    if (uSpawnEventEnabled) {
+      if (uSpawnTime - uDelta < uSpawnEventTime && uSpawnTime >= uSpawnEventTime) {
+        if (spawnEventHash(vUv) < uSpawnEventCount) doRespawn = true;
+      }
+    }
     if (uKillBoundary && length(pos) > uBounceRadius + 0.001) doRespawn = true;
     if (uKillMask) {
       vec2 maskUv = clamp(pos.xy * (1.0 / (2.0 * max(uBounceRadius, 1.0))) + 0.5, 0.0, 1.0);

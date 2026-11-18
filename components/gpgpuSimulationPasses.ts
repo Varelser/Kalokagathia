@@ -275,6 +275,13 @@ export function runSimulationPasses(args: {
   // the kill is on and the mask image is ready).
   spawnTime?: number;
   killMaskTex?: THREE.Texture | null;
+  // Spawn order (Phase AX): the baked distance-order texture for
+  // the pool's initial positions (built by the runtime alongside
+  // the initial data). Null unless the order mode is a distance
+  // mode — the passes then resolve uSpawnOrderMode 0 and the
+  // shaders read the legacy hash, so a missing texture can never
+  // change the order silently.
+  spawnOrderTex?: THREE.Texture | null;
   // Multi-touch interference (Phase AO): world positions of all
   // tracked pointers (index 0 = primary) and how many entries are
   // live. Only consulted while gpgpuMouseMultiTouch is on; absent
@@ -549,6 +556,19 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uSpawnTime) velSimMat.uniforms.uSpawnTime.value = args.spawnTime ?? time;
   if (velSimMat.uniforms.uSpawnPulseInterval) velSimMat.uniforms.uSpawnPulseInterval.value = Math.max(0, Math.min(30, config.gpgpuSpawnPulseInterval ?? 0));
   if (velSimMat.uniforms.uSpawnPulseDuty) velSimMat.uniforms.uSpawnPulseDuty.value = Math.max(0.05, Math.min(1, config.gpgpuSpawnPulseDuty ?? 0.3));
+  // Phase AX spawn grammar: pulse cycles / probability, distance
+  // order (resolved: mode 1 only with a ready order texture and
+  // the gate actually in play), and the burst event (suppressed
+  // while Vellum / rigid bodies own the lifecycle, like the gate).
+  if (velSimMat.uniforms.uSpawnPulseCycles) velSimMat.uniforms.uSpawnPulseCycles.value = Math.max(0, Math.min(64, Math.floor(config.gpgpuSpawnPulseCycles ?? 0)));
+  if (velSimMat.uniforms.uSpawnPulseProbability) velSimMat.uniforms.uSpawnPulseProbability.value = Math.max(0, Math.min(1, config.gpgpuSpawnPulseProbability ?? 1));
+  if (velSimMat.uniforms.uSpawnOrderTex) velSimMat.uniforms.uSpawnOrderTex.value = args.spawnOrderTex ?? null;
+  if (velSimMat.uniforms.uSpawnOrderMode) velSimMat.uniforms.uSpawnOrderMode.value = config.gpgpuSpawnOrderMode !== 'hash' && args.spawnOrderTex && !vellum.active && !rigidActive ? (config.gpgpuSpawnOrderMode === 'distanceFar' ? 2 : 1) : 0;
+  if (velSimMat.uniforms.uSpawnEventEnabled) velSimMat.uniforms.uSpawnEventEnabled.value = !!config.gpgpuSpawnEventEnabled && !vellum.active && !rigidActive;
+  if (velSimMat.uniforms.uSpawnEventTime) velSimMat.uniforms.uSpawnEventTime.value = Math.max(0, Math.min(600, config.gpgpuSpawnEventTime ?? 0));
+  if (velSimMat.uniforms.uSpawnEventCount) velSimMat.uniforms.uSpawnEventCount.value = Math.max(0, Math.min(1, config.gpgpuSpawnEventCount ?? 0));
+  if (velSimMat.uniforms.uSpawnEventSpeed) velSimMat.uniforms.uSpawnEventSpeed.value = Math.max(0, Math.min(50, config.gpgpuSpawnEventSpeed ?? 0));
+  if (velSimMat.uniforms.uSpawnEventSpread) velSimMat.uniforms.uSpawnEventSpread.value = Math.max(0, Math.min(1, config.gpgpuSpawnEventSpread ?? 0));
   if (velSimMat.uniforms.uDragRate) velSimMat.uniforms.uDragRate.value = Math.max(0, Math.min(10, config.gpgpuDrag ?? 1.1));
   if (velSimMat.uniforms.uMaxSpeed) velSimMat.uniforms.uMaxSpeed.value = Math.max(0, config.gpgpuMaxSpeed || 0);
   // Signal & time grammar (Phase AC): curl evolution speed and the
@@ -828,6 +848,14 @@ export function runSimulationPasses(args: {
   if (posSimMat.uniforms.uSpawnTime) posSimMat.uniforms.uSpawnTime.value = args.spawnTime ?? time;
   if (posSimMat.uniforms.uSpawnPulseInterval) posSimMat.uniforms.uSpawnPulseInterval.value = Math.max(0, Math.min(30, config.gpgpuSpawnPulseInterval ?? 0));
   if (posSimMat.uniforms.uSpawnPulseDuty) posSimMat.uniforms.uSpawnPulseDuty.value = Math.max(0.05, Math.min(1, config.gpgpuSpawnPulseDuty ?? 0.3));
+  // Phase AX spawn grammar (same resolution as the velocity pass).
+  if (posSimMat.uniforms.uSpawnPulseCycles) posSimMat.uniforms.uSpawnPulseCycles.value = Math.max(0, Math.min(64, Math.floor(config.gpgpuSpawnPulseCycles ?? 0)));
+  if (posSimMat.uniforms.uSpawnPulseProbability) posSimMat.uniforms.uSpawnPulseProbability.value = Math.max(0, Math.min(1, config.gpgpuSpawnPulseProbability ?? 1));
+  if (posSimMat.uniforms.uSpawnOrderTex) posSimMat.uniforms.uSpawnOrderTex.value = args.spawnOrderTex ?? null;
+  if (posSimMat.uniforms.uSpawnOrderMode) posSimMat.uniforms.uSpawnOrderMode.value = config.gpgpuSpawnOrderMode !== 'hash' && args.spawnOrderTex && !vellum.active && !rigidActive ? (config.gpgpuSpawnOrderMode === 'distanceFar' ? 2 : 1) : 0;
+  if (posSimMat.uniforms.uSpawnEventEnabled) posSimMat.uniforms.uSpawnEventEnabled.value = !!config.gpgpuSpawnEventEnabled && !vellum.active && !rigidActive;
+  if (posSimMat.uniforms.uSpawnEventTime) posSimMat.uniforms.uSpawnEventTime.value = Math.max(0, Math.min(600, config.gpgpuSpawnEventTime ?? 0));
+  if (posSimMat.uniforms.uSpawnEventCount) posSimMat.uniforms.uSpawnEventCount.value = Math.max(0, Math.min(1, config.gpgpuSpawnEventCount ?? 0));
   // Emission curve (Phase AJ): resolved like the age curves —
   // disabled OR an identity curve keeps the legacy respawn path.
   // The knot arrays are padded to FREE_CURVE_MAX_POINTS by

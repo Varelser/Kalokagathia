@@ -77,6 +77,17 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSpawnTime:   { value: 0 },
       uSpawnPulseInterval: { value: 0 },
       uSpawnPulseDuty:     { value: 0.3 },
+      // Phase AX: cycles 0 / probability 1 = legacy pulse;
+      // order mode 0 = legacy hash; event disabled.
+      uSpawnPulseCycles:      { value: 0 },
+      uSpawnPulseProbability: { value: 1 },
+      uSpawnOrderTex:  { value: null },
+      uSpawnOrderMode: { value: 0 },
+      uSpawnEventEnabled: { value: false },
+      uSpawnEventTime:    { value: 0 },
+      uSpawnEventCount:   { value: 0 },
+      uSpawnEventSpeed:   { value: 0 },
+      uSpawnEventSpread:  { value: 0 },
       uDragRate:    { value: 1.1 },
       uMaxSpeed:    { value: 0 },
       uVortexEnabled:    { value: false },
@@ -295,6 +306,15 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uSpawnTime:   { value: 0 },
       uSpawnPulseInterval: { value: 0 },
       uSpawnPulseDuty:     { value: 0.3 },
+      // Phase AX: cycles 0 / probability 1 = legacy pulse;
+      // order mode 0 = legacy hash; event disabled.
+      uSpawnPulseCycles:      { value: 0 },
+      uSpawnPulseProbability: { value: 1 },
+      uSpawnOrderTex:  { value: null },
+      uSpawnOrderMode: { value: 0 },
+      uSpawnEventEnabled: { value: false },
+      uSpawnEventTime:    { value: 0 },
+      uSpawnEventCount:   { value: 0 },
       // Emission curve (Phase AJ): off + identity arrays is the
       // exact legacy respawn path.
       uEmissionCurveEnabled: { value: false },

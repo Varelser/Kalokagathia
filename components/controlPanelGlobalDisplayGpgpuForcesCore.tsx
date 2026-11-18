@@ -248,7 +248,21 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       <Slider label="Spawn Rate （放出レート）" value={config.gpgpuSpawnRate} min={0.01} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnRate', v)} />
       <Slider label="Spawn Pulse Interval （周期バースト間隔・秒、0でOFF）" value={config.gpgpuSpawnPulseInterval} min={0} max={30} step={0.1} onChange={(v) => updateConfig('gpgpuSpawnPulseInterval', v)} />
       {config.gpgpuSpawnPulseInterval > 0 && (
-        <Slider label="Spawn Pulse Duty （周期内の放出割合）" value={config.gpgpuSpawnPulseDuty} min={0.05} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnPulseDuty', v)} />
+        <>
+          <Slider label="Spawn Pulse Duty （周期内の放出割合）" value={config.gpgpuSpawnPulseDuty} min={0.05} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnPulseDuty', v)} />
+          <Slider label="Spawn Pulse Cycles （繰り返し回数・0で無制限）" value={config.gpgpuSpawnPulseCycles} min={0} max={64} step={1} onChange={(v) => updateConfig('gpgpuSpawnPulseCycles', Math.round(v))} />
+          <Slider label="Spawn Pulse Probability （周期ごとの発生確率）" value={config.gpgpuSpawnPulseProbability} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnPulseProbability', v)} />
+        </>
+      )}
+      <Toggle label="Spawn Order （放出順）" value={config.gpgpuSpawnOrderMode} options={[{ label: 'Hash', val: 'hash' as const }, { label: 'Distance', val: 'distance' as const }, { label: 'Far', val: 'distanceFar' as const }]} onChange={(v) => updateConfig('gpgpuSpawnOrderMode', v)} />
+      <Toggle label="Spawn Burst Event （バーストイベント — Phase AX）" value={config.gpgpuSpawnEventEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuSpawnEventEnabled', v)} />
+      {config.gpgpuSpawnEventEnabled && (
+        <>
+          <Slider label="Event Time （時刻・秒）" value={config.gpgpuSpawnEventTime} min={0} max={600} step={0.1} onChange={(v) => updateConfig('gpgpuSpawnEventTime', v)} />
+          <Slider label="Event Count （リスポーン割合）" value={config.gpgpuSpawnEventCount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnEventCount', v)} />
+          <Slider label="Event Speed （初速・直接指定）" value={config.gpgpuSpawnEventSpeed} min={0} max={50} step={0.1} onChange={(v) => updateConfig('gpgpuSpawnEventSpeed', v)} />
+          <Slider label="Event Spread （初速の広がり）" value={config.gpgpuSpawnEventSpread} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnEventSpread', v)} />
+        </>
       )}
       <Toggle label="Emission Curve （放出カーブ駆動 — Phase AJ）" value={config.gpgpuEmissionCurveEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuEmissionCurveEnabled', v)} />
       {config.gpgpuEmissionCurveEnabled && (
@@ -269,7 +283,7 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       <Slider label="Global Drag （全体ドラッグ）" value={config.gpgpuDrag} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuDrag', v)} />
       <Slider label="Global Max Speed （全体の最高速度・0で無制限）" value={config.gpgpuMaxSpeed} min={0} max={350} step={1} onChange={(v) => updateConfig('gpgpuMaxSpeed', v)} />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-        粒子の「生まれ方・消え方」の文法です。Spawn Burst は開始時に有効な粒子の割合（1＝全粒子で従来同一）、残りは Spawn Rate（プール割合/秒）で順に放出されます。境界キルは球境界の外へ出た粒子を跳ね返さず消滅→リスポーンさせます。マスクキルはラスタマスク（Morph の Mask 画像）の拒否域にいる粒子を消滅→リスポーンさせます（マスク画像が読み込めていない間は無効）。Global Drag 1.1・Max Speed 0 が従来同一です。
+        粒子の「生まれ方・消え方」の文法です。Spawn Burst は開始時に有効な粒子の割合（1＝全粒子で従来同一）、残りは Spawn Rate（プール割合/秒）で順に放出されます。放出順（Phase AX）は Hash が従来のハッシュ順、Distance は初期位置が原点に近い粒子から、Far は遠い粒子から放出します（ゲート有効時のみ）。周期バーストには繰り返し回数と周期ごとの発生確率（決定論ハッシュ判定）を付けられます。バーストイベントは指定時刻に生存プールの一部を一斉にリスポーンさせ、初速を直接指定します（未放出の粒子は対象外）。境界キルは球境界の外へ出た粒子を跳ね返さず消滅→リスポーンさせます。マスクキルはラスタマスク（Morph の Mask 画像）の拒否域にいる粒子を消滅→リスポーンさせます（マスク画像が読み込めていない間は無効）。Global Drag 1.1・Max Speed 0 が従来同一です。
       </div>
     </div>
 

@@ -68,6 +68,12 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uSpriteSheetMode:        { value: 0 },
       uSpriteSheetFps:         { value: 12 },
       uSpriteSheetLoop:        { value: true },
+      // Sprite rotation (Phase AX): 0s — the fragment skips the
+      // rotation and samples verbatim.
+      uSpriteRotInitial:       { value: 0 },
+      uSpriteRotSpeed:         { value: 0 },
+      uSpriteRotDamping:       { value: 0 },
+      uSpriteRotRandom:        { value: 0 },
       // 3D light (Phase T): disabled by default; the vertex shader
       // then yields exactly 1.0 and the fragment multiply is the
       // identity, so the legacy draw is bit-identical.

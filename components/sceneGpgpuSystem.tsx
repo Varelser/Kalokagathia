@@ -224,6 +224,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     pingIsA,
     prevPosRTRef,
     initPosTexRef,
+    spawnOrderTexRef,
     morphTexRef,
     morphNormalTexRef,
     attrTexRef,
@@ -374,7 +375,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // Spawn epoch (Phase AB): restart the release clock whenever
     // the gate's inputs change (same placement discipline as the
     // morph kick above).
-    const spawnEpochKey = `${config.gpgpuSpawnBurst}|${config.gpgpuSpawnRate}|${config.gpgpuSpawnPulseInterval}|${config.gpgpuSpawnPulseDuty}|${config.gpgpuCount}|${config.gpgpuSeed}`;
+    const spawnEpochKey = `${config.gpgpuSpawnBurst}|${config.gpgpuSpawnRate}|${config.gpgpuSpawnPulseInterval}|${config.gpgpuSpawnPulseDuty}|${config.gpgpuSpawnPulseCycles}|${config.gpgpuSpawnPulseProbability}|${config.gpgpuSpawnOrderMode}|${config.gpgpuSpawnEventEnabled}|${config.gpgpuSpawnEventTime}|${config.gpgpuCount}|${config.gpgpuSeed}`;
     if (spawnEpochKey !== spawnEpochKeyRef.current) {
       spawnEpochKeyRef.current = spawnEpochKey;
       if (spawnEpochInitRef.current) spawnEpochStartRef.current = timeRef.current;
@@ -491,6 +492,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         prevPosTex: prevPosRTRef.current?.texture ?? null,
         spawnTime,
         killMaskTex,
+        spawnOrderTex: spawnOrderTexRef.current,
         mouseWorldMulti,
         mouseMultiCount,
         vellumRestTex: vellumRestTexRef.current,

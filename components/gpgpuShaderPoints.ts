@@ -159,6 +159,9 @@ export const DRAW_VERT = /* glsl */ `
   attribute vec2 aTexCoord;
   varying float vSpeed;
   varying float vNormAge;
+  // Sprite rotation (Phase AX): the raw particle age, for the
+  // fragment's age-driven sprite angle (lib/spriteRotation.ts).
+  varying float vAge;
   varying float vPhaseMix;
   varying float vPlBright;
   varying float vAttrBright;
@@ -245,6 +248,7 @@ export const DRAW_VERT = /* glsl */ `
     vec3 vel      = texture2D(uVelTex, particleUv).xyz;
     vSpeed   = clamp(length(vel) / 80.0, 0.0, 1.0);
     vNormAge = uAgeEnabled ? clamp(posData.w / max(uAgeMax, 0.001), 0.0, 1.0) : 0.5;
+    vAge = posData.w;
     vSeed    = fract(sin(dot(aTexCoord, vec2(127.1, 311.7))) * 43758.5453123);
     // Size over lifetime: curve 0 is the legacy linear start->end mix;
     // curve 1 is the Kinetix 'bell' (B1b): end -> start -> end following
@@ -368,8 +372,18 @@ export const DRAW_FRAG = /* glsl */ `
   uniform float     uSpriteSheetMode;
   uniform float     uSpriteSheetFps;
   uniform bool      uSpriteSheetLoop;
+  // Sprite rotation (Phase AX): angle = initial + speed · seedMul
+  // · ∫exp(−damping·a)da over the particle age (vAge). Initial /
+  // speed arrive in radians (converted at the uniform site). Both
+  // 0 (the defaults) skip the rotation entirely — the legacy
+  // sampling below is then verbatim. TS twin: lib/spriteRotation.ts.
+  uniform float     uSpriteRotInitial;
+  uniform float     uSpriteRotSpeed;
+  uniform float     uSpriteRotDamping;
+  uniform float     uSpriteRotRandom;
   varying float vSpeed;
   varying float vNormAge;
+  varying float vAge;
   varying float vPhaseMix;
   varying float vPlBright;
   varying float vAttrBright;
@@ -411,7 +425,24 @@ export const DRAW_FRAG = /* glsl */ `
   }
 
   void main() {
+    // Sprite rotation (Phase AX): rotate the point coord around
+    // the sprite centre by the age-driven angle. Length is
+    // rotation-invariant, so the discard circle is unchanged;
+    // angle 0 (defaults) skips the rotation verbatim.
+    float spriteRotAngle = 0.0;
+    if (uSpriteRotInitial != 0.0 || uSpriteRotSpeed != 0.0) {
+      float seedMul = 1.0 + (vSeed * 2.0 - 1.0) * uSpriteRotRandom;
+      float ageInt = uSpriteRotDamping > 0.0
+        ? (1.0 - exp(-uSpriteRotDamping * max(vAge, 0.0))) / uSpriteRotDamping
+        : max(vAge, 0.0);
+      spriteRotAngle = uSpriteRotInitial + uSpriteRotSpeed * seedMul * ageInt;
+    }
     vec2 pc = gl_PointCoord - 0.5;
+    if (spriteRotAngle != 0.0) {
+      float ca = cos(spriteRotAngle);
+      float sa = sin(spriteRotAngle);
+      pc = mat2(ca, -sa, sa, ca) * pc;
+    }
     float d = length(pc);
     if (d > 0.5) discard;
 
@@ -522,12 +553,12 @@ export const DRAW_FRAG = /* glsl */ `
       // is exactly the legacy expression (frame 0, (0+x)/1,
       // 1-(0+y)/1), so single-image sprites are bit-identical.
       float spriteFrame = kaloSpriteFrame(uSpriteSheetCols, uSpriteSheetRows, uSpriteSheetMode, uSpriteSheetFps, uSpriteSheetLoop, vNormAge, uGradTime, vSeed);
-      shapeAlpha = texture2D(uSpriteImageTex, kaloSpriteSheetUv(gl_PointCoord, uSpriteSheetCols, uSpriteSheetRows, spriteFrame)).r;
+      shapeAlpha = texture2D(uSpriteImageTex, kaloSpriteSheetUv(pc + 0.5, uSpriteSheetCols, uSpriteSheetRows, spriteFrame)).r;
       if (shapeAlpha < 0.01) discard;
     } else if (uPointShape == 0) {
       shapeAlpha = smoothstep(0.5, 0.12, d);
     } else {
-      vec2 pq = (gl_PointCoord - 0.5) * 2.0;
+      vec2 pq = pc * 2.0;
       pq.y = -pq.y;
       shapeAlpha = particleShapeMask(uPointShape, pq, vSeed);
       if (shapeAlpha < 0.01) discard;

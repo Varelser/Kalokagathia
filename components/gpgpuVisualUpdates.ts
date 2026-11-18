@@ -340,6 +340,12 @@ export function syncVisualUniforms(args: {
     if (drawMat.uniforms.uSpriteSheetMode) drawMat.uniforms.uSpriteSheetMode.value = spriteFrameModeIndex(config.gpgpuSpriteFrameMode);
     if (drawMat.uniforms.uSpriteSheetFps) drawMat.uniforms.uSpriteSheetFps.value = normalizeSpriteFrameFps(config.gpgpuSpriteFrameFps);
     if (drawMat.uniforms.uSpriteSheetLoop) drawMat.uniforms.uSpriteSheetLoop.value = config.gpgpuSpriteLoop;
+    // Sprite rotation (Phase AX): degrees → radians at this site;
+    // the angle law itself is lib/spriteRotation.ts.
+    if (drawMat.uniforms.uSpriteRotInitial) drawMat.uniforms.uSpriteRotInitial.value = (config.gpgpuSpriteRotInitial ?? 0) * Math.PI / 180;
+    if (drawMat.uniforms.uSpriteRotSpeed) drawMat.uniforms.uSpriteRotSpeed.value = (config.gpgpuSpriteRotSpeed ?? 0) * Math.PI / 180;
+    if (drawMat.uniforms.uSpriteRotDamping) drawMat.uniforms.uSpriteRotDamping.value = Math.max(0, Math.min(10, config.gpgpuSpriteRotDamping ?? 0));
+    if (drawMat.uniforms.uSpriteRotRandom) drawMat.uniforms.uSpriteRotRandom.value = Math.max(0, Math.min(1, config.gpgpuSpriteRotRandom ?? 0));
   }
   // 3D light (Phase T): position / intensity / radius are plain
   // values; the cone direction is normalised on the way in (a zero

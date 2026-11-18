@@ -137,6 +137,72 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  vec3 hash3(vec3 p) {
     return (whole * uSpawnPulseDuty + min(fracPart, uSpawnPulseDuty)) * uSpawnPulseInterval;
   }
 
+  // Pulse cycles + probability (Phase AX): cycle k fires when
+  // hash1((k + 1, 3.13)) falls below uSpawnPulseProbability. The
+  // extended pulse time sums live time over fired cycles only —
+  // the first 64 cycles exactly, the expectation beyond (the TS
+  // twin spawnPulseTimeExtended in lib/gpgpuLifecycle.ts uses the
+  // identical bound). Cycles 0 + probability 1 delegates to the
+  // legacy spawnPulseTime above, verbatim.
+  float spawnPulseCycleFires(float k) {
+    return fract(sin(dot(vec2(k + 1.0, 3.13), vec2(127.1, 311.7))) * 43758.5453) < uSpawnPulseProbability ? 1.0 : 0.0;
+  }
+  float spawnPulseTimeEx(float t) {
+    float tt = max(t, 0.0);
+    if (uSpawnPulseInterval <= 0.0) return tt;
+    if (uSpawnPulseCycles <= 0.0 && uSpawnPulseProbability >= 1.0) return spawnPulseTime(tt);
+    float iv = uSpawnPulseInterval;
+    float d = uSpawnPulseDuty;
+    float cyc = tt / iv;
+    float whole = floor(cyc);
+    float fracPart = cyc - whole;
+    bool capped = uSpawnPulseCycles > 0.0;
+    if (capped && whole > uSpawnPulseCycles) whole = uSpawnPulseCycles;
+    float live = 0.0;
+    float exact = min(whole, 64.0);
+    for (int k = 0; k < 64; k++) {
+      if (float(k) >= exact) break;
+      live += spawnPulseCycleFires(float(k)) * d * iv;
+    }
+    if (whole > 64.0) live += uSpawnPulseProbability * (whole - 64.0) * d * iv;
+    if (!capped || cyc < uSpawnPulseCycles) {
+      float cur = whole < 64.0 ? spawnPulseCycleFires(whole) : uSpawnPulseProbability;
+      live += cur * min(fracPart, d) * iv;
+    }
+    return live;
+  }
+
+  // Spawn gate value (Phase AX): mode 0 is the legacy spawnHash;
+  // mode 1 reads the baked max-normalised initial distance from
+  // the order texture (buildSpawnDistanceValues in
+  // lib/gpgpuLifecycle.ts). The passes resolve mode 0 whenever
+  // the texture is not ready, so the fallback is the legacy order.
+  float spawnGateValue(vec2 uv) {
+    if (uSpawnOrderMode == 0) return spawnHash(uv);
+    float v = texture2D(uSpawnOrderTex, uv).r;
+    return uSpawnOrderMode == 2 ? 1.0 - v : v;
+  }
+
+  // Spawn burst event (Phase AX): the cohort hash and the
+  // directly specified initial velocity. TS twins:
+  // spawnEventHashForUv / spawnEventVelocity in
+  // lib/gpgpuLifecycle.ts — the hash draws and the blend law are
+  // identical, so the position pass (cohort → respawn) and this
+  // pass (cohort → velocity) always pick the same particles.
+  float spawnEventHash(vec2 uv) {
+    return fract(sin(dot(uv + vec2(5.39, 8.17), vec2(127.1, 311.7))) * 43758.5453);
+  }
+  vec3 spawnEventVelocity(vec3 pos, vec2 uv) {
+    float th = fract(sin(dot(uv + vec2(2.71, 6.13), vec2(127.1, 311.7))) * 43758.5453) * 6.28318530718;
+    float phi = acos(2.0 * fract(sin(dot(uv + vec2(9.43, 4.29), vec2(127.1, 311.7))) * 43758.5453) - 1.0);
+    float magHash = fract(sin(dot(uv + vec2(7.77, 1.93), vec2(127.1, 311.7))) * 43758.5453);
+    vec3 randDir = vec3(sin(phi) * cos(th), sin(phi) * sin(th), cos(phi));
+    vec3 radial = length(pos) > 0.0001 ? normalize(pos) : vec3(0.0, 1.0, 0.0);
+    vec3 dir = normalize(mix(radial, randDir, uSpawnEventSpread));
+    float mag = uSpawnEventSpeed * mix(1.0, 0.25 + 0.75 * magHash, uSpawnEventSpread);
+    return dir * mag;
+  }
+
   // SDF distance for obstacle avoidance (Phase AB): the same field
   // formulas the collider block at the bottom of main() evaluates
   // (gyroid uses the gradient-normalised approximation above).

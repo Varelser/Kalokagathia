@@ -32,10 +32,26 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
     // this entirely. TS twin: spawnStateForIndex in
     // lib/gpgpuLifecycle.ts.
     if (uSpawnBurst < 1.0) {
-      float sThr = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTime(uSpawnTime));
-      if (spawnHash(vUv) >= sThr) {
+      float sThr = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime));
+      if (spawnGateValue(vUv) >= sThr) {
         gl_FragColor = vec4(0.0, 0.0, 0.0, phaseState);
         return;
+      }
+    }
+
+    // Spawn burst event (Phase AX): on the single frame the
+    // spawn clock crosses the authored event time, the event's
+    // cohort (the same hash the position pass respawns) is handed
+    // the directly specified initial velocity, replacing whatever
+    // it carried. The forces below then act on it as usual. Only
+    // live particles reach this point (parked ones returned
+    // above), matching the position pass, whose parked particles
+    // never enter the respawn block.
+    if (uSpawnEventEnabled && uSpawnEventSpeed > 0.0) {
+      if (uSpawnTime - uDelta < uSpawnEventTime && uSpawnTime >= uSpawnEventTime) {
+        if (spawnEventHash(vUv) < uSpawnEventCount) {
+          vel = spawnEventVelocity(pos, vUv);
+        }
       }
     }
 

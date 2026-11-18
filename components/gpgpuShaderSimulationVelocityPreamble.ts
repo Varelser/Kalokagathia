@@ -70,6 +70,21 @@ export const VEL_FRAG_PREAMBLE = /* glsl */ `
   // lib/gpgpuLifecycle.ts.
   uniform float uSpawnPulseInterval;
   uniform float uSpawnPulseDuty;
+  // Pulse cycles + probability, spawn order and the spawn burst
+  // event (Phase AX): cycles 0 (unlimited) with probability 1
+  // makes spawnPulseTimeEx delegate to the legacy spawnPulseTime;
+  // order mode 0 reads the legacy spawnHash instead of the baked
+  // distance texture; the event is disabled by default. TS twins:
+  // lib/gpgpuLifecycle.ts.
+  uniform float uSpawnPulseCycles;
+  uniform float uSpawnPulseProbability;
+  uniform sampler2D uSpawnOrderTex;
+  uniform int uSpawnOrderMode;
+  uniform bool uSpawnEventEnabled;
+  uniform float uSpawnEventTime;
+  uniform float uSpawnEventCount;
+  uniform float uSpawnEventSpeed;
+  uniform float uSpawnEventSpread;
   uniform float uDragRate;
   uniform float uMaxSpeed;
   // Signal & time grammar (Phase AC): the curl field's evolution

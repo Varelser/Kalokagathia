@@ -103,6 +103,12 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // The Aux birthBurst mode needs no entry of its own: 'aux'
   // already routes every aux config to WebGL.
   if ((config.gpgpuSpawnBurst ?? 1) < 1) features.push('spawn-gate');
+  // Phase AX spawn grammar: the pulse cycle limit / probability,
+  // the distance spawn order and the burst event live in the
+  // WebGL passes only — same treatment as the gate above.
+  if ((config.gpgpuSpawnPulseCycles ?? 0) > 0 || (config.gpgpuSpawnPulseProbability ?? 1) < 1) features.push('spawn-pulse-cycles');
+  if ((config.gpgpuSpawnOrderMode ?? 'hash') !== 'hash') features.push('spawn-distance-order');
+  if (config.gpgpuSpawnEventEnabled) features.push('spawn-burst-event');
   if (config.gpgpuKillBoundary || config.gpgpuKillMask) features.push('kill-conditions');
   if ((config.gpgpuMaxSpeed || 0) > 0 || Math.abs((config.gpgpuDrag ?? 1.1) - 1.1) > 1e-9) features.push('global-velocity-limit');
   if (config.gpgpuParticleLifeEnabled && (config.gpgpuParticleLifeAvoid || 0) > 0) features.push('particle-life-avoid');

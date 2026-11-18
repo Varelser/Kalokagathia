@@ -3,6 +3,7 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
+import { buildSpawnDistanceValues } from '../lib/gpgpuLifecycle';
 import { buildVellumBakeData, vellumTearActive } from '../lib/gpgpuVellum';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
 import { splitTextOnPathGlyphs, type TextGlyphRaster } from '../lib/gpgpuTextOnPath';
@@ -281,6 +282,10 @@ export type GpgpuRuntimeRefs = {
   pingIsA: MutableRefObject<boolean>;
   prevPosRTRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   initPosTexRef: MutableRefObject<THREE.DataTexture | null>;
+  // Spawn order (Phase AX): static texture of the pool's
+  // max-normalised initial distances (R channel), built with the
+  // initial data; the passes only read it in a distance mode.
+  spawnOrderTexRef: MutableRefObject<THREE.DataTexture | null>;
   morphTexRef: MutableRefObject<THREE.DataTexture | null>;
   morphNormalTexRef: MutableRefObject<THREE.DataTexture | null>;
   attrTexRef: MutableRefObject<THREE.DataTexture | null>;
@@ -603,6 +608,9 @@ export function buildMorphBakeData(
       slopeMax: config.gpgpuMorphScatterSlopeMax,
       alignNormal: config.gpgpuMorphScatterAlignNormal,
       species: config.gpgpuMorphScatterSpecies,
+      scaleRandom: config.gpgpuMorphScatterScaleRandom,
+      rotRandom: config.gpgpuMorphScatterRotRandom,
+      bend: config.gpgpuMorphScatterBend,
     } : null,
     mask: morphMaskOption(config),
     // Attribute point cloud (Phase AK): the data target's
@@ -624,6 +632,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const pingIsA = useRef(true);
   const prevPosRTRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const initPosTexRef = useRef<THREE.DataTexture | null>(null);
+  const spawnOrderTexRef = useRef<THREE.DataTexture | null>(null);
   const morphTexRef = useRef<THREE.DataTexture | null>(null);
   const morphNormalTexRef = useRef<THREE.DataTexture | null>(null);
   const attrTexRef = useRef<THREE.DataTexture | null>(null);
@@ -724,6 +733,19 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     const initTex = new THREE.DataTexture(posData.slice(), texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     initTex.needsUpdate = true;
     initPosTexRef.current = initTex;
+    // Spawn order (Phase AX): bake the distance-order texture
+    // from the same initial positions (near-first values in R;
+    // the far-first mode inverts in the shader). Built always —
+    // it is one O(N) pass — but only sampled in a distance mode.
+    spawnOrderTexRef.current?.dispose();
+    {
+      const distValues = buildSpawnDistanceValues(posData, false);
+      const orderData = new Float32Array(texSize * texSize * 4);
+      for (let i = 0; i < distValues.length; i++) orderData[i * 4] = distValues[i];
+      const orderTex = new THREE.DataTexture(orderData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+      orderTex.needsUpdate = true;
+      spawnOrderTexRef.current = orderTex;
+    }
 
     const copyScene = new THREE.Scene();
     const copyCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -885,6 +907,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       prevPosRTRef.current = null;
       initPosTexRef.current?.dispose();
       initPosTexRef.current = null;
+      spawnOrderTexRef.current?.dispose();
+      spawnOrderTexRef.current = null;
       vellumRestTexRef.current?.dispose();
       vellumRestTexRef.current = null;
       sortRTARef.current?.dispose();
@@ -1100,6 +1124,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphScatterSlopeMax = config.gpgpuMorphScatterSlopeMax;
   const morphScatterAlignNormal = config.gpgpuMorphScatterAlignNormal;
   const morphScatterSpecies = config.gpgpuMorphScatterSpecies;
+  // Scatter finishing (Phase AX).
+  const morphScatterScaleRandom = config.gpgpuMorphScatterScaleRandom;
+  const morphScatterRotRandom = config.gpgpuMorphScatterRotRandom;
+  const morphScatterBend = config.gpgpuMorphScatterBend;
   const morphPathMode = config.gpgpuMorphPathMode;
   const morphTextOnPathEnabled = config.gpgpuMorphTextOnPathEnabled;
   const morphTextOnPathDelay = config.gpgpuMorphTextOnPathDelay;
@@ -1291,6 +1319,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         slopeMax: morphScatterSlopeMax,
         alignNormal: morphScatterAlignNormal,
         species: morphScatterSpecies,
+        scaleRandom: morphScatterScaleRandom,
+        rotRandom: morphScatterRotRandom,
+        bend: morphScatterBend,
       } : null,
       // Raster mask (Phase X): same option the shared bake builder
       // assembles, from the effect's own captured values.
@@ -1419,6 +1450,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphScatterSlopeMax,
     morphScatterAlignNormal,
     morphScatterSpecies,
+    morphScatterScaleRandom,
+    morphScatterRotRandom,
+    morphScatterBend,
     morphPathMode,
     morphTextOnPathEnabled,
     morphTextOnPathDelay,
@@ -1534,6 +1568,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     pingIsA,
     prevPosRTRef,
     initPosTexRef,
+    spawnOrderTexRef,
     morphTexRef,
     morphNormalTexRef,
     attrTexRef,

@@ -52,6 +52,18 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSpawnBurst: 1.0,
   gpgpuSpawnPulseInterval: 0,
   gpgpuSpawnPulseDuty: 0.3,
+  // Pulse cycles + probability (Phase AX): 0 cycles = unlimited,
+  // probability 1 = every cycle fires — both legacy.
+  gpgpuSpawnPulseCycles: 0,
+  gpgpuSpawnPulseProbability: 1,
+  // Spawn order (Phase AX): 'hash' = the legacy hash order.
+  gpgpuSpawnOrderMode: 'hash' as const,
+  // Spawn burst event (Phase AX): disabled = no event.
+  gpgpuSpawnEventEnabled: false,
+  gpgpuSpawnEventTime: 2,
+  gpgpuSpawnEventCount: 0.3,
+  gpgpuSpawnEventSpeed: 2,
+  gpgpuSpawnEventSpread: 0.5,
   // Emission curve (Phase AJ): disabled, identity curve, 8 s period.
   gpgpuFreeCurvePoints: [0, 1, 1, 1],
   gpgpuEmissionCurveEnabled: false,
@@ -243,6 +255,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMorphScatterSlopeMax: 1,
   gpgpuMorphScatterAlignNormal: 0,
   gpgpuMorphScatterSpecies: 1,
+  // Scatter finishing (Phase AX): all 0 = the Phase AI bake verbatim.
+  gpgpuMorphScatterScaleRandom: 0,
+  gpgpuMorphScatterRotRandom: 0,
+  gpgpuMorphScatterBend: 0,
   // Terrain collider (Phase AI): off by default = legacy path.
   gpgpuTerrainColliderEnabled: false,
   gpgpuTerrainColliderBounce: 0.5,
@@ -454,6 +470,11 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSpriteFrameMode: 'age' as const,
   gpgpuSpriteFrameFps: 12,
   gpgpuSpriteLoop: true,
+  // Sprite rotation (Phase AX): all 0 = un-rotated legacy sampling.
+  gpgpuSpriteRotInitial: 0,
+  gpgpuSpriteRotSpeed: 0,
+  gpgpuSpriteRotDamping: 0,
+  gpgpuSpriteRotRandom: 0,
   gpgpuBlendMode: 'additive' as const,
   // Size over Lifetime
   gpgpuAgeSizeEnabled: false,

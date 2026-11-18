@@ -229,6 +229,24 @@ export interface GpgpuMorphTerrainScatterOptions {
    *  channel — the normal magnitude drives the Phase O emission
    *  kick speed). 1 = a single species. */
   species: number;
+  /** Scatter finishing (Phase AX): per-particle scale
+   *  randomisation of the species magnitude (factor in [1−r, 1+r]
+   *  by a deterministic index hash). 0 = off. Only acts on the
+   *  aligned / bent normal — with alignment 0 and bend 0 it is
+   *  inert and does not keep the grammar alive on its own. */
+  scaleRandom?: number;
+  /** Scatter finishing (Phase AX): azimuth randomisation of the
+   *  companion normal (rotation around Y by up to ±r·π, same
+   *  hash family). 0 = off; inert without alignment / bend. */
+  rotRandom?: number;
+  /** Scatter finishing (Phase AX): posture bend — the companion
+   *  normal leans toward downhill by up to 0.6·bend of the way
+   *  to the horizontal downhill direction; at alignment 0 the
+   *  bend alone writes a leaning normal of magnitude 0.6·bend.
+   *  This is an orientation finish on a point cloud, NOT a mesh
+   *  bend, and there is no per-species mesh swap (the pool draws
+   *  a single geometry mode). 0 = off. */
+  bend?: number;
 }
 
 export interface GpgpuMorphTargetBuildOptions {
@@ -742,10 +760,17 @@ export function resolveTerrainScatter(
   const alignNormal = clampScatter01(scatter.alignNormal, 0);
   const speciesRaw = Math.floor(scatter.species);
   const species = Number.isFinite(speciesRaw) ? Math.max(1, Math.min(4, speciesRaw)) : 1;
-  if (density >= 1 && heightMin <= 0 && heightMax >= 1 && slopeMax >= 1 && alignNormal <= 0) {
+  // Phase AX finishing: scale / rotation randomisation only
+  // modify the aligned (or bent) normal, so like `species` they
+  // do not keep the grammar alive on their own; bend does (it
+  // writes a leaning normal even at alignment 0).
+  const scaleRandom = clampScatter01(scatter.scaleRandom ?? 0, 0);
+  const rotRandom = clampScatter01(scatter.rotRandom ?? 0, 0);
+  const bend = clampScatter01(scatter.bend ?? 0, 0);
+  if (density >= 1 && heightMin <= 0 && heightMax >= 1 && slopeMax >= 1 && alignNormal <= 0 && bend <= 0) {
     return null;
   }
-  return { density, heightMin, heightMax, slopeMax, alignNormal, species };
+  return { density, heightMin, heightMax, slopeMax, alignNormal, species, scaleRandom, rotRandom, bend };
 }
 
 /**
@@ -792,6 +817,80 @@ export function terrainScatterSpeciesScale(
 /** Resampling attempts per particle in the scatter branch
  *  (the first attempt is the particle's own grid cell). */
 export const TERRAIN_SCATTER_ATTEMPTS = 5;
+
+/** Deterministic per-particle hash in [0, 1) for the Phase AX
+ *  scatter finishing (the shared hash1 family on (index, salt)).
+ *  Index-based — never an RNG draw — so enabling the finishing
+ *  cannot shift the bake's draw sequence. */
+export function terrainScatterHash01(index: number, salt: number): number {
+  const s = Math.sin(index * 127.1 + salt * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/** The per-particle scale factor of the finishing: [1−r, 1+r]. */
+export function terrainScatterScaleFactor(scatter: GpgpuMorphTerrainScatterOptions, hash: number): number {
+  const r = clampScatter01(scatter.scaleRandom ?? 0, 0);
+  const h = Number.isFinite(hash) ? Math.max(0, Math.min(1, hash)) : 0.5;
+  return 1 + (h * 2 - 1) * r;
+}
+
+/**
+ * Scatter finishing (Phase AX): the companion normal after the
+ * scale randomisation, the azimuth randomisation and the bend
+ * are applied to the Phase AI aligned normal. With scaleRandom /
+ * rotRandom / bend all 0 this returns exactly the Phase AI
+ * statement (terrain normal × align × species scale), and with
+ * alignment 0 and bend 0 it returns the zero vector (the legacy
+ * terrain normals), whatever the randomisation keys say.
+ */
+export function terrainScatterFinishNormal(
+  scatter: GpgpuMorphTerrainScatterOptions,
+  gx: number,
+  gz: number,
+  t: number,
+  hashScale: number,
+  hashRot: number,
+): { x: number; y: number; z: number } {
+  const scaleF = terrainScatterScaleFactor(scatter, hashScale);
+  const invLen = 1 / Math.sqrt(gx * gx + 1 + gz * gz);
+  let nx = -gx * invLen;
+  let ny = invLen;
+  let nz = -gz * invLen;
+  let mag = scatter.alignNormal * terrainScatterSpeciesScale(scatter, t) * scaleF;
+  const bend = clampScatter01(scatter.bend ?? 0, 0);
+  const gl = Math.hypot(gx, gz);
+  if (bend > 0 && gl > 1e-6) {
+    const dhx = -gx / gl;
+    const dhz = -gz / gl;
+    if (mag <= 0) {
+      nx = dhx;
+      ny = 0;
+      nz = dhz;
+      mag = bend * 0.6 * scaleF;
+    } else {
+      const mixAmt = Math.min(1, bend * 0.6);
+      const mx = nx + (dhx - nx) * mixAmt;
+      const my = ny + (0 - ny) * mixAmt;
+      const mz = nz + (dhz - nz) * mixAmt;
+      const ml = Math.hypot(mx, my, mz) || 1;
+      nx = mx / ml;
+      ny = my / ml;
+      nz = mz / ml;
+    }
+  }
+  const rot = clampScatter01(scatter.rotRandom ?? 0, 0);
+  if (rot > 0 && mag > 0) {
+    const h = Number.isFinite(hashRot) ? Math.max(0, Math.min(1, hashRot)) : 0.5;
+    const ang = (h * 2 - 1) * rot * Math.PI;
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    const rx = nx * c - nz * s;
+    const rz = nx * s + nz * c;
+    nx = rx;
+    nz = rz;
+  }
+  return { x: nx * mag, y: ny * mag, z: nz * mag };
+}
 
 // ---------------------------------------------------------------------------
 // Terrain erosion (Phase AP)
@@ -1334,7 +1433,7 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
     ? getErodedTerrainField(terrainOpts, terrainFieldSeed)
     : null;
   const terrainScatterGradRef = terrainScatter && terrainOpts
-    && (terrainScatter.slopeMax < 1 || terrainScatter.alignNormal > 0)
+    && (terrainScatter.slopeMax < 1 || terrainScatter.alignNormal > 0 || (terrainScatter.bend ?? 0) > 0)
     ? (terrainErosionField
       ? erodedFieldScatterGradientRef(terrainErosionField)
       : terrainScatterGradientRef(terrainOpts, terrainFieldSeed))
@@ -1935,12 +2034,18 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
             // class of the particle's height zone. With alignment
             // 0 the normals stay zero, exactly like the legacy
             // terrain bake.
-            if (terrainScatter.alignNormal > 0) {
-              const invLen = 1 / Math.sqrt(accGx * accGx + 1 + accGz * accGz);
-              const mag = terrainScatter.alignNormal * terrainScatterSpeciesScale(terrainScatter, accT);
-              nnx = -accGx * invLen * mag;
-              nny = invLen * mag;
-              nnz = -accGz * invLen * mag;
+            if (terrainScatter.alignNormal > 0 || (terrainScatter.bend ?? 0) > 0) {
+              // Phase AX: the finishing (scale / rotation
+              // randomisation + bend) wraps the Phase AI aligned
+              // normal; at its defaults the helper returns the
+              // Phase AI statement verbatim.
+              const fin = terrainScatterFinishNormal(
+                terrainScatter, accGx, accGz, accT,
+                terrainScatterHash01(i, 11.31), terrainScatterHash01(i, 47.97),
+              );
+              nnx = fin.x;
+              nny = fin.y;
+              nnz = fin.z;
             }
           } else {
             tx = (((cellX + s) / texSize) * 2 - 1) * extent;

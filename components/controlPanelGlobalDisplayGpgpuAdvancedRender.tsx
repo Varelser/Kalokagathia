@@ -239,6 +239,16 @@ const SpriteImageBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, u
           </div>
         </div>
       )}
+      <div className="mt-2 border-t border-white/10 pt-2">
+        <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Sprite Rotation（スプライト回転 — Phase AX）</div>
+        <Slider label="Initial （初期角度・度）" value={config.gpgpuSpriteRotInitial} min={-360} max={360} step={1} onChange={(v) => updateConfig('gpgpuSpriteRotInitial', v)} />
+        <Slider label="Speed （角速度・度/秒）" value={config.gpgpuSpriteRotSpeed} min={-720} max={720} step={1} onChange={(v) => updateConfig('gpgpuSpriteRotSpeed', v)} />
+        <Slider label="Damping （減衰）" value={config.gpgpuSpriteRotDamping} min={0} max={10} step={0.05} onChange={(v) => updateConfig('gpgpuSpriteRotDamping', v)} />
+        <Slider label="Random （粒子ごとの速度のばらつき）" value={config.gpgpuSpriteRotRandom} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpriteRotRandom', v)} />
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          ポイントスプライト自体が粒子の年齢で回転します（角度＝初期角度＋角速度×減衰つき年齢積分）。スプライト画像と手続き形状の両方に効きます。Damping を上げると年を取るほど回転が弱まります。初期角度 0・角速度 0 で従来と完全一致です。ジオメトリモードの自転（Geom Spin）とは別系統です。
+        </div>
+      </div>
     </div>
   );
 };
