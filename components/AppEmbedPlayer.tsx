@@ -5,6 +5,7 @@ import { AppScene } from './AppScene';
 import { getInterLayerContactAmount } from '../lib/appState';
 import { toggleFullscreen } from '../lib/platformFeatures';
 import { buildFullAppUrl } from '../lib/embedMode';
+import { handleEmbedControlMessage, type EmbedControlHandlers } from '../lib/embedControl';
 import type { ParticleConfig } from '../types';
 import type { PointCloudCaptureState } from '../lib/pointCloudExport';
 import type { AudioLevels } from '../lib/audioControllerTypes';
@@ -33,6 +34,13 @@ export type AppEmbedPlayerProps = {
   saveTrigger: number;
   sequenceStepProgress: number;
   pointCloudCaptureRef: React.RefObject<PointCloudCaptureState>;
+  /**
+   * Script API handlers (Phase AO): when supplied, the player
+   * answers the postMessage control protocol (PUBLIC_API.md).
+   * Only the embed player ever mounts this listener — the main
+   * app does not pass handlers and stays deaf to the protocol.
+   */
+  embedControl?: EmbedControlHandlers;
 };
 
 export const AppEmbedPlayer: React.FC<AppEmbedPlayerProps> = ({
@@ -46,7 +54,34 @@ export const AppEmbedPlayer: React.FC<AppEmbedPlayerProps> = ({
   saveTrigger,
   sequenceStepProgress,
   pointCloudCaptureRef,
+  embedControl,
 }) => {
+  // Script API (Phase AO): the handlers close over live App state,
+  // so they are re-read through a ref on every message instead of
+  // re-registering the listener per render.
+  const embedHandlersRef = React.useRef(embedControl);
+  embedHandlersRef.current = embedControl;
+  React.useEffect(() => {
+    if (!embedHandlersRef.current) return;
+    const onMessage = (event: MessageEvent) => {
+      const handlers = embedHandlersRef.current;
+      if (!handlers) return;
+      const outcome = handleEmbedControlMessage(event.data, handlers);
+      if (outcome.handled && outcome.reply) {
+        // Reply to the sender's own origin (never broadcast): the
+        // host page that asked is the only intended reader.
+        const target = event.source as Window | null;
+        const origin = event.origin && event.origin !== 'null' ? event.origin : '*';
+        try {
+          target?.postMessage(outcome.reply, origin);
+        } catch {
+          // Sender gone / opaque origin: the reply is best-effort.
+        }
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   React.useEffect(() => {
     const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));

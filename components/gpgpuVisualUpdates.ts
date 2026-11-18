@@ -37,6 +37,12 @@ function getShadowOcclusionTexture(config: ParticleConfig): THREE.DataTexture | 
     config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat,
     config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ,
     config.gpgpuMorphObjSource,
+    // Terrain erosion (Phase AP): the occluder follows the
+    // carved field, so the erosion params are part of the key.
+    config.gpgpuMorphTerrainErosionWater, config.gpgpuMorphTerrainErosionDroplets,
+    config.gpgpuMorphTerrainErosionDeposit, config.gpgpuMorphTerrainErosionThermal,
+    config.gpgpuMorphTerrainErosionTalus, config.gpgpuMorphTerrainErosionThermalPasses,
+    config.gpgpuMorphTerrainErosionSeed, config.gpgpuTerrainMeshTunnel,
   ]);
   if (key !== shadowCacheKey) {
     const bake = bakeShadowOcclusionMap(buildShadowScene(config), 64);

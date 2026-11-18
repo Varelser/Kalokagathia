@@ -374,6 +374,38 @@ const NUMS: NumDef[] = [
   ['gpgpuSphPressure', 'GPGPU流体（SPH）の圧力'],
   ['gpgpuSphViscosity', 'GPGPU流体（SPH）の粘性'],
   ['gpgpuSphSurfaceTension', 'GPGPU流体（SPH）の表面張力（凝集の近似、0で従来同一）'],
+  ['gpgpuGrainsEnabled', '粒状体ソルバ（DEM 型の粒同士の接触・摩擦）のON/OFF（OFFで従来同一）'],
+  ['gpgpuGrainsSize', '粒状体ソルバの粒の直径（ワールド単位）'],
+  ['gpgpuGrainsStiffness', '粒状体ソルバの接触の押し返しの硬さ'],
+  ['gpgpuGrainsFriction', '粒状体ソルバの摩擦係数（安息角は創発値で直接指定ではない）'],
+  ['gpgpuGrainsCohesion', '粒状体ソルバの凝集（0で無効）'],
+  ['gpgpuGrainsRestitution', '粒状体ソルバの反発係数'],
+  ['gpgpuGrainsRestDamping', '粒状体ソルバの静止減衰'],
+  ['gpgpuFlipEnabled', 'FLIP層（2D平面グリッド圧力解法＋粒子⇔グリッド転送）のON/OFF（流体フィールドONが前提、OFFで従来同一）'],
+  ['gpgpuFlipBlend', 'FLIPのG2Pブレンド（0=PIC、1=FLIP）'],
+  ['gpgpuFlipPressureIterations', 'FLIP圧力投影のJacobi反復回数（0〜32）'],
+  ['gpgpuFlipTransfer', 'FLIPのG2P転送の適用の強さ'],
+  ['gpgpuRigidEnabled', '剛体ソルバ（RBD、CPU解法＋球近似）のON/OFF（モーフ点群が前提、OFFで従来同一）'],
+  ['gpgpuRigidRestitution', '剛体衝突の反発係数'],
+  ['gpgpuRigidFriction', '剛体接触の摩擦係数'],
+  ['gpgpuRigidGlueEnabled', '剛体の接着（グルー）のON/OFF'],
+  ['gpgpuRigidGlueStrength', '接着の破断閾値（衝突の速度変化量）'],
+  ['gpgpuRigidStartSleeping', '剛体を全スリープで開始するか'],
+  ['gpgpuPyroEnabled', 'Pyroソルバ（粒子側の温度・浮力・攪拌）のON/OFF（OFFで従来同一）'],
+  ['gpgpuPyroTemperature', 'Pyroの放出温度（年齢で冷却される温度の初期値）'],
+  ['gpgpuPyroBuoyancy', 'Pyroの浮力（重力単位。熱い粒子が正の重力に逆らって昇る）'],
+  ['gpgpuPyroCooling', 'Pyroの冷却指数（年齢比に対する温度の減衰の速さ。0で冷えない）'],
+  ['gpgpuPyroDisturbance', 'Pyroの攪拌（温度で重み付けした渦場の強さ）'],
+  ['gpgpuPyroDisturbanceHeat', 'Pyroの攪拌の温度連動（既存カールへの温度ゲイン）'],
+  ['gpgpuVellumEnabled', '拘束ソルバ（PBD 系距離拘束、プールを格子ベイクして布／殻として解く）のON/OFF（OFFで従来同一。有効時は年齢／キル／スポーン／モーフ／レプリカ／ペイントが無効化される）'],
+  ['gpgpuVellumMode', '拘束ソルバの初期形状（sheet=平面格子／shell=球殻）'],
+  ['gpgpuVellumStiffness', '拘束ソルバの距離拘束の補正率（剛性の実効値）'],
+  ['gpgpuVellumBend', '拘束ソルバの曲げ拘束の補正率'],
+  ['gpgpuVellumSubsteps', '拘束ソルバの投影反復回数（1〜4）'],
+  ['gpgpuVellumPin', '拘束ソルバのピン留め（none／top／corners／topCorners）'],
+  ['gpgpuVellumPressure', '拘束ソルバの面法線方向の圧力（体積保存ではない。符号で反転）'],
+  ['gpgpuVellumTear', '拘束ソルバの破れ閾値（歪み比、0で無効）'],
+  ['gpgpuVellumDamping', '拘束ソルバ有効時の速度減衰'],
   ['gpgpuSpawnRate', 'GPGPU放出レート（未放出分の放出速度、プール割合/秒。バースト1では無効）'],
   ['gpgpuSpawnBurst', 'GPGPU開始バースト（開始時に有効な粒子の割合、1で全粒子＝従来同一）'],
   ['gpgpuSpawnPulseInterval', 'GPGPU周期バーストの間隔（秒、0でOFF＝従来同一。放出がパルス状になる）'],
@@ -424,6 +456,13 @@ const NUMS: NumDef[] = [
   ['gpgpuMorphTerrainOctaves', 'GPGPUモーフ地形のfBmオクターブ数（1〜6）'],
   ['gpgpuMorphTerrainSeed', 'GPGPUモーフ地形のシードオフセット'],
   ['gpgpuMorphTerrainTerraceSteps', 'GPGPUモーフ地形の段丘レシピの段数（2〜32、terrace のときだけ）'],
+  ['gpgpuMorphTerrainErosionWater', 'GPGPUモーフ地形の水力侵食の強さ（水滴シミュレーション、0で無効）'],
+  ['gpgpuMorphTerrainErosionDroplets', 'GPGPUモーフ地形の侵食の水滴量（基準30,000個への倍率 0〜2、上限60,000）'],
+  ['gpgpuMorphTerrainErosionDeposit', 'GPGPUモーフ地形の侵食の堆積率（水滴が運ぶ土砂の堆積 0..1）'],
+  ['gpgpuMorphTerrainErosionThermal', 'GPGPUモーフ地形の熱侵食（タラス緩和）の強さ（0で無効）'],
+  ['gpgpuMorphTerrainErosionTalus', 'GPGPUモーフ地形の熱侵食のタラス角（安息角、大きいほど急斜面が残る）'],
+  ['gpgpuMorphTerrainErosionThermalPasses', 'GPGPUモーフ地形の熱侵食の緩和パス数（1〜80）'],
+  ['gpgpuMorphTerrainErosionSeed', 'GPGPUモーフ地形の侵食シード（水滴配置のオフセット）'],
   ['gpgpuMorphScatterDensity', 'GPGPU地形散布文法の密度（受理率、1で間引きなし）'],
   ['gpgpuMorphScatterHeightMin', 'GPGPU地形散布の高度帯の下限（正規化高さ 0..1）'],
   ['gpgpuMorphScatterHeightMax', 'GPGPU地形散布の高度帯の上限（正規化高さ 0..1）'],
@@ -677,6 +716,7 @@ const BOOLS: BoolDef[] = [
   ['gpgpuShadowSourceObj', 'GPGPU シャドウの遮蔽源に OBJ メッシュ（外接球近似）を使う'],
   ['gpgpuMorphStampAlign', 'GPGPUモーフのスタンプをパス接線に整列させる'],
   ['gpgpuFloorEnabled', 'GPGPUの床バウンス'],
+  ['gpgpuMouseMultiTouch', 'GPGPUマウスフォースのマルチタッチ同時干渉（最大4ポインタ、OFFで従来同一、Phase AO）'],
 ];
 
 // Curated expressive subset of the 198 motion types — the ones a person
@@ -745,7 +785,7 @@ const ENUMS: { key: keyof ParticleConfig; gloss: string; values: readonly string
   { key: 'backgroundGradientType', gloss: 'Horizon グラデーションの型', values: ['linear', 'radial'] },
   { key: 'backgroundImageFit', gloss: 'Horizon 背景画像の収め方', values: ['cover', 'fit'] },
   { key: 'backgroundImageProjection', gloss: 'Horizon 背景画像の投影方式（flat=従来の平面 / equirect=360°パノラマ）', values: ['flat', 'equirect'] },
-  { key: 'gpgpuGeomMode', gloss: 'GPGPU粒子の描画体', values: ['point', 'cube', 'tetra', 'octa', 'icosa', 'torus', 'cone'] },
+  { key: 'gpgpuGeomMode', gloss: 'GPGPU粒子の描画体（obj は取り込みOBJを粒子形状にする、三角形予算 4,096 超過時は八面体へフォールバック、Phase AO）', values: ['point', 'cube', 'tetra', 'octa', 'icosa', 'torus', 'cone', 'obj'] },
   { key: 'sdfShape', gloss: '全体のSDF粒子形状', values: ['sphere', 'ring', 'star', 'hexagon', 'diamond', 'flare', 'cloud', 'bokeh', 'crosshair', 'iris', 'lightning'] },
   { key: 'layer1SdfShape', gloss: 'レイヤー1のSDF粒子形状', values: ['sphere', 'ring', 'star', 'hexagon', 'diamond', 'flare', 'cloud', 'bokeh', 'crosshair', 'iris', 'lightning'] },
   { key: 'layer2SdfShape', gloss: 'レイヤー2のSDF粒子形状', values: ['sphere', 'ring', 'star', 'hexagon', 'diamond', 'flare', 'cloud', 'bokeh', 'crosshair', 'iris', 'lightning'] },
@@ -803,6 +843,16 @@ export const AI_SPEC_BY_KEY = new Map<string, AiParamSpec>(
 );
 
 export const AI_MAX_PATCH_KEYS = 40;
+
+/**
+ * Schema version of this catalog as a public contract (Phase AO):
+ * the embed script API (PUBLIC_API.md) validates setParam against
+ * this catalog, and the version is reported in getState replies so
+ * host pages can pin against a known schema. Bump only on a
+ * breaking change to the spec shapes (keys added/removed follow
+ * the app version, not this constant).
+ */
+export const AI_CONTROL_CATALOG_VERSION = 1;
 
 function fmtVal(v: unknown): string {
   if (typeof v === 'number') return String(Math.round(v * 1000) / 1000);

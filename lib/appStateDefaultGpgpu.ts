@@ -139,6 +139,24 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSphRestDensity: 2.0,
   // Surface tension (Phase AB, cohesion approximation): 0 = off.
   gpgpuSphSurfaceTension: 0,
+  // Grains (Phase AQ, DEM-style contact solver): disabled = off.
+  gpgpuGrainsEnabled: false,
+  gpgpuGrainsSize: 8.0,
+  gpgpuGrainsStiffness: 2.0,
+  gpgpuGrainsFriction: 0.6,
+  gpgpuGrainsCohesion: 0,
+  gpgpuGrainsRestitution: 0,
+  gpgpuGrainsRestDamping: 0.5,
+  // Pyro (Phase AS, particle-side temperature / buoyancy solver):
+  // disabled = off. Buoyancy is in gravity units (1.2 at full
+  // temperature out-lifts the default gravity 0.2 and gravity 1.0
+  // alike); Cooling is the exponent of the age cooling curve.
+  gpgpuPyroEnabled: false,
+  gpgpuPyroTemperature: 1.0,
+  gpgpuPyroBuoyancy: 1.2,
+  gpgpuPyroCooling: 1.0,
+  gpgpuPyroDisturbance: 1.0,
+  gpgpuPyroDisturbanceHeat: 1.0,
   // Vector Field
   gpgpuVFieldEnabled: false,
   gpgpuVFieldType: 'spiral' as const,
@@ -207,6 +225,15 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // Terrain recipes (Phase AI): 'fbm' default = the Phase L field.
   gpgpuMorphTerrainKind: 'fbm' as const,
   gpgpuMorphTerrainTerraceSteps: 6,
+  // Terrain erosion (Phase AP): Water 0 + Thermal 0 = the grammar
+  // resolves to null and the field stays the analytic original.
+  gpgpuMorphTerrainErosionWater: 0,
+  gpgpuMorphTerrainErosionDroplets: 1,
+  gpgpuMorphTerrainErosionDeposit: 0.3,
+  gpgpuMorphTerrainErosionThermal: 0,
+  gpgpuMorphTerrainErosionTalus: 0.5,
+  gpgpuMorphTerrainErosionThermalPasses: 24,
+  gpgpuMorphTerrainErosionSeed: 0,
   // Terrain scatter grammar (Phase AI): off by default; the
   // sub-keys at these values resolve to the legacy tiling anyway.
   gpgpuMorphScatterEnabled: false,
@@ -307,6 +334,17 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuObjMeshRepeatScaleStep: 1,
   // Verlet Integration
   gpgpuVerletEnabled: false,
+  // Vellum constraint solver (Phase AR): all defaults keep the
+  // solver off and every legacy path verbatim.
+  gpgpuVellumEnabled: false,
+  gpgpuVellumMode: 'sheet' as const,
+  gpgpuVellumStiffness: 0.8,
+  gpgpuVellumBend: 0.3,
+  gpgpuVellumSubsteps: 2,
+  gpgpuVellumPin: 'top' as const,
+  gpgpuVellumPressure: 0,
+  gpgpuVellumTear: 0,
+  gpgpuVellumDamping: 0.05,
   // SDF Collider
   gpgpuSdfEnabled: false,
   gpgpuSdfShape: 'sphere' as const,
@@ -458,6 +496,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMouseRadius: 150.0,
   gpgpuMouseMode: 'attract' as const,
   gpgpuMousePaintRate: 0.6,
+  gpgpuMouseMultiTouch: false,
   // Streak Rendering
   gpgpuStreakEnabled: false,
   gpgpuStreakLength: 15.0,
@@ -472,6 +511,17 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuFluidInfluence: 0.8,
   gpgpuFluidScale: 1.5,
   gpgpuFluidExtForce: false,
+  gpgpuFlipEnabled: false,
+  gpgpuFlipBlend: 0.95,
+  gpgpuFlipPressureIterations: 16,
+  gpgpuFlipTransfer: 1.0,
+  // Rigid bodies (Phase AU): off by default — identity.
+  gpgpuRigidEnabled: false,
+  gpgpuRigidRestitution: 0.2,
+  gpgpuRigidFriction: 0.5,
+  gpgpuRigidGlueEnabled: true,
+  gpgpuRigidGlueStrength: 45,
+  gpgpuRigidStartSleeping: false,
   // WebGPU Compute Backend
   gpgpuWebGPUEnabled: false,
   gpgpuExecutionPreference: 'auto',

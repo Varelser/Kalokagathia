@@ -29,6 +29,8 @@
  */
 
 import {
+  getErodedTerrainField,
+  sampleErodedField,
   terrainFieldSeedFor,
   terrainHeightAt,
   type GpgpuMorphTerrainOptions,
@@ -102,6 +104,13 @@ export function buildTerrainMeshGeometryData(
   const { terrain, seed, worldScale, tunnel } = options;
   const res = Math.max(8, Math.min(256, Math.floor(options.resolution ?? TERRAIN_MESH_RESOLUTION)));
   const fieldSeed = terrainFieldSeedFor(seed, terrain.seed);
+  // Terrain erosion (Phase AP): the plane mesh reads the eroded
+  // field, so the polygon landscape is the carved one the points
+  // and the collider describe. The tunnel keeps the analytic
+  // field verbatim (its cross-fade tiling needs the pure
+  // function, and the config-side builders strip the erosion
+  // options in tunnel mode anyway).
+  const erodedField = tunnel ? null : getErodedTerrainField(terrain, fieldSeed);
   const extent = TERRAIN_MESH_EXTENT;
   const vertsPerAxis = res + 1;
   const vertexCount = vertsPerAxis * vertsPerAxis;
@@ -125,7 +134,9 @@ export function buildTerrainMeshGeometryData(
       uvs[idx * 2] = u;
       uvs[idx * 2 + 1] = v;
       if (!tunnel) {
-        const h = terrainHeightAt(fx, fz, terrain, fieldSeed);
+        const h = erodedField
+          ? sampleErodedField(erodedField, fx, fz)
+          : terrainHeightAt(fx, fz, terrain, fieldSeed);
         positions[idx * 3] = fx * worldScale;
         positions[idx * 3 + 1] = h * worldScale;
         positions[idx * 3 + 2] = fz * worldScale;

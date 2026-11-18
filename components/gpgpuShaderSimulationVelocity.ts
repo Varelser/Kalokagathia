@@ -152,6 +152,49 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uSphRadius;
   uniform float uSphRestDensity;
   uniform float uSphSurfaceTension;
+  // Grains (Phase AQ): DEM-style penalty contact + Coulomb
+  // friction over the shared subsample neighbourhood. Disabled
+  // is the exact legacy path (the block is skipped whole).
+  uniform bool  uGrainsEnabled;
+  uniform float uGrainsSize;
+  uniform float uGrainsStiffness;
+  uniform float uGrainsFriction;
+  uniform float uGrainsCohesion;
+  uniform float uGrainsRestitution;
+  uniform float uGrainsRestDamping;
+  // Vellum (Phase AR): the pressure force + velocity damping
+  // of the constraint solver (the projection itself lives in a
+  // dedicated pass). uVellumEnabled false is the exact legacy
+  // path — both blocks below are skipped whole. The pressure
+  // reads the texel neighbours of uPosTex: right / up in grid
+  // space (shell mode wraps x, like the projection pass).
+  uniform bool  uVellumEnabled;
+  uniform int   uVellumMode;
+  uniform float uVellumPressure;
+  uniform float uVellumDamping;
+  // Rigid bodies (Phase AU): while the CPU rigid body solver is
+  // bound, this pass writes the rigid velocity of the particle's
+  // point on its body — body linear velocity + ω × (rotated
+  // local offset) — converted to the velocity texture's units
+  // (world / s ÷ 60, the position pass's integration scale).
+  // Body texture rows: 0 = position + radius, 1 = quaternion,
+  // 2 = linear velocity + sleep flag, 3 = angular velocity.
+  // False (default) keeps every statement below verbatim.
+  uniform bool  uRigidEnabled;
+  uniform sampler2D uRigidCellTex;
+  uniform sampler2D uRigidBodyTex;
+  // Pyro (Phase AS): the particle-side temperature / buoyancy
+  // solver. The temperature is a pure function of the normalised
+  // age (derived below, next to ageNorm) — no new textures, no
+  // new passes. uPyroEnabled false skips every Pyro block whole
+  // and the curl modulation factor stays the literal 1.0, so the
+  // disabled path is verbatim legacy.
+  uniform bool  uPyroEnabled;
+  uniform float uPyroTemperature;
+  uniform float uPyroBuoyancy;
+  uniform float uPyroCooling;
+  uniform float uPyroDisturbance;
+  uniform float uPyroDisturbanceHeat;
   uniform bool  uVFieldEnabled;
   uniform int   uVFieldType;
   uniform float uVFieldStrength;
@@ -196,10 +239,28 @@ export const SIM_VEL_FRAG = /* glsl */ `
   uniform float uMouseRadius;
   uniform int   uMouseMode;
   uniform float uMousePaintRate;
+  // Multi-touch interference (Phase AO): world positions of all
+  // tracked pointers (index 0 = the primary, same value as
+  // uMousePos). uMouseCount stays 0 unless the CPU side resolved
+  // multi-touch on, which keeps the block below inert and the
+  // legacy path bit-identical.
+  uniform vec3  uMousePosMulti[4];
+  uniform int   uMouseCount;
   uniform bool  uFluidEnabled;
   uniform sampler2D uFluidTex;
   uniform float uFluidInfluence;
   uniform float uFluidScale;
+  // FLIP layer (Phase AT): uFlipBaseTex carries this frame's
+  // composite grid velocity BEFORE the pressure projection, so
+  // the pass can form the FLIP increment (projected - base)
+  // against uFluidTex (the projected field). uFlipEnabled is
+  // only ever true together with uFluidEnabled, and only the
+  // CPU side's FLIP field pipeline sets it — off, the fluid
+  // block below is the legacy external-force sample verbatim.
+  uniform bool  uFlipEnabled;
+  uniform sampler2D uFlipBaseTex;
+  uniform float uFlipBlend;
+  uniform float uFlipTransfer;
   varying vec2 vUv;
 
   vec3 hash3(vec3 p) {
@@ -446,12 +507,33 @@ export const SIM_VEL_FRAG = /* glsl */ `
     return v;
   }
 
+  // Quaternion rotation (Phase AU): GLSL twin of quatRotate in
+  // lib/rigidBodies.ts.
+  vec3 kaloQuatRotate(vec4 q, vec3 v) {
+    vec3 u = q.xyz;
+    return v + 2.0 * cross(u, cross(u, v) + q.w * v);
+  }
+
   void main() {
     vec4 posData = texture2D(uPosTex, vUv);
     vec4 velData = texture2D(uVelTex, vUv);
     vec3 pos = posData.xyz;
     vec3 vel = velData.xyz;
     float phaseState = velData.w;
+
+    // Rigid bodies (Phase AU): the velocity of a point rigidly
+    // attached to its body. The phase state is preserved
+    // verbatim; every force below is superseded whole.
+    if (uRigidEnabled) {
+      vec4 cell = texture2D(uRigidCellTex, vUv);
+      float bx = (cell.w + 0.5) / 64.0;
+      vec4 bodyQuat = texture2D(uRigidBodyTex, vec2(bx, 0.375));
+      vec4 bodyVel = texture2D(uRigidBodyTex, vec2(bx, 0.625));
+      vec4 bodyAng = texture2D(uRigidBodyTex, vec2(bx, 0.875));
+      vec3 r = kaloQuatRotate(bodyQuat, cell.xyz);
+      gl_FragColor = vec4((bodyVel.xyz + cross(bodyAng.xyz, r)) / 60.0, phaseState);
+      return;
+    }
 
     // Spawn gate (Phase AB): an unreleased particle carries zero
     // velocity (its phase state is preserved verbatim) so it sits
@@ -517,6 +599,20 @@ export const SIM_VEL_FRAG = /* glsl */ `
     // Age ratio for the Phase AC sim curves — the points shader's
     // convention (0.5 while age tracking is off).
     float ageNorm = uAgeEnabled ? clamp(posData.w / max(uAgeMax, 0.001), 0.0, 1.0) : 0.5;
+    // Pyro temperature (Phase AS): a deterministic function of
+    // the normalised age only — a particle is born at the full
+    // emission temperature and cools monotonically toward the
+    // ambient 0 as it ages (a power curve; Cooling 0 never cools,
+    // guarded explicitly because pow(0, 0) is undefined). While
+    // age tracking is off, ageNorm is the conventional 0.5, so
+    // the temperature is one uniform value pool-wide. No state,
+    // no randomness, no wall clock: FROZEN steps reproduce it
+    // exactly, like the Phase AC age curves above.
+    float pyroTemp = 0.0;
+    if (uPyroEnabled) {
+      float coolFactor = uPyroCooling > 0.0 ? pow(1.0 - ageNorm, uPyroCooling) : 1.0;
+      pyroTemp = uPyroTemperature * coolFactor;
+    }
     // Force over Lifetime baseline (Phase AC): the velocity before
     // the built-in force accumulation below.
     vec3 velForceBase = vel;
@@ -525,6 +621,17 @@ export const SIM_VEL_FRAG = /* glsl */ `
     float curlTime = replicaTime * 0.15 * uCurlSpeed;
 
     vel.y -= uGravity * uDelta * 9.8 * grpGravity;
+
+    // Pyro buoyancy (Phase AS): hot particles rise against a
+    // gravity that stays downward — the gain is a separate term
+    // in gravity units (the AQ discipline: a new interaction
+    // keeps its own gain), replacing the legacy starter trick of
+    // a negative gravity. Inside the force accumulation, so the
+    // Phase AC Force-over-Lifetime capture below scales it like
+    // every other built-in force.
+    if (uPyroEnabled) {
+      vel.y += pyroTemp * uPyroBuoyancy * uDelta * 9.8;
+    }
 
     if (uTurbulence > 0.001) {
       float t = replicaTime * 0.25;
@@ -572,7 +679,24 @@ export const SIM_VEL_FRAG = /* glsl */ `
           ? curlNoise(pos * uCurlScale + vec3(curlTime) + replicaSeed)
           : symmetricCurl(pos * uCurlScale + replicaSeed, vec3(curlTime)))
         : curlField(pos * uCurlScale + replicaSeed, vec3(curlTime));
-      vel += curl * uCurlStrength * 20.0 * uDelta * grpCurl;
+      // Pyro disturbance linkage (Phase AS): the temperature
+      // scales the stirring — hot smoke churns harder. The
+      // factor is exactly 1.0 while Pyro is off (an IEEE
+      // identity, the Phase AC / AK precedent).
+      float pyroCurlMul = uPyroEnabled ? 1.0 + pyroTemp * uPyroDisturbanceHeat : 1.0;
+      vel += curl * uCurlStrength * 20.0 * uDelta * grpCurl * pyroCurlMul;
+    }
+
+    // Pyro disturbance (Phase AS): Pyro's own stirring term, so
+    // hot particles churn even with the curl block off. It
+    // samples the same divergence-free curl field at a different
+    // scale and offset (decorrelated from the block above) and
+    // weights it by the particle temperature — this is a
+    // temperature modulation of a curl field, not a grid
+    // vorticity confinement solve.
+    if (uPyroEnabled && uPyroDisturbance > 0.0) {
+      vec3 pyroCurl = curlNoise(pos * uCurlScale * 2.3 + vec3(19.7, 7.3, 11.9) + vec3(curlTime * 1.31) + replicaSeed);
+      vel += pyroCurl * pyroTemp * uPyroDisturbance * 20.0 * uDelta;
     }
 
     // Boids
@@ -918,6 +1042,125 @@ export const SIM_VEL_FRAG = /* glsl */ `
       }
     }
 
+    // Grains (Phase AQ): DEM-style grain contact. A separate
+    // subsample loop from SPH above (the SPH loop accumulates
+    // density incrementally and prices pressure from the running
+    // total — a different quantity from per-contact overlap and
+    // relative velocity, and sharing it would mean editing the
+    // SPH-only path). Per sampled neighbour closer than the
+    // grain diameter:
+    //   normal  — penalty repulsion, overlap x stiffness, at
+    //             the SPH force gain (x15). No position
+    //             projection exists, so deep compression keeps
+    //             some interpenetration (documented limit).
+    //   friction — Coulomb: cancel the tangential relative
+    //             velocity, capped at friction x the contact's
+    //             normal push; below the cap the contact sticks.
+    //             The pile's angle of repose emerges from this
+    //             coefficient (plus the floor / terrain surface
+    //             friction) — it is measured, not set.
+    //   cohesion — the Phase AB offset-proportional pull at the
+    //             gentle x1 gain (a stiff shared gain heated the
+    //             cloud on the AB gate; gains stay separated).
+    //   restitution — a fraction of the approaching normal
+    //             velocity returned (0 = fully inelastic).
+    //   contact damping — the standard DEM viscous term: a
+    //             fixed fraction of the normal relative
+    //             velocity is removed per contact. Without it
+    //             the penalty kick at contact equilibrium
+    //             (~overlap x stiffness x dt x 15 per frame)
+    //             keeps grains jittering above the rest
+    //             threshold forever (measured on the first AQ
+    //             gate: the pile churned as much as the OFF
+    //             control). Glancing stream contacts have
+    //             small normal velocities, so flow is barely
+    //             touched.
+    // Rest damping then bleeds velocity from slow grains that
+    // are in contact, so a pile settles instead of creeping
+    // forever; airborne grains (no contact) are never damped,
+    // which is also what keeps age respawns (teleports into
+    // free space) out of the rest term's reach.
+    if (uGrainsEnabled) {
+      float gd = max(uGrainsSize, 0.001);
+      float gd2 = gd * gd;
+      float strideG = uTexSizeF / float(uNBodySamples);
+      float grainsVel0Len = length(vel);
+      vec3 pushForce = vec3(0.0);
+      vec3 frictionDelta = vec3(0.0);
+      vec3 dampDelta = vec3(0.0);
+      vec3 bounceDelta = vec3(0.0);
+      vec3 cohesionPull = vec3(0.0);
+      float contactCount = 0.0;
+      for (int i = 0; i < 64; i++) {
+        if (i >= uNBodySamples) break;
+        float si = float(i) * strideG;
+        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
+        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
+        vec3 oPos = texture2D(uPosTex, sUv).xyz;
+        vec3 oVel = texture2D(uVelTex, sUv).xyz;
+        vec3 r = pos - oPos;
+        float r2 = dot(r, r);
+        if (r2 < gd2 && r2 > 0.0001) {
+          float dist = sqrt(r2);
+          vec3 n = r / dist;
+          float overlap = gd - dist;
+          pushForce += n * overlap;
+          contactCount += 1.0;
+          // This contact's normal push in velocity units (the
+          // same x15 application the accumulated sum gets).
+          float pushVel = overlap * uGrainsStiffness * uDelta * 15.0;
+          vec3 rv = vel - oVel;
+          float vn = dot(rv, n);
+          dampDelta -= n * (vn * 0.15);
+          vec3 vt = rv - n * vn;
+          float vtLen = length(vt);
+          if (vtLen > 0.0001) {
+            float cap = uGrainsFriction * pushVel;
+            float kill = vtLen <= cap ? 1.0 : cap / vtLen;
+            frictionDelta -= vt * kill;
+          }
+          if (uGrainsRestitution > 0.0 && vn < 0.0) {
+            bounceDelta += n * (-vn * uGrainsRestitution);
+          }
+          if (uGrainsCohesion > 0.0) {
+            float q = dist / gd;
+            float w = max(0.0, 1.0 - q * q);
+            cohesionPull += (oPos - pos) * (w / gd);
+          }
+        }
+      }
+      vel += pushForce * uGrainsStiffness * uDelta * 15.0;
+      vel += bounceDelta;
+      // Contact damping is priced on the frame-start velocity
+      // (it removes a fraction of the normal relative velocity
+      // that existed when the contacts were read), so it clamps
+      // against that, not against the post-penalty speed — the
+      // penalty can legitimately cancel the whole velocity in
+      // one frame, and the damping must still land.
+      float ddLen = length(dampDelta);
+      if (ddLen > 0.0001 && ddLen > grainsVel0Len) {
+        dampDelta *= grainsVel0Len / ddLen;
+      }
+      vel += dampDelta;
+      // Friction applies last, clamped to whatever velocity
+      // remains: the two removal terms together can never
+      // overshoot it or reverse it.
+      float fdLen = length(frictionDelta);
+      if (fdLen > 0.0001) {
+        float vLen = length(vel);
+        if (fdLen > vLen) frictionDelta *= vLen / fdLen;
+      }
+      vel += frictionDelta;
+      if (uGrainsCohesion > 0.0) {
+        vel += cohesionPull * uGrainsCohesion * uDelta * 1.0;
+      }
+      if (contactCount > 0.0 && uGrainsRestDamping > 0.0) {
+        if (dot(vel, vel) < 0.25) {
+          vel *= max(0.0, 1.0 - uGrainsRestDamping * 0.3);
+        }
+      }
+    }
+
     // Vector Field
     if (uVFieldEnabled) {
       vec3 p = pos * uVFieldScale;
@@ -1034,6 +1277,29 @@ export const SIM_VEL_FRAG = /* glsl */ `
       }
     }
 
+    // Vellum pressure (Phase AR): a normal-direction force from
+    // the local grid frame — the (unnormalised) cross product of
+    // the right / up neighbour offsets, so the force is area-
+    // weighted by construction. This is NOT a volume-preserving
+    // pressure constraint: no enclosed-volume term exists, the
+    // force simply pushes along the local normal (shells inflate
+    // outward at positive pressure; the sheet normal is the
+    // bake's -z side, so the sign flips the push direction).
+    // Border texels of a sheet sample themselves through the
+    // clamped UV and contribute no force.
+    if (uVellumEnabled && uVellumPressure != 0.0) {
+      vec2 vTc = floor(vUv * uTexSizeF);
+      vec2 vTcR = vTc + vec2(1.0, 0.0);
+      vec2 vTcU = vTc + vec2(0.0, 1.0);
+      if (uVellumMode == 1) vTcR.x = mod(vTcR.x, uTexSizeF);
+      vTcR = clamp(vTcR, vec2(0.0), vec2(uTexSizeF - 1.0));
+      vTcU = clamp(vTcU, vec2(0.0), vec2(uTexSizeF - 1.0));
+      vec3 posR = texture2D(uPosTex, (vTcR + 0.5) / uTexSizeF).xyz;
+      vec3 posU = texture2D(uPosTex, (vTcU + 0.5) / uTexSizeF).xyz;
+      vec3 vNormal = cross(posR - pos, posU - pos);
+      vel += vNormal * uVellumPressure * uDelta * 30.0;
+    }
+
     // Force over Lifetime capture (Phase AC): the velocity after
     // the built-in force accumulation (gravity … morph). The
     // collider / mouse / paint / floor / fluid / custom blocks
@@ -1136,11 +1402,39 @@ export const SIM_VEL_FRAG = /* glsl */ `
       }
     }
 
+    // Multi-touch interference (Phase AO): pointers 2..N apply
+    // the same falloff law as the primary pointer above, sharing
+    // strength / radius / mode. Paint (mode 3) has no velocity-
+    // side position term — the position pass picks the brush.
+    if (uMouseEnabled && uMouseCount >= 2 && uMouseMode != 3) {
+      for (int mi = 1; mi < 4; mi++) {
+        if (mi >= uMouseCount) break;
+        vec3 toMouseM = uMousePosMulti[mi] - pos;
+        float mdM = length(toMouseM);
+        if (mdM < uMouseRadius && mdM > 0.001) {
+          float falloffM = (1.0 - mdM / uMouseRadius);
+          falloffM *= falloffM;
+          vec3 dirM = normalize(toMouseM);
+          if (uMouseMode == 0) { // attract
+            vel += dirM * falloffM * uMouseStrength * uDelta * 200.0;
+          } else if (uMouseMode == 1) { // repel
+            vel -= dirM * falloffM * uMouseStrength * uDelta * 200.0;
+          } else if (uMouseMode == 2) { // swirl
+            vec3 swirlM = cross(dirM, vec3(0.0, 1.0, 0.001));
+            vel += normalize(swirlM) * falloffM * uMouseStrength * uDelta * 150.0;
+          }
+        }
+      }
+    }
+
     // Pointer paint (B3): the gate hash is shared with the position
     // pass, which teleports gated particles to the brush this same
     // frame; here they receive a fresh random velocity so the painted
     // particles stream away from the pointer instead of freezing.
-    if (uMouseEnabled && uMouseMode == 3) {
+    // Vellum (Phase AR) suppresses paint outright: a teleport would
+    // tear the constraint grid apart (the position pass gates its
+    // half of paint on the same flag).
+    if (uMouseEnabled && uMouseMode == 3 && !uVellumEnabled) {
       float paintTick = floor(uTime * 30.0);
       float paintGate = paintHash(vUv, paintTick);
       if (paintGate < uMousePaintRate * 0.008) {
@@ -1165,8 +1459,27 @@ export const SIM_VEL_FRAG = /* glsl */ `
       vec2 fieldUv = pos.xz / (uBounceRadius * uFluidScale) * 0.5 + 0.5;
       fieldUv = clamp(fieldUv, 0.001, 0.999);
       vec2 fieldVel = texture2D(uFluidTex, fieldUv).xy;
-      vel.x += fieldVel.x * uFluidInfluence * uDelta * 300.0;
-      vel.z += fieldVel.y * uFluidInfluence * uDelta * 300.0;
+      if (uFlipEnabled) {
+        // G2P transfer (Phase AT): the projected grid velocity
+        // is carried back to the particles as a PIC/FLIP blend.
+        // PIC takes the grid velocity itself; FLIP takes the
+        // particle's own velocity plus the grid's change this
+        // frame (projection increment). The field-to-world scale
+        // keeps the legacy sample's uFluidInfluence meaning: a
+        // field velocity of 1.0 maps to 60 world units at
+        // Influence 1 (the legacy force integrated the same
+        // field at x300 per second). Only the horizontal (xz)
+        // components transfer — the grid solves no y motion.
+        vec2 baseVel = texture2D(uFlipBaseTex, fieldUv).xy;
+        float fScale = uFluidInfluence * 60.0;
+        vec2 picVel = fieldVel * fScale;
+        vec2 flipVel = vel.xz + (fieldVel - baseVel) * fScale;
+        vec2 target = mix(picVel, flipVel, uFlipBlend);
+        vel.xz = mix(vel.xz, target, uFlipTransfer);
+      } else {
+        vel.x += fieldVel.x * uFluidInfluence * uDelta * 300.0;
+        vel.z += fieldVel.y * uFluidInfluence * uDelta * 300.0;
+      }
     }
 
     // __CUSTOM_FORCE__
@@ -1201,6 +1514,17 @@ export const SIM_VEL_FRAG = /* glsl */ `
       vel *= (1.0 - 1.1 * uDelta);
     } else {
       vel *= (1.0 - uDragRate * uDelta);
+    }
+
+    // Vellum damping (Phase AR): the projection pass moves
+    // positions without touching this velocity texture, so a
+    // cloth-specific bleed keeps the two from fighting (the
+    // projected position says "stay", the stale velocity says
+    // "keep falling"). The rate is the fraction removed per
+    // 1/60 s frame, exponentiated by the step so the feel is
+    // frame-rate independent like the Verlet damping constant.
+    if (uVellumEnabled && uVellumDamping > 0.0) {
+      vel *= pow(1.0 - clamp(uVellumDamping, 0.0, 0.95), uDelta * 60.0);
     }
 
     float dist = length(pos);

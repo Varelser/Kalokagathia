@@ -4,6 +4,250 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.53.0] — 2026-11-18
+
+Sixth-term Phase AU: rigid-body dynamics (RBD) — a CPU
+rigid-body solver over the Voronoi fracture cells, the sixth
+and final of the solver-class phases. Six new config keys
+(total 1,240 → 1,246), two new starters (565 → 567).
+
+### Added
+- **Rigid bodies** (`gpgpuRigid*`, Enabled default off): the
+  fracture bake's cells become up to 64 rigid bodies, stepped
+  by a deterministic CPU solver at a fixed 1/120 s substep
+  inside the render frame. Bodies translate and rotate
+  (sphere-approximation inertia from the cells' second
+  moments), collide with each other (bounding-sphere pairs
+  with per-pair rest distances so deeply overlapping cells do
+  not explode apart), the floor and the bounce sphere,
+  restitution and Coulomb friction (`gpgpuRigidRestitution`,
+  `gpgpuRigidFriction`), sleeping with impact / glue-break /
+  support-loss wake-up, and glue bonds between initially
+  touching cells that hold the assembly together and break on
+  impact Δv or strain (`gpgpuRigidGlueEnabled`,
+  `gpgpuRigidGlueStrength`). `gpgpuRigidStartSleeping` starts
+  the bodies asleep. The solver's state reaches the GPU as a
+  small body texture; the position pass overrides each bound
+  particle to its body's rigid transform and the velocity
+  pass to the rigid surface velocity, so the cloud moves as
+  solid pieces. Honest limits: bounding-sphere collision
+  only — no convex hulls or mesh collision, no constraint
+  joints, no friction stacking; the floor is flat (the
+  eroded height field is not a collider in this version);
+  while RBD is bound the Vellum resolution is forced off and
+  the respawn / kill / morph lifecycle is suppressed (a
+  respawn would shred body membership), and replica stacks
+  are suppressed (the solver owns the single pool). WebGPU
+  compute declares 'rigid-bodies' unsupported and routes to
+  WebGL; the CPU fallback treats it as a no-op.
+
+## [1.52.0] — 2026-11-18
+
+Sixth-term Phase AT: the FLIP layer — a grid pressure solver
+for the fluid field, the fifth of the solver-class phases.
+Four new config keys (total 1,236 → 1,240), two new starters
+(563 → 565).
+
+### Added
+- **FLIP layer** (`gpgpuFlip*`, Enabled default off, requires
+  the fluid field): the existing 64×64 advection field becomes
+  a two-way coupled FLIP grid. Particles splat momentum onto
+  the grid (P2G, bilinear shares accumulated into a float
+  transfer target with additive blending), the composite grid
+  velocity (advected field mixed with the momentum average by
+  coverage) is made divergence-free by a Jacobi pressure
+  projection (`gpgpuFlipPressureIterations`, 0–32, default
+  16), and the velocity pass reads the result back (G2P) as a
+  PIC/FLIP blend (`gpgpuFlipBlend`, 0 = PIC … 1 = FLIP) applied
+  at `gpgpuFlipTransfer` strength. The projection's discrete
+  operators are MAC-consistent (backward-difference
+  divergence, forward-difference gradient), so the compact
+  Laplacian the Jacobi iteration solves is the one the
+  projection actually cancels. Honest limits: this is a 2D
+  planar (xz) FLIP layer, not Houdini's 3D solver — no free
+  surface, no y-pressure, grid viscosity stays with SPH, no
+  whitewater; and plain Jacobi inside 32 iterations removes
+  cell/mid-scale divergence effectively but barely touches
+  the smoothest bulk modes (residuals measured in the Phase
+  AT gate report). While FLIP is on, the legacy one-way field
+  sample is replaced by the transfer (no double forcing) and
+  replica stacks are suppressed (the splat reads the shared
+  pool). WebGPU compute declares 'flip' unsupported and
+  routes to WebGL; the CPU fallback treats it as a no-op.
+
+## [1.51.0] — 2026-11-18
+
+Sixth-term Phase AS: the Pyro solver — a particle-side
+temperature / buoyancy solver in the velocity pass, the fourth
+of the solver-class phases. Six new config keys (total
+1,230 → 1,236), two new starters (561 → 563).
+
+### Added
+- **Pyro solver** (`gpgpuPyro*`, Enabled default off): each
+  particle's temperature is derived deterministically from its
+  normalised age — T = Temperature × (1 − ageNorm) ^ Cooling —
+  with no new textures, passes or state. The temperature drives
+  a buoyancy acceleration in the velocity pass (its own term in
+  gravity units, so hot particles rise against a gravity that
+  stays downward — replacing the legacy starter trick of a
+  negative gravity) and temperature-linked stirring: the curl
+  block's effective strength is modulated by the temperature
+  (Disturbance Heat), and an independent temperature-weighted
+  curl term (Disturbance) stirs hot particles even with curl
+  off. Honest limits: this is a particle-side solver, not a
+  grid volume solver — no density / temperature field, no
+  pressure projection, no heat conduction between particles,
+  no combustion model. The smoke density is the particle
+  distribution itself; the age-driven blackbody gradient stays
+  in sync with the temperature by construction. WebGPU compute
+  declares 'pyro' unsupported and routes to WebGL; the CPU
+  fallback treats it as a no-op (like SPH / Grains).
+
+## [1.50.0] — 2026-11-18
+
+Sixth-term Phase AR: the Vellum solver — PBD-family distance-
+constraint projection over the particle pool's texel grid, the
+third of the solver-class phases. Nine new config keys (total
+1,221 → 1,230), two new starters (559 → 561).
+
+### Added
+- **Vellum solver** (`gpgpuVellum*`, Enabled default off): while
+  on, the pool re-bakes into a structured grid — a flat Sheet or
+  a spherical Shell — and a dedicated projection pass runs
+  `Substeps` Jacobi iterations (1–4, default 2) of distance-
+  constraint projection (structural / shear / bend links against
+  the baked rest lengths, per-texel corrections averaged over
+  the live-link count — the plain sum diverges at stiffness 1,
+  measured) after the position pass each frame. Pin fixes texels
+  to their rest pose (top edge / corners / both); Pressure is a
+  face-normal force in the velocity pass; Damping bleeds
+  velocity per frame; Tear severs structural links whose strain
+  exceeds the threshold (monotonic — only a re-bake resets).
+  While the solver is on, age respawn, kill conditions, the
+  spawn gate, morph attraction, replica independent stacks and
+  pointer painting are resolved off to protect the grid.
+  Honest limits: this is PBD-family position projection, not a
+  strict XPBD compliance solve (stiffness is the effective value
+  of correction rate × iterations and shifts with dt); the
+  averaged Jacobi iteration converges slowly for long-wavelength
+  pulls, so residual stretch remains; there is no self-collision;
+  pressure is a normal force, not volume preservation. The
+  WebGPU path declares `vellum` in the capability registry and
+  routes to WebGL; the CPU fallback is a no-op (SPH parity).
+- **Starters**: `starter-vellum-silk-cloth` (a sheet pinned
+  along the top edge, hanging and fluttering in the wind) and
+  `starter-vellum-balloon` (an unpinned shell inflated by
+  pressure).
+
+## [1.49.0] — 2026-11-18
+
+Sixth-term Phase AQ: the Grains solver — grain-grain contact
+and friction as an actual solve, the second of the solver-class
+phases. Seven new config keys (total 1,214 → 1,221), two new
+starters (557 → 559).
+
+### Added
+- **Grains solver** (`gpgpuGrains*`, Enabled default off): a
+  DEM-style penalty contact + Coulomb friction solve inside the
+  WebGL velocity pass, over the same statistical subsample
+  neighbourhood as SPH (max 64 samples, no new passes, no new
+  textures). Per sampled neighbour closer than the grain
+  diameter (Size, world units — the SPH radius' unit system):
+  a penalty repulsion of overlap × Stiffness, tangential
+  friction capped at Friction × the contact's normal push
+  (below the cap the contact sticks), an offset-proportional
+  Cohesion pull at the gentle Phase AB gain, Restitution on the
+  approaching normal velocity, and Rest Damping that bleeds
+  velocity from slow grains in contact so a pile settles.
+  Honest limits: there is no position projection, so deep
+  compression keeps some interpenetration; the neighbourhood
+  is statistical, so sparse single contacts can be missed;
+  and the angle of repose is an emergent value of the friction
+  coefficient (measured on the real-GPU gate), not a key.
+  The WebGPU path declares `grains` in the capability registry
+  and routes to WebGL; the CPU fallback is a no-op (SPH parity).
+- **Starters**: `starter-grains-pile` (a rain of grains stacking
+  into a mound on the floor) and
+  `starter-grains-cohesive-clumps` (cohesion on — wet-sand
+  clumps instead of a loose rain).
+
+## [1.48.0] — 2026-11-18
+
+Sixth-term Phase AP: terrain erosion simulation — the first of
+the solver-class phases. The generated height field is re-carved
+by an iterative simulation at bake time. Seven new config keys
+(total 1,207 → 1,214), two new starters (555 → 557).
+
+### Added
+- **Terrain erosion** (`lib/gpgpuMorphTargets.ts`,
+  `gpgpuMorphTerrainErosion*`, both strengths default 0):
+  seeded droplet hydraulic erosion (Water / Droplets / Deposit /
+  Seed — 30,000 base droplets, hard budget 60,000) plus thermal
+  talus relaxation (Thermal / Talus / ThermalPasses, hard budget
+  80 passes), run once on the field's own 129×129 grid when the
+  terrain is baked. The output is ONE eroded field with a
+  bilinear sampler, and every consumer of the landscape reads
+  it — the morph bake, the terrain mesh, the derived maps (and
+  with them the terrain collider and the slope force), the
+  shadow occlusion and the scatter grammar — so the carved
+  landscape never splits. Per-frame cost is zero; the worst-case
+  bake (max droplets + max passes) measures ~0.2 s. With both
+  strengths at 0 the grammar resolves to null and every consumer
+  runs the analytic field verbatim (bit-identical legacy
+  landscape). Plane mode only: in tunnel mode the config-side
+  builders strip the erosion options, following the collider /
+  slope-force precedent. No WebGPU capability declaration is
+  needed: erosion lives in the shared CPU bake and the derived
+  supply, which resolve identically on every path.
+- **Starters**: `starter-terrain-eroded-canyon` (hydraulic
+  carving on the point terrain) and
+  `starter-terrain-talused-ridge` (thermal relaxation on the
+  ridge mesh).
+
+## [1.47.0] — 2026-11-18
+
+Sixth-term Phase AO: input and the public surface. Four items:
+multi-touch simultaneous interference, the embed script API as a
+published spec, declared User Parameters, and the imported OBJ as
+a particle geometry. One new config key (total 1,206 → 1,207),
+two new starters (553 → 555).
+
+### Added
+- **Multi-touch interference** (`lib/multiPointer.ts`,
+  `gpgpuMouseMultiTouch`, default off): pointer input is now
+  tracked as an insertion-ordered set of up to 4 pointers
+  (Pointer Events). The first pointer drives the legacy
+  single-pointer path verbatim; with the key on, the velocity /
+  position shaders apply the same falloff law to every pointer
+  (`uMousePosMulti[4]` / `uMouseCount`, inert at count 0), and
+  paint brushes are picked per particle from the tracked set by
+  the shared gate hash. Strength / radius / mode stay shared.
+  The WebGPU path declares `multi-touch` in the capability
+  registry and routes to WebGL; layers 2/3 keep their single
+  pointer (documented limitation).
+- **Embed script API** (`lib/embedControl.ts`, `PUBLIC_API.md`):
+  a namespaced postMessage protocol (`kalokagathia`, v1) for the
+  embed player only — `setParam` (validated through the AI
+  control catalog, unchanged), `applyPreset` (ID only, no config
+  injection), `setUserParam` (declared names only), `getState`
+  (replies to the sender's origin). The catalog gains a public
+  schema version constant (`AI_CONTROL_CATALOG_VERSION` = 1) and
+  the spec is listed in DOCS_INDEX.md. No new config keys.
+- **User Parameters** (`lib/userParameters.ts`): declarations
+  `{ id, label, group, key, defaultValue }` cut existing catalog
+  keys out onto a public surface (Global tab section), persisted
+  under their own localStorage key
+  (`kalokagathia.userParameters.v1`). Ranges come from the
+  catalogs; values write through the normal config path. Zero
+  declarations = no surface, no writes. Project-file inclusion
+  is out of scope for this phase.
+- **OBJ particle geometry** (`gpgpuGeomMode: 'obj'`): the
+  imported OBJ (the morph source document) becomes the
+  per-particle shape, scaled to the built-in shapes' radius
+  class (0.7). A new triangle budget (4,096) bounds the source;
+  empty / unparseable / over-budget sources fall back to the
+  octahedron base and the panel note states which case applies.
+
 ## [1.46.0] — 2026-11-18
 
 Sixth-term Phase AN: the editing base — sequence tracks and

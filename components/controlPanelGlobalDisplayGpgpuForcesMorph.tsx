@@ -139,6 +139,17 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
               <div className="mt-1 text-[9px] leading-relaxed text-white/40">
                 シード付き高度場の表面に粒子を敷きます。同じ設定からは常に同じ地形になります。レシピ（Phase AI）は fBm（従来）／Ridge（尾根）／Terrace（段々）／Cellular（細胞状）で、メッシュ・派生マップ・地形コライダにも同じ形が使われます。高さで色を変えるには Kinetix Color Gradient の Driver を Height にしてください（谷→山頂でグラデーションが進みます）。
               </div>
+              <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Terrain Erosion （地形侵食）</div>
+              <Slider label="Water （水力侵食）" value={config.gpgpuMorphTerrainErosionWater} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionWater', v)} />
+              <Slider label="Droplets （水滴量）" value={config.gpgpuMorphTerrainErosionDroplets} min={0} max={2} step={0.1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionDroplets', v)} />
+              <Slider label="Deposit （堆積率）" value={config.gpgpuMorphTerrainErosionDeposit} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionDeposit', v)} />
+              <Slider label="Thermal （熱侵食）" value={config.gpgpuMorphTerrainErosionThermal} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionThermal', v)} />
+              <Slider label="Talus （タラス角）" value={config.gpgpuMorphTerrainErosionTalus} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionTalus', v)} />
+              <Slider label="Thermal Passes （緩和パス）" value={config.gpgpuMorphTerrainErosionThermalPasses} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionThermalPasses', Math.round(v))} />
+              <Slider label="Erosion Seed （侵食シード）" value={config.gpgpuMorphTerrainErosionSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionSeed', Math.round(v))} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                生成済みの高度場をベイク時に彫り直す侵食シミュレーションです（Phase AP）。Water は水滴が谷を刻む水力侵食、Thermal はタラス角を超えた斜面が崩れる熱侵食で、どちらも 0 のときは従来の地形と完全に同一です。侵食後の地形はモーフ・メッシュ・派生マップ・コライダ・影で共有されます。トンネル表示のときは平面前提が崩れるため侵食は無効です。
+              </div>
               <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Terrain Scatter （地形散布）</div>
               <Toggle label="Scatter （散布文法）" value={config.gpgpuMorphScatterEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphScatterEnabled', v)} />
               {config.gpgpuMorphScatterEnabled && (
@@ -285,8 +296,16 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           {config.gpgpuMorphTerrainKind === 'terrace' && (
             <Slider label="Terrace Steps （段数）" value={config.gpgpuMorphTerrainTerraceSteps} min={2} max={32} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainTerraceSteps', Math.round(v))} />
           )}
+          <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Terrain Erosion （地形侵食・モーフ地形と共有）</div>
+          <Slider label="Water （水力侵食）" value={config.gpgpuMorphTerrainErosionWater} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionWater', v)} />
+          <Slider label="Droplets （水滴量）" value={config.gpgpuMorphTerrainErosionDroplets} min={0} max={2} step={0.1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionDroplets', v)} />
+          <Slider label="Deposit （堆積率）" value={config.gpgpuMorphTerrainErosionDeposit} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionDeposit', v)} />
+          <Slider label="Thermal （熱侵食）" value={config.gpgpuMorphTerrainErosionThermal} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionThermal', v)} />
+          <Slider label="Talus （タラス角）" value={config.gpgpuMorphTerrainErosionTalus} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionTalus', v)} />
+          <Slider label="Thermal Passes （緩和パス）" value={config.gpgpuMorphTerrainErosionThermalPasses} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionThermalPasses', Math.round(v))} />
+          <Slider label="Erosion Seed （侵食シード）" value={config.gpgpuMorphTerrainErosionSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionSeed', Math.round(v))} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は地形専用画像が優先され、未設定時は Horizon 背景画像を流用します。Repeat / Offset は全テクスチャ種に効く UV 変換です。Tunnel Speed は地形の位相スクロールによる前進表現で、カメラ自体は動きません。速度 0 では従来の静止トンネルと完全に同一です。
+            高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は地形専用画像が優先され、未設定時は Horizon 背景画像を流用します。Repeat / Offset は全テクスチャ種に効く UV 変換です。Tunnel Speed は地形の位相スクロールによる前進表現で、カメラ自体は動きません。速度 0 では従来の静止トンネルと完全に同一です。侵食（Phase AP）はベイク時に高度場を彫り直すシミュレーションで、Water／Thermal とも 0 では従来と完全に同一です。トンネル表示では侵食は無効です。
           </div>
           <TerrainDerivedMapsBlock config={config} updateConfig={updateConfig} />
         </>
@@ -299,6 +318,53 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
     {/* Verlet Integration */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Verlet Integration" value={config.gpgpuVerletEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuVerletEnabled', v)} />
+    </div>
+
+    {/* Vellum constraint solver (Phase AR) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Vellum Solver （拘束ソルバ）" value={config.gpgpuVellumEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuVellumEnabled', v)} />
+      {config.gpgpuVellumEnabled && (
+        <>
+          <Toggle
+            label="Mode （初期形状）"
+            value={config.gpgpuVellumMode}
+            options={[{ label: 'Sheet （平面）', val: 'sheet' as const }, { label: 'Shell （球殻）', val: 'shell' as const }]}
+            onChange={(v) => updateConfig('gpgpuVellumMode', v)}
+          />
+          <Toggle
+            label="Pin （ピン留め）"
+            value={config.gpgpuVellumPin}
+            options={[{ label: 'None', val: 'none' as const }, { label: 'Top （上辺）', val: 'top' as const }, { label: 'Corners （四隅）', val: 'corners' as const }, { label: 'Top+Corners', val: 'topCorners' as const }]}
+            onChange={(v) => updateConfig('gpgpuVellumPin', v)}
+          />
+          <Slider label="Stiffness （剛性・補正率）" value={config.gpgpuVellumStiffness} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuVellumStiffness', v)} />
+          <Slider label="Bend （曲げ）" value={config.gpgpuVellumBend} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuVellumBend', v)} />
+          <Slider label="Substeps （反復）" value={config.gpgpuVellumSubsteps} min={1} max={4} step={1} onChange={(v) => updateConfig('gpgpuVellumSubsteps', Math.round(v))} />
+          <Slider label="Pressure （圧力）" value={config.gpgpuVellumPressure} min={-5} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuVellumPressure', v)} />
+          <Slider label="Tear （破れ閾値）" value={config.gpgpuVellumTear} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuVellumTear', v)} />
+          <Slider label="Damping （減衰）" value={config.gpgpuVellumDamping} min={0} max={0.5} step={0.01} onChange={(v) => updateConfig('gpgpuVellumDamping', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            PBD 系の距離拘束ソルバです（XPBD の厳密実装ではなく、剛性は補正率×反復の実効値）。有効にするとプール全体が格子状に再配置され（リセット＝再ベイク）、年齢リスポーン／キル条件／スポーンゲート／モーフ／レプリカ独立 sim／ポインタペイントは格子を守るため無効化されます。自己衝突は解きません。圧力は体積保存ではなく面法線方向の力です。
+          </div>
+        </>
+      )}
+    </div>
+
+    {/* Rigid body solver (Phase AU) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Rigid Body Solver （剛体ソルバ）" value={config.gpgpuRigidEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidEnabled', v)} />
+      {config.gpgpuRigidEnabled && (
+        <>
+          <Slider label="Restitution （反発）" value={config.gpgpuRigidRestitution} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuRigidRestitution', v)} />
+          <Slider label="Friction （摩擦）" value={config.gpgpuRigidFriction} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuRigidFriction', v)} />
+          <Toggle label="Glue （接着）" value={config.gpgpuRigidGlueEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidGlueEnabled', v)} />
+          <Slider label="Glue Strength （破断閾値）" value={config.gpgpuRigidGlueStrength} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuRigidGlueStrength', Math.round(v))} />
+          <Toggle label="Start Sleeping （全スリープ開始）" value={config.gpgpuRigidStartSleeping} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidStartSleeping', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            破砕ベイクのセル（最大64体）を永続剛体として CPU で解くソルバです（質量・球近似の慣性・逐次インパルス接触・接着と破断・スリープ／活性化）。モーフ点群が前提で、破砕の Cells / Seed がそのまま体の分割になります。有効中は年齢リスポーン／キル条件／スポーンゲート／モーフ引力／レプリカ独立 sim は体を守るため無効化され、Vellum より優先されます。衝突形状はセルのバウンディング球近似のみ（開始時の重なりは初期距離を下限として許容）、凸包・メッシュ衝突・拘束ジョイント・地形との衝突は解きません。床とバウンス球には衝突します。
+          </div>
+        </>
+      )}
     </div>
 
     {/* SDF Collider */}

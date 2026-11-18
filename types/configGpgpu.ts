@@ -20,7 +20,7 @@ export interface ParticleConfigGpgpu {
   gpgpuTrailFade: number;
   gpgpuTrailVelocityScale: number;
   // Instanced Geometry
-  gpgpuGeomMode: 'point' | 'cube' | 'tetra' | 'octa' | 'icosa' | 'torus' | 'cone';
+  gpgpuGeomMode: 'point' | 'cube' | 'tetra' | 'octa' | 'icosa' | 'torus' | 'cone' | 'obj';
   gpgpuGeomVelocityAlign: boolean;
   gpgpuGeomScale: number;
   // Geometry material extras (Kinetix integration B1b): procedural
@@ -201,6 +201,40 @@ export interface ParticleConfigGpgpu {
   // kernel weight, so a droplet holds together. An approximation
   // (no curvature model); 0 (default) = off, legacy SPH.
   gpgpuSphSurfaceTension: number;
+  // Grains (Phase AQ): a DEM-style penalty contact + Coulomb
+  // friction solver in the velocity pass — grain-grain contact
+  // resolved as forces over the same statistical subsample
+  // neighbourhood as SPH (no position projection, no new passes).
+  // Size is the grain diameter in world units (the SPH radius'
+  // unit system). Enabled false (default) = the block is skipped
+  // and the pass is verbatim legacy. The angle of repose is an
+  // emergent value of Friction, not a key.
+  gpgpuGrainsEnabled: boolean;
+  gpgpuGrainsSize: number;
+  gpgpuGrainsStiffness: number;
+  gpgpuGrainsFriction: number;
+  gpgpuGrainsCohesion: number;
+  gpgpuGrainsRestitution: number;
+  gpgpuGrainsRestDamping: number;
+  // Pyro (Phase AS): a particle-side temperature / buoyancy
+  // solver in the velocity pass. Each particle's temperature is
+  // derived deterministically from its normalised age —
+  // T = Temperature × (1 − ageNorm) ^ Cooling — and drives a
+  // buoyancy acceleration (in gravity units, gain kept separate
+  // from gravity itself) plus temperature-linked stirring: the
+  // existing curl block's effective strength is modulated by the
+  // temperature, and an independent temperature-weighted curl
+  // term stirs hot particles even with curl off. No grid density
+  // / temperature field, no pressure projection, no heat
+  // conduction, no combustion — the smoke density is the particle
+  // distribution itself. Enabled false (default) = every block
+  // is skipped and the pass is verbatim legacy.
+  gpgpuPyroEnabled: boolean;
+  gpgpuPyroTemperature: number;
+  gpgpuPyroBuoyancy: number;
+  gpgpuPyroCooling: number;
+  gpgpuPyroDisturbance: number;
+  gpgpuPyroDisturbanceHeat: number;
   // Vector Field
   gpgpuVFieldEnabled: boolean;
   gpgpuVFieldType: 'dipole' | 'saddle' | 'spiral' | 'source' | 'abc' | 'gyre' | 'worley';
@@ -328,6 +362,25 @@ export interface ParticleConfigGpgpu {
   // same landscape. TerraceSteps is only read by 'terrace'.
   gpgpuMorphTerrainKind: 'fbm' | 'ridge' | 'terrace' | 'cellular';
   gpgpuMorphTerrainTerraceSteps: number;
+  // Terrain erosion (Phase AP): the generated height field is
+  // re-carved by an iterative simulation at bake time — droplet
+  // hydraulic erosion (Water / Droplets / Deposit / Seed) plus
+  // thermal talus relaxation (Thermal / Talus / ThermalPasses).
+  // The eroded field is ONE object every consumer reads (morph
+  // bake, terrain mesh, derived maps + collider, shadow
+  // occlusion, scatter), so the landscape never splits. Water 0
+  // and Thermal 0 (defaults) resolve the whole grammar to null
+  // and every consumer runs the analytic field verbatim, so the
+  // legacy landscape stays bit-identical. Plane mode only: in
+  // tunnel mode the config-side builders strip the erosion
+  // options (the collider / slope-force precedent).
+  gpgpuMorphTerrainErosionWater: number;
+  gpgpuMorphTerrainErosionDroplets: number;
+  gpgpuMorphTerrainErosionDeposit: number;
+  gpgpuMorphTerrainErosionThermal: number;
+  gpgpuMorphTerrainErosionTalus: number;
+  gpgpuMorphTerrainErosionThermalPasses: number;
+  gpgpuMorphTerrainErosionSeed: number;
   // Terrain scatter grammar (Phase AI): a foliage-style placement
   // grammar for the terrain morph target — density / height band /
   // slope cap drive the bake's acceptance resampling, the aligned
@@ -553,6 +606,30 @@ export interface ParticleConfigGpgpu {
   gpgpuObjMeshRepeatScaleStep: number;
   // Verlet Integration
   gpgpuVerletEnabled: boolean;
+  // Vellum constraint solver (Phase AR): a PBD-family distance-
+  // constraint solve over the pool's texel grid. While Enabled,
+  // the pool's initial data is a structured grid bake (sheet /
+  // shell — lib/gpgpuVellum.ts) so texel adjacency is the cloth
+  // topology, and a dedicated projection pass iterates distance
+  // constraints (structural / shear / bend) with pinning, a
+  // normal-direction pressure force and optional link tearing.
+  // CPU-side resolution while Enabled: age respawn / kill
+  // conditions / spawn gate / morph attraction / replica stacks /
+  // pointer paint are suppressed (they would break the grid);
+  // Verlet is NOT forced (the projection is integrator-
+  // independent). Enabled false (default) = every path verbatim
+  // legacy. This is a position-projection solver, not XPBD:
+  // stiffness is an effective rate, there is no compliance unit
+  // and no self-collision.
+  gpgpuVellumEnabled: boolean;
+  gpgpuVellumMode: 'sheet' | 'shell';
+  gpgpuVellumStiffness: number;
+  gpgpuVellumBend: number;
+  gpgpuVellumSubsteps: number;
+  gpgpuVellumPin: 'none' | 'top' | 'corners' | 'topCorners';
+  gpgpuVellumPressure: number;
+  gpgpuVellumTear: number;
+  gpgpuVellumDamping: number;
   // SDF Collider ('gyroid' added by Kinetix integration B3: the TPMS
   // gyroid surface as a signed-distance collider, Kinetix 'gyro')
   gpgpuSdfEnabled: boolean;
@@ -820,6 +897,10 @@ export interface ParticleConfigGpgpu {
   gpgpuMouseRadius: number;
   gpgpuMouseMode: 'attract' | 'repel' | 'swirl' | 'paint';
   gpgpuMousePaintRate: number;
+  /** Multi-pointer interference (Phase AO): when on, up to 4
+   *  simultaneous pointers each exert the mouse force; off keeps
+   *  the single-pointer path verbatim. */
+  gpgpuMouseMultiTouch: boolean;
   // Streak Rendering
   gpgpuStreakEnabled: boolean;
   gpgpuStreakLength: number;
@@ -834,6 +915,25 @@ export interface ParticleConfigGpgpu {
   gpgpuFluidInfluence: number;
   gpgpuFluidScale: number;
   gpgpuFluidExtForce: boolean;
+  // FLIP layer (Phase AT): particle<->grid transfer + Jacobi
+  // pressure projection on the 2D (xz) fluid field. All keys
+  // are inert unless gpgpuFlipEnabled (and the fluid field) is
+  // on; defaults keep the legacy one-way field sample verbatim.
+  gpgpuFlipEnabled: boolean;
+  gpgpuFlipBlend: number;
+  gpgpuFlipPressureIterations: number;
+  gpgpuFlipTransfer: number;
+  // Rigid body solver (Phase AU): CPU solver (≤64 bodies from
+  // the fracture bake's cell assignment) + small texture supply
+  // + position-pass consumption. All keys are inert unless
+  // gpgpuRigidEnabled is on AND a morph cloud exists to bind;
+  // the default (off) keeps every path verbatim.
+  gpgpuRigidEnabled: boolean;
+  gpgpuRigidRestitution: number;
+  gpgpuRigidFriction: number;
+  gpgpuRigidGlueEnabled: boolean;
+  gpgpuRigidGlueStrength: number;
+  gpgpuRigidStartSleeping: boolean;
   // WebGPU Compute Backend
   gpgpuWebGPUEnabled: boolean;
   gpgpuExecutionPreference: 'auto' | 'webgl' | 'webgpu';

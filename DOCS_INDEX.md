@@ -6,6 +6,8 @@ DOCS_INDEX
 
 README.md起動・開発・配布の入口
 
+PUBLIC_API.md公開スクリプト API 仕様（埋め込み postMessage プロトコル）
+
 CURRENT_STATUS.md現在の正本。まず最初に読む
 
 REVIEW.md現物基準の精査結果

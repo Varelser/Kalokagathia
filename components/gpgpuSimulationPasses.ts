@@ -6,6 +6,8 @@ import {
   readbackWebGPUPositions,
 } from '../lib/webgpuCompute';
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
+import { resolveVellum } from '../lib/gpgpuVellum';
+import { resolveRigid } from '../lib/rigidBodies';
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { isFreeCurveIdentity, normalizeFreeCurvePoints, FREE_CURVE_MAX_POINTS } from '../lib/freeCurve';
@@ -84,6 +86,21 @@ export function runFluidAdvectionPass(args: {
   simCamera: THREE.Camera;
   dt: number;
   time: number;
+  // FLIP layer (Phase AT): the transfer / pressure targets, the
+  // FLIP materials, the splat points (one vertex per particle
+  // texel) and the frame-start particle textures. All optional:
+  // absent extras (or the key off) keep the legacy one-way
+  // advection path below byte-identical.
+  flipTransferRT?: THREE.WebGLRenderTarget | null;
+  flipPressureRT?: THREE.WebGLRenderTarget | null;
+  flipSplatMat?: THREE.ShaderMaterial;
+  flipCompositeMat?: THREE.ShaderMaterial;
+  flipJacobiMat?: THREE.ShaderMaterial;
+  flipSubtractMat?: THREE.ShaderMaterial;
+  flipClearMat?: THREE.ShaderMaterial;
+  flipPoints?: THREE.Points | null;
+  flipPosTex?: THREE.Texture | null;
+  flipVelTex?: THREE.Texture | null;
 }): void {
   const {
     config,
@@ -98,7 +115,23 @@ export function runFluidAdvectionPass(args: {
     simCamera,
     dt,
     time,
+    flipTransferRT,
+    flipPressureRT,
+    flipSplatMat,
+    flipCompositeMat,
+    flipJacobiMat,
+    flipSubtractMat,
+    flipClearMat,
+    flipPoints,
+    flipPosTex,
+    flipVelTex,
   } = args;
+
+  const flipActive = Boolean(
+    config.gpgpuFluidEnabled && config.gpgpuFlipEnabled &&
+    flipTransferRT && flipPressureRT && flipSplatMat && flipCompositeMat &&
+    flipJacobiMat && flipSubtractMat && flipClearMat && flipPoints && flipPosTex && flipVelTex,
+  );
 
   if (config.gpgpuFluidEnabled && fluidRTA && fluidRTB) {
     const fluidIn = fluidPingIsA.current ? fluidRTA : fluidRTB;
@@ -119,10 +152,91 @@ export function runFluidAdvectionPass(args: {
     velSimMat.uniforms.uFluidTex.value = currentFluid.texture;
     velSimMat.uniforms.uFluidInfluence.value = config.gpgpuFluidInfluence;
     velSimMat.uniforms.uFluidScale.value = config.gpgpuFluidScale;
+    if (!flipActive) {
+      if (velSimMat.uniforms.uFlipEnabled) velSimMat.uniforms.uFlipEnabled.value = false;
+      return;
+    }
+
+    // ── FLIP layer (Phase AT) ──
+    // currentFluid currently holds the advected field. The
+    // pipeline below turns fluidIn (now free) into the composite
+    // (pre-projection) field and lands the projected field back
+    // in currentFluid, so the ping state above stays valid.
+    const baseRT = fluidIn;
+    const finalRT = currentFluid;
+    const transferRT = flipTransferRT!;
+    const pressureRT = flipPressureRT!;
+
+    const clearInto = (rt: THREE.WebGLRenderTarget) => {
+      simMesh.material = flipClearMat!;
+      gl.setRenderTarget(rt);
+      gl.render(simScene, simCamera);
+    };
+
+    // P2G: clear the transfer target, then deposit every
+    // particle's momentum in 4 bilinear shares. Draw order is
+    // the particle index order, so accumulation is
+    // deterministic.
+    clearInto(transferRT);
+    flipSplatMat!.uniforms.uPosTex.value = flipPosTex;
+    flipSplatMat!.uniforms.uVelTex.value = flipVelTex;
+    flipSplatMat!.uniforms.uBounceRadius.value = config.gpgpuBounceRadius;
+    flipSplatMat!.uniforms.uFluidScale.value = config.gpgpuFluidScale;
+    simScene.add(flipPoints!);
+    simMesh.visible = false;
+    gl.setRenderTarget(transferRT);
+    for (let oy = 0; oy <= 1; oy++) {
+      for (let ox = 0; ox <= 1; ox++) {
+        (flipSplatMat!.uniforms.uCellOffset.value as THREE.Vector2).set(ox, oy);
+        gl.render(simScene, simCamera);
+      }
+    }
+    simMesh.visible = true;
+    simScene.remove(flipPoints!);
+
+    // Composite: advected field + momentum average by coverage
+    // → the pre-projection grid velocity in baseRT.
+    flipCompositeMat!.uniforms.uAdvTex.value = finalRT.texture;
+    flipCompositeMat!.uniforms.uTransferTex.value = transferRT.texture;
+    flipCompositeMat!.uniforms.uAvgWeight.value = Math.max(1, config.gpgpuCount) / (64 * 64);
+    simMesh.material = flipCompositeMat!;
+    gl.setRenderTarget(baseRT);
+    gl.render(simScene, simCamera);
+
+    // Pressure projection: Jacobi ping-pong between the (now
+    // consumed) transfer target and the pressure target, both
+    // cleared to zero pressure first. The divergence source is
+    // the fixed composite field in baseRT.
+    clearInto(transferRT);
+    clearInto(pressureRT);
+    const iterations = Math.max(0, Math.min(32, Math.round(config.gpgpuFlipPressureIterations)));
+    let presIn: THREE.WebGLRenderTarget = transferRT;
+    let presOut: THREE.WebGLRenderTarget = pressureRT;
+    flipJacobiMat!.uniforms.uVelTex.value = baseRT.texture;
+    for (let i = 0; i < iterations; i++) {
+      flipJacobiMat!.uniforms.uPresIn.value = presIn.texture;
+      simMesh.material = flipJacobiMat!;
+      gl.setRenderTarget(presOut);
+      gl.render(simScene, simCamera);
+      const swap = presIn; presIn = presOut; presOut = swap;
+    }
+
+    // Gradient subtraction: projected field → finalRT.
+    flipSubtractMat!.uniforms.uVelTex.value = baseRT.texture;
+    flipSubtractMat!.uniforms.uPresTex.value = presIn.texture;
+    simMesh.material = flipSubtractMat!;
+    gl.setRenderTarget(finalRT);
+    gl.render(simScene, simCamera);
+
+    velSimMat.uniforms.uFlipEnabled.value = true;
+    velSimMat.uniforms.uFlipBaseTex.value = baseRT.texture;
+    velSimMat.uniforms.uFlipBlend.value = config.gpgpuFlipBlend;
+    velSimMat.uniforms.uFlipTransfer.value = config.gpgpuFlipTransfer;
     return;
   }
 
   velSimMat.uniforms.uFluidEnabled.value = false;
+  if (velSimMat.uniforms.uFlipEnabled) velSimMat.uniforms.uFlipEnabled.value = false;
 }
 
 export function runSimulationPasses(args: {
@@ -161,6 +275,35 @@ export function runSimulationPasses(args: {
   // the kill is on and the mask image is ready).
   spawnTime?: number;
   killMaskTex?: THREE.Texture | null;
+  // Multi-touch interference (Phase AO): world positions of all
+  // tracked pointers (index 0 = primary) and how many entries are
+  // live. Only consulted while gpgpuMouseMultiTouch is on; absent
+  // or off keeps uMouseCount at 0 and the legacy path verbatim.
+  mouseWorldMulti?: THREE.Vector3[];
+  mouseMultiCount?: number;
+  // Vellum (Phase AR): shared-path extras for the constraint
+  // solver — the rest-pose texture, the projection / tear-state
+  // materials, the tear ping-pong pair, a scratch target for the
+  // projection ping-pong (the Verlet previous-position RT, whose
+  // frame-start copy the position pass has already consumed) and
+  // the blit material for the final landing copy. All optional:
+  // the replica-stack runner passes none of them (the runtime
+  // suppresses stacks while the solver is on), and absent extras
+  // skip the solver's passes entirely.
+  vellumRestTex?: THREE.Texture | null;
+  vellumProjMat?: THREE.ShaderMaterial;
+  vellumStateMat?: THREE.ShaderMaterial;
+  vellumStateIn?: THREE.WebGLRenderTarget | null;
+  vellumStateOut?: THREE.WebGLRenderTarget | null;
+  vellumSpareRT?: THREE.WebGLRenderTarget | null;
+  blitMat?: THREE.ShaderMaterial;
+  // Rigid bodies (Phase AU): the per-particle cell texture and
+  // the solver's body-state texture. The solver itself is stepped
+  // CPU-side by the scene before this runner is called; these
+  // textures are the whole contract. Absent (no morph cloud to
+  // bind) keeps the rigid uniforms off and every path verbatim.
+  rigidCellTex?: THREE.Texture | null;
+  rigidBodyTex?: THREE.Texture | null;
   webgpuState: WebGPUComputeState | null;
   webgpuPosTex: THREE.DataTexture | null;
   webgpuPingIsARef: MutableRefObject<boolean>;
@@ -324,6 +467,29 @@ export function runSimulationPasses(args: {
     return;
   }
 
+  // Vellum (Phase AR): the single resolution every Vellum
+  // consumer in this runner shares. While active, the lifecycle
+  // resolutions below (age / spawn gate / kill / morph) protect
+  // the constraint grid; while inactive every assignment is the
+  // legacy one verbatim. (The WebGPU branch above never sees an
+  // active solver — the capability registry routes it to WebGL.)
+  const vellum = resolveVellum(config);
+  // Rigid bodies (Phase AU): bound only while the solver's
+  // supply textures exist (a morph cloud was baked and the
+  // solver built). While bound, RBD owns the pool outright: the
+  // Vellum resolution is forced inactive (the two solvers never
+  // fight over the position texture) and the same lifecycle
+  // protections as Vellum apply — a respawn or a kill would
+  // shred the bodies' point membership. (resolveVellum returns
+  // a fresh object per call, so mutating it here is safe.)
+  const rigid = resolveRigid(config);
+  const rigidActive = rigid.active && !!args.rigidCellTex && !!args.rigidBodyTex;
+  if (rigidActive) {
+    vellum.active = false;
+    vellum.pressure = 0;
+    vellum.damping = 0;
+  }
+
   velSimMat.uniforms.uPosTex.value = posIn.texture;
   velSimMat.uniforms.uVelTex.value = velIn.texture;
   velSimMat.uniforms.uDelta.value = dt;
@@ -376,7 +542,10 @@ export function runSimulationPasses(args: {
   // Lifecycle grammar (Phase AB): spawn gate + global drag / max
   // speed. The clamps mirror lib/gpgpuLifecycle.ts.
   if (velSimMat.uniforms.uSpawnRate) velSimMat.uniforms.uSpawnRate.value = Math.max(0.01, Math.min(1, config.gpgpuSpawnRate || 1));
-  if (velSimMat.uniforms.uSpawnBurst) velSimMat.uniforms.uSpawnBurst.value = Math.max(0, Math.min(1, config.gpgpuSpawnBurst ?? 1));
+  if (velSimMat.uniforms.uSpawnBurst) velSimMat.uniforms.uSpawnBurst.value = vellum.active ? 1 : Math.max(0, Math.min(1, config.gpgpuSpawnBurst ?? 1));
+  // Rigid bodies (Phase AU): the spawn gate is pinned open while
+  // the solver is bound (this later assignment wins).
+  if (rigidActive && velSimMat.uniforms.uSpawnBurst) velSimMat.uniforms.uSpawnBurst.value = 1;
   if (velSimMat.uniforms.uSpawnTime) velSimMat.uniforms.uSpawnTime.value = args.spawnTime ?? time;
   if (velSimMat.uniforms.uSpawnPulseInterval) velSimMat.uniforms.uSpawnPulseInterval.value = Math.max(0, Math.min(30, config.gpgpuSpawnPulseInterval ?? 0));
   if (velSimMat.uniforms.uSpawnPulseDuty) velSimMat.uniforms.uSpawnPulseDuty.value = Math.max(0.05, Math.min(1, config.gpgpuSpawnPulseDuty ?? 0.3));
@@ -479,6 +648,46 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uSphRadius.value = config.gpgpuSphRadius;
   velSimMat.uniforms.uSphRestDensity.value = config.gpgpuSphRestDensity;
   if (velSimMat.uniforms.uSphSurfaceTension) velSimMat.uniforms.uSphSurfaceTension.value = Math.max(0, config.gpgpuSphSurfaceTension || 0);
+  // Grains (Phase AQ): guarded like the surface tension — stack
+  // materials built before this phase simply lack the uniforms.
+  if (velSimMat.uniforms.uGrainsEnabled) {
+    velSimMat.uniforms.uGrainsEnabled.value = config.gpgpuGrainsEnabled;
+    velSimMat.uniforms.uGrainsSize.value = Math.max(0.001, config.gpgpuGrainsSize || 0);
+    velSimMat.uniforms.uGrainsStiffness.value = Math.max(0, config.gpgpuGrainsStiffness || 0);
+    velSimMat.uniforms.uGrainsFriction.value = Math.max(0, config.gpgpuGrainsFriction || 0);
+    velSimMat.uniforms.uGrainsCohesion.value = Math.max(0, config.gpgpuGrainsCohesion || 0);
+    velSimMat.uniforms.uGrainsRestitution.value = Math.max(0, config.gpgpuGrainsRestitution || 0);
+    velSimMat.uniforms.uGrainsRestDamping.value = Math.max(0, config.gpgpuGrainsRestDamping || 0);
+  }
+  // Vellum (Phase AR): guarded like Grains — the pressure force
+  // and the velocity damping are the velocity pass's share of
+  // the solver; the projection runs below the position pass.
+  if (velSimMat.uniforms.uVellumEnabled) {
+    velSimMat.uniforms.uVellumEnabled.value = vellum.active;
+    velSimMat.uniforms.uVellumMode.value = vellum.modeId;
+    velSimMat.uniforms.uVellumPressure.value = vellum.active ? vellum.pressure : 0;
+    velSimMat.uniforms.uVellumDamping.value = vellum.active ? vellum.damping : 0;
+  }
+  // Rigid bodies (Phase AU): guarded like Grains — stack
+  // materials built before this phase simply lack the uniforms.
+  // While bound, the velocity pass writes rigid point velocities
+  // and every force below is superseded by the shader's early
+  // return; the solver itself was stepped by the scene.
+  if (velSimMat.uniforms.uRigidEnabled) {
+    velSimMat.uniforms.uRigidEnabled.value = rigidActive;
+    velSimMat.uniforms.uRigidCellTex.value = rigidActive ? args.rigidCellTex : null;
+    velSimMat.uniforms.uRigidBodyTex.value = rigidActive ? args.rigidBodyTex : null;
+  }
+  // Pyro (Phase AS): guarded like Grains — stack materials
+  // built before this phase simply lack the uniforms.
+  if (velSimMat.uniforms.uPyroEnabled) {
+    velSimMat.uniforms.uPyroEnabled.value = config.gpgpuPyroEnabled;
+    velSimMat.uniforms.uPyroTemperature.value = Math.max(0, config.gpgpuPyroTemperature || 0);
+    velSimMat.uniforms.uPyroBuoyancy.value = Math.max(0, config.gpgpuPyroBuoyancy || 0);
+    velSimMat.uniforms.uPyroCooling.value = Math.max(0, config.gpgpuPyroCooling || 0);
+    velSimMat.uniforms.uPyroDisturbance.value = Math.max(0, config.gpgpuPyroDisturbance || 0);
+    velSimMat.uniforms.uPyroDisturbanceHeat.value = Math.max(0, config.gpgpuPyroDisturbanceHeat || 0);
+  }
   velSimMat.uniforms.uVFieldEnabled.value = config.gpgpuVFieldEnabled;
   velSimMat.uniforms.uVFieldType.value = { dipole: 0, saddle: 1, spiral: 2, source: 3, abc: 4, gyre: 5, worley: 6 }[config.gpgpuVFieldType] ?? 3;
   velSimMat.uniforms.uVFieldStrength.value = config.gpgpuVFieldStrength;
@@ -486,7 +695,10 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uSpringEnabled.value = config.gpgpuSpringEnabled;
   velSimMat.uniforms.uSpringStrength.value = config.gpgpuSpringStrength;
   velSimMat.uniforms.uInitPosTex.value = initPosTex;
-  velSimMat.uniforms.uMorphEnabled.value = config.gpgpuMorphEnabled && !!morphTex;
+  // Vellum (Phase AR) resolves morph attraction off: the morph
+  // targets would fight the constraint grid for every particle.
+  // Rigid bodies (Phase AU) resolve it off for the same reason.
+  velSimMat.uniforms.uMorphEnabled.value = config.gpgpuMorphEnabled && !!morphTex && !vellum.active && !rigidActive;
   velSimMat.uniforms.uMorphTex.value = morphTex;
   // OBJ normal kick (Phase O): companion normal texture + speed.
   // The speed is passed verbatim; 0 (default) makes the shader skip
@@ -494,7 +706,7 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uMorphNormalTex) velSimMat.uniforms.uMorphNormalTex.value = morphNormalTex;
   if (velSimMat.uniforms.uMorphObjNormalSpeed) velSimMat.uniforms.uMorphObjNormalSpeed.value = Math.max(0, config.gpgpuMorphObjNormalSpeed || 0);
   if (velSimMat.uniforms.uMorphKickStart) velSimMat.uniforms.uMorphKickStart.value = morphKickStart;
-  if (velSimMat.uniforms.uAgeEnabled) velSimMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled;
+  if (velSimMat.uniforms.uAgeEnabled) velSimMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled && !vellum.active && !rigidActive;
   velSimMat.uniforms.uMorphStrength.value = config.gpgpuMorphStrength;
   velSimMat.uniforms.uMorphOrbitSpeed.value = config.gpgpuMorphOrbitSpeed;
   // Replica phase offsets (baked into the morph texel alpha) apply
@@ -518,6 +730,20 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uMouseRadius.value = config.gpgpuMouseRadius;
   velSimMat.uniforms.uMouseMode.value = MOUSE_MODE_IDS[config.gpgpuMouseMode] ?? 0;
   velSimMat.uniforms.uMousePaintRate.value = config.gpgpuMousePaintRate;
+  // Multi-touch (Phase AO): the resolved pointer count is the
+  // ONLY switch for the shader's multi block. Key off (or no
+  // tracked set supplied) writes 0, so the block never runs.
+  const mouseMultiCount = config.gpgpuMouseMultiTouch && args.mouseWorldMulti
+    ? Math.max(0, Math.min(4, args.mouseMultiCount ?? 0))
+    : 0;
+  if (velSimMat.uniforms.uMouseCount) velSimMat.uniforms.uMouseCount.value = mouseMultiCount;
+  if (velSimMat.uniforms.uMousePosMulti && mouseMultiCount > 0 && args.mouseWorldMulti) {
+    const arr = velSimMat.uniforms.uMousePosMulti.value as THREE.Vector3[];
+    for (let i = 0; i < arr.length; i++) {
+      if (i < mouseMultiCount) arr[i].copy(args.mouseWorldMulti[i]);
+      else arr[i].set(0, 0, 0);
+    }
+  }
   simMesh.material = velSimMat;
   gl.setRenderTarget(velOut);
   gl.render(simScene, simCamera);
@@ -528,7 +754,21 @@ export function runSimulationPasses(args: {
   posSimMat.uniforms.uTime.value = time;
   posSimMat.uniforms.uSpeed.value = config.gpgpuSpeed;
   posSimMat.uniforms.uBounceRadius.value = config.gpgpuBounceRadius;
-  posSimMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled;
+  // Vellum (Phase AR): age advance is resolved off while the
+  // solver is active (a respawn would shred the grid), and the
+  // paint gate flag follows the same resolution. Rigid bodies
+  // (Phase AU) resolve it off for the same reason (a respawn
+  // would shred the bodies' point membership).
+  posSimMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled && !vellum.active && !rigidActive;
+  if (posSimMat.uniforms.uVellumEnabled) posSimMat.uniforms.uVellumEnabled.value = vellum.active;
+  // Rigid bodies (Phase AU): while bound, the position pass
+  // composes world positions from the body transforms (early
+  // return in the shader); the solver was stepped by the scene.
+  if (posSimMat.uniforms.uRigidEnabled) {
+    posSimMat.uniforms.uRigidEnabled.value = rigidActive;
+    posSimMat.uniforms.uRigidCellTex.value = rigidActive ? args.rigidCellTex : null;
+    posSimMat.uniforms.uRigidBodyTex.value = rigidActive ? args.rigidBodyTex : null;
+  }
   posSimMat.uniforms.uAgeMax.value = config.gpgpuAgeMax;
   // Replica age phase (Phase M): gated exactly like the initial
   // data — morph on, more than one copy, step > 0 — else 0, which
@@ -563,6 +803,14 @@ export function runSimulationPasses(args: {
   posSimMat.uniforms.uMouseRadius.value = config.gpgpuMouseRadius;
   posSimMat.uniforms.uMouseMode.value = MOUSE_MODE_IDS[config.gpgpuMouseMode] ?? 0;
   posSimMat.uniforms.uMousePaintRate.value = config.gpgpuMousePaintRate;
+  if (posSimMat.uniforms.uMouseCount) posSimMat.uniforms.uMouseCount.value = mouseMultiCount;
+  if (posSimMat.uniforms.uMousePosMulti && mouseMultiCount > 0 && args.mouseWorldMulti) {
+    const arr = posSimMat.uniforms.uMousePosMulti.value as THREE.Vector3[];
+    for (let i = 0; i < arr.length; i++) {
+      if (i < mouseMultiCount) arr[i].copy(args.mouseWorldMulti[i]);
+      else arr[i].set(0, 0, 0);
+    }
+  }
   // Light emitter (Phase T): only the 'light' emit shape reroutes
   // the age respawn to the light position; everything else keeps
   // the legacy origin-sphere respawn.
@@ -575,7 +823,8 @@ export function runSimulationPasses(args: {
   // otherwise the shader keeps the legacy path (the UI states the
   // fallback, like the draw clip does).
   if (posSimMat.uniforms.uSpawnRate) posSimMat.uniforms.uSpawnRate.value = Math.max(0.01, Math.min(1, config.gpgpuSpawnRate || 1));
-  if (posSimMat.uniforms.uSpawnBurst) posSimMat.uniforms.uSpawnBurst.value = Math.max(0, Math.min(1, config.gpgpuSpawnBurst ?? 1));
+  if (posSimMat.uniforms.uSpawnBurst) posSimMat.uniforms.uSpawnBurst.value = vellum.active ? 1 : Math.max(0, Math.min(1, config.gpgpuSpawnBurst ?? 1));
+  if (rigidActive && posSimMat.uniforms.uSpawnBurst) posSimMat.uniforms.uSpawnBurst.value = 1;
   if (posSimMat.uniforms.uSpawnTime) posSimMat.uniforms.uSpawnTime.value = args.spawnTime ?? time;
   if (posSimMat.uniforms.uSpawnPulseInterval) posSimMat.uniforms.uSpawnPulseInterval.value = Math.max(0, Math.min(30, config.gpgpuSpawnPulseInterval ?? 0));
   if (posSimMat.uniforms.uSpawnPulseDuty) posSimMat.uniforms.uSpawnPulseDuty.value = Math.max(0.05, Math.min(1, config.gpgpuSpawnPulseDuty ?? 0.3));
@@ -599,14 +848,68 @@ export function runSimulationPasses(args: {
       posSimMat.uniforms.uEmissionCurveV.value = padded;
     }
   }
-  if (posSimMat.uniforms.uKillBoundary) posSimMat.uniforms.uKillBoundary.value = !!config.gpgpuKillBoundary;
-  if (posSimMat.uniforms.uKillMask) posSimMat.uniforms.uKillMask.value = !!config.gpgpuKillMask && !!args.killMaskTex;
+  if (posSimMat.uniforms.uKillBoundary) posSimMat.uniforms.uKillBoundary.value = !!config.gpgpuKillBoundary && !vellum.active && !rigidActive;
+  if (posSimMat.uniforms.uKillMask) posSimMat.uniforms.uKillMask.value = !!config.gpgpuKillMask && !!args.killMaskTex && !vellum.active && !rigidActive;
   if (posSimMat.uniforms.uKillMaskTex) posSimMat.uniforms.uKillMaskTex.value = args.killMaskTex ?? null;
   if (posSimMat.uniforms.uKillMaskThreshold) posSimMat.uniforms.uKillMaskThreshold.value = Math.max(0, Math.min(1, config.gpgpuMaskThreshold ?? 0.5));
   if (posSimMat.uniforms.uKillMaskInvert) posSimMat.uniforms.uKillMaskInvert.value = !!config.gpgpuMaskInvert;
   simMesh.material = posSimMat;
   gl.setRenderTarget(posOut);
   gl.render(simScene, simCamera);
+
+  // Vellum (Phase AR): tear state update + constraint projection
+  // iterations. Runs only while the solver is active AND the
+  // shared-path extras were supplied (the replica-stack runner
+  // passes none of them). posIn is never written here — the aux
+  // passes still read it as the frame-start positions. The
+  // iterations ping-pong between posOut and the spare target
+  // (the Verlet previous-position RT; its frame-start copy was
+  // already consumed by the position pass above), and an odd
+  // landing is blitted back so the frame always ends with the
+  // solved positions in posOut, where every consumer reads them.
+  if (vellum.active && args.vellumRestTex && args.vellumProjMat && args.vellumSpareRT && args.blitMat) {
+    let stateTex: THREE.Texture | null = null;
+    if (vellum.tear > 0 && args.vellumStateMat && args.vellumStateIn && args.vellumStateOut) {
+      // Strain is measured on the frame-start positions (posIn),
+      // one frame behind the integration — deterministic, and
+      // the severing is monotonic in the state pass itself.
+      const stU = args.vellumStateMat.uniforms;
+      stU.uPosTex.value = posIn.texture;
+      stU.uVellumRestTex.value = args.vellumRestTex;
+      stU.uVellumStateTex.value = args.vellumStateIn.texture;
+      stU.uVellumTear.value = vellum.tear;
+      stU.uVellumMode.value = vellum.modeId;
+      stU.uTexSizeF.value = texSize;
+      simMesh.material = args.vellumStateMat;
+      gl.setRenderTarget(args.vellumStateOut);
+      gl.render(simScene, simCamera);
+      stateTex = args.vellumStateOut.texture;
+    }
+    const projU = args.vellumProjMat.uniforms;
+    projU.uVellumRestTex.value = args.vellumRestTex;
+    projU.uVellumStateTex.value = stateTex;
+    projU.uVellumTearEnabled.value = !!stateTex;
+    projU.uVellumMode.value = vellum.modeId;
+    projU.uVellumStiffness.value = vellum.stiffness;
+    projU.uVellumBend.value = vellum.bend;
+    projU.uVellumPin.value = vellum.pinId;
+    projU.uTexSizeF.value = texSize;
+    let cur: THREE.WebGLRenderTarget = posOut;
+    for (let i = 0; i < vellum.substeps; i++) {
+      const dst = cur === posOut ? args.vellumSpareRT : posOut;
+      projU.uPosTex.value = cur.texture;
+      simMesh.material = args.vellumProjMat;
+      gl.setRenderTarget(dst);
+      gl.render(simScene, simCamera);
+      cur = dst;
+    }
+    if (cur !== posOut) {
+      args.blitMat.uniforms.uTex.value = cur.texture;
+      simMesh.material = args.blitMat;
+      gl.setRenderTarget(posOut);
+      gl.render(simScene, simCamera);
+    }
+  }
 }
 
 const SDF_SHAPE_IDS: Record<ParticleConfig['gpgpuSdfShape'], number> = {
@@ -885,6 +1188,9 @@ export function runReplicaStackPasses(args: {
   morphKickStart: number;
   fluidVelMat: THREE.ShaderMaterial;
   globalTexSize: number;
+  // Multi-touch (Phase AO): forwarded to every stack's passes.
+  mouseWorldMulti?: THREE.Vector3[];
+  mouseMultiCount?: number;
 }): void {
   const {
     config,
@@ -974,6 +1280,8 @@ export function runReplicaStackPasses(args: {
       morphNormalTex,
       morphKickStart,
       prevPosTex: stack.prevPos.texture,
+      mouseWorldMulti: args.mouseWorldMulti,
+      mouseMultiCount: args.mouseMultiCount,
       webgpuState: null,
       webgpuPosTex: null,
       webgpuPingIsARef: STACK_WEBGPU_PING_REF,

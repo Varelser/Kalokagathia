@@ -669,6 +669,24 @@ const AppBody: React.FC = () => {
         saveTrigger={ui.saveTrigger}
         sequenceStepProgress={sequenceStepProgress}
         pointCloudCaptureRef={pointCloudCaptureRef}
+        embedControl={{
+          config,
+          // Script API (Phase AO): validated changes only, applied
+          // through the same setConfig every other surface uses.
+          applyValue: (key, value) => {
+            setConfig((prev) => ({ ...prev, [key]: value } as ParticleConfig));
+          },
+          // ID-only preset application (library + starters); an
+          // unknown ID is dropped, never resolved to raw config.
+          applyPresetById: (id) => {
+            const hit = presets.find((preset) => preset.id === id)
+              ?? starterLibrary?.presets.find((preset) => preset.id === id);
+            if (!hit) return false;
+            applyConfigMorph(hit.config, presetBlendDuration, hit.id);
+            return true;
+          },
+          getState: () => ({ presetId: activePresetId, isPlaying: ui.isPlaying }),
+        }}
       />
     );
   }

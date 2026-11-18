@@ -43,6 +43,9 @@
 
 import * as THREE from 'three';
 import {
+  erodeHeightGridInPlace,
+  erosionRngSeedFor,
+  resolveTerrainErosion,
   terrainFieldSeedFor,
   terrainHeightAt,
   type GpgpuMorphTerrainOptions,
@@ -104,6 +107,16 @@ export function buildTerrainHeightGrid(
       const fx = -extent + i * step;
       heights[j * n + i] = terrainHeightAt(fx, fz, terrain, fieldSeed);
     }
+  }
+  // Terrain erosion (Phase AP): the derived bakes differentiate
+  // the ERODED grid, so the normal / slope / curvature maps, the
+  // slope-force gradient and the collider all describe the same
+  // carved landscape the bake and the mesh read. The sim is the
+  // shared erodeHeightGridInPlace over this same base grid, so
+  // the result agrees cell for cell with the eroded field.
+  const erosion = resolveTerrainErosion(terrain.erosion);
+  if (erosion) {
+    erodeHeightGridInPlace(heights, n, step, erosion, erosionRngSeedFor(fieldSeed, erosion.seed));
   }
   return { size: n, heights, extent, step };
 }
@@ -265,6 +278,19 @@ export function terrainOptionsFromConfig(config: ParticleConfig): GpgpuMorphTerr
     seed: config.gpgpuMorphTerrainSeed,
     kind: config.gpgpuMorphTerrainKind,
     terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
+    // Terrain erosion (Phase AP): plane mode only — in tunnel
+    // mode the erosion options are stripped here, exactly like
+    // the collider / slope force turn off (the wrapped field has
+    // no single planar height field to erode).
+    erosion: config.gpgpuTerrainMeshTunnel ? undefined : {
+      water: config.gpgpuMorphTerrainErosionWater,
+      droplets: config.gpgpuMorphTerrainErosionDroplets,
+      deposit: config.gpgpuMorphTerrainErosionDeposit,
+      thermal: config.gpgpuMorphTerrainErosionThermal,
+      talus: config.gpgpuMorphTerrainErosionTalus,
+      thermalPasses: config.gpgpuMorphTerrainErosionThermalPasses,
+      seed: config.gpgpuMorphTerrainErosionSeed,
+    },
   };
 }
 
@@ -278,6 +304,16 @@ function derivedCacheKey(config: ParticleConfig): string {
     // is part of the cache identity.
     config.gpgpuMorphTerrainKind,
     config.gpgpuMorphTerrainTerraceSteps,
+    // Phase AP: the erosion params re-carve every bake, so they
+    // are part of the cache identity too (a key miss would serve
+    // the un-eroded landscape's maps against an eroded field).
+    config.gpgpuMorphTerrainErosionWater,
+    config.gpgpuMorphTerrainErosionDroplets,
+    config.gpgpuMorphTerrainErosionDeposit,
+    config.gpgpuMorphTerrainErosionThermal,
+    config.gpgpuMorphTerrainErosionTalus,
+    config.gpgpuMorphTerrainErosionThermalPasses,
+    config.gpgpuMorphTerrainErosionSeed,
     config.gpgpuSeed,
   ].join('|');
 }

@@ -18,6 +18,25 @@ export const SIM_POS_FRAG = /* glsl */ `
   // index * step * ageMax here). 0 in the shared path.
   uniform float uReplicaAgeBase;
   uniform float uTexSizeF;
+  // Vellum (Phase AR): while the constraint solver is active the
+  // pointer-paint teleport below is suppressed (it would tear
+  // the constraint grid). The projection itself lives in a
+  // dedicated pass (gpgpuShaderSimulationVellum.ts); this flag
+  // is the position pass's only Vellum surface. False (default)
+  // keeps every statement below verbatim.
+  uniform bool  uVellumEnabled;
+  // Rigid bodies (Phase AU): while the CPU rigid body solver is
+  // bound, this pass composes every particle's world position
+  // from its body's transform (body texture: row 0 = position +
+  // bounding radius, row 1 = quaternion) applied to the
+  // particle's local offset in its fracture cell (cell texture:
+  // xyz = offset, w = body index). The lifecycle / respawn
+  // machinery below never runs — the passes resolve it off
+  // CPU-side, and this early return is the hard guarantee.
+  // False (default) keeps every statement below verbatim.
+  uniform bool  uRigidEnabled;
+  uniform sampler2D uRigidCellTex;
+  uniform sampler2D uRigidBodyTex;
   uniform bool  uVerletEnabled;
   uniform sampler2D uPrevPosTex;
   uniform bool  uSdfEnabled;
@@ -44,6 +63,11 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform float uMouseRadius;
   uniform int   uMouseMode;
   uniform float uMousePaintRate;
+  // Multi-touch interference (Phase AO): all tracked pointers'
+  // world positions (index 0 = primary, same as uMousePos);
+  // uMouseCount is 0 unless multi-touch resolved on CPU-side.
+  uniform vec3  uMousePosMulti[4];
+  uniform int   uMouseCount;
   // Light emitter (Phase T): while the emit shape is 'light', the
   // age respawn re-emits around the light position instead of the
   // origin sphere. False (default) keeps the legacy statement.
@@ -167,11 +191,31 @@ export const SIM_POS_FRAG = /* glsl */ `
     return fract(sin(dot(uv * 913.7 + vec2(tick * 17.31, tick * 7.77), vec2(12.9898, 78.233))) * 43758.5453);
   }
 
+  // Quaternion rotation (Phase AU): GLSL twin of quatRotate in
+  // lib/rigidBodies.ts.
+  vec3 kaloQuatRotate(vec4 q, vec3 v) {
+    vec3 u = q.xyz;
+    return v + 2.0 * cross(u, cross(u, v) + q.w * v);
+  }
+
   void main() {
     vec4 posData = texture2D(uPosTex, vUv);
     vec3 pos = posData.xyz;
     float age = posData.w;
     vec3 vel = texture2D(uVelTex, vUv).xyz;
+
+    // Rigid bodies (Phase AU): the particle IS a point of its
+    // body — world position = body position + rotated local
+    // offset. Age is carried verbatim (frozen: the lifecycle is
+    // resolved off while the solver is bound).
+    if (uRigidEnabled) {
+      vec4 cell = texture2D(uRigidCellTex, vUv);
+      vec2 bodyUv = vec2((cell.w + 0.5) / 64.0, 0.0);
+      vec4 bodyPos = texture2D(uRigidBodyTex, vec2(bodyUv.x, 0.125));
+      vec4 bodyQuat = texture2D(uRigidBodyTex, vec2(bodyUv.x, 0.375));
+      gl_FragColor = vec4(bodyPos.xyz + kaloQuatRotate(bodyQuat, cell.xyz), age);
+      return;
+    }
 
     // Spawn gate (Phase AB): an unreleased particle is parked
     // off-screen with its age frozen (the velocity pass zeroes its
@@ -254,8 +298,9 @@ export const SIM_POS_FRAG = /* glsl */ `
 
     // Pointer paint (B3): gated particles are re-emitted at the brush
     // position with a hash offset inside the brush disc. The velocity
-    // pass re-seeds their velocity under the same gate.
-    if (uMouseEnabled && uMouseMode == 3) {
+    // pass re-seeds their velocity under the same gate. Vellum
+    // (Phase AR) suppresses the teleport while the solver is on.
+    if (uMouseEnabled && uMouseMode == 3 && !uVellumEnabled) {
       float paintTick = floor(uTime * 30.0);
       float paintGate = paintHash(vUv, paintTick);
       if (paintGate < uMousePaintRate * 0.008) {
@@ -264,7 +309,18 @@ export const SIM_POS_FRAG = /* glsl */ `
           hash1(vUv + paintTick * 1.317 + 4.7),
           hash1(vUv + paintTick * 2.113 + 9.1)
         ) - 0.5;
-        pos = uMousePos + paintOffset * uMouseRadius * 0.7;
+        // Multi-touch (Phase AO): with several brushes the gated
+        // particle is emitted from one of them, chosen by the
+        // same gate hash the velocity pass uses for its speed
+        // mix, so the choice is deterministic. Count 0/1 (and
+        // index 0) reproduce the legacy single-brush statement.
+        vec3 brushPos = uMousePos;
+        if (uMouseCount >= 2) {
+          int brushIdx = int(fract(paintGate * 91.7) * float(uMouseCount));
+          if (brushIdx > uMouseCount - 1) brushIdx = uMouseCount - 1;
+          brushPos = uMousePosMulti[brushIdx];
+        }
+        pos = brushPos + paintOffset * uMouseRadius * 0.7;
       }
     }
 

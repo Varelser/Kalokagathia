@@ -2,6 +2,25 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { ParticleConfig } from "../types";
 import { GEOM_FRAG, GEOM_VERT, VOLUMETRIC_FRAG, VOLUMETRIC_VERT } from "./gpgpuShaders";
+import { buildObjGeomBaseData } from "../lib/objMesh";
+
+/**
+ * Base geometry for the 'obj' particle geometry mode (Phase AO):
+ * the imported OBJ (gpgpuMorphObjSource, the same document the
+ * morph sampler and the mesh display read) as the per-particle
+ * shape. Empty / unparseable / over-budget sources fall back to
+ * the octahedron base — the panel note states the fallback and
+ * the reason instead of switching silently.
+ */
+function buildObjParticleBaseGeometry(source: string): THREE.BufferGeometry {
+  const data = buildObjGeomBaseData(source);
+  if (!data) return new THREE.OctahedronGeometry(0.7);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3));
+  geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
+  return geo;
+}
 
 export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
   const instGeo = useMemo(() => {
@@ -14,6 +33,7 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
     else if (config.gpgpuGeomMode === 'icosa') baseGeo = new THREE.IcosahedronGeometry(0.82);
     else if (config.gpgpuGeomMode === 'torus') baseGeo = new THREE.TorusGeometry(0.68, 0.27, 10, 20);
     else if (config.gpgpuGeomMode === 'cone')  baseGeo = new THREE.ConeGeometry(0.6, 1.05, 20);
+    else if (config.gpgpuGeomMode === 'obj')   baseGeo = buildObjParticleBaseGeometry(config.gpgpuMorphObjSource);
     else                                        baseGeo = new THREE.OctahedronGeometry(0.7);
     if (baseGeo.index) geo.setIndex(baseGeo.index);
     geo.setAttribute('position', baseGeo.attributes.position);
@@ -27,7 +47,7 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
     geo.instanceCount = count;
     baseGeo.dispose();
     return geo;
-  }, [texSize, config.gpgpuGeomMode]);
+  }, [texSize, config.gpgpuGeomMode, config.gpgpuMorphObjSource]);
 
   const geomMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {

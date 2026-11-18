@@ -42,7 +42,7 @@
 
 import type { ParticleConfig } from '../types';
 import { createSeededRng } from './seededRng';
-import { applyVoronoiFracture } from './voronoiFracture';
+import { applyVoronoiFracture, buildFractureCellData, type FractureCellData } from './voronoiFracture';
 import {
   maskAcceptsAt,
   resolveActiveMask,
@@ -187,6 +187,12 @@ export interface GpgpuMorphTerrainOptions {
   /** Terrace step count (Phase AI); only read by the 'terrace'
    *  recipe. Absent = 6, clamped to 2..32. */
   terraceSteps?: number;
+  /**
+   * Erosion grammar (Phase AP); absent / null, or both strengths
+   * at 0, resolves to null in resolveTerrainErosion and every
+   * consumer reads the analytic field verbatim.
+   */
+  erosion?: GpgpuMorphTerrainErosionOptions | null;
 }
 
 /**
@@ -354,6 +360,22 @@ export interface GpgpuMorphTargetBuildOptions {
    * null = the legacy bake exactly (the pass is skipped).
    */
   fracture?: {
+    cells: number;
+    seed: number;
+    gap: number;
+  } | null;
+  /**
+   * Rigid body cell data (Phase AU, lib/rigidBodies.ts): when
+   * present, the bake additionally returns the fracture cell
+   * table (assignment / local offsets / body table) computed from
+   * the pre-transform cloud with these options — the CPU rigid
+   * body solver's material. The options carry the fracture keys'
+   * cells / seed and the gap the bake's own fracture pass will
+   * apply (0 while the fracture is disabled), so the cell data
+   * matches the produced cloud point for point. Absent / null =
+   * no cell data is computed and the bake is untouched.
+   */
+  rigidFracture?: {
     cells: number;
     seed: number;
     gap: number;
@@ -725,6 +747,433 @@ export function terrainScatterSpeciesScale(
  *  (the first attempt is the particle's own grid cell). */
 export const TERRAIN_SCATTER_ATTEMPTS = 5;
 
+// ---------------------------------------------------------------------------
+// Terrain erosion (Phase AP)
+
+/**
+ * Terrain erosion grammar (Phase AP): the generated height field
+ * re-carved by an iterative simulation — seeded droplet hydraulic
+ * erosion plus thermal talus relaxation — run ONCE at bake time
+ * on the field's own grid (129×129 over [-1.05, 1.05]^2, the
+ * derived-maps grid). This is the solver side of the terrain,
+ * distinct from the Phase AI generation recipes: the recipes
+ * shape the field analytically, erosion then wears it down.
+ *
+ * The simulation output is a single eroded-field object with a
+ * bilinear sampler. While erosion is active, every consumer of
+ * the landscape reads the eroded field — the morph bake, the
+ * terrain mesh, the derived maps (and with them the collider and
+ * the slope force), the shadow occlusion and the scatter grammar
+ * — so there is still exactly one landscape. Identity: Water 0
+ * and Thermal 0 (the defaults) resolve the grammar to null, no
+ * grid is ever built, and every consumer runs the analytic
+ * terrainHeightAt verbatim. The sim is a pure function of
+ * (terrain params, field seed, erosion params): the droplet RNG
+ * is the shared seeded mulberry, so the same config always grows
+ * the same eroded landscape. Per-frame cost is zero — the field
+ * is baked, like the derived maps.
+ */
+export interface GpgpuMorphTerrainErosionOptions {
+  /** Hydraulic (droplet) erosion strength 0..1. 0 = off. */
+  water: number;
+  /** Droplet count multiplier 0..2 over the base count. */
+  droplets: number;
+  /** Deposition rate 0..1 of the sediment a droplet carries. */
+  deposit: number;
+  /** Thermal (talus) relaxation strength 0..1. 0 = off. */
+  thermal: number;
+  /** Talus (angle of repose) 0..1, mapped to a max slope. */
+  talus: number;
+  /** Thermal relaxation passes, clamped to 1..80. */
+  thermalPasses: number;
+  /** Erosion seed offset (droplet placement). */
+  seed: number;
+}
+
+export interface ResolvedTerrainErosion {
+  water: number;
+  dropletCount: number;
+  deposit: number;
+  thermal: number;
+  /** Steepest neighbour slope (height per field unit) the
+   *  thermal pass lets stand. */
+  talusSlope: number;
+  thermalPasses: number;
+  seed: number;
+}
+
+/** Side length of the erosion grid: the derived-maps grid
+ *  (TERRAIN_MESH_RESOLUTION + 1), so the grid the derived maps
+ *  differentiate and the field the bake samples are the same
+ *  grid, cell for cell. The Phase AP budget cap is 257. */
+export const TERRAIN_EROSION_GRID_SIZE = 129;
+/** Base droplet count at multiplier 1 (Phase AP budget). */
+export const TERRAIN_EROSION_BASE_DROPLETS = 30000;
+/** Hard droplet budget (Phase AP budget). */
+export const TERRAIN_EROSION_MAX_DROPLETS = 60000;
+/** Hard thermal-pass budget (Phase AP budget). */
+export const TERRAIN_EROSION_MAX_THERMAL_PASSES = 80;
+
+function clampErosion01(v: number, fallback: number): number {
+  return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback;
+}
+
+/**
+ * Resolve erosion options to their clamped runtime form, or
+ * null when the grammar cannot change anything (absent options,
+ * or both strengths at 0). Null is the identity guarantee, the
+ * same shape as resolveTerrainScatter.
+ */
+export function resolveTerrainErosion(
+  erosion: GpgpuMorphTerrainErosionOptions | null | undefined,
+): ResolvedTerrainErosion | null {
+  if (!erosion) return null;
+  const water = clampErosion01(erosion.water, 0);
+  const thermal = clampErosion01(erosion.thermal, 0);
+  if (water <= 0 && thermal <= 0) return null;
+  const dropletsMult = Number.isFinite(erosion.droplets)
+    ? Math.max(0, Math.min(2, erosion.droplets))
+    : 1;
+  const dropletCount = Math.min(
+    TERRAIN_EROSION_MAX_DROPLETS,
+    Math.round(TERRAIN_EROSION_BASE_DROPLETS * dropletsMult),
+  );
+  const deposit = clampErosion01(erosion.deposit, 0.3);
+  const talus = clampErosion01(erosion.talus, 0.5);
+  const passesRaw = Math.floor(erosion.thermalPasses);
+  const thermalPasses = Number.isFinite(passesRaw)
+    ? Math.max(1, Math.min(TERRAIN_EROSION_MAX_THERMAL_PASSES, passesRaw))
+    : 24;
+  const seedRaw = Math.floor(erosion.seed);
+  const seed = Number.isFinite(seedRaw) ? seedRaw : 0;
+  return {
+    water,
+    dropletCount,
+    deposit,
+    thermal,
+    talusSlope: 0.15 + talus * 2.35,
+    thermalPasses,
+    seed,
+  };
+}
+
+/** RNG seed of the droplet sim: the field seed mixed with the
+ *  erosion seed offset (the terrainFieldSeedFor mixing shape). */
+export function erosionRngSeedFor(fieldSeed: number, erosionSeed: number): number {
+  return ((fieldSeed ^ Math.imul((erosionSeed | 0) + 1, 0x85ebca6b)) | 0);
+}
+
+/**
+ * Droplet hydraulic erosion on a height grid (the classic
+ * seeded-droplet model): each droplet runs downhill under
+ * inertia, carrying sediment up to a capacity set by its speed,
+ * water volume and the local drop; it deposits on climbs and
+ * when over capacity, and erodes otherwise. Positions are grid
+ * cells, heights are field units, so the carving scales with
+ * the terrain amplitude itself. All randomness comes from the
+ * seeded RNG — the result is a pure function of the inputs.
+ */
+function erodeDropletsInPlace(
+  heights: Float32Array,
+  n: number,
+  resolved: ResolvedTerrainErosion,
+  rngSeed: number,
+): void {
+  const count = resolved.dropletCount;
+  if (count <= 0 || resolved.water <= 0) return;
+  const rng = createSeededRng(rngSeed >>> 0);
+  const inertia = 0.3;
+  const capacityFactor = 4;
+  const minCapacity = 0.01;
+  const erodeRate = 0.3 * resolved.water;
+  const depositRate = resolved.deposit;
+  const evaporateRate = 0.01;
+  const gravity = -4;
+  const maxLifetime = 30;
+  const sampleAt = (px: number, pz: number): number => {
+    const ix = Math.max(0, Math.min(n - 2, Math.floor(px)));
+    const iz = Math.max(0, Math.min(n - 2, Math.floor(pz)));
+    const fx = Math.max(0, Math.min(1, px - ix));
+    const fz = Math.max(0, Math.min(1, pz - iz));
+    const h00 = heights[iz * n + ix];
+    const h10 = heights[iz * n + ix + 1];
+    const h01 = heights[(iz + 1) * n + ix];
+    const h11 = heights[(iz + 1) * n + ix + 1];
+    return (h00 * (1 - fx) + h10 * fx) * (1 - fz) + (h01 * (1 - fx) + h11 * fx) * fz;
+  };
+  const addAt = (px: number, pz: number, amount: number): void => {
+    const ix = Math.max(0, Math.min(n - 2, Math.floor(px)));
+    const iz = Math.max(0, Math.min(n - 2, Math.floor(pz)));
+    const fx = Math.max(0, Math.min(1, px - ix));
+    const fz = Math.max(0, Math.min(1, pz - iz));
+    heights[iz * n + ix] += amount * (1 - fx) * (1 - fz);
+    heights[iz * n + ix + 1] += amount * fx * (1 - fz);
+    heights[(iz + 1) * n + ix] += amount * (1 - fx) * fz;
+    heights[(iz + 1) * n + ix + 1] += amount * fx * fz;
+  };
+  for (let d = 0; d < count; d++) {
+    let px = rng() * (n - 1);
+    let pz = rng() * (n - 1);
+    let dirX = 0;
+    let dirZ = 0;
+    let speed = 1;
+    let waterVol = 1;
+    let sediment = 0;
+    let prevH = sampleAt(px, pz);
+    for (let step = 0; step < maxLifetime; step++) {
+      const ix = Math.floor(px);
+      const iz = Math.floor(pz);
+      if (ix < 0 || iz < 0 || ix >= n - 1 || iz >= n - 1) break;
+      const fx = px - ix;
+      const fz = pz - iz;
+      const h00 = heights[iz * n + ix];
+      const h10 = heights[iz * n + ix + 1];
+      const h01 = heights[(iz + 1) * n + ix];
+      const h11 = heights[(iz + 1) * n + ix + 1];
+      // Gradient in height-per-cell at the droplet position.
+      const gx = (h10 - h00) * (1 - fz) + (h11 - h01) * fz;
+      const gz = (h01 - h00) * (1 - fx) + (h11 - h10) * fx;
+      dirX = dirX * inertia - gx * (1 - inertia);
+      dirZ = dirZ * inertia - gz * (1 - inertia);
+      const len = Math.hypot(dirX, dirZ);
+      if (len < 1e-9) {
+        const a = rng() * (Math.PI * 2);
+        dirX = Math.cos(a);
+        dirZ = Math.sin(a);
+      } else {
+        dirX /= len;
+        dirZ /= len;
+      }
+      const oldX = px;
+      const oldZ = pz;
+      px += dirX;
+      pz += dirZ;
+      if (px < 0 || pz < 0 || px > n - 1 || pz > n - 1) break;
+      const newH = sampleAt(px, pz);
+      const dh = newH - prevH;
+      const capacity = Math.max(-dh * speed * waterVol * capacityFactor, minCapacity);
+      if (sediment > capacity || dh > 0) {
+        const amount = dh > 0 ? Math.min(dh, sediment) : sediment * depositRate;
+        sediment -= amount;
+        addAt(oldX, oldZ, amount);
+      } else {
+        const amount = Math.min((capacity - sediment) * erodeRate, -dh);
+        sediment += amount;
+        addAt(oldX, oldZ, -amount);
+      }
+      prevH = newH;
+      speed = Math.sqrt(Math.max(0, speed * speed + dh * gravity));
+      waterVol *= 1 - evaporateRate;
+    }
+  }
+}
+
+/**
+ * Thermal talus relaxation on a height grid: any neighbour pair
+ * steeper than the talus slope sheds half the excess downhill,
+ * per pass. Jacobi-style (all transfers are computed from the
+ * pass-start heights into a delta buffer), so the result does
+ * not depend on the scan order and stays deterministic.
+ */
+function relaxThermalInPlace(
+  heights: Float32Array,
+  n: number,
+  step: number,
+  resolved: ResolvedTerrainErosion,
+): void {
+  if (resolved.thermal <= 0) return;
+  const maxDiff = resolved.talusSlope * step;
+  const rate = 0.5 * resolved.thermal;
+  const delta = new Float32Array(n * n);
+  for (let pass = 0; pass < resolved.thermalPasses; pass++) {
+    delta.fill(0);
+    let moved = false;
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const idx = j * n + i;
+        const h = heights[idx];
+        if (i + 1 < n) {
+          const diff = h - heights[idx + 1];
+          if (diff > maxDiff) {
+            const m = (diff - maxDiff) * rate * 0.5;
+            delta[idx] -= m; delta[idx + 1] += m; moved = true;
+          } else if (diff < -maxDiff) {
+            const m = (-diff - maxDiff) * rate * 0.5;
+            delta[idx] += m; delta[idx + 1] -= m; moved = true;
+          }
+        }
+        if (j + 1 < n) {
+          const diff = h - heights[idx + n];
+          if (diff > maxDiff) {
+            const m = (diff - maxDiff) * rate * 0.5;
+            delta[idx] -= m; delta[idx + n] += m; moved = true;
+          } else if (diff < -maxDiff) {
+            const m = (-diff - maxDiff) * rate * 0.5;
+            delta[idx] += m; delta[idx + n] -= m; moved = true;
+          }
+        }
+      }
+    }
+    if (!moved) break;
+    for (let k = 0; k < heights.length; k++) heights[k] += delta[k];
+  }
+}
+
+/**
+ * Run the erosion sim on a height grid in place (droplets first,
+ * then talus relaxation, so the water cuts the channels and the
+ * thermal pass settles their banks). Shared by the eroded-field
+ * builder below and the derived maps, which differentiate their
+ * own grid — both feed the same base grid through this same sim,
+ * so their landscapes agree cell for cell.
+ */
+export function erodeHeightGridInPlace(
+  heights: Float32Array,
+  size: number,
+  step: number,
+  resolved: ResolvedTerrainErosion,
+  rngSeed: number,
+): void {
+  erodeDropletsInPlace(heights, size, resolved, rngSeed);
+  relaxThermalInPlace(heights, size, step, resolved);
+}
+
+/** The eroded height field: one baked grid + a bilinear sampler. */
+export interface ErodedTerrainField {
+  size: number;
+  extent: number;
+  step: number;
+  heights: Float32Array;
+}
+
+let erodedFieldCache: { key: string; field: ErodedTerrainField } | null = null;
+
+function erodedFieldCacheKey(terrain: GpgpuMorphTerrainOptions, fieldSeed: number): string {
+  const e = terrain.erosion;
+  return [
+    terrain.amplitude, terrain.frequency, terrain.octaves, terrain.seed,
+    terrain.kind ?? 'fbm', terrain.terraceSteps ?? 6,
+    e?.water ?? 0, e?.droplets ?? 1, e?.deposit ?? 0.3,
+    e?.thermal ?? 0, e?.talus ?? 0.5, e?.thermalPasses ?? 24, e?.seed ?? 0,
+    fieldSeed,
+  ].join('|');
+}
+
+/**
+ * The eroded field for one (terrain, field seed), or null when
+ * the erosion grammar resolves to null. Single-entry cache (the
+ * derived-maps discipline): a parameter change replaces the
+ * field wholesale. The base grid samples the analytic field on
+ * the derived-maps grid exactly like buildTerrainHeightGrid, so
+ * the derived maps — which erode their own copy of that grid
+ * through erodeHeightGridInPlace — stay in agreement.
+ */
+export function getErodedTerrainField(
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+): ErodedTerrainField | null {
+  const resolved = resolveTerrainErosion(terrain.erosion);
+  if (!resolved) return null;
+  const key = erodedFieldCacheKey(terrain, fieldSeed);
+  if (erodedFieldCache && erodedFieldCache.key === key) return erodedFieldCache.field;
+  const n = TERRAIN_EROSION_GRID_SIZE;
+  const extent = 1.05;
+  const step = (extent * 2) / (n - 1);
+  const heights = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) {
+    const fz = -extent + j * step;
+    for (let i = 0; i < n; i++) {
+      const fx = -extent + i * step;
+      heights[j * n + i] = terrainHeightAt(fx, fz, terrain, fieldSeed);
+    }
+  }
+  erodeHeightGridInPlace(heights, n, step, resolved, erosionRngSeedFor(fieldSeed, resolved.seed));
+  const field: ErodedTerrainField = { size: n, extent, step, heights };
+  erodedFieldCache = { key, field };
+  return field;
+}
+
+/** Bilinear sample of the eroded field at a field point
+ *  (clamped to the field domain, like the derived bakes). */
+export function sampleErodedField(field: ErodedTerrainField, x: number, z: number): number {
+  const n = field.size;
+  const gx = Math.max(0, Math.min(n - 1, (x + field.extent) / field.step));
+  const gz = Math.max(0, Math.min(n - 1, (z + field.extent) / field.step));
+  const ix = Math.min(n - 2, Math.floor(gx));
+  const iz = Math.min(n - 2, Math.floor(gz));
+  const fx = gx - ix;
+  const fz = gz - iz;
+  const h = field.heights;
+  const h00 = h[iz * n + ix];
+  const h10 = h[iz * n + ix + 1];
+  const h01 = h[(iz + 1) * n + ix];
+  const h11 = h[(iz + 1) * n + ix + 1];
+  return (h00 * (1 - fx) + h10 * fx) * (1 - fz) + (h01 * (1 - fx) + h11 * fx) * fz;
+}
+
+/** Gradient of the eroded field by central differences of the
+ *  sampler, with the same step as terrainGradientAt. */
+export function erodedFieldGradient(
+  field: ErodedTerrainField,
+  x: number,
+  z: number,
+): { gx: number; gz: number } {
+  const eps = TERRAIN_GRADIENT_EPS;
+  const gx = (sampleErodedField(field, x + eps, z) - sampleErodedField(field, x - eps, z)) / (2 * eps);
+  const gz = (sampleErodedField(field, x, z + eps) - sampleErodedField(field, x, z - eps)) / (2 * eps);
+  return { gx, gz };
+}
+
+/** The scatter slope reference over the eroded field (the
+ *  terrainScatterGradientRef computation on the sampler). */
+export function erodedFieldScatterGradientRef(
+  field: ErodedTerrainField,
+  gridSize: number = 48,
+): number {
+  const n = Math.max(4, Math.floor(gridSize));
+  const extent = 1.05;
+  let max = 0;
+  for (let j = 0; j < n; j++) {
+    const fz = -extent + (j / (n - 1)) * extent * 2;
+    for (let i = 0; i < n; i++) {
+      const fx = -extent + (i / (n - 1)) * extent * 2;
+      const { gx, gz } = erodedFieldGradient(field, fx, fz);
+      const g = Math.hypot(gx, gz);
+      if (g > max) max = g;
+    }
+  }
+  return max;
+}
+
+/**
+ * Height of the landscape at (x, z): the eroded field while
+ * erosion is active, the analytic terrainHeightAt verbatim
+ * otherwise. Loop consumers resolve the field once through
+ * getErodedTerrainField and sample it directly; this is the
+ * one-shot form.
+ */
+export function terrainHeightAtEroded(
+  x: number,
+  z: number,
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+): number {
+  const field = getErodedTerrainField(terrain, fieldSeed);
+  return field ? sampleErodedField(field, x, z) : terrainHeightAt(x, z, terrain, fieldSeed);
+}
+
+/** Gradient of the landscape: eroded while active, analytic
+ *  verbatim otherwise (see terrainHeightAtEroded). */
+export function terrainGradientAtEroded(
+  x: number,
+  z: number,
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+): { gx: number; gz: number } {
+  const field = getErodedTerrainField(terrain, fieldSeed);
+  return field ? erodedFieldGradient(field, x, z) : terrainGradientAt(x, z, terrain, fieldSeed);
+}
+
 const TAU = Math.PI * 2;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
@@ -789,8 +1238,9 @@ export function buildGpgpuMorphTargetData(options: GpgpuMorphTargetBuildOptions)
 export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBuildOptions): {
   data: Float32Array;
   normalData: Float32Array;
+  fractureCells: FractureCellData | null;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, scatter, contourGeometry } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, rigidFracture, scatter, contourGeometry } = options;
   const formActive = isFormDeformationActive(form);
   // Raster mask (Phase X): resolved once; null unless the mode is
   // on and the map is usable, in which case the placement branches
@@ -831,9 +1281,17 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   // bite; the reference grid costs ~48² gradient evaluations,
   // negligible next to the bake itself.
   const terrainScatter = target === 'terrain' ? resolveTerrainScatter(scatter) : null;
+  // Terrain erosion (Phase AP): the eroded field for this bake,
+  // resolved once. Null (grammar off / both strengths 0) keeps
+  // every terrain sample below on the analytic path verbatim.
+  const terrainErosionField = terrainOpts
+    ? getErodedTerrainField(terrainOpts, terrainFieldSeed)
+    : null;
   const terrainScatterGradRef = terrainScatter && terrainOpts
     && (terrainScatter.slopeMax < 1 || terrainScatter.alignNormal > 0)
-    ? terrainScatterGradientRef(terrainOpts, terrainFieldSeed)
+    ? (terrainErosionField
+      ? erodedFieldScatterGradientRef(terrainErosionField)
+      : terrainScatterGradientRef(terrainOpts, terrainFieldSeed))
     : 0;
   const mediaPoint = { x: 0, y: 0, z: 0 };
   // Path placement (Phase S): active only for the svg target with a
@@ -1386,7 +1844,9 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
                 cx = (((rcx + rng()) / texSize) * 2 - 1) * extent;
                 cz = (((rcz + rng()) / texSize) * 2 - 1) * extent;
               }
-              const h = terrainHeightAt(cx, cz, terrainOpts, terrainFieldSeed);
+              const h = terrainErosionField
+                ? sampleErodedField(terrainErosionField, cx, cz)
+                : terrainHeightAt(cx, cz, terrainOpts, terrainFieldSeed);
               const t = terrainOpts.amplitude > 0
                 ? Math.max(0, Math.min(1, h / terrainOpts.amplitude * 0.5 + 0.5))
                 : 0.5;
@@ -1394,7 +1854,9 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
               let gz = 0;
               let slopeNorm = 0;
               if (terrainScatterGradRef > 0) {
-                const g = terrainGradientAt(cx, cz, terrainOpts, terrainFieldSeed);
+                const g = terrainErosionField
+                  ? erodedFieldGradient(terrainErosionField, cx, cz)
+                  : terrainGradientAt(cx, cz, terrainOpts, terrainFieldSeed);
                 gx = g.gx;
                 gz = g.gz;
                 slopeNorm = Math.min(1, Math.hypot(gx, gz) / terrainScatterGradRef);
@@ -1430,7 +1892,11 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
           } else {
             tx = (((cellX + s) / texSize) * 2 - 1) * extent;
             tz = (((cellZ + h1) / texSize) * 2 - 1) * extent;
-            ty = terrainOpts ? terrainHeightAt(tx, tz, terrainOpts, terrainFieldSeed) : 0;
+            ty = terrainOpts
+              ? (terrainErosionField
+                ? sampleErodedField(terrainErosionField, tx, tz)
+                : terrainHeightAt(tx, tz, terrainOpts, terrainFieldSeed))
+              : 0;
           }
           break;
         }
@@ -1541,11 +2007,19 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
     normalData[o + 2] = nnz;
     normalData[o + 3] = 0;
   }
+  // Rigid body cell data (Phase AU): computed from the finished
+  // cloud BEFORE the fracture transform below mutates it, with
+  // the same division options, so the solver's initial placement
+  // reproduces the (possibly fractured) cloud exactly. Read-only
+  // over the data — the bake itself is untouched by the request.
+  const fractureCells = rigidFracture
+    ? buildFractureCellData(data, count, rigidFracture)
+    : null;
   // Voronoi fracture (Phase AG): post-pass over the finished
   // cloud. Skipped entirely unless the option is present, so the
   // default bake stays bit-identical.
   if (fracture) {
     applyVoronoiFracture(data, count, fracture);
   }
-  return { data, normalData };
+  return { data, normalData, fractureCells };
 }

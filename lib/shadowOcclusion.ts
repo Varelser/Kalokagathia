@@ -56,6 +56,8 @@
  */
 
 import {
+  getErodedTerrainField,
+  sampleErodedField,
   terrainFieldSeedFor,
   terrainHeightAt,
   type GpgpuMorphTerrainKind,
@@ -125,7 +127,16 @@ export function clampFogShadowSteps(v: number): number {
 export function terrainWorldHeightAt(wx: number, wz: number, scene: ShadowScene): number {
   if (!(scene.worldScale > 0)) return 0;
   const fieldSeed = terrainFieldSeedFor(scene.seed, scene.terrain.seed);
-  return terrainHeightAt(wx / scene.worldScale, wz / scene.worldScale, scene.terrain, fieldSeed) * scene.worldScale;
+  // Terrain erosion (Phase AP): the occluder is the carved
+  // landscape while erosion is active (the field cache makes
+  // this one resolution per scene state, then plain sampling).
+  const field = getErodedTerrainField(scene.terrain, fieldSeed);
+  const fx = wx / scene.worldScale;
+  const fz = wz / scene.worldScale;
+  const h = field
+    ? sampleErodedField(field, fx, fz)
+    : terrainHeightAt(fx, fz, scene.terrain, fieldSeed);
+  return h * scene.worldScale;
 }
 
 /**
@@ -341,6 +352,15 @@ export interface ShadowSceneConfig {
   gpgpuMorphTerrainSeed: number;
   gpgpuMorphTerrainKind: GpgpuMorphTerrainKind;
   gpgpuMorphTerrainTerraceSteps: number;
+  // Terrain erosion (Phase AP) + the tunnel gate that strips it.
+  gpgpuMorphTerrainErosionWater: number;
+  gpgpuMorphTerrainErosionDroplets: number;
+  gpgpuMorphTerrainErosionDeposit: number;
+  gpgpuMorphTerrainErosionThermal: number;
+  gpgpuMorphTerrainErosionTalus: number;
+  gpgpuMorphTerrainErosionThermalPasses: number;
+  gpgpuMorphTerrainErosionSeed: number;
+  gpgpuTerrainMeshTunnel: boolean;
   gpgpuSeed: number;
   gpgpuMorphScale: number;
   gpgpuBounceRadius: number;
@@ -407,6 +427,17 @@ export function buildShadowScene(config: ShadowSceneConfig): ShadowScene {
       // selected recipe like every other consumer.
       kind: config.gpgpuMorphTerrainKind,
       terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
+      // Terrain erosion (Phase AP): the occluder follows the
+      // carved field; stripped in tunnel mode (plane only).
+      erosion: config.gpgpuTerrainMeshTunnel ? undefined : {
+        water: config.gpgpuMorphTerrainErosionWater,
+        droplets: config.gpgpuMorphTerrainErosionDroplets,
+        deposit: config.gpgpuMorphTerrainErosionDeposit,
+        thermal: config.gpgpuMorphTerrainErosionThermal,
+        talus: config.gpgpuMorphTerrainErosionTalus,
+        thermalPasses: config.gpgpuMorphTerrainErosionThermalPasses,
+        seed: config.gpgpuMorphTerrainErosionSeed,
+      },
     },
     seed: config.gpgpuSeed,
     worldScale,

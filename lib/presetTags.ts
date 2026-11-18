@@ -28,6 +28,11 @@ export function getPresetTags(preset: PresetRecord): string[] {
   if (types.includes('reaction_diffusion')) tags.push('Reaction');
   if (types.some((type) => DEPOSITION_TYPES.has(type))) tags.push('Deposition');
   if (config.gpgpuSphEnabled) tags.push('SPH');
+  if (config.gpgpuGrainsEnabled) tags.push('Grains');
+  if (config.gpgpuVellumEnabled) tags.push('Vellum');
+  if (config.gpgpuPyroEnabled) tags.push('Pyro');
+  if (config.gpgpuFlipEnabled) tags.push('FLIP');
+  if (config.gpgpuRigidEnabled) tags.push('RBD');
   if (config.gpgpuFluidEnabled) tags.push('Fluid Sim');
   if (config.gpgpuEnabled) tags.push('GPGPU');
   if (config.gpgpuWebGPUEnabled) tags.push('WebGPU');

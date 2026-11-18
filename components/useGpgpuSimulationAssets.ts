@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { BLIT_FRAG, FLUID_ADVECT_FRAG, SIM_POS_FRAG, SIM_VERT, SIM_VEL_FRAG, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildVelocityFragment } from "./gpgpuShaders";
+import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLUID_ADVECT_FRAG, SIM_POS_FRAG, SIM_VERT, SIM_VEL_FRAG, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildVelocityFragment } from "./gpgpuShaders";
+import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG } from "./gpgpuShaderSimulationVellum";
 import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG } from "./gpgpuShaderAux";
 import { useThree } from "@react-three/fiber";
 import { buildCustomForceHarness, compileCheckShader, setCustomForceStatus, validateCustomForceCode } from "../lib/gpgpuCustomForce";
@@ -141,6 +142,30 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSphRadius:       { value: 40.0 },
       uSphRestDensity:  { value: 2.0 },
       uSphSurfaceTension: { value: 0 },
+      // Grains (Phase AQ): disabled is the exact legacy path.
+      uGrainsEnabled:     { value: false },
+      uGrainsSize:        { value: 8.0 },
+      uGrainsStiffness:   { value: 2.0 },
+      uGrainsFriction:    { value: 0.6 },
+      uGrainsCohesion:    { value: 0 },
+      uGrainsRestitution: { value: 0 },
+      uGrainsRestDamping: { value: 0.5 },
+      // Vellum (Phase AR): disabled is the exact legacy path.
+      uVellumEnabled:     { value: false },
+      uVellumMode:        { value: 0 },
+      uVellumPressure:    { value: 0 },
+      uVellumDamping:     { value: 0 },
+      // Rigid bodies (Phase AU): disabled is the exact legacy path.
+      uRigidEnabled:      { value: false },
+      uRigidCellTex:      { value: null },
+      uRigidBodyTex:      { value: null },
+      // Pyro (Phase AS): disabled is the exact legacy path.
+      uPyroEnabled:       { value: false },
+      uPyroTemperature:   { value: 1.0 },
+      uPyroBuoyancy:      { value: 1.2 },
+      uPyroCooling:       { value: 1.0 },
+      uPyroDisturbance:   { value: 1.0 },
+      uPyroDisturbanceHeat: { value: 1.0 },
       uVFieldEnabled:   { value: false },
       uVFieldType:      { value: 2 },
       uVFieldStrength:  { value: 1.0 },
@@ -191,10 +216,21 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uMouseRadius:     { value: 150.0 },
       uMouseMode:       { value: 0 },
       uMousePaintRate:  { value: 0.6 },
+      // Multi-touch (Phase AO): count 0 = the multi block never
+      // runs; positions are only written while the key is on.
+      uMousePosMulti:   { value: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)] },
+      uMouseCount:      { value: 0 },
       uFluidEnabled:    { value: false },
       uFluidTex:        { value: null },
       uFluidInfluence:  { value: 0.8 },
       uFluidScale:      { value: 1.5 },
+      // FLIP layer (Phase AT): set only by the FLIP field
+      // pipeline in runFluidAdvectionPass; defaults keep the
+      // G2P block inert and the legacy sample verbatim.
+      uFlipEnabled:     { value: false },
+      uFlipBaseTex:     { value: null },
+      uFlipBlend:       { value: 0.95 },
+      uFlipTransfer:    { value: 1.0 },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_VEL_FRAG,
   });
@@ -214,6 +250,12 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uAgeReplicaCount: { value: 1 },
       uReplicaAgeBase: { value: 0 },
       uTexSizeF:      { value: texSize },
+      // Vellum (Phase AR): gates the pointer-paint teleport only.
+      uVellumEnabled: { value: false },
+      // Rigid bodies (Phase AU): disabled is the exact legacy path.
+      uRigidEnabled:  { value: false },
+      uRigidCellTex:  { value: null },
+      uRigidBodyTex:  { value: null },
       uVerletEnabled: { value: false },
       uPrevPosTex:    { value: null },
       uSdfEnabled:    { value: false },
@@ -240,6 +282,9 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uMouseRadius:   { value: 150.0 },
       uMouseMode:     { value: 0 },
       uMousePaintRate:{ value: 0.6 },
+      // Multi-touch (Phase AO): same contract as the velocity pass.
+      uMousePosMulti: { value: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)] },
+      uMouseCount:    { value: 0 },
       // Light emitter respawn (Phase T): off unless the emit shape
       // is 'light'; the position then mirrors the light keys.
       uEmitLight:     { value: false },
@@ -266,11 +311,52 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
   });
 }
 
+// Vellum projection material (Phase AR): one Jacobi iteration of
+// the distance-constraint solve. Shared-path only — the replica
+// stacks never receive it (the solver is resolved off while
+// stacks are active, mirroring the morph suppression).
+export function createVellumProjMaterial(texSize: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex:          { value: null },
+      uVellumRestTex:   { value: null },
+      uVellumStateTex:  { value: null },
+      uVellumTearEnabled: { value: false },
+      uVellumMode:      { value: 0 },
+      uVellumStiffness: { value: 0.8 },
+      uVellumBend:      { value: 0.3 },
+      uVellumPin:       { value: 1 },
+      uTexSizeF:        { value: texSize },
+    },
+    vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_PROJ_FRAG,
+  });
+}
+
+// Vellum tear-state material (Phase AR): updates the link
+// survival texture from the frame-start positions.
+export function createVellumStateMaterial(texSize: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex:          { value: null },
+      uVellumRestTex:   { value: null },
+      uVellumStateTex:  { value: null },
+      uVellumTear:      { value: 0 },
+      uVellumMode:      { value: 0 },
+      uTexSizeF:        { value: texSize },
+    },
+    vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_STATE_FRAG,
+  });
+}
+
 export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: UseGpgpuAssetsArgs) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const velSimMat = useMemo(() => createVelSimMaterial(texSize, config), []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const posSimMat = useMemo(() => createPosSimMaterial(texSize, config), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vellumProjMat = useMemo(() => createVellumProjMaterial(texSize), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vellumStateMat = useMemo(() => createVellumStateMaterial(texSize), []);
 
   // Aux event emission materials (B3): the shared event uniforms are
   // declared in gpgpuShaderAux's AUX_EVENT_GLSL chunk; the passes in
@@ -423,6 +509,59 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     vertexShader: SIM_VERT, fragmentShader: FLUID_ADVECT_FRAG,
   }), []);
 
+  // FLIP layer (Phase AT): P2G splat (custom ONE/ONE blending
+  // so deposits accumulate in the float transfer target),
+  // composite, pressure Jacobi, gradient subtraction and the
+  // zero-clear used for the transfer / pressure targets.
+  const flipSplatMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex:       { value: null },
+      uVelTex:       { value: null },
+      uBounceRadius: { value: 150.0 },
+      uFluidScale:   { value: 1.5 },
+      uCellOffset:   { value: new THREE.Vector2(0, 0) },
+    },
+    vertexShader: FLIP_SPLAT_VERT, fragmentShader: FLIP_SPLAT_FRAG,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneFactor,
+    depthTest: false,
+    depthWrite: false,
+    transparent: false,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  const flipCompositeMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uAdvTex:      { value: null },
+      uTransferTex: { value: null },
+      uAvgWeight:   { value: 1.0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP_COMPOSITE_FRAG,
+  }), []);
+
+  const flipJacobiMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uVelTex: { value: null },
+      uPresIn: { value: null },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP_JACOBI_FRAG,
+  }), []);
+
+  const flipSubtractMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uVelTex:  { value: null },
+      uPresTex: { value: null },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP_SUBTRACT_FRAG,
+  }), []);
+
+  const flipClearMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {},
+    vertexShader: SIM_VERT, fragmentShader: FLIP_CLEAR_FRAG,
+  }), []);
+
   const simMeshRef = useRef<THREE.Mesh | null>(null);
   useEffect(() => {
     const mesh = new THREE.Mesh(simGeo, velSimMat);
@@ -471,6 +610,8 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     simMeshRef,
     velSimMat,
     posSimMat,
+    vellumProjMat,
+    vellumStateMat,
     auxVelMat,
     auxPosMat,
     auxChainVelMat,
@@ -479,5 +620,10 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     sortDepthMat,
     bitonicMat,
     fluidAdvectMat,
+    flipSplatMat,
+    flipCompositeMat,
+    flipJacobiMat,
+    flipSubtractMat,
+    flipClearMat,
   };
 }

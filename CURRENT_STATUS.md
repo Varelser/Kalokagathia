@@ -1,19 +1,19 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.46.0**（2026-11-18、第6期 Phase AN＝編集基盤: Sequencer のトラック化＋キーフレーム。トラックは独立キー `kalokagathia.sequenceTracks.v1` に保存される setup 側の文法で、新規 config キー 0件・スターター +0。iMac ゲート・出荷は PHASE_AN_REPORT.md 参照）
+**現行バージョン: v1.53.0**（2026-11-18、第6期 Phase AU＝RBD（剛体）: 破砕セルの上に立つ CPU 剛体ソルバ（最大64体、固定刻み 1/120 s）。並進＋回転（球近似慣性）＋球近似の剛体間衝突＋接着破断＋スリープまで。凸包・メッシュ衝突・拘束ジョイント・摩擦スタック・地形床は解かない（床は平面）。新規 config キー +6（gpgpuRigid*）・スターター +2。iMac ゲート・出荷は PHASE_AU_REPORT.md 参照。第6期は本フェーズで完走）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_AN_REPORT.md / PHASE_AN_GATE_REPORT.md、前: PHASE_AM_REPORT.md / PHASE_AM_GATE_REPORT.md）
+  （最新: PHASE_AU_REPORT.md / PHASE_AU_GATE_REPORT.md、前: PHASE_AT_REPORT.md / PHASE_AT_GATE_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.46.0] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.53.0] が最新項）
 
 ## 資産の実数（2026-11-18 実測）
 
-- config キー: **1,206件** ／ 内蔵スターター: **553件**
+- config キー: **1,246件** ／ 内蔵スターター: **567件**
 - 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

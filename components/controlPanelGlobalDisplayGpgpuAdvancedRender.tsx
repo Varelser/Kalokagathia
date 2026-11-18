@@ -2,6 +2,7 @@ import React from 'react';
 
 import { Slider, Toggle } from './controlPanelParts';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
+import { OBJ_GEOM_TRIANGLE_BUDGET, describeObjGeomSource } from '../lib/objMesh';
 
 export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
@@ -13,7 +14,7 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
       <Toggle
         label="Geometry Mode"
         value={config.gpgpuGeomMode}
-        options={[{ label: 'Point', val: 'point' }, { label: 'Cube', val: 'cube' }, { label: 'Tetra', val: 'tetra' }, { label: 'Octa', val: 'octa' }, { label: 'Icosa', val: 'icosa' }, { label: 'Torus', val: 'torus' }, { label: 'Cone', val: 'cone' }]}
+        options={[{ label: 'Point', val: 'point' }, { label: 'Cube', val: 'cube' }, { label: 'Tetra', val: 'tetra' }, { label: 'Octa', val: 'octa' }, { label: 'Icosa', val: 'icosa' }, { label: 'Torus', val: 'torus' }, { label: 'Cone', val: 'cone' }, { label: 'OBJ', val: 'obj' }]}
         onChange={(v) => updateConfig('gpgpuGeomMode', v)}
       />
       {config.gpgpuGeomMode === 'point' && (
@@ -39,6 +40,9 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
           </select>
           <SpriteImageBlock config={config} updateConfig={updateConfig} />
         </>
+      )}
+      {config.gpgpuGeomMode === 'obj' && (
+        <ObjGeomSourceNote source={config.gpgpuMorphObjSource} />
       )}
       {config.gpgpuGeomMode !== 'point' && (
         <>
@@ -116,6 +120,30 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
     </div>
   </>
 );
+
+/**
+ * OBJ geometry source note (Phase AO): the 'obj' geometry mode
+ * reads the imported OBJ document (the same source the morph
+ * system and the OBJ mesh display use). The note states which of
+ * the four source states applies — including the octahedron
+ * fallback cases — instead of letting the shape change silently.
+ */
+const ObjGeomSourceNote: React.FC<{ source: string }> = ({ source }) => {
+  const info = React.useMemo(() => describeObjGeomSource(source), [source]);
+  const text =
+    info.state === 'empty'
+      ? 'OBJ ソースが未設定のため、粒子形状は八面体（Octa）で描かれます。Morph 節で OBJ を取り込むと、その形状が粒子の形になります。'
+      : info.state === 'invalid'
+        ? 'OBJ ソースを解析できないため、粒子形状は八面体（Octa）で描かれます。'
+        : info.state === 'over-budget'
+          ? `OBJ の三角形数 ${info.triangleCount} が予算 ${OBJ_GEOM_TRIANGLE_BUDGET} を超えるため、粒子形状は八面体（Octa）で描かれます（OBJ メッシュ表示とモーフは従来どおり使えます）。`
+          : `取り込み OBJ（${info.triangleCount} 三角形）を粒子の形として使います。半径は組み込み形状と同じ級（0.7）に揃えてあります。`;
+  return (
+    <div className="mt-2 rounded border border-white/10 bg-white/5 p-2">
+      <div className="text-[9px] leading-relaxed text-white/50">{text}</div>
+    </div>
+  );
+};
 
 /**
  * Sprite image controls (Phase U). Same placement manners as the

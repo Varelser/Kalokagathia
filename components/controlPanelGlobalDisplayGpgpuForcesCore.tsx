@@ -512,6 +512,38 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       )}
     </div>
 
+    {/* Grains (Phase AQ): DEM-style grain contact / friction */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Grains （粒状体ソルバ）" value={config.gpgpuGrainsEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGrainsEnabled', v)} />
+      {config.gpgpuGrainsEnabled && (
+        <>
+          <Slider label="Grain Size （粒径）" value={config.gpgpuGrainsSize} min={1} max={60} step={0.5} onChange={(v) => updateConfig('gpgpuGrainsSize', v)} />
+          <Slider label="Stiffness （接触の硬さ）" value={config.gpgpuGrainsStiffness} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuGrainsStiffness', v)} />
+          <Slider label="Friction （摩擦・安息角は創発）" value={config.gpgpuGrainsFriction} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsFriction', v)} />
+          <Slider label="Cohesion （凝集）" value={config.gpgpuGrainsCohesion} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsCohesion', v)} />
+          <Slider label="Restitution （反発）" value={config.gpgpuGrainsRestitution} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsRestitution', v)} />
+          <Slider label="Rest Damping （静止減衰）" value={config.gpgpuGrainsRestDamping} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsRestDamping', v)} />
+        </>
+      )}
+    </div>
+
+    {/* Pyro (Phase AS): particle-side temperature / buoyancy */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Pyro （温度・浮力ソルバ）" value={config.gpgpuPyroEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuPyroEnabled', v)} />
+      {config.gpgpuPyroEnabled && (
+        <>
+          <Slider label="Temperature （放出温度）" value={config.gpgpuPyroTemperature} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuPyroTemperature', v)} />
+          <Slider label="Buoyancy （浮力・重力単位）" value={config.gpgpuPyroBuoyancy} min={0} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuPyroBuoyancy', v)} />
+          <Slider label="Cooling （冷却の指数）" value={config.gpgpuPyroCooling} min={0} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuPyroCooling', v)} />
+          <Slider label="Disturbance （攪拌）" value={config.gpgpuPyroDisturbance} min={0} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuPyroDisturbance', v)} />
+          <Slider label="Disturbance Heat （カールへの温度連動）" value={config.gpgpuPyroDisturbanceHeat} min={0} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuPyroDisturbanceHeat', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            温度は年齢から決定的に導かれます（熱い粒子ほど昇り、冷えると落ち着きます）。グリッドの密度場・圧力投影・燃焼は解かない粒子側ソルバです。
+          </div>
+        </>
+      )}
+    </div>
+
     {/* Vector Field */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Vector Field" value={config.gpgpuVFieldEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuVFieldEnabled', v)} />

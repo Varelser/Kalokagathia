@@ -8,6 +8,12 @@ export {
   SORT_DEPTH_FRAG,
   SORT_BITONIC_FRAG,
   FLUID_ADVECT_FRAG,
+  FLIP_SPLAT_VERT,
+  FLIP_SPLAT_FRAG,
+  FLIP_COMPOSITE_FRAG,
+  FLIP_JACOBI_FRAG,
+  FLIP_SUBTRACT_FRAG,
+  FLIP_CLEAR_FRAG,
 } from "./gpgpuShaderSimulation";
 export { DRAW_VERT, DRAW_FRAG } from "./gpgpuShaderPoints";
 export {

@@ -3,10 +3,20 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
+import { buildVellumBakeData, vellumTearActive } from '../lib/gpgpuVellum';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
 import { splitTextOnPathGlyphs, type TextGlyphRaster } from '../lib/gpgpuTextOnPath';
 import { traceContourGeometry } from '../lib/contourTrace';
 import { fractureOptionFromConfig } from '../lib/voronoiFracture';
+import {
+  createRigidSolver,
+  resolveRigid,
+  rigidFractureOptionFromConfig,
+  writeRigidBodyTexture,
+  RIGID_BODY_TEX_WIDTH,
+  RIGID_BODY_TEX_HEIGHT,
+  type RigidSolverState,
+} from '../lib/rigidBodies';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
@@ -51,6 +61,20 @@ export function getTexSize(count: number): number {
 }
 
 function makeRT(size: number): THREE.WebGLRenderTarget {
+  return new THREE.WebGLRenderTarget(size, size, {
+    minFilter: THREE.NearestFilter,
+    magFilter: THREE.NearestFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.FloatType,
+    depthBuffer: false,
+    stencilBuffer: false,
+  });
+}
+
+// FLIP layer (Phase AT): grid data targets are sampled at texel
+// centres only (taps / composite), so nearest filtering keeps
+// every read exact.
+function makeGridRT(size: number): THREE.WebGLRenderTarget {
   return new THREE.WebGLRenderTarget(size, size, {
     minFilter: THREE.NearestFilter,
     magFilter: THREE.NearestFilter,
@@ -263,6 +287,8 @@ export type GpgpuRuntimeRefs = {
   fluidRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   fluidRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   fluidPingIsA: MutableRefObject<boolean>;
+  flipTransferRTRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
+  flipPressureRTRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   sortRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   sortRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   auxRtRef: MutableRefObject<{
@@ -277,6 +303,22 @@ export type GpgpuRuntimeRefs = {
   aux3RtRef: MutableRefObject<AuxPoolTargets | null>;
   aux3PingIsA: MutableRefObject<boolean>;
   replicaStacksRef: MutableRefObject<ReplicaStack[] | null>;
+  // Vellum (Phase AR): the static rest-pose texture (the grid
+  // bake itself) and the tear link-survival ping-pong pair
+  // (allocated only while the tear key is on).
+  vellumRestTexRef: MutableRefObject<THREE.DataTexture | null>;
+  vellumStateRtRef: MutableRefObject<{ a: THREE.WebGLRenderTarget; b: THREE.WebGLRenderTarget } | null>;
+  vellumStatePingIsA: MutableRefObject<boolean>;
+  // Rigid bodies (Phase AU): the per-particle cell texture
+  // (xyz = local offset in the body, w = body index), the
+  // solver's body-state supply texture (64×4) with its CPU
+  // backing array, and the CPU solver state itself. All three
+  // exist only while the solver is enabled AND a morph bake
+  // produced a fracture cell table to bind.
+  rigidCellTexRef: MutableRefObject<THREE.DataTexture | null>;
+  rigidBodyTexRef: MutableRefObject<THREE.DataTexture | null>;
+  rigidBodyDataRef: MutableRefObject<Float32Array | null>;
+  rigidSolverRef: MutableRefObject<RigidSolverState | null>;
   webgpuStateRef: MutableRefObject<WebGPUComputeState | null>;
   webgpuPosTexRef: MutableRefObject<THREE.DataTexture | null>;
   webgpuPingIsARef: MutableRefObject<boolean>;
@@ -535,6 +577,17 @@ export function buildMorphBakeData(
       // Terrain recipes (Phase AI): 'fbm' is the legacy field.
       kind: config.gpgpuMorphTerrainKind,
       terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
+      // Terrain erosion (Phase AP): plane mode only — stripped
+      // in tunnel mode (the collider / slope-force precedent).
+      erosion: config.gpgpuTerrainMeshTunnel ? undefined : {
+        water: config.gpgpuMorphTerrainErosionWater,
+        droplets: config.gpgpuMorphTerrainErosionDroplets,
+        deposit: config.gpgpuMorphTerrainErosionDeposit,
+        thermal: config.gpgpuMorphTerrainErosionThermal,
+        talus: config.gpgpuMorphTerrainErosionTalus,
+        thermalPasses: config.gpgpuMorphTerrainErosionThermalPasses,
+        seed: config.gpgpuMorphTerrainErosionSeed,
+      },
     },
     // Terrain scatter grammar (Phase AI): a top-level bake
     // option (only read by the terrain target), gated by its
@@ -578,6 +631,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const fluidRTARef = useRef<THREE.WebGLRenderTarget | null>(null);
   const fluidRTBRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const fluidPingIsA = useRef(true);
+  const flipTransferRTRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const flipPressureRTRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const sortRTARef = useRef<THREE.WebGLRenderTarget | null>(null);
   const sortRTBRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const auxRtRef = useRef<{
@@ -592,6 +647,13 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const aux3RtRef = useRef<AuxPoolTargets | null>(null);
   const aux3PingIsA = useRef(true);
   const replicaStacksRef = useRef<ReplicaStack[] | null>(null);
+  const vellumRestTexRef = useRef<THREE.DataTexture | null>(null);
+  const vellumStateRtRef = useRef<{ a: THREE.WebGLRenderTarget; b: THREE.WebGLRenderTarget } | null>(null);
+  const vellumStatePingIsA = useRef(true);
+  const rigidCellTexRef = useRef<THREE.DataTexture | null>(null);
+  const rigidBodyTexRef = useRef<THREE.DataTexture | null>(null);
+  const rigidBodyDataRef = useRef<Float32Array | null>(null);
+  const rigidSolverRef = useRef<RigidSolverState | null>(null);
   // Latest shared initial arrays (Phase W2): the main effect
   // rebuilds them on every reseed; the replica-stack effect seeds
   // the stacks from them, including when only the independent
@@ -610,6 +672,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     }
     prevPosRTRef.current?.dispose();
     initPosTexRef.current?.dispose();
+    vellumRestTexRef.current?.dispose();
+    vellumRestTexRef.current = null;
 
     const posA = makeRT(texSize);
     const posB = makeRT(texSize);
@@ -620,24 +684,39 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     prevPosRTRef.current = prevPos;
     pingIsA.current = true;
 
-    const { posData, velData } = buildGpgpuInitialData(
-      texSize,
-      config.gpgpuBounceRadius,
-      config.gpgpuEmitShape,
-      config.gpgpuSeed,
-      config.gpgpuAgeMax,
-      // Replica age phase (Phase M): only while the morph replica
-      // grammar is actually in play; otherwise null = legacy data.
-      config.gpgpuMorphEnabled && config.gpgpuMorphReplicaCount > 1 && config.gpgpuMorphReplicaAgeStep > 0
-        ? { count: config.gpgpuMorphReplicaCount, step: config.gpgpuMorphReplicaAgeStep }
-        : null,
-      // Light emitter (Phase T): the light position is an emitter
-      // input only for the 'light' shape; every other shape ignores
-      // it, so their seeded arrays stay byte-identical.
-      config.gpgpuEmitShape === 'light'
-        ? { lightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ } }
-        : null,
-    );
+    // Vellum (Phase AR): while the constraint solver is enabled
+    // the pool seeds from the structured grid bake instead of the
+    // emit-shape scatter — texel adjacency has to BE the cloth
+    // topology from frame 0. The bake doubles as the static rest
+    // texture the projection / state passes read. Disabled, the
+    // legacy initial data runs verbatim and no rest texture is
+    // built (the passes never see one).
+    const vellumOn = !!config.gpgpuVellumEnabled;
+    const { posData, velData } = vellumOn
+      ? buildVellumBakeData(texSize, config.gpgpuVellumMode, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax)
+      : buildGpgpuInitialData(
+        texSize,
+        config.gpgpuBounceRadius,
+        config.gpgpuEmitShape,
+        config.gpgpuSeed,
+        config.gpgpuAgeMax,
+        // Replica age phase (Phase M): only while the morph replica
+        // grammar is actually in play; otherwise null = legacy data.
+        config.gpgpuMorphEnabled && config.gpgpuMorphReplicaCount > 1 && config.gpgpuMorphReplicaAgeStep > 0
+          ? { count: config.gpgpuMorphReplicaCount, step: config.gpgpuMorphReplicaAgeStep }
+          : null,
+        // Light emitter (Phase T): the light position is an emitter
+        // input only for the 'light' shape; every other shape ignores
+        // it, so their seeded arrays stay byte-identical.
+        config.gpgpuEmitShape === 'light'
+          ? { lightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ } }
+          : null,
+      );
+    if (vellumOn) {
+      const restTex = new THREE.DataTexture(posData.slice(), texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+      restTex.needsUpdate = true;
+      vellumRestTexRef.current = restTex;
+    }
     initDataRef.current = { posData, velData };
     const initTex = new THREE.DataTexture(posData.slice(), texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     initTex.needsUpdate = true;
@@ -733,6 +812,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     fluidRTARef.current = makeFluidRT(FLUID_SIZE);
     fluidRTBRef.current = makeFluidRT(FLUID_SIZE);
     fluidPingIsA.current = true;
+    flipTransferRTRef.current?.dispose();
+    flipPressureRTRef.current?.dispose();
+    flipTransferRTRef.current = makeGridRT(FLUID_SIZE);
+    flipPressureRTRef.current = makeGridRT(FLUID_SIZE);
 
     const fluidInitData = new Float32Array(FLUID_SIZE * FLUID_SIZE * 4);
     for (let fi = 0; fi < FLUID_SIZE * FLUID_SIZE; fi++) {
@@ -799,6 +882,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       prevPosRTRef.current = null;
       initPosTexRef.current?.dispose();
       initPosTexRef.current = null;
+      vellumRestTexRef.current?.dispose();
+      vellumRestTexRef.current = null;
       sortRTARef.current?.dispose();
       sortRTARef.current = null;
       sortRTBRef.current?.dispose();
@@ -812,6 +897,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       fluidRTARef.current = null;
       fluidRTBRef.current?.dispose();
       fluidRTBRef.current = null;
+      flipTransferRTRef.current?.dispose();
+      flipTransferRTRef.current = null;
+      flipPressureRTRef.current?.dispose();
+      flipPressureRTRef.current = null;
       if (webgpuStateRef.current) {
         destroyWebGPUCompute(webgpuStateRef.current);
         webgpuStateRef.current = null;
@@ -820,6 +909,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       webgpuPosTexRef.current = null;
     };
   }, [texSize, gl, config.gpgpuEmitShape, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax, config.gpgpuMorphEnabled, config.gpgpuMorphReplicaCount, config.gpgpuMorphReplicaAgeStep,
+    // Vellum (Phase AR): toggling the solver or its shape reseeds
+    // the pool from the grid bake (the "reset = re-bake" rule).
+    config.gpgpuVellumEnabled, config.gpgpuVellumMode,
     // Light position only re-seeds while the 'light' emitter is in
     // use (Phase T); for other shapes it is masked to 0 so dragging
     // the light never resets their cloud.
@@ -848,6 +940,49 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     };
   }, [gl, auxDepth]);
 
+  // Vellum tear state pool (Phase AR): a texSize ping-pong pair
+  // holding link survival (.r = right link, .g = up link),
+  // allocated only while the tear key is live — in a dedicated
+  // effect like the aux chain pools, so toggling tear never
+  // reseeds the main pool. Both targets start fully alive
+  // (1,1,1,1); the state pass only ever clears bits, and a
+  // re-bake (any bake input changing) reallocates and resets.
+  const tearOn = vellumTearActive(config);
+  useEffect(() => {
+    if (vellumStateRtRef.current) {
+      vellumStateRtRef.current.a.dispose();
+      vellumStateRtRef.current.b.dispose();
+      vellumStateRtRef.current = null;
+    }
+    vellumStatePingIsA.current = true;
+    if (!tearOn) return;
+    const a = makeRT(texSize);
+    const b = makeRT(texSize);
+    vellumStateRtRef.current = { a, b };
+    const alive = new Float32Array(texSize * texSize * 4).fill(1);
+    const aliveTex = new THREE.DataTexture(alive, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    aliveTex.needsUpdate = true;
+    const copyScene = new THREE.Scene();
+    const copyCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const copyMat = new THREE.MeshBasicMaterial({ map: aliveTex });
+    copyMat.blending = THREE.NoBlending;
+    const copyMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), copyMat);
+    copyScene.add(copyMesh);
+    gl.setRenderTarget(a);
+    gl.render(copyScene, copyCam);
+    gl.setRenderTarget(b);
+    gl.render(copyScene, copyCam);
+    gl.setRenderTarget(null);
+    aliveTex.dispose();
+    copyMat.dispose();
+    copyMesh.geometry.dispose();
+    return () => {
+      vellumStateRtRef.current?.a.dispose();
+      vellumStateRtRef.current?.b.dispose();
+      vellumStateRtRef.current = null;
+    };
+  }, [gl, texSize, tearOn, config.gpgpuVellumMode, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuCount]);
+
   // Replica simulation stacks (Phase W2): allocated only while
   // the independent sim is active (key on + morph on + count > 1),
   // in a dedicated effect — exactly like the aux chain pools — so
@@ -858,7 +993,13 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // fresh arrays. While the stacks run, the main pool's targets
   // hold the merged layout the consumers read, so toggling the
   // key off resumes the shared sim from the merged state.
-  const replicaStacksActive = resolveReplicaIndependentActive(config);
+  // Vellum (Phase AR) suppresses the replica stacks outright,
+  // and FLIP (Phase AT) does the same (its P2G splat reads the
+  // shared pool's frame-start textures):
+  // the stacks are a morph-grammar construct and the constraint
+  // grid must own the whole pool layout (the passes additionally
+  // resolve morph attraction off while the solver is active).
+  const replicaStacksActive = resolveReplicaIndependentActive(config) && !config.gpgpuVellumEnabled && !config.gpgpuFlipEnabled && !config.gpgpuRigidEnabled;
   const replicaStackCount = replicaStacksActive
     ? Math.max(1, Math.min(8, Math.round(config.gpgpuMorphReplicaCount)))
     : 0;
@@ -901,6 +1042,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // no texture exists and the velocity shader skips the force entirely,
   // leaving the stock behaviour bit-identical.
   const morphEnabled = config.gpgpuMorphEnabled;
+  // Rigid bodies (Phase AU): the solver's build rides the morph
+  // bake, so its switches are bake inputs here.
+  const rigidEnabled = config.gpgpuRigidEnabled;
+  const rigidGlueEnabled = config.gpgpuRigidGlueEnabled;
+  const rigidStartSleeping = config.gpgpuRigidStartSleeping;
+  const morphFractureEnabled = config.gpgpuMorphFractureEnabled;
+  const morphFractureCells = config.gpgpuMorphFractureCells;
+  const morphFractureSeed = config.gpgpuMorphFractureSeed;
+  const morphFractureGap = config.gpgpuMorphFractureGap;
   const morphTarget = config.gpgpuMorphTarget;
   const morphScale = config.gpgpuMorphScale;
   const morphJitter = config.gpgpuMorphJitter;
@@ -931,6 +1081,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // Terrain recipes + scatter grammar (Phase AI).
   const morphTerrainKind = config.gpgpuMorphTerrainKind;
   const morphTerrainTerraceSteps = config.gpgpuMorphTerrainTerraceSteps;
+  // Terrain erosion (Phase AP) + its plane-mode gate.
+  const morphTerrainErosionWater = config.gpgpuMorphTerrainErosionWater;
+  const morphTerrainErosionDroplets = config.gpgpuMorphTerrainErosionDroplets;
+  const morphTerrainErosionDeposit = config.gpgpuMorphTerrainErosionDeposit;
+  const morphTerrainErosionThermal = config.gpgpuMorphTerrainErosionThermal;
+  const morphTerrainErosionTalus = config.gpgpuMorphTerrainErosionTalus;
+  const morphTerrainErosionThermalPasses = config.gpgpuMorphTerrainErosionThermalPasses;
+  const morphTerrainErosionSeed = config.gpgpuMorphTerrainErosionSeed;
+  const morphTerrainTunnel = config.gpgpuTerrainMeshTunnel;
   const morphScatterEnabled = config.gpgpuMorphScatterEnabled;
   const morphScatterDensity = config.gpgpuMorphScatterDensity;
   const morphScatterHeightMin = config.gpgpuMorphScatterHeightMin;
@@ -1036,7 +1195,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       ? sampleObjPointCloudWithNormals(morphObjSource, morphObjSampleMode) : null;
     const objPoints = objSample ? objSample.points : null;
     const objNormals = objSample ? objSample.normals : null;
-    const { data, normalData } = buildGpgpuMorphTargetDataWithNormals({
+    const { data, normalData, fractureCells } = buildGpgpuMorphTargetDataWithNormals({
       texSize,
       target: morphTarget,
       worldScale: morphScale * morphBounceRadius * 0.48,
@@ -1064,6 +1223,13 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       // Voronoi fracture (Phase AG): same shared option builder
       // as the WebGPU bake (buildMorphBakeData above).
       fracture: fractureOptionFromConfig(config),
+      // Rigid bodies (Phase AU): while the solver is enabled the
+      // bake also yields the fracture cell table the CPU solver
+      // binds to (division from the fracture keys; gap follows
+      // the fracture's own enable, so the offsets match the
+      // produced cloud). Null while disabled — no cell data is
+      // computed and the bake is untouched.
+      rigidFracture: rigidEnabled ? rigidFractureOptionFromConfig(config) : null,
       form: {
         disperseAmount: morphDisperseAmount,
         disperseDirection: morphDisperseDirection,
@@ -1096,6 +1262,16 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         // Terrain recipes (Phase AI): 'fbm' is the legacy field.
         kind: morphTerrainKind,
         terraceSteps: morphTerrainTerraceSteps,
+        // Terrain erosion (Phase AP): stripped in tunnel mode.
+        erosion: morphTerrainTunnel ? undefined : {
+          water: morphTerrainErosionWater,
+          droplets: morphTerrainErosionDroplets,
+          deposit: morphTerrainErosionDeposit,
+          thermal: morphTerrainErosionThermal,
+          talus: morphTerrainErosionTalus,
+          thermalPasses: morphTerrainErosionThermalPasses,
+          seed: morphTerrainErosionSeed,
+        },
       },
       // Terrain scatter grammar (Phase AI): top-level bake
       // option, same assembly as the shared builder above.
@@ -1141,11 +1317,51 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     const normalTex = new THREE.DataTexture(normalData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     normalTex.needsUpdate = true;
     morphNormalTexRef.current = normalTex;
+    // Rigid bodies (Phase AU): build the solver + supply
+    // textures from the bake's cell table. Rebuilt with every
+    // bake (the "reset = re-bake" rule the Vellum grid follows),
+    // so the solver's initial placement is always the current
+    // cloud. Absent cell data (solver off) leaves all refs null.
+    let rigidCellTex: THREE.DataTexture | null = null;
+    let rigidBodyTex: THREE.DataTexture | null = null;
+    if (rigidEnabled && fractureCells) {
+      const cellData = new Float32Array(texSize * texSize * 4);
+      for (let i = 0; i < texSize * texSize; i++) {
+        cellData[i * 4] = fractureCells.localOffsets[i * 3];
+        cellData[i * 4 + 1] = fractureCells.localOffsets[i * 3 + 1];
+        cellData[i * 4 + 2] = fractureCells.localOffsets[i * 3 + 2];
+        cellData[i * 4 + 3] = fractureCells.assignment[i];
+      }
+      rigidCellTex = new THREE.DataTexture(cellData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+      rigidCellTex.needsUpdate = true;
+      rigidCellTexRef.current = rigidCellTex;
+      const resolved = resolveRigid(config);
+      rigidSolverRef.current = createRigidSolver(fractureCells, {
+        glueEnabled: resolved.glueEnabled,
+        startSleeping: resolved.startSleeping,
+      });
+      const bodyData = new Float32Array(RIGID_BODY_TEX_WIDTH * RIGID_BODY_TEX_HEIGHT * 4);
+      writeRigidBodyTexture(rigidSolverRef.current, bodyData);
+      rigidBodyDataRef.current = bodyData;
+      rigidBodyTex = new THREE.DataTexture(bodyData, RIGID_BODY_TEX_WIDTH, RIGID_BODY_TEX_HEIGHT, THREE.RGBAFormat, THREE.FloatType);
+      rigidBodyTex.needsUpdate = true;
+      rigidBodyTexRef.current = rigidBodyTex;
+    }
     return () => {
       tex.dispose();
       if (morphTexRef.current === tex) morphTexRef.current = null;
       normalTex.dispose();
       if (morphNormalTexRef.current === normalTex) morphNormalTexRef.current = null;
+      if (rigidCellTex) {
+        rigidCellTex.dispose();
+        if (rigidCellTexRef.current === rigidCellTex) rigidCellTexRef.current = null;
+      }
+      if (rigidBodyTex) {
+        rigidBodyTex.dispose();
+        if (rigidBodyTexRef.current === rigidBodyTex) rigidBodyTexRef.current = null;
+        rigidBodyDataRef.current = null;
+        rigidSolverRef.current = null;
+      }
     };
   }, [
     texSize,
@@ -1179,6 +1395,14 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTerrainSeed,
     morphTerrainKind,
     morphTerrainTerraceSteps,
+    morphTerrainErosionWater,
+    morphTerrainErosionDroplets,
+    morphTerrainErosionDeposit,
+    morphTerrainErosionThermal,
+    morphTerrainErosionTalus,
+    morphTerrainErosionThermalPasses,
+    morphTerrainErosionSeed,
+    morphTerrainTunnel,
     morphScatterEnabled,
     morphScatterDensity,
     morphScatterHeightMin,
@@ -1218,6 +1442,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphMaskHeight,
     morphMaskThreshold,
     morphMaskInvert,
+    // Rigid bodies (Phase AU): solver switches + the fracture
+    // division keys are bake inputs while the solver is enabled.
+    rigidEnabled,
+    rigidGlueEnabled,
+    rigidStartSleeping,
+    morphFractureEnabled,
+    morphFractureCells,
+    morphFractureSeed,
+    morphFractureGap,
     attrCloud?.version ?? 0,
   ]);
 
@@ -1296,6 +1529,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     fluidRTARef,
     fluidRTBRef,
     fluidPingIsA,
+    flipTransferRTRef,
+    flipPressureRTRef,
     sortRTARef,
     sortRTBRef,
     auxRtRef,
@@ -1305,6 +1540,13 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     aux3RtRef,
     aux3PingIsA,
     replicaStacksRef,
+    vellumRestTexRef,
+    vellumStateRtRef,
+    vellumStatePingIsA,
+    rigidCellTexRef,
+    rigidBodyTexRef,
+    rigidBodyDataRef,
+    rigidSolverRef,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,

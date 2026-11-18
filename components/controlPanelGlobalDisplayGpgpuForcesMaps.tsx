@@ -149,6 +149,12 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
               </div>
             </>
           )}
+          <Toggle label="Multi-Touch (同時干渉)" value={config.gpgpuMouseMultiTouch} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMouseMultiTouch', v)} />
+          {config.gpgpuMouseMultiTouch && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              最大4つのポインタ（タッチ／ペン／マウス）が同時に干渉します。強さ・半径・モードは全ポインタ共通で、2本指のカメラ操作中も干渉は入ります。WebGPU 経路は未対応のため、この設定では WebGL へ誘導されます。レイヤー2／3のポインタは従来どおり単一です。
+            </div>
+          )}
         </>
       )}
     </div>
@@ -172,6 +178,15 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
           <Slider label="Decay" value={config.gpgpuFluidDecay} min={0} max={0.1} step={0.001} onChange={(v) => updateConfig('gpgpuFluidDecay', v)} />
           <Slider label="Scale" value={config.gpgpuFluidScale} min={0.5} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuFluidScale', v)} />
           <Toggle label="Ext. Force (Vortex)" value={config.gpgpuFluidExtForce} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuFluidExtForce', v)} />
+          <Toggle label="FLIP Layer (2D Pressure)" value={config.gpgpuFlipEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuFlipEnabled', v)} />
+          {config.gpgpuFlipEnabled && (
+            <>
+              <Slider label="FLIP Blend (PIC ↔ FLIP)" value={config.gpgpuFlipBlend} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuFlipBlend', v)} />
+              <Slider label="Pressure Iterations" value={config.gpgpuFlipPressureIterations} min={0} max={32} step={1} onChange={(v) => updateConfig('gpgpuFlipPressureIterations', v)} />
+              <Slider label="Transfer" value={config.gpgpuFlipTransfer} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuFlipTransfer', v)} />
+              <div className="mt-1 text-[9px] text-white/40">2D planar FLIP on the field grid: particles &lt;-&gt; grid transfer + pressure projection (incompressible xz flow). No free surface / y-pressure — gravity, SPH and colliders still own the vertical.</div>
+            </>
+          )}
         </>
       )}
     </div>

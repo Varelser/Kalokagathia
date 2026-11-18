@@ -19,7 +19,9 @@ export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   // is genuinely implemented on this path. Still unsupported —
   // and therefore still routing to WebGL — are 'age' (the respawn
   // lifecycle lives in the WebGL position pass), 'fluid-field'
-  // (its solver is a WebGL FBO pass with no WGSL counterpart) and
+  // (its solver is a WebGL FBO pass with no WGSL counterpart),
+  // 'flip' (Phase AT: the P2G / pressure-projection passes are
+  // WebGL FBO passes with no WGSL counterpart) and
   // 'custom-force' (user GLSL cannot be compiled to WGSL).
   'audio-reactive',
   'verlet',
@@ -72,6 +74,9 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   if (config.gpgpuSpringEnabled) features.push('spring');
   if (config.gpgpuSdfEnabled) features.push('sdf-collider');
   if (config.gpgpuMouseEnabled) features.push('mouse-force');
+  // Multi-touch interference (Phase AO): the WGSL passes carry a
+  // single mouse position only — declaring it routes to WebGL.
+  if (config.gpgpuMouseEnabled && config.gpgpuMouseMultiTouch) features.push('multi-touch');
   if (config.gpgpuFluidEnabled) features.push('fluid-field');
   if (config.gpgpuMorphEnabled) features.push('morph');
   // Phase X3 inventory: the features below exist in the WebGL
@@ -135,6 +140,29 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // Wind volume (Phase AL): the placed wind localisation lives in
   // the WebGL velocity pass only — declaring it routes to WebGL.
   if (config.gpgpuWindVolumeEnabled) features.push('wind-volume');
+  // Grains (Phase AQ): the DEM-style contact / friction solver
+  // lives in the WebGL velocity pass only — declaring it routes
+  // to WebGL (the CPU fallback treats it as a no-op, like SPH).
+  if (config.gpgpuGrainsEnabled) features.push('grains');
+  // Vellum (Phase AR): the constraint projection pass, the tear
+  // state pass and the structured grid bake live on the WebGL
+  // path only — declaring it routes to WebGL (the CPU fallback
+  // treats it as a no-op, like SPH / Grains).
+  if (config.gpgpuVellumEnabled) features.push('vellum');
+  // Pyro (Phase AS): the temperature / buoyancy / disturbance
+  // terms live in the WebGL velocity pass only — declaring it
+  // routes to WebGL (the CPU fallback treats it as a no-op,
+  // like SPH / Grains).
+  if (config.gpgpuPyroEnabled) features.push('pyro');
+  // FLIP (Phase AT): the P2G splat, pressure projection and
+  // G2P transfer live on the WebGL FBO path only — declaring
+  // it routes to WebGL (the CPU fallback treats it as a
+  // no-op, like SPH / Grains).
+  if (config.gpgpuFlipEnabled) features.push('flip');
+  // Rigid bodies (Phase AU): the CPU solver + texture supply
+  // live on the WebGL path only — declaring it routes to WebGL
+  // (the CPU fallback treats it as a no-op, like SPH / Grains).
+  if (config.gpgpuRigidEnabled) features.push('rigid-bodies');
   return features;
 }
 

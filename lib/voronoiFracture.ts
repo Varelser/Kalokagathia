@@ -184,3 +184,115 @@ export function applyVoronoiFracture(
   }
   return { cells: k, nonEmptyCells: nonEmpty };
 }
+
+// ── Rigid body cell data (Phase AU) ────────────────────────────
+// The assignment applyVoronoiFracture computes internally and
+// discards, taken out as an additional output for the CPU rigid
+// body solver (lib/rigidBodies.ts): which body each point
+// belongs to, the point's offset from its body's centre (in the
+// POST-transform cloud, so the solver's initial placement
+// reproduces the baked shape exactly), and the body table
+// (transformed centroid / bounding radius / RMS radius / member
+// count). Pure and deterministic, and read-only over `data`:
+// asking for the cell data never changes the bake itself. Must
+// be called with the PRE-transform data and the same options the
+// bake's own fracture pass uses (or gap 0 when the fracture is
+// disabled), so the two computations agree point for point.
+
+export interface FractureCellData {
+  /** Per-point body index, compacted over non-empty cells. */
+  assignment: Int32Array;
+  /** Per-point local offset from its body's transformed centroid, xyz-packed. */
+  localOffsets: Float32Array;
+  /** Body centroids after the fracture transform, xyz-packed. */
+  centroids: Float32Array;
+  /** Bounding radius per body (max |local offset|). */
+  radii: Float32Array;
+  /** RMS radius per body. */
+  coreRadii: Float32Array;
+  /** Member count per body. */
+  cellCounts: Int32Array;
+  bodyCount: number;
+}
+
+export function buildFractureCellData(
+  data: Float32Array,
+  count: number,
+  options: VoronoiFractureOptions,
+): FractureCellData | null {
+  const n = Math.max(0, Math.floor(count));
+  if (n === 0 || data.length < n * 4) return null;
+  const xyz = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    xyz[i * 3] = data[i * 4];
+    xyz[i * 3 + 1] = data[i * 4 + 1];
+    xyz[i * 3 + 2] = data[i * 4 + 2];
+  }
+  const sites = buildFractureSites(xyz, n, options.cells, options.seed);
+  const k = Math.floor(sites.length / 3);
+  if (k === 0) return null;
+  const { assignment, centroids, cellCounts } = assignFractureCells(xyz, n, sites);
+  let cx = 0; let cy = 0; let cz = 0;
+  for (let i = 0; i < n; i++) { cx += xyz[i * 3]; cy += xyz[i * 3 + 1]; cz += xyz[i * 3 + 2]; }
+  cx /= n; cy /= n; cz /= n;
+  const gap = clampFractureGap(options.gap);
+  const shrink = 1 - 0.3 * gap;
+  // Compact the non-empty cells into body indices.
+  const bodyOf = new Int32Array(k).fill(-1);
+  let bodyCount = 0;
+  for (let c = 0; c < k; c++) if (cellCounts[c] > 0) { bodyOf[c] = bodyCount; bodyCount += 1; }
+  if (bodyCount === 0) return null;
+  const outAssignment = new Int32Array(n);
+  const localOffsets = new Float32Array(n * 3);
+  const outCentroids = new Float32Array(bodyCount * 3);
+  const radii = new Float32Array(bodyCount);
+  const coreRadii = new Float32Array(bodyCount);
+  const outCounts = new Int32Array(bodyCount);
+  const sumSq = new Float64Array(bodyCount);
+  for (let c = 0; c < k; c++) {
+    const b = bodyOf[c];
+    if (b < 0) continue;
+    // The transformed centroid: the shrink acts around the
+    // centroid itself, so only the centre-push moves it.
+    outCentroids[b * 3] = centroids[c * 3] + (centroids[c * 3] - cx) * gap;
+    outCentroids[b * 3 + 1] = centroids[c * 3 + 1] + (centroids[c * 3 + 1] - cy) * gap;
+    outCentroids[b * 3 + 2] = centroids[c * 3 + 2] + (centroids[c * 3 + 2] - cz) * gap;
+    outCounts[b] = cellCounts[c];
+  }
+  for (let i = 0; i < n; i++) {
+    const c = assignment[i];
+    const b = bodyOf[c];
+    outAssignment[i] = b;
+    const mx = centroids[c * 3]; const my = centroids[c * 3 + 1]; const mz = centroids[c * 3 + 2];
+    const px = mx + (xyz[i * 3] - mx) * shrink + (mx - cx) * gap;
+    const py = my + (xyz[i * 3 + 1] - my) * shrink + (my - cy) * gap;
+    const pz = mz + (xyz[i * 3 + 2] - mz) * shrink + (mz - cz) * gap;
+    const lx = px - outCentroids[b * 3];
+    const ly = py - outCentroids[b * 3 + 1];
+    const lz = pz - outCentroids[b * 3 + 2];
+    localOffsets[i * 3] = lx;
+    localOffsets[i * 3 + 1] = ly;
+    localOffsets[i * 3 + 2] = lz;
+    // Measure the radii from the STORED (float32) offsets, so
+    // the bounding radius covers exactly what consumers read.
+    const sx = localOffsets[i * 3];
+    const sy = localOffsets[i * 3 + 1];
+    const sz = localOffsets[i * 3 + 2];
+    const d2 = sx * sx + sy * sy + sz * sz;
+    sumSq[b] += d2;
+    const d = Math.sqrt(d2);
+    if (d > radii[b]) radii[b] = d;
+  }
+  for (let b = 0; b < bodyCount; b++) {
+    coreRadii[b] = Math.sqrt(sumSq[b] / Math.max(1, outCounts[b]));
+  }
+  return {
+    assignment: outAssignment,
+    localOffsets,
+    centroids: outCentroids,
+    radii,
+    coreRadii,
+    cellCounts: outCounts,
+    bodyCount,
+  };
+}

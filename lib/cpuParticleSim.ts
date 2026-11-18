@@ -236,6 +236,17 @@ export function buildCpuMorphData(
       // Terrain recipes (Phase AI): 'fbm' is the legacy field.
       kind: config.gpgpuMorphTerrainKind,
       terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
+      // Terrain erosion (Phase AP): plane mode only — stripped
+      // in tunnel mode (the collider / slope-force precedent).
+      erosion: config.gpgpuTerrainMeshTunnel ? undefined : {
+        water: config.gpgpuMorphTerrainErosionWater,
+        droplets: config.gpgpuMorphTerrainErosionDroplets,
+        deposit: config.gpgpuMorphTerrainErosionDeposit,
+        thermal: config.gpgpuMorphTerrainErosionThermal,
+        talus: config.gpgpuMorphTerrainErosionTalus,
+        thermalPasses: config.gpgpuMorphTerrainErosionThermalPasses,
+        seed: config.gpgpuMorphTerrainErosionSeed,
+      },
     },
     // Terrain scatter grammar (Phase AI): top-level bake option,
     // same assembly as the GPU paths.

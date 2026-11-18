@@ -201,3 +201,64 @@ export function objMeshRepeatTransforms(
 export function objMeshWorldScale(morphScale: number, bounceRadius: number, meshScale: number): number {
   return morphScale * bounceRadius * 0.48 * meshScale;
 }
+
+/* ------------------------------------------------------------------ */
+/* Particle geometry mode 'obj' (Phase AO)                             */
+
+/**
+ * Triangle budget for the 'obj' particle geometry mode. The shared
+ * OBJ parser has no size limits of its own (the morph sampler and
+ * the mesh display subsample / draw once), but the geometry mode
+ * replicates the base geometry per particle instance, so an
+ * unbounded source would multiply straight into the vertex cost.
+ * Over-budget sources fall back to the octahedron base — the UI
+ * states the fallback instead of switching silently.
+ */
+export const OBJ_GEOM_TRIANGLE_BUDGET = 4096;
+
+/**
+ * Base radius of the 'obj' particle geometry: the built-in shapes
+ * sit in the 0.6..0.82 class (octahedron 0.7), and the OBJ data is
+ * normalised to bounding-sphere radius 1, so it is scaled by this
+ * factor to land in the same class.
+ */
+export const OBJ_GEOM_RADIUS = 0.7;
+
+export type ObjGeomSourceState = 'empty' | 'invalid' | 'over-budget' | 'ok';
+
+/** Light source classification for the UI note (parse only). */
+export function describeObjGeomSource(objText: string): { state: ObjGeomSourceState; triangleCount: number } {
+  if (!objText || objText.trim().length === 0) return { state: 'empty', triangleCount: 0 };
+  const geometry = parseObjGeometry(objText);
+  if (!geometry) return { state: 'invalid', triangleCount: 0 };
+  return {
+    state: geometry.triangleCount > OBJ_GEOM_TRIANGLE_BUDGET ? 'over-budget' : 'ok',
+    triangleCount: geometry.triangleCount,
+  };
+}
+
+export interface ObjGeomBaseData {
+  /** Positions scaled to OBJ_GEOM_RADIUS, flat xyz triples. */
+  positions: Float32Array;
+  normals: Float32Array;
+  indices: Uint32Array;
+  triangleCount: number;
+}
+
+/**
+ * Base geometry data for the 'obj' particle geometry mode: the
+ * shared mesh geometry data (same normalisation as the morph
+ * sampler) scaled into the built-in shapes' radius class. Returns
+ * null when the source is empty, unparseable or over the triangle
+ * budget — the caller falls back to the octahedron base and the UI
+ * note (describeObjGeomSource) states which case it is.
+ */
+export function buildObjGeomBaseData(objText: string): ObjGeomBaseData | null {
+  if (!objText || objText.trim().length === 0) return null;
+  const data = buildObjMeshGeometryData(objText);
+  if (!data) return null;
+  if (data.triangleCount > OBJ_GEOM_TRIANGLE_BUDGET) return null;
+  const positions = new Float32Array(data.positions.length);
+  for (let i = 0; i < data.positions.length; i++) positions[i] = data.positions[i] * OBJ_GEOM_RADIUS;
+  return { positions, normals: data.normals, indices: data.indices, triangleCount: data.triangleCount };
+}

@@ -39,8 +39,19 @@ import {
 import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
+import { resolveRigid, stepRigidBodies, writeRigidBodyTexture } from '../lib/rigidBodies';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { getDeterministicRotationFrame, isDeterministicJobActive } from '../lib/sceneRotationDeterminism';
+import {
+  MAX_MULTI_POINTERS,
+  createPointerTrackMap,
+  movePointer,
+  pointerList,
+  primaryPointer,
+  releasePointer,
+  trackPointer,
+  type PointerTrackMap,
+} from '../lib/multiPointer';
 
 type GpgpuSystemProps = {
   audioRef: MutableRefObject<{ bass: number; treble: number; pulse: number }>;
@@ -53,6 +64,14 @@ type GpgpuSystemProps = {
 export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config, isPlaying, posReadbackRef, pointCloudCaptureRef }) => {
   const { gl, camera } = useThree();
   const mouseNDC = useRef(new THREE.Vector2(0, 0));
+  // Multi-pointer tracking (Phase AO): insertion-ordered set of
+  // live pointers. The FIRST entry drives mouseNDC / mouseWorld
+  // (the legacy single-pointer path verbatim); the full set only
+  // reaches the shaders while gpgpuMouseMultiTouch is on.
+  const pointerMapRef = useRef<PointerTrackMap>(createPointerTrackMap());
+  const mouseWorldMultiRef = useRef<THREE.Vector3[]>(
+    Array.from({ length: MAX_MULTI_POINTERS }, () => new THREE.Vector3()),
+  );
   const mouseWorldRef = useRef(new THREE.Vector3(0, 0, 0));
   const tempMouseVec = useRef(new THREE.Vector3());
   const tempMouseDir = useRef(new THREE.Vector3());
@@ -81,13 +100,54 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
 
   useEffect(() => {
     const canvas = gl.domElement;
-    const onMove = (e: MouseEvent) => {
+    const map = pointerMapRef.current;
+    const toNdc = (e: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
-      mouseNDC.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouseNDC.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      return {
+        x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        y: -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      };
     };
-    canvas.addEventListener('mousemove', onMove);
-    return () => canvas.removeEventListener('mousemove', onMove);
+    const syncPrimary = () => {
+      const primary = primaryPointer(map);
+      if (primary) {
+        mouseNDC.current.x = primary.x;
+        mouseNDC.current.y = primary.y;
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      const ndc = toNdc(e);
+      trackPointer(map, e.pointerId, ndc.x, ndc.y);
+      syncPrimary();
+    };
+    const onMove = (e: PointerEvent) => {
+      const ndc = toNdc(e);
+      // The mouse is tracked on move alone (hover), exactly like
+      // the legacy mousemove listener; touch / pen moves only
+      // update pointers that are already down.
+      if (e.pointerType === 'mouse') trackPointer(map, e.pointerId, ndc.x, ndc.y);
+      else movePointer(map, e.pointerId, ndc.x, ndc.y);
+      syncPrimary();
+    };
+    const onUp = (e: PointerEvent) => {
+      // The mouse entry persists after button-up (hover continues
+      // to drive it); touch / pen entries end with the contact.
+      // OrbitControls keeps its own handling — pointers are only
+      // observed here, never captured or prevented, so two-finger
+      // camera gestures and multi-touch interference coexist.
+      if (e.pointerType !== 'mouse') releasePointer(map, e.pointerId);
+      syncPrimary();
+    };
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
+    return () => {
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onUp);
+    };
   }, [gl.domElement]);
 
   useEffect(() => {
@@ -133,6 +193,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     simMeshRef,
     velSimMat,
     posSimMat,
+    vellumProjMat,
+    vellumStateMat,
     auxVelMat,
     auxPosMat,
     auxChainVelMat,
@@ -143,6 +205,11 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     sortDepthMat,
     bitonicMat,
     fluidAdvectMat,
+    flipSplatMat,
+    flipCompositeMat,
+    flipJacobiMat,
+    flipSubtractMat,
+    flipClearMat,
     drawGeo,
     streakGeo,
     auxDrawGeo,
@@ -163,6 +230,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     fluidRTARef,
     fluidRTBRef,
     fluidPingIsA,
+    flipTransferRTRef,
+    flipPressureRTRef,
     sortRTARef,
     sortRTBRef,
     auxRtRef,
@@ -172,10 +241,35 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     aux3RtRef,
     aux3PingIsA,
     replicaStacksRef,
+    vellumRestTexRef,
+    vellumStateRtRef,
+    vellumStatePingIsA,
+    rigidCellTexRef,
+    rigidBodyTexRef,
+    rigidBodyDataRef,
+    rigidSolverRef,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,
   } = runtime;
+
+  // FLIP (Phase AT): the P2G splat points — one vertex per
+  // particle texel; the position attribute carries the texel uv
+  // the splat vertex shader fetches position / velocity with.
+  const flipPoints = useMemo(() => {
+    const count = texSize * texSize;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = ((i % texSize) + 0.5) / texSize;
+      positions[i * 3 + 1] = (Math.floor(i / texSize) + 0.5) / texSize;
+      positions[i * 3 + 2] = 0;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const points = new THREE.Points(geo, flipSplatMat);
+    points.frustumCulled = false;
+    return points;
+  }, [texSize, flipSplatMat]);
 
   useFrame(({ gl: glCtx }, delta) => {
     if (!isPlaying || !rtRef.current || !simMeshRef.current) return;
@@ -208,6 +302,22 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       tempDir: tempMouseDir.current,
     });
 
+    // Multi-touch (Phase AO): world positions for every tracked
+    // pointer, computed with the same unproject law as the
+    // primary. Only resolved while the key is on — off, the
+    // passes receive no set and uMouseCount stays 0.
+    const trackedPointers = config.gpgpuMouseMultiTouch ? pointerList(pointerMapRef.current) : [];
+    if (config.gpgpuMouseMultiTouch) {
+      const worlds = mouseWorldMultiRef.current;
+      for (let i = 0; i < trackedPointers.length && i < worlds.length; i++) {
+        tempMouseVec.current.set(trackedPointers[i].x, trackedPointers[i].y, 0.5).unproject(camera);
+        tempMouseDir.current.copy(tempMouseVec.current).sub(camera.position).normalize();
+        worlds[i].copy(camera.position).addScaledVector(tempMouseDir.current, camera.position.length());
+      }
+    }
+    const mouseWorldMulti = config.gpgpuMouseMultiTouch ? mouseWorldMultiRef.current : undefined;
+    const mouseMultiCount = trackedPointers.length;
+
     blitPreviousPositionPass({
       config,
       prevPosRT: prevPosRTRef.current,
@@ -232,6 +342,16 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       simCamera,
       dt,
       time: timeRef.current,
+      flipTransferRT: flipTransferRTRef.current,
+      flipPressureRT: flipPressureRTRef.current,
+      flipSplatMat,
+      flipCompositeMat,
+      flipJacobiMat,
+      flipSubtractMat,
+      flipClearMat,
+      flipPoints,
+      flipPosTex: posIn.texture,
+      flipVelTex: velIn.texture,
     });
 
     // OBJ normal kick placement detection (Phase O): a new morph
@@ -310,8 +430,41 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         morphKickStart: morphKickStartRef.current,
         fluidVelMat: velSimMat,
         globalTexSize: texSize,
+        mouseWorldMulti,
+        mouseMultiCount,
       });
     } else {
+      // Rigid bodies (Phase AU): step the CPU solver HERE,
+      // inside this useFrame and before the GPU passes, with the
+      // same processed dt they consume (clamped, time-scale
+      // locked) — the placement PHASE_AU_DETERMINISM.md proved
+      // delivers the deterministic render's fixed dt series to a
+      // CPU solver unchanged. The stepped state is packed into
+      // the supply texture the position / velocity passes read.
+      const rigidSolver = rigidSolverRef.current;
+      if (rigidSolver && rigidBodyTexRef.current && rigidBodyDataRef.current) {
+        const rigid = resolveRigid(config);
+        stepRigidBodies(rigidSolver, dt * Math.max(0, config.gpgpuSpeed), {
+          // Particle gravity: vel.y -= gravity · dt · 9.8 in the
+          // velocity pass, and positions integrate vel · dt · 60,
+          // so the world-space acceleration is gravity · 9.8 · 60.
+          gravityY: -config.gpgpuGravity * 9.8 * 60,
+          floorEnabled: config.gpgpuFloorEnabled,
+          floorY: config.gpgpuFloorY,
+          bounceRadius: config.gpgpuBounceRadius,
+          restitution: rigid.restitution,
+          friction: rigid.friction,
+          glueEnabled: rigid.glueEnabled,
+          glueStrength: rigid.glueStrength,
+        });
+        writeRigidBodyTexture(rigidSolver, rigidBodyDataRef.current);
+        rigidBodyTexRef.current.needsUpdate = true;
+      }
+      // Vellum (Phase AR): the tear state's ping-pong for this
+      // frame (the pool exists only while the tear key is live).
+      const vellumState = vellumStateRtRef.current;
+      const vellumStateIn = vellumState ? (vellumStatePingIsA.current ? vellumState.a : vellumState.b) : null;
+      const vellumStateOut = vellumState ? (vellumStatePingIsA.current ? vellumState.b : vellumState.a) : null;
       runSimulationPasses({
         useWebGPU: routing.useWebGPU,
         config,
@@ -338,10 +491,26 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         prevPosTex: prevPosRTRef.current?.texture ?? null,
         spawnTime,
         killMaskTex,
+        mouseWorldMulti,
+        mouseMultiCount,
+        vellumRestTex: vellumRestTexRef.current,
+        vellumProjMat,
+        vellumStateMat,
+        vellumStateIn,
+        vellumStateOut,
+        vellumSpareRT: prevPosRTRef.current,
+        blitMat,
+        rigidCellTex: rigidCellTexRef.current,
+        rigidBodyTex: rigidBodyTexRef.current,
         webgpuState: webgpuStateRef.current,
         webgpuPosTex: webgpuPosTexRef.current,
         webgpuPingIsARef,
       });
+      // The state pass inside wrote stateOut; make it next
+      // frame's input (only when it actually ran).
+      if (vellumState && config.gpgpuVellumEnabled && (config.gpgpuVellumTear || 0) > 0) {
+        vellumStatePingIsA.current = !vellumStatePingIsA.current;
+      }
     }
 
     // Aux event emission (B3, WebGL path only — the WebGPU compute

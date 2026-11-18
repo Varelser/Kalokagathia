@@ -58,6 +58,16 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
   // particles collide with.
   const terrainKind = config.gpgpuMorphTerrainKind;
   const terrainTerraceSteps = config.gpgpuMorphTerrainTerraceSteps;
+  // Terrain erosion (Phase AP): the visible mesh follows the
+  // carved field like every other consumer; stripped in tunnel
+  // mode (plane mode only, the collider precedent).
+  const erosionWater = config.gpgpuMorphTerrainErosionWater;
+  const erosionDroplets = config.gpgpuMorphTerrainErosionDroplets;
+  const erosionDeposit = config.gpgpuMorphTerrainErosionDeposit;
+  const erosionThermal = config.gpgpuMorphTerrainErosionThermal;
+  const erosionTalus = config.gpgpuMorphTerrainErosionTalus;
+  const erosionThermalPasses = config.gpgpuMorphTerrainErosionThermalPasses;
+  const erosionSeed = config.gpgpuMorphTerrainErosionSeed;
   const seed = config.gpgpuSeed;
   const morphScale = config.gpgpuMorphScale;
   const bounceRadius = config.gpgpuBounceRadius;
@@ -81,7 +91,13 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
   const geometry = React.useMemo(() => {
     if (!enabled) return null;
     const data = buildTerrainMeshGeometryData({
-      terrain: { amplitude: amp, frequency: freq, octaves, seed: terrainSeed, kind: terrainKind, terraceSteps: terrainTerraceSteps },
+      terrain: {
+        amplitude: amp, frequency: freq, octaves, seed: terrainSeed, kind: terrainKind, terraceSteps: terrainTerraceSteps,
+        erosion: tunnel ? undefined : {
+          water: erosionWater, droplets: erosionDroplets, deposit: erosionDeposit,
+          thermal: erosionThermal, talus: erosionTalus, thermalPasses: erosionThermalPasses, seed: erosionSeed,
+        },
+      },
       seed,
       worldScale,
       tunnel,
@@ -107,7 +123,7 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
     geo.computeVertexNormals();
     return geo;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, amp, freq, octaves, terrainSeed, terrainKind, terrainTerraceSteps, seed, morphScale, bounceRadius, meshScale, tunnel, shadowActive, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
+  }, [enabled, amp, freq, octaves, terrainSeed, terrainKind, terrainTerraceSteps, erosionWater, erosionDroplets, erosionDeposit, erosionThermal, erosionTalus, erosionThermalPasses, erosionSeed, seed, morphScale, bounceRadius, meshScale, tunnel, shadowActive, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
 
   React.useEffect(() => {
     return () => {
