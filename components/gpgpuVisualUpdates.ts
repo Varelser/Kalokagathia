@@ -16,6 +16,7 @@ import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { resolveIblEnvironment } from '../lib/iblEnvironment';
 import { horizonEquirectYawRadians } from '../lib/horizonBackground';
+import { clampNoiseMapAmount, clampNoiseMapEvolve, clampNoiseMapScale } from '../lib/noiseFieldMap';
 
 // Occlusion-map shadow (Phase Z): the bake is a pure function of
 // the shadow-relevant config, so it is cached by that config's
@@ -69,6 +70,9 @@ const GRAD_DRIVER_IDS: Record<ParticleConfig['gpgpuGradDriver'], number> = {
   image: 4,
   blackbody: 5,
   height: 6,
+  // Noise field (Phase AY): the ramp input is the field value
+  // at the particle's own position (lib/noiseFieldMap.ts).
+  noise: 7,
 };
 
 export function runDepthSortPass(args: {
@@ -321,6 +325,17 @@ export function syncVisualUniforms(args: {
     if (drawMat.uniforms.uMapDisplaceAmount) drawMat.uniforms.uMapDisplaceAmount.value = config.gpgpuMapDisplaceAmount;
     if (drawMat.uniforms.uMapDisplaceRadius) drawMat.uniforms.uMapDisplaceRadius.value = Math.max(config.gpgpuBounceRadius, 1);
   }
+  // Noise field map (Phase AY): the field parameters are shared
+  // by the vertex (size / displacement) and the fragment (the
+  // 'noise' gradient driver); the field clock is the same time
+  // as uGradTime, so evolution follows the deterministic render
+  // clock. Values resolve through the lib/noiseFieldMap.ts
+  // clamps the unit tests pin.
+  if (drawMat.uniforms.uNoiseMapScale) drawMat.uniforms.uNoiseMapScale.value = clampNoiseMapScale(config.gpgpuNoiseMapScale);
+  if (drawMat.uniforms.uNoiseMapEvolve) drawMat.uniforms.uNoiseMapEvolve.value = clampNoiseMapEvolve(config.gpgpuNoiseMapEvolve);
+  if (drawMat.uniforms.uNoiseMapTime) drawMat.uniforms.uNoiseMapTime.value = time ?? 0;
+  if (drawMat.uniforms.uNoiseMapSizeAmount) drawMat.uniforms.uNoiseMapSizeAmount.value = clampNoiseMapAmount(config.gpgpuNoiseMapSizeAmount);
+  if (drawMat.uniforms.uNoiseMapDisplaceAmount) drawMat.uniforms.uNoiseMapDisplaceAmount.value = clampNoiseMapAmount(config.gpgpuNoiseMapDisplaceAmount);
   if (drawMat.uniforms.uMaskTex) {
     const state = config.gpgpuMaskSource ? resolveMapSourceTexture(config.gpgpuMaskSource, config) : null;
     drawMat.uniforms.uMaskTex.value = state ? state.texture : null;

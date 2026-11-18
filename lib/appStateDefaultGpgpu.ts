@@ -506,6 +506,13 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMapColorSource: '',
   gpgpuMapDisplaceSource: '',
   gpgpuMapDisplaceAmount: 0,
+  // Noise field map (Phase AY): amounts 0 and evolve 0 — no
+  // consumer samples the field, so the draw is bit-identical;
+  // colour joins through the 'noise' gradient driver value.
+  gpgpuNoiseMapScale: 0.01,
+  gpgpuNoiseMapEvolve: 0,
+  gpgpuNoiseMapSizeAmount: 0,
+  gpgpuNoiseMapDisplaceAmount: 0,
   gpgpuMaskSource: '',
   gpgpuMaskMode: 'off' as const,
   gpgpuMaskThreshold: 0.5,

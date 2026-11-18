@@ -3078,4 +3078,57 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuSpawnEventSpread: 0.35,
         gpgpuTrailEnabled: false,
       }),
+  // Phase AY: noise field chroma — the colour of every particle
+  // is the noise field value at its own position read through
+  // the gradient ramp (driver 'noise'), size is modulated by
+  // the same field, and evolve 0.35 makes both drift slowly.
+  createStarterPreset('starter-noise-field-chroma', 'Noise Field Chroma (Field-Driven Color + Size)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#e6ebee',
+        gpgpuSize: 2.0,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.2,
+        gpgpuGradEnabled: true,
+        gpgpuGradDriver: 'noise',
+        gpgpuGradStart: '#0b1e3a',
+        gpgpuGradMid: '#38bdf8',
+        gpgpuGradEnd: '#e0f2fe',
+        gpgpuNoiseMapScale: 0.012,
+        gpgpuNoiseMapEvolve: 0.35,
+        gpgpuNoiseMapSizeAmount: 0.8,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase AY: evolving noise relief — a quiet shell whose
+  // points are pushed radially in and out by the field value
+  // at their own position (displacement from the field, not
+  // from an image); evolve 0.5 keeps the relief breathing.
+  createStarterPreset('starter-noise-relief-drift', 'Noise Relief Drift (Field Displacement + Evolution)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'shell',
+        gpgpuColor: '#e6ebee',
+        gpgpuSize: 1.8,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.15,
+        gpgpuNoiseMapScale: 0.008,
+        gpgpuNoiseMapEvolve: 0.5,
+        gpgpuNoiseMapDisplaceAmount: 0.7,
+        gpgpuTrailEnabled: false,
+      }),
 ];

@@ -4,6 +4,34 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.57.0] — 2026-11-18
+
+Seventh-term Phase AY: the noise field becomes a map source.
+Four new config keys, every one defaulting to the legacy
+behaviour; the gradient gains a 'noise' driver value; two new
+starters.
+
+### Added
+- **Noise field map** (`gpgpuNoiseMapScale`, `gpgpuNoiseMapEvolve`,
+  `gpgpuNoiseMapSizeAmount`, `gpgpuNoiseMapDisplaceAmount`): the
+  scalar noise field the curl force is built from (the velocity
+  pass's vnoise; TS reference in `lib/noiseFieldMap.ts`) can now
+  be consumed as data, not only as a force. The field value at a
+  particle's own position modulates its size (Layer Map factor
+  form) and displaces it radially (the Phase X formula, while
+  the texture displacement path is inactive), and the new
+  **'noise' gradient driver** reads the same field as the colour
+  ramp's input — colour decided by the spatial field, not by
+  age or a per-particle random seed.
+- **Field time evolution**: the sample point carries an offset
+  of direction * evolve * time on the render clock, so with
+  evolve > 0 the colours, sizes and displacement drift as the
+  field evolves — no rebake and no config snapshot, and the
+  deterministic render reproduces the field at any given time
+  exactly. Evolve 0 (default) is a static field; with the
+  amounts at 0 and the driver at its default the draw never
+  samples the field and stays bit-identical.
+
 ## [1.56.0] — 2026-11-18
 
 Seventh-term Phase AX: the remaining emission-side grammar

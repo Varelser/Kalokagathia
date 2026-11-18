@@ -833,7 +833,7 @@ export interface ParticleConfigGpgpu {
   // (or it is still loading) it falls back to the life driver, and
   // the UI says so explicitly.
   gpgpuGradEnabled: boolean;
-  gpgpuGradDriver: 'life' | 'velocity' | 'spatial' | 'prism' | 'image' | 'blackbody' | 'height';
+  gpgpuGradDriver: 'life' | 'velocity' | 'spatial' | 'prism' | 'image' | 'blackbody' | 'height' | 'noise';
   gpgpuGradStart: string;
   gpgpuGradMid: string;
   gpgpuGradEnd: string;
@@ -942,6 +942,18 @@ export interface ParticleConfigGpgpu {
   gpgpuMapColorSource: string;
   gpgpuMapDisplaceSource: string;
   gpgpuMapDisplaceAmount: number;
+  // Noise field map (Phase AY): the scalar noise field (the
+  // velocity pass's vnoise, lib/noiseFieldMap.ts) as a map
+  // source for the points draw. Scale is the field frequency
+  // over world position; evolve is the field's time-evolution
+  // rate (0 = static field). The size / displacement amounts
+  // gate their consumers (0 = the legacy path, the field is
+  // never sampled); colour consumes the field through the
+  // 'noise' gradient driver instead of a dedicated amount.
+  gpgpuNoiseMapScale: number;
+  gpgpuNoiseMapEvolve: number;
+  gpgpuNoiseMapSizeAmount: number;
+  gpgpuNoiseMapDisplaceAmount: number;
   gpgpuMaskSource: string;
   gpgpuMaskMode: 'off' | 'clip' | 'shape';
   gpgpuMaskThreshold: number;

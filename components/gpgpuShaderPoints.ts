@@ -54,6 +54,33 @@ const AGE_CURVE_GLSL = /* glsl */ `
   }
 `;
 
+// Noise field map (Phase AY): the engine's scalar noise field as
+// a map source. hash3 / vnoise are copied verbatim from the
+// velocity pass helpers, so the map reads the SAME field the curl
+// force is built from; kaloNoiseMap01 maps it to [0, 1] at
+// worldPos * scale + the evolution offset (direction * evolve *
+// time — evolve 0 is a static field). The field is a pure
+// function of (position, time), so the deterministic render
+// reproduces it exactly. TS twin: lib/noiseFieldMap.ts
+// (sampleNoiseField01).
+const NOISE_MAP_GLSL = /* glsl */ `
+  vec3 kaloNoiseHash3(vec3 p) {
+    p = vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));
+    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+  }
+  float kaloNoiseValue(vec3 p) {
+    vec3 i = floor(p); vec3 f = fract(p); vec3 u = f*f*(3.0-2.0*f);
+    return mix(mix(mix(dot(kaloNoiseHash3(i),f),dot(kaloNoiseHash3(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),
+                   mix(dot(kaloNoiseHash3(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(kaloNoiseHash3(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),
+               mix(mix(dot(kaloNoiseHash3(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(kaloNoiseHash3(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),
+                   mix(dot(kaloNoiseHash3(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(kaloNoiseHash3(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);
+  }
+  float kaloNoiseMap01(vec3 worldPos, float scale, float evolve, float time) {
+    vec3 off = vec3(0.31, 0.47, 0.19) * (evolve * max(time, 0.0));
+    return clamp(0.5 + 0.5 * kaloNoiseValue(worldPos * scale + off), 0.0, 1.0);
+  }
+`;
+
 // 3D light (Phase T): GLSL twins of lib/gpgpuLight.ts — the same
 // falloff ((1-(d/R)^2)^2 inside the radius, 0 outside) and the same
 // cone feather (smoothstep from the half angle out to 1.25x it,
@@ -122,6 +149,15 @@ export const DRAW_VERT = /* glsl */ `
   uniform bool      uMapDisplaceReady;
   uniform float     uMapDisplaceAmount;
   uniform float     uMapDisplaceRadius;
+  // Noise field map (Phase AY): the field as a source for size
+  // and displacement. Amounts 0 (defaults) skip the evaluation
+  // entirely, so the legacy draw is bit-identical; the field
+  // parameters are shared with the fragment's gradient driver.
+  uniform float     uNoiseMapScale;
+  uniform float     uNoiseMapEvolve;
+  uniform float     uNoiseMapTime;
+  uniform float     uNoiseMapSizeAmount;
+  uniform float     uNoiseMapDisplaceAmount;
   // 3D light (Phase T): brightness multiplier from the light object.
   uniform bool  uLightEnabled;
   uniform vec3  uLightPos;
@@ -171,6 +207,8 @@ export const DRAW_VERT = /* glsl */ `
   varying float vShadowMul;
 
   ${AGE_CURVE_GLSL}
+
+  ${NOISE_MAP_GLSL}
 
   // Attribute channel picker (Phase AK): identical to the
   // velocity pass's copy — R/G/B/A are attribute slots 0/1/2/3
@@ -236,6 +274,17 @@ export const DRAW_VERT = /* glsl */ `
       if (rLen > 0.0001) {
         worldPos += (worldPos / rLen) * ((dLuma - 0.5) * uMapDisplaceAmount * uMapDisplaceRadius);
       }
+    } else if (uNoiseMapDisplaceAmount > 0.0) {
+      // Noise field displacement (Phase AY): while the texture
+      // displacement path is inactive, the field value at the
+      // particle's own position takes the luminance's place in
+      // the same Phase X formula (radial, same radius). A ready
+      // texture map keeps priority, mirroring the size map rule.
+      float nLuma = kaloNoiseMap01(worldPos, uNoiseMapScale, uNoiseMapEvolve, uNoiseMapTime);
+      float rLen = length(worldPos);
+      if (rLen > 0.0001) {
+        worldPos += (worldPos / rLen) * ((nLuma - 0.5) * uNoiseMapDisplaceAmount * uMapDisplaceRadius);
+      }
     }
     vWorldPos = worldPos;
     // 3D light (Phase T): a pure function of the world position —
@@ -292,6 +341,13 @@ export const DRAW_VERT = /* glsl */ `
         sizeMul *= kaloMapFactor(uGradImageTex, worldPos.xy, uGradImageScale, uMapSizeAmount);
       }
     }
+    // Noise field map (Phase AY): size modulated by the field
+    // value at the particle's own position — the Layer Map
+    // factor form with the field as the source. Layers on top of
+    // the image map (both may apply); amount 0 skips it.
+    if (uNoiseMapSizeAmount > 0.0) {
+      sizeMul *= mix(1.0, kaloNoiseMap01(worldPos, uNoiseMapScale, uNoiseMapEvolve, uNoiseMapTime), uNoiseMapSizeAmount);
+    }
     vPhaseMix = 1.0;
     vPlBright = 1.0;
     if (uParticleLifeEnabled) {
@@ -332,7 +388,9 @@ export const DRAW_FRAG = /* glsl */ `
   // 0 life, 1 velocity, 2 spatial, 3 prism, 4 image (samples the
   // user image by particle position; life LUT fallback while no
   // image is ready), 5 blackbody, 6 height (Phase L: world Y mapped
-  // through the LUT — terrain-style height shading).
+  // through the LUT — terrain-style height shading), 7 noise
+  // (Phase AY: the noise field value at the particle position —
+  // colour decided by the field, not by age or a random seed).
   uniform bool      uGradEnabled;
   uniform int       uGradDriver;
   uniform sampler2D uGradLut;
@@ -341,6 +399,11 @@ export const DRAW_FRAG = /* glsl */ `
   uniform sampler2D uGradImageTex;
   uniform bool      uGradImageReady;
   uniform float     uGradImageScale;
+  // Noise field map (Phase AY): shared field parameters (the
+  // vertex consumes the same field for size / displacement).
+  uniform float     uNoiseMapScale;
+  uniform float     uNoiseMapEvolve;
+  uniform float     uNoiseMapTime;
   // Age curve (Phase U): opacity multiplier over normalised age.
   uniform bool      uAgeCurveOpacityEnabled;
   uniform float     uAgeCurveOpacity[5];
@@ -395,6 +458,8 @@ export const DRAW_FRAG = /* glsl */ `
   ${PARTICLE_SHAPE_GLSL}
 
   ${AGE_CURVE_GLSL}
+
+  ${NOISE_MAP_GLSL}
 
   ${SPRITE_SHEET_GLSL}
 
@@ -486,6 +551,12 @@ export const DRAW_FRAG = /* glsl */ `
           // the same slider the spatial driver uses — valleys take
           // the start colour, peaks the end colour.
           gt = clamp(0.5 + vWorldPos.y * uGradSpatialScale, 0.0, 1.0);
+        } else if (uGradDriver == 7) {
+          // Noise field driver (Phase AY): the LUT input is the
+          // noise field value at the particle's own position —
+          // the field is the ramp's data source (map source), and
+          // with evolve > 0 the colours drift as the field evolves.
+          gt = kaloNoiseMap01(vWorldPos, uNoiseMapScale, uNoiseMapEvolve, uNoiseMapTime);
         }
         col = texture2D(uGradLut, vec2(gt, 0.5)).rgb;
       }

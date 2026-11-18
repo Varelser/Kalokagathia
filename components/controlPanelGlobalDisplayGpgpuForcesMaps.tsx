@@ -104,6 +104,24 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
       </div>
     </div>
 
+    {/* Noise Field Map (Phase AY): the scalar noise field (the
+        same vnoise the curl force is built from) as a map source.
+        The field value at the particle's own position drives
+        size / displacement here, and colour through the Noise
+        gradient driver. Evolve moves the field through time on
+        the render clock — no rebake, no snapshot. Amounts 0 keep
+        every consumer off. */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-white/70">Noise Field Map（ノイズ場マップ）</div>
+      <Slider label="Noise Scale" value={config.gpgpuNoiseMapScale} min={0.001} max={0.1} step={0.001} onChange={(v) => updateConfig('gpgpuNoiseMapScale', v)} />
+      <Slider label="Noise Evolve" value={config.gpgpuNoiseMapEvolve} min={0} max={4} step={0.01} onChange={(v) => updateConfig('gpgpuNoiseMapEvolve', v)} />
+      <Slider label="Noise Size Amount" value={config.gpgpuNoiseMapSizeAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuNoiseMapSizeAmount', v)} />
+      <Slider label="Noise Displace Amount" value={config.gpgpuNoiseMapDisplaceAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuNoiseMapDisplaceAmount', v)} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        画像ではなく空間ノイズ場そのものをマップ源にします。粒子は自分の位置の場の値（0〜1）を引き、サイズ倍率・半径方向の変位に使います。色は Color Gradient の Driver を Noise Field にすると同じ場で決まります。Evolve は場の時間発展で、0 では静止した場、上げるほど色・大きさ・変位がゆっくり流れます（決定レンダーでも同じ時刻で同じ場になります）。変位は画像変位（上の Map Displace）が有効な間はそちらが優先されます。
+      </div>
+    </div>
+
     {/* Raster Mask (Phase X): a luminance image that clips or
         shapes placement — baked into the morph targets and the
         layer media placement, and enforced live by the draw

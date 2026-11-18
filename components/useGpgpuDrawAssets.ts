@@ -53,6 +53,14 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uMapDisplaceReady:       { value: false },
       uMapDisplaceAmount:      { value: 0 },
       uMapDisplaceRadius:      { value: 1 },
+      // Noise field map (Phase AY): amounts 0 — both consumers
+      // skip the field evaluation and the legacy draw is
+      // bit-identical; scale / evolve are inert while they are 0.
+      uNoiseMapScale:          { value: 0.01 },
+      uNoiseMapEvolve:         { value: 0 },
+      uNoiseMapTime:           { value: 0 },
+      uNoiseMapSizeAmount:     { value: 0 },
+      uNoiseMapDisplaceAmount: { value: 0 },
       uMaskTex:                { value: null },
       uMaskReady:              { value: false },
       uMaskMode:               { value: 0 },

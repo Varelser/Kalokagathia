@@ -128,6 +128,7 @@ export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffe
             <option value="prism">Prism（色相環）</option>
             <option value="blackbody">Blackbody（黒体放射）</option>
             <option value="image">Image（画像から色）</option>
+            <option value="noise">Noise Field（ノイズ場の値）</option>
           </select>
           <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Gradient Preset</div>
           <select
@@ -220,6 +221,11 @@ export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffe
           )}
           {config.gpgpuGradDriver === 'image' && (
             <GradImageBlock config={config} updateConfig={updateConfig} />
+          )}
+          {config.gpgpuGradDriver === 'noise' && (
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              Noise Field は粒子の位置におけるノイズ場の値でグラデーションを引きます。年齢や乱数ではなく空間の場が色を決め、場の時間発展（Evolve）を上げると色がゆっくり流れます。場の細かさ・発展・サイズ／変位への供給は Layer Maps の「Noise Field Map」で制御します（場は Curl フォースと同じ vnoise です）。
+            </div>
           )}
         </>
       )}
