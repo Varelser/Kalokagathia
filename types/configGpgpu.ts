@@ -136,6 +136,14 @@ export interface ParticleConfigGpgpu {
   // the result clamped to [0, 1] and baked into the same
   // static texture. All-empty is the legacy bake, bit-identical.
   gpgpuAttrExprs: string[];
+  // Dynamic attribute re-evaluation (Phase BO, stage 2): while
+  // enabled, a GPU pass re-evaluates the slot expressions every
+  // gpgpuAttrDynInterval frames with t = the sim clock opened to
+  // the expressions, and the consumers read the re-evaluated
+  // texture instead of the bake. Disabled (the default) never
+  // builds the pass, so the legacy bake runs bit-identically.
+  gpgpuAttrDynEnabled: boolean;
+  gpgpuAttrDynInterval: number;
   gpgpuAttrSizeSlot: number;
   gpgpuAttrSizeAmount: number;
   gpgpuAttrBrightSlot: number;

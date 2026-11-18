@@ -245,6 +245,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuAttrBrightAmount', label: "Attr Bright Amount", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuAttrForceSlot', label: "Attr Force Slot", tab: 'global', min: -1, max: 3, step: 1 },
   { key: 'gpgpuAttrForceAmount', label: "Attr Force Amount", tab: 'global', min: 0, max: 1, step: 0.01 },
+  { key: 'gpgpuAttrDynInterval', label: "Attr Dyn Interval", tab: 'global', min: 1, max: 60, step: 1 },
   { key: 'gpgpuGroupSlot', label: "Group Attr Slot", tab: 'global', min: 0, max: 3, step: 1 },
   { key: 'gpgpuGroupLow', label: "Group Low", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuGroupHigh', label: "Group High", tab: 'global', min: 0, max: 1, step: 0.01 },

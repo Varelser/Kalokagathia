@@ -2502,6 +2502,56 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuGroupTarget: 'gravity',
         gpgpuTrailEnabled: false,
       }),
+  // Phase BO: dynamic attribute re-evaluation (stage 2) —
+  // slot a is re-evaluated every frame as a travelling sine of
+  // the sim clock and its own bake value, so point size pulses
+  // across the sphere in waves instead of staying baked.
+  createStarterPreset('starter-attr-dyn-pulse', 'Attribute Dynamic Pulse (Time-Driven Size)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.6,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.08,
+        gpgpuAttrExprs: ['0.5 + 0.5 * sin(t * 2 + a * 6.2832)', '', '', ''],
+        gpgpuAttrDynEnabled: true,
+        gpgpuAttrSizeSlot: 0,
+        gpgpuAttrSizeAmount: 1,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase BO: dynamic attribute re-evaluation (stage 2) —
+  // slot b wraps its species value forward with the sim clock
+  // (fract keeps it in 0..1), so the brightness pattern flows
+  // continuously instead of staying baked.
+  createStarterPreset('starter-attr-dyn-flow', 'Attribute Dynamic Flow (Time-Driven Brightness)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.6,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.08,
+        gpgpuAttrExprs: ['', 'fract(b + t * 0.1)', '', ''],
+        gpgpuAttrDynEnabled: true,
+        gpgpuAttrBrightSlot: 1,
+        gpgpuAttrBrightAmount: 1,
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AL: escape-time fractal — a Julia field (c = -0.8 +
   // 0.156i) rendered by the post stage, mixed over a sparse,
   // slowly drifting particle sphere.

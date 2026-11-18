@@ -38,6 +38,13 @@ import {
   updateMouseWorldPosition,
 } from './gpgpuSimulationPasses';
 import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
+import { GpgpuAttrDynPass } from './gpgpuAttrDynPass';
+import { buildAttrDynFragment } from '../lib/expressionGlsl';
+import {
+  normalizeAttrExprs,
+  normalizeAttrNames,
+  resolveAttrDynInterval,
+} from '../lib/gpgpuAttributes';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
 import { resolveRigid, stepRigidBodies, writeRigidBodyTexture } from '../lib/rigidBodies';
@@ -223,6 +230,30 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     trailRTs,
     trailHead,
   } = assets;
+
+  // Phase BO: dynamic attribute re-evaluation (stage 2). The
+  // generated fragment is null unless the key is on AND at least
+  // one slot expression compiles to GLSL — with a null fragment
+  // the pass is never built and every consumer keeps the bake
+  // texture verbatim (the structural identity guarantee). The
+  // signature covers everything the pass depends on, so the
+  // useFrame below rebuilds it only when one of them changes.
+  const attrDynFragment = config.gpgpuAttrDynEnabled
+    ? buildAttrDynFragment(config.gpgpuAttrExprs, config.gpgpuAttrNames)
+    : null;
+  const attrDynInterval = resolveAttrDynInterval(config.gpgpuAttrDynInterval);
+  const attrDynSignature = attrDynFragment
+    ? `${JSON.stringify(normalizeAttrExprs(config.gpgpuAttrExprs))}|${normalizeAttrNames(config.gpgpuAttrNames).join(',')}|${attrDynInterval}|${texSize}`
+    : '';
+  const attrDynPassRef = useRef<GpgpuAttrDynPass | null>(null);
+  const attrDynSignatureRef = useRef('');
+  const attrDynTextureRef = useRef<THREE.Texture | null>(null);
+  const attrDynFrameRef = useRef(0);
+
+  useEffect(() => () => {
+    attrDynPassRef.current?.dispose();
+    attrDynPassRef.current = null;
+  }, []);
 
   const runtime = useGpgpuRuntime({ gl, texSize, config });
   const {
@@ -416,6 +447,45 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     });
     routingSnapshotRef.current = createGpgpuFrameDiagnosticSnapshot(routing);
 
+    // Phase BO: run the stage-2 attribute pass here — after the
+    // deterministic guard, before every consumer. On frame
+    // counter multiples of the interval the expressions are
+    // re-evaluated against the bake with t = the sim clock;
+    // between runs the held output is reused. With no fragment
+    // (disabled, or nothing compilable) the pass is disposed
+    // and the consumers below receive the bake texture verbatim.
+    let attrDynTexture: THREE.Texture | null = null;
+    if (attrDynFragment) {
+      if (attrDynSignatureRef.current !== attrDynSignature || !attrDynPassRef.current) {
+        attrDynSignatureRef.current = attrDynSignature;
+        attrDynPassRef.current?.dispose();
+        attrDynPassRef.current = new GpgpuAttrDynPass(texSize, attrDynFragment);
+        attrDynTextureRef.current = null;
+        attrDynFrameRef.current = 0;
+      }
+      const attrDynPass = attrDynPassRef.current;
+      const bakeAttrTex = attrTexRef.current;
+      if (attrDynPass && bakeAttrTex) {
+        if (attrDynFrameRef.current % attrDynInterval === 0) {
+          attrDynTextureRef.current = attrDynPass.run(glCtx, bakeAttrTex, timeRef.current);
+        }
+        attrDynTexture = attrDynTextureRef.current;
+      }
+      attrDynFrameRef.current += 1;
+    } else if (attrDynPassRef.current) {
+      attrDynPassRef.current.dispose();
+      attrDynPassRef.current = null;
+      attrDynTextureRef.current = null;
+      attrDynSignatureRef.current = '';
+      attrDynFrameRef.current = 0;
+    }
+    // Sim-side consumers (the force drive / the group gate) read
+    // the re-evaluated texture on the WebGL route only; on the
+    // WebGPU route they keep the bake (declared gap, Phase BO
+    // brief). The draw readout (syncVisualUniforms below) always
+    // reads the re-evaluated texture.
+    const simAttrTex = !routing.useWebGPU && attrDynTexture ? attrDynTexture : attrTexRef.current;
+
     if (stacksActive) {
       runReplicaStackPasses({
         config,
@@ -433,7 +503,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         mergeMat: replicaMergeMat,
         blitMat,
         initPosTex: initPosTexRef.current,
-        attrTex: attrTexRef.current,
+        attrTex: simAttrTex,
         morphTex: morphTexRef.current,
         morphNormalTex: morphNormalTexRef.current,
         morphKickStart: morphKickStartRef.current,
@@ -499,7 +569,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         velSimMat,
         posSimMat,
         initPosTex: initPosTexRef.current,
-        attrTex: attrTexRef.current,
+        attrTex: simAttrTex,
         morphTex: morphTexRef.current,
         morphNormalTex: morphNormalTexRef.current,
         morphKickStart: morphKickStartRef.current,
@@ -747,7 +817,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       posTexture: routing.outputPosTexture,
       velTexture: velOut.texture,
       finalSortTex,
-      attrTexture: attrTexRef.current,
+      attrTexture: attrDynTexture ?? attrTexRef.current,
       texSize,
       time: timeRef.current,
     });

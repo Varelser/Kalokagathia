@@ -133,6 +133,16 @@ export function normalizeAttrSlot(value: unknown): number {
   return slot >= 0 && slot < ATTR_SLOT_COUNT ? slot : -1;
 }
 
+/**
+ * Resolve the stage-2 re-evaluation interval (Phase BO, config
+ * gpgpuAttrDynInterval): whole frames, clamped to 1..240.
+ * Non-finite / non-number input resolves to 1 (every frame).
+ */
+export function resolveAttrDynInterval(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1;
+  return Math.max(1, Math.min(240, Math.round(value)));
+}
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }

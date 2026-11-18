@@ -77,6 +77,11 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // Bake-time attribute arithmetic (Phase BI): all empty = no
   // arithmetic, the bake is the legacy one bit-for-bit.
   gpgpuAttrExprs: ['', '', '', ''],
+  // Dynamic attribute re-evaluation (Phase BO): disabled and a
+  // 1-frame interval — while disabled the pass is never built
+  // and the bake is the legacy one bit-for-bit.
+  gpgpuAttrDynEnabled: false,
+  gpgpuAttrDynInterval: 1,
   gpgpuAttrSizeSlot: -1,
   gpgpuAttrSizeAmount: 1,
   gpgpuAttrBrightSlot: -1,

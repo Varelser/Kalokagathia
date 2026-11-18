@@ -414,6 +414,8 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuAttrNames: '属性の名前（4スロット分。Data 源では点群の列名と一致させる）',
   gpgpuAttrSources: '属性の生成源（4スロット分。hash／index／species／radius／height／age／target／data）',
   gpgpuAttrExprs: '属性のベイク時演算式（4スロット分。スロット名と x で生成値を計算し結果を属性にする。空文字は演算なし、不正な式は生成値のまま）',
+  gpgpuAttrDynEnabled: '属性の動的再評価（段階2、Phase BO）: 式を毎フレーム再評価し変数 t（シミュレーション時刻）も使える。OFFで従来のベイクと完全同一',
+  gpgpuAttrDynInterval: '属性の動的再評価の間隔（フレーム数。1で毎フレーム再評価）',
   gpgpuAttrSizeSlot: '属性→サイズ駆動のスロット（-1でOFF）',
   gpgpuAttrSizeAmount: '属性→サイズ駆動の量（属性値でサイズを係数 mix する割合）',
   gpgpuAttrBrightSlot: '属性→明るさ駆動のスロット（-1でOFF）',

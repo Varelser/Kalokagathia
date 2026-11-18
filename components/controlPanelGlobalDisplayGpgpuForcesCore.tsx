@@ -166,6 +166,13 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         式（Phase BI）は生成時のベイクで一度だけ計算され、結果が属性値になります（毎フレームは変わりません）。使える変数はスロット名（例: a * b、先のスロットは計算結果・後のスロットは生成値）と x（そのスロット自身の生成値）で、結果は 0..1 に収められます。不正な式は生成値のままになります。空欄は演算なしです。
       </div>
+      <Toggle label="Dynamic Re-eval（属性の動的再評価 — 段階2）" value={config.gpgpuAttrDynEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuAttrDynEnabled', v)} />
+      {config.gpgpuAttrDynEnabled && (
+        <Slider label="Re-eval Interval（再評価の間隔・フレーム）" value={config.gpgpuAttrDynInterval} min={1} max={60} step={1} onChange={(v) => updateConfig('gpgpuAttrDynInterval', Math.round(v))} />
+      )}
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        段階2（Phase BO）: ON では上記の式が間隔ごとのフレームで再評価され、変数 t（シミュレーション時刻・秒）も使えます。再評価の結果は下の駆動とグループ判定にそのまま流れます。OFF では従来のベイクと完全同一です。CPU フォールバックでは属性自体が無いため使えません。
+      </div>
       <AttrSelect label="Attr → Size（サイズ駆動）" value={String(config.gpgpuAttrSizeSlot)} options={slotOptions} onChange={(v) => updateConfig('gpgpuAttrSizeSlot', Number(v))} />
       {config.gpgpuAttrSizeSlot >= 0 && (
         <Slider label="Size Amount（サイズ駆動の量）" value={config.gpgpuAttrSizeAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuAttrSizeAmount', v)} />
