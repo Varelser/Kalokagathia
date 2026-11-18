@@ -4,6 +4,7 @@ import type { ParticleConfig } from "../types";
 import { createGradientLutTexture } from "../lib/kinetixGradients";
 import { DRAW_FRAG, DRAW_VERT, STREAK_FRAG, STREAK_VERT } from "./gpgpuShaders";
 import { AUX_DRAW_FRAG, AUX_DRAW_VERT, AUX_TEX_SIZE } from "./gpgpuShaderAux";
+import { WW_DRAW_FRAG, WW_DRAW_VERT, WW_TEX_SIZE } from "./gpgpuShaderWhitewater";
 
 export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
   const drawMat = useMemo(() => new THREE.ShaderMaterial({
@@ -235,6 +236,38 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
     return geo;
   }, []);
 
+  // Whitewater draw (Phase BC): fixed 64x64 grid, foam white by
+  // definition (a near-white with a hint of the water's grey-blue;
+  // not a key — whitewater's colour is its identity, its amount /
+  // life / size are the keys). Uniforms are pointed at the foam
+  // ping-pong outputs by the scene loop each frame the foam
+  // passes run.
+  const wwDrawMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uWwPosTex: { value: null },
+      uWwVelTex: { value: null },
+      uColor:    { value: new THREE.Color('#eef4f5') },
+      uOpacity:  { value: config.gpgpuOpacity },
+      uWwSize:   { value: config.gpgpuWhitewaterSize },
+    },
+    vertexShader: WW_DRAW_VERT, fragmentShader: WW_DRAW_FRAG,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  const wwDrawGeo = useMemo(() => {
+    const count = WW_TEX_SIZE * WW_TEX_SIZE;
+    const geo = new THREE.BufferGeometry();
+    const coords = new Float32Array(count * 2);
+    for (let i = 0; i < count; i++) {
+      coords[i * 2]     = ((i % WW_TEX_SIZE) + 0.5) / WW_TEX_SIZE;
+      coords[i * 2 + 1] = (Math.floor(i / WW_TEX_SIZE) + 0.5) / WW_TEX_SIZE;
+    }
+    geo.setAttribute('position',  new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    geo.setAttribute('aTexCoord', new THREE.BufferAttribute(coords, 2));
+    return geo;
+  }, []);
+
   // Same disposal contract as useGpgpuTrailAssets: texSize-sized
   // geometries must not outlive the generation that created them.
   useEffect(() => () => {
@@ -246,6 +279,9 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
   useEffect(() => () => {
     auxDrawGeo.dispose();
   }, [auxDrawGeo]);
+  useEffect(() => () => {
+    wwDrawGeo.dispose();
+  }, [wwDrawGeo]);
 
   return {
     drawMat,
@@ -256,5 +292,7 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
     aux2DrawMat,
     aux3DrawMat,
     auxDrawGeo,
+    wwDrawMat,
+    wwDrawGeo,
   };
 }

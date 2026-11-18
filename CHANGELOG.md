@@ -4,6 +4,33 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.61.0] — 2026-11-18
+
+Seventh-term Phase BC (the final phase of the term):
+whitewater — a foam layer derived from the FLIP field. Five
+new config keys, all defaulting to the legacy behaviour
+exactly; two new starters.
+
+### Added
+- **Whitewater — foam derived from the FLIP field**
+  (`gpgpuWhitewaterEnabled`, default off; `Amount` /
+  `Threshold` / `Life` / `Size`): a dedicated 64×64 GPU pool
+  whose inactive slots probe one hashed field cell per tick
+  and spawn there when the cell's agitation — vorticity
+  magnitude (central differences) plus convergence (negative
+  divergence, the pressure solver's own stencil) — passes the
+  threshold. Spawn probability is proportional to the foam
+  factor, so foam density tracks the field quantity: still
+  water spawns nothing. Foam particles are born with the
+  field's PIC velocity plus a small upward pop, are carried by
+  the flow, shrink and die within their short life. The system
+  is strictly one-way: foam reads the projected field and
+  never writes back into the FLIP pipeline or the main pool.
+  Honest scope: the FLIP layer is a 2D planar (xz) solver, so
+  foam lives on a thin sheet around the field plane — no free
+  surface, no curvature / energy criterion, and no foam /
+  spray separation (a single foam population).
+
 ## [1.60.0] — 2026-11-18
 
 Seventh-term Phase BB: the Vellum constraints learn to pull,

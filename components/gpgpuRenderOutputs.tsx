@@ -41,6 +41,8 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
     auxDrawMat,
     aux2DrawMat,
     aux3DrawMat,
+    wwDrawGeo,
+    wwDrawMat,
   } = assets;
   const plan = getGpgpuRenderOutputPlan(config);
   const chainLevels = resolveAuxChainLevels(config);
@@ -58,6 +60,9 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
       )}
       {chainLevels.some((l) => l.level === 3) && (
         <points geometry={auxDrawGeo} material={aux3DrawMat} />
+      )}
+      {config.gpgpuWhitewaterEnabled && config.gpgpuFluidEnabled && config.gpgpuFlipEnabled && (
+        <points geometry={wwDrawGeo} material={wwDrawMat} />
       )}
       {plan.instancedSolids && geomMeshObj && (
         <primitive object={geomMeshObj} />

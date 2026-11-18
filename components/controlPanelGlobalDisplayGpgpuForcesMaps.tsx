@@ -203,6 +203,16 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
               <Slider label="Pressure Iterations" value={config.gpgpuFlipPressureIterations} min={0} max={32} step={1} onChange={(v) => updateConfig('gpgpuFlipPressureIterations', v)} />
               <Slider label="Transfer" value={config.gpgpuFlipTransfer} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuFlipTransfer', v)} />
               <div className="mt-1 text-[9px] text-white/40">2D planar FLIP on the field grid: particles &lt;-&gt; grid transfer + pressure projection (incompressible xz flow). No free surface / y-pressure — gravity, SPH and colliders still own the vertical.</div>
+              <Toggle label="Whitewater (Foam)" value={config.gpgpuWhitewaterEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuWhitewaterEnabled', v)} />
+              {config.gpgpuWhitewaterEnabled && (
+                <>
+                  <Slider label="Foam Amount" value={config.gpgpuWhitewaterAmount} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuWhitewaterAmount', v)} />
+                  <Slider label="Foam Threshold" value={config.gpgpuWhitewaterThreshold} min={0.02} max={2} step={0.01} onChange={(v) => updateConfig('gpgpuWhitewaterThreshold', v)} />
+                  <Slider label="Foam Life" value={config.gpgpuWhitewaterLife} min={0.1} max={2.5} step={0.05} onChange={(v) => updateConfig('gpgpuWhitewaterLife', v)} />
+                  <Slider label="Foam Size" value={config.gpgpuWhitewaterSize} min={0.4} max={4} step={0.1} onChange={(v) => updateConfig('gpgpuWhitewaterSize', v)} />
+                  <div className="mt-1 text-[9px] text-white/40">Foam points spawned where the field&apos;s vorticity + convergence pass the threshold, carried by the flow, short-lived. One-way only — foam never feeds back into the solver. Lives on the 2D field plane; no foam / spray split.</div>
+                </>
+              )}
             </>
           )}
         </>

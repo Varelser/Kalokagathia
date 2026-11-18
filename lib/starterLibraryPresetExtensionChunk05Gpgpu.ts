@@ -2893,6 +2893,82 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuFlipTransfer: 0.9,
         gpgpuTrailEnabled: false,
       }),
+  // Phase BC: whitewater — the ferry's vortex wears a foam
+  // collar. The foam pool spawns where the projected field's
+  // vorticity passes the (low) threshold: the vortex core and
+  // its shear ring light up with short-lived white points that
+  // the flow carries around. One-way only — the water does not
+  // feel the foam.
+  createStarterPreset('starter-whitewater-vortex-foam', 'Whitewater Vortex Foam (Foam Collars the FLIP Vortex)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 32768,
+        gpgpuEmitShape: 'disc',
+        gpgpuColor: '#dbe7ee',
+        gpgpuSize: 1.8,
+        gpgpuOpacity: 0.55,
+        gpgpuSpeed: 0.25,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.02,
+        gpgpuFluidEnabled: true,
+        gpgpuFluidDiffuse: 0.015,
+        gpgpuFluidDecay: 0.002,
+        gpgpuFluidStrength: 2.2,
+        gpgpuFluidInfluence: 1.2,
+        gpgpuFluidScale: 1.5,
+        gpgpuFluidExtForce: true,
+        gpgpuFlipEnabled: true,
+        gpgpuFlipBlend: 0.6,
+        gpgpuFlipPressureIterations: 16,
+        gpgpuFlipTransfer: 0.9,
+        gpgpuWhitewaterEnabled: true,
+        gpgpuWhitewaterAmount: 1.4,
+        gpgpuWhitewaterThreshold: 0.15,
+        gpgpuWhitewaterLife: 0.8,
+        gpgpuWhitewaterSize: 1.8,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase BC: whitewater on the planar pool — a churning disc
+  // where the foam follows the turbulence: convergence zones
+  // where the projected flow piles up shed foam alongside the
+  // vortical patches, at the default life and a finer grain.
+  createStarterPreset('starter-whitewater-pool-churn', 'Whitewater Pool Churn (Foam on the FLIP Pool)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 32768,
+        gpgpuEmitShape: 'disc',
+        gpgpuColor: '#dbe7ee',
+        gpgpuSize: 2.0,
+        gpgpuOpacity: 0.6,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.15,
+        gpgpuTurbulence: 0.06,
+        gpgpuFluidEnabled: true,
+        gpgpuFluidDiffuse: 0.02,
+        gpgpuFluidDecay: 0.004,
+        gpgpuFluidStrength: 1.4,
+        gpgpuFluidInfluence: 1.0,
+        gpgpuFluidScale: 1.5,
+        gpgpuFluidExtForce: true,
+        gpgpuFlipEnabled: true,
+        gpgpuFlipBlend: 0.95,
+        gpgpuFlipPressureIterations: 24,
+        gpgpuFlipTransfer: 1.0,
+        gpgpuWhitewaterEnabled: true,
+        gpgpuWhitewaterAmount: 1.0,
+        gpgpuWhitewaterThreshold: 0.2,
+        gpgpuWhitewaterLife: 0.6,
+        gpgpuWhitewaterSize: 1.4,
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AU: rigid bodies — a fractured shell whose cells are
   // persistent rigid bodies (CPU solver, sphere-approximated
   // contacts). Strong glue holds the ball together through the

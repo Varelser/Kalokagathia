@@ -552,6 +552,12 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuFlipBlend: 0.95,
   gpgpuFlipPressureIterations: 16,
   gpgpuFlipTransfer: 1.0,
+  // Whitewater (Phase BC): off by default — identity.
+  gpgpuWhitewaterEnabled: false,
+  gpgpuWhitewaterAmount: 1.0,
+  gpgpuWhitewaterThreshold: 0.3,
+  gpgpuWhitewaterLife: 0.7,
+  gpgpuWhitewaterSize: 1.6,
   // Rigid bodies (Phase AU): off by default — identity.
   gpgpuRigidEnabled: false,
   gpgpuRigidRestitution: 0.2,

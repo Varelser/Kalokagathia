@@ -33,6 +33,7 @@ import {
   runAuxSimulationPasses,
   runFluidAdvectionPass,
   runReplicaStackPasses,
+  runWhitewaterSimulationPasses,
   runSimulationPasses,
   updateMouseWorldPosition,
 } from './gpgpuSimulationPasses';
@@ -201,6 +202,9 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     auxPosMat,
     auxChainVelMat,
     auxChainPosMat,
+    wwVelMat,
+    wwPosMat,
+    wwDrawMat,
     aux2DrawMat,
     aux3DrawMat,
     blitMat,
@@ -239,6 +243,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     sortRTBRef,
     auxRtRef,
     auxPingIsA,
+    wwRtRef,
+    wwPingIsA,
     aux2RtRef,
     aux2PingIsA,
     aux3RtRef,
@@ -524,6 +530,40 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         && ((config.gpgpuVellumTear || 0) > 0
           || ((config.gpgpuVellumGlue || 0) > 0 && (config.gpgpuVellumGlueBreak || 0) > 0))) {
         vellumStatePingIsA.current = !vellumStatePingIsA.current;
+      }
+    }
+
+    // Whitewater (Phase BC, WebGL path only — the WebGPU compute
+    // backend has no foam pool, and its draw material simply never
+    // activates). Reads the field texture the fluid pass produced
+    // this frame (the projected FLIP field) and the foam pool's
+    // own ping-pong pair; foam never writes back into the field.
+    if (!routing.useWebGPU && config.gpgpuWhitewaterEnabled && config.gpgpuFluidEnabled && config.gpgpuFlipEnabled && wwRtRef.current && simMeshRef.current) {
+      const fluidTex = (fluidPingIsA.current ? fluidRTARef.current : fluidRTBRef.current)?.texture ?? null;
+      if (fluidTex) {
+        const wwTargets = resolvePingPongTargets(wwRtRef.current, wwPingIsA.current);
+        runWhitewaterSimulationPasses({
+          config,
+          dt,
+          time: timeRef.current,
+          simMesh: simMeshRef.current,
+          gl: glCtx,
+          simScene,
+          simCamera,
+          fluidTex,
+          wwPosIn: wwTargets.posIn,
+          wwPosOut: wwTargets.posOut,
+          wwVelIn: wwTargets.velIn,
+          wwVelOut: wwTargets.velOut,
+          wwVelMat,
+          wwPosMat,
+        });
+        wwPingIsA.current = !wwPingIsA.current;
+        wwDrawMat.uniforms.uWwPosTex.value = wwTargets.posOut.texture;
+        wwDrawMat.uniforms.uWwVelTex.value = wwTargets.velOut.texture;
+        wwDrawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
+        wwDrawMat.uniforms.uWwSize.value = config.gpgpuWhitewaterSize;
+        wwDrawMat.blending = config.gpgpuBlendMode === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
       }
     }
 

@@ -165,6 +165,11 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // it routes to WebGL (the CPU fallback treats it as a
   // no-op, like SPH / Grains).
   if (config.gpgpuFlipEnabled) features.push('flip');
+  // Whitewater (Phase BC): the foam pool's spawn / carry passes
+  // are WebGL FBO passes over the FLIP field — declaring it
+  // routes to WebGL (the CPU fallback treats it as a no-op,
+  // like SPH / Grains).
+  if (config.gpgpuWhitewaterEnabled) features.push('whitewater');
   // Rigid bodies (Phase AU): the CPU solver + texture supply
   // live on the WebGL path only — declaring it routes to WebGL
   // (the CPU fallback treats it as a no-op, like SPH / Grains).

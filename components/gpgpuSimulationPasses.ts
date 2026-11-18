@@ -1097,6 +1097,80 @@ export function runAuxSimulationPasses(args: {
   gl.render(simScene, simCamera);
 }
 
+// Whitewater passes (Phase BC): run after the fluid pass, reading
+// the field texture the fluid pass just produced (the projected
+// FLIP field while the FLIP layer is on) and the foam pool's own
+// ping-pong pair. The caller flips the foam ping-pong and points
+// the foam draw material at the outputs. Foam never writes into
+// the field, the FLIP targets or the main pool — one-way only.
+export function runWhitewaterSimulationPasses(args: {
+  config: ParticleConfig;
+  dt: number;
+  time: number;
+  simMesh: THREE.Mesh;
+  gl: THREE.WebGLRenderer;
+  simScene: THREE.Scene;
+  simCamera: THREE.Camera;
+  fluidTex: THREE.Texture;
+  wwPosIn: THREE.WebGLRenderTarget;
+  wwPosOut: THREE.WebGLRenderTarget;
+  wwVelIn: THREE.WebGLRenderTarget;
+  wwVelOut: THREE.WebGLRenderTarget;
+  wwVelMat: THREE.ShaderMaterial;
+  wwPosMat: THREE.ShaderMaterial;
+}): void {
+  const {
+    config,
+    dt,
+    time,
+    simMesh,
+    gl,
+    simScene,
+    simCamera,
+    fluidTex,
+    wwPosIn,
+    wwPosOut,
+    wwVelIn,
+    wwVelOut,
+    wwVelMat,
+    wwPosMat,
+  } = args;
+
+  if (!config.gpgpuWhitewaterEnabled || !config.gpgpuFluidEnabled || !config.gpgpuFlipEnabled) return;
+
+  const velU = wwVelMat.uniforms;
+  velU.uWwPosTex.value = wwPosIn.texture;
+  velU.uWwVelTex.value = wwVelIn.texture;
+  velU.uFluidTex.value = fluidTex;
+  velU.uBounceRadius.value = config.gpgpuBounceRadius;
+  velU.uFluidScale.value = config.gpgpuFluidScale;
+  velU.uFluidInfluence.value = config.gpgpuFluidInfluence;
+  velU.uWwThreshold.value = config.gpgpuWhitewaterThreshold;
+  velU.uWwAmount.value = config.gpgpuWhitewaterAmount;
+  velU.uWwLife.value = config.gpgpuWhitewaterLife;
+  velU.uDelta.value = dt;
+  velU.uTime.value = time;
+  simMesh.material = wwVelMat;
+  gl.setRenderTarget(wwVelOut);
+  gl.render(simScene, simCamera);
+
+  const posU = wwPosMat.uniforms;
+  posU.uWwPosTex.value = wwPosIn.texture;
+  posU.uWwVelTex.value = wwVelIn.texture;
+  posU.uWwVelOutTex.value = wwVelOut.texture;
+  posU.uFluidTex.value = fluidTex;
+  posU.uBounceRadius.value = config.gpgpuBounceRadius;
+  posU.uFluidScale.value = config.gpgpuFluidScale;
+  posU.uFluidInfluence.value = config.gpgpuFluidInfluence;
+  posU.uWwThreshold.value = config.gpgpuWhitewaterThreshold;
+  posU.uWwAmount.value = config.gpgpuWhitewaterAmount;
+  posU.uDelta.value = dt;
+  posU.uTime.value = time;
+  simMesh.material = wwPosMat;
+  gl.setRenderTarget(wwPosOut);
+  gl.render(simScene, simCamera);
+}
+
 // Aux chain passes (Phase W1): one chain level (2 or 3) against the
 // previous level's FRAME-START textures — the same pre-update state
 // level 1 reads from the main pool, so a death/bounce event is

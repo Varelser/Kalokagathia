@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLUID_ADVECT_FRAG, SIM_POS_FRAG, SIM_VERT, SIM_VEL_FRAG, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildVelocityFragment } from "./gpgpuShaders";
 import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG, SIM_VELLUM_VEL_FRAG } from "./gpgpuShaderSimulationVellum";
 import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG } from "./gpgpuShaderAux";
+import { WW_POS_FRAG, WW_VEL_FRAG } from "./gpgpuShaderWhitewater";
 import { useThree } from "@react-three/fiber";
 import { buildCustomForceHarness, compileCheckShader, setCustomForceStatus, validateCustomForceCode } from "../lib/gpgpuCustomForce";
 import type { UseGpgpuAssetsArgs } from "./gpgpuAssetShared";
@@ -606,6 +607,47 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     vertexShader: SIM_VERT, fragmentShader: FLIP_CLEAR_FRAG,
   }), []);
 
+  // Whitewater materials (Phase BC): the foam pool's two passes.
+  // The shared field uniforms are declared in
+  // gpgpuShaderWhitewater's WW_SPAWN_GLSL chunk; the passes in
+  // gpgpuSimulationPasses.runWhitewaterSimulationPasses fill them
+  // per frame.
+  const wwVelMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uWwPosTex:       { value: null },
+      uWwVelTex:       { value: null },
+      uFluidTex:       { value: null },
+      uBounceRadius:   { value: 150.0 },
+      uFluidScale:     { value: 1.5 },
+      uFluidInfluence: { value: 0.8 },
+      uWwThreshold:    { value: 0.3 },
+      uWwAmount:       { value: 1.0 },
+      uWwLife:         { value: 0.7 },
+      uDelta:          { value: 0.016 },
+      uTime:           { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: WW_VEL_FRAG,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  const wwPosMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uWwPosTex:       { value: null },
+      uWwVelTex:       { value: null },
+      uWwVelOutTex:    { value: null },
+      uFluidTex:       { value: null },
+      uBounceRadius:   { value: 150.0 },
+      uFluidScale:     { value: 1.5 },
+      uFluidInfluence: { value: 0.8 },
+      uWwThreshold:    { value: 0.3 },
+      uWwAmount:       { value: 1.0 },
+      uDelta:          { value: 0.016 },
+      uTime:           { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: WW_POS_FRAG,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
   const simMeshRef = useRef<THREE.Mesh | null>(null);
   useEffect(() => {
     const mesh = new THREE.Mesh(simGeo, velSimMat);
@@ -661,6 +703,8 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     auxPosMat,
     auxChainVelMat,
     auxChainPosMat,
+    wwVelMat,
+    wwPosMat,
     blitMat,
     sortDepthMat,
     bitonicMat,

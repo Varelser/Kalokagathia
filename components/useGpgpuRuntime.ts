@@ -33,6 +33,7 @@ import {
 import type { WebGPUComputeState } from '../lib/webgpuCompute';
 import { FLUID_SIZE } from './gpgpuShaders';
 import { AUX_TEX_SIZE } from './gpgpuShaderAux';
+import { WW_TEX_SIZE } from './gpgpuShaderWhitewater';
 import { clampAuxDepth } from '../lib/auxChain';
 import { getMaxGpgpuTexSize } from '../lib/gpuTier';
 import {
@@ -303,6 +304,17 @@ export type GpgpuRuntimeRefs = {
     velB: THREE.WebGLRenderTarget;
   } | null>;
   auxPingIsA: MutableRefObject<boolean>;
+  // Whitewater (Phase BC): the foam pool's ping-pong pair
+  // (fixed 64x64), allocated with the other pools and initialised
+  // to the same inactive state; the passes only run while the
+  // whitewater key (and the fluid field + FLIP layer) is on.
+  wwRtRef: MutableRefObject<{
+    posA: THREE.WebGLRenderTarget;
+    posB: THREE.WebGLRenderTarget;
+    velA: THREE.WebGLRenderTarget;
+    velB: THREE.WebGLRenderTarget;
+  } | null>;
+  wwPingIsA: MutableRefObject<boolean>;
   aux2RtRef: MutableRefObject<AuxPoolTargets | null>;
   aux2PingIsA: MutableRefObject<boolean>;
   aux3RtRef: MutableRefObject<AuxPoolTargets | null>;
@@ -654,6 +666,13 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     velB: THREE.WebGLRenderTarget;
   } | null>(null);
   const auxPingIsA = useRef(true);
+  const wwRtRef = useRef<{
+    posA: THREE.WebGLRenderTarget;
+    posB: THREE.WebGLRenderTarget;
+    velA: THREE.WebGLRenderTarget;
+    velB: THREE.WebGLRenderTarget;
+  } | null>(null);
+  const wwPingIsA = useRef(true);
   const aux2RtRef = useRef<AuxPoolTargets | null>(null);
   const aux2PingIsA = useRef(true);
   const aux3RtRef = useRef<AuxPoolTargets | null>(null);
@@ -832,6 +851,55 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       auxVelTex.dispose();
     }
 
+    // Whitewater pool (Phase BC): fixed 64x64 ping-pong pair,
+    // initialised to the inactive state (age 10 >= life 0) with
+    // the same DataTexture copy path as the aux pool. The passes
+    // only run while the whitewater key is on, so an unused pool
+    // costs just the four small targets.
+    if (wwRtRef.current) {
+      wwRtRef.current.posA.dispose();
+      wwRtRef.current.posB.dispose();
+      wwRtRef.current.velA.dispose();
+      wwRtRef.current.velB.dispose();
+    }
+    const wwPosA = makeRT(WW_TEX_SIZE);
+    const wwPosB = makeRT(WW_TEX_SIZE);
+    const wwVelA = makeRT(WW_TEX_SIZE);
+    const wwVelB = makeRT(WW_TEX_SIZE);
+    wwRtRef.current = { posA: wwPosA, posB: wwPosB, velA: wwVelA, velB: wwVelB };
+    wwPingIsA.current = true;
+    {
+      const wwCount = WW_TEX_SIZE * WW_TEX_SIZE;
+      const wwPosData = new Float32Array(wwCount * 4);
+      const wwVelData = new Float32Array(wwCount * 4);
+      for (let i = 0; i < wwCount; i++) {
+        wwPosData[i * 4 + 3] = 10; // age: starts past any life → inactive
+        wwVelData[i * 4 + 3] = 0; // life: 0 → inactive
+      }
+      const wwPosTex = new THREE.DataTexture(wwPosData, WW_TEX_SIZE, WW_TEX_SIZE, THREE.RGBAFormat, THREE.FloatType);
+      const wwVelTex = new THREE.DataTexture(wwVelData, WW_TEX_SIZE, WW_TEX_SIZE, THREE.RGBAFormat, THREE.FloatType);
+      wwPosTex.needsUpdate = true;
+      wwVelTex.needsUpdate = true;
+      const wwCopyMat = new THREE.MeshBasicMaterial({ map: wwPosTex });
+      const wwCopyMesh = new THREE.Mesh(copyGeo, wwCopyMat);
+      copyScene.add(wwCopyMesh);
+      gl.setRenderTarget(wwPosA);
+      gl.render(copyScene, copyCam);
+      gl.setRenderTarget(wwPosB);
+      gl.render(copyScene, copyCam);
+      wwCopyMat.map = wwVelTex;
+      wwCopyMat.needsUpdate = true;
+      gl.setRenderTarget(wwVelA);
+      gl.render(copyScene, copyCam);
+      gl.setRenderTarget(wwVelB);
+      gl.render(copyScene, copyCam);
+      gl.setRenderTarget(null);
+      copyScene.remove(wwCopyMesh);
+      wwCopyMat.dispose();
+      wwPosTex.dispose();
+      wwVelTex.dispose();
+    }
+
     fluidRTARef.current?.dispose();
     fluidRTBRef.current?.dispose();
     fluidRTARef.current = makeFluidRT(FLUID_SIZE);
@@ -920,6 +988,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       auxRtRef.current?.velA.dispose();
       auxRtRef.current?.velB.dispose();
       auxRtRef.current = null;
+      wwRtRef.current?.posA.dispose();
+      wwRtRef.current?.posB.dispose();
+      wwRtRef.current?.velA.dispose();
+      wwRtRef.current?.velB.dispose();
+      wwRtRef.current = null;
       fluidRTARef.current?.dispose();
       fluidRTARef.current = null;
       fluidRTBRef.current?.dispose();
@@ -1583,6 +1656,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     sortRTBRef,
     auxRtRef,
     auxPingIsA,
+    wwRtRef,
+    wwPingIsA,
     aux2RtRef,
     aux2PingIsA,
     aux3RtRef,

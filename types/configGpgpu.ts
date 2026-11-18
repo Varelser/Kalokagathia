@@ -1027,6 +1027,18 @@ export interface ParticleConfigGpgpu {
   gpgpuFlipBlend: number;
   gpgpuFlipPressureIterations: number;
   gpgpuFlipTransfer: number;
+  // Whitewater (Phase BC): foam points derived from the FLIP
+  // field — a one-way dependent pool that spawns where the
+  // field's vorticity + convergence pass the threshold. All
+  // keys are inert unless gpgpuWhitewaterEnabled (and the
+  // fluid field + FLIP layer) is on; the default (off) keeps
+  // every path verbatim. The foam lives on the 2D field plane:
+  // no foam/spray separation.
+  gpgpuWhitewaterEnabled: boolean;
+  gpgpuWhitewaterAmount: number;
+  gpgpuWhitewaterThreshold: number;
+  gpgpuWhitewaterLife: number;
+  gpgpuWhitewaterSize: number;
   // Rigid body solver (Phase AU): CPU solver (≤64 bodies from
   // the fracture bake's cell assignment) + small texture supply
   // + position-pass consumption. All keys are inert unless
