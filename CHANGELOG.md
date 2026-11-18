@@ -4,6 +4,26 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.54.0] — 2026-11-18
+
+Seventh-term Phase AV: behaviour-zero maintenance. No behaviour
+change, no new config keys, no new starters.
+
+### Fixed
+- **Stale test expectations**: the Phase AR suite's totals pins
+  still held the AR-era values (1,230 keys / 561 starters) and
+  are updated to the current measured totals (1,246 / 567); the
+  Phase X2 CPU-port suite's morph signature expectation still
+  predated Phase AM and now includes AM's six bake-input fields
+  in their current position. Both suites pass in full again.
+- **Velocity shader split**: `gpgpuShaderSimulationVelocity.ts`
+  (71,378 B) is split into a thin concatenation shell (1,861 B)
+  over five verbatim chunk modules (preamble / helpers / main
+  forces / main SPH+Grains / main tail), the same pattern as the
+  Forces split in v1.39.1. The assembled `SIM_VEL_FRAG` string
+  is byte-identical to the pre-split shader (length 70,447,
+  sha256 pinned by the new Phase AV test).
+
 ## [1.53.1] — 2026-11-18
 
 Maintenance release: the depiction honesty note catches up with

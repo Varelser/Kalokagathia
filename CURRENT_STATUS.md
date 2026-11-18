@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.53.1**（2026-11-18、保守リリース: depiction 正直注記を第6期ソルバ級の実態へ現行化 — SHADER_EMULATED は mpm-material のみへ、pbd-solver／destruction-fracture は限定つき実在として LIMITED_REAL_SOLVER_FAMILIES を新設。挙動変更なし。前版 v1.53.0 は第6期 Phase AU＝RBD（剛体）: 破砕セルの上に立つ CPU 剛体ソルバ（最大64体、固定刻み 1/120 s）。並進＋回転（球近似慣性）＋球近似の剛体間衝突＋接着破断＋スリープまで。凸包・メッシュ衝突・拘束ジョイント・摩擦スタック・地形床は解かない（床は平面）。新規 config キー +6（gpgpuRigid*）・スターター +2。iMac ゲート・出荷は PHASE_AU_REPORT.md 参照。第6期は本フェーズで完走）
+**現行バージョン: v1.54.0**（2026-11-18、第7期 Phase AV＝保守の締め: テストドリフト2件の解消と速度シェーダの分割。挙動変更なし、新規キー・スターターなし。前版 v1.53.1 は depiction 正直注記の現行化、その前の v1.53.0 は第6期 Phase AU＝RBD（剛体）: 破砕セルの上に立つ CPU 剛体ソルバ（最大64体、固定刻み 1/120 s）。並進＋回転（球近似慣性）＋球近似の剛体間衝突＋接着破断＋スリープまで。凸包・メッシュ衝突・拘束ジョイント・摩擦スタック・地形床は解かない（床は平面）。新規 config キー +6（gpgpuRigid*）・スターター +2。iMac ゲート・出荷は PHASE_AU_REPORT.md 参照。第6期は本フェーズで完走）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -9,7 +9,7 @@
   （最新: PHASE_AU_REPORT.md / PHASE_AU_GATE_REPORT.md、前: PHASE_AT_REPORT.md / PHASE_AT_GATE_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.53.1] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.54.0] が最新項）
 
 ## 資産の実数（2026-11-18 実測）
 
