@@ -114,11 +114,18 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
     <div className="mt-4 border-t border-white/10 pt-4">
       <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-white/70">Noise Field Map（ノイズ場マップ）</div>
       <Slider label="Noise Scale" value={config.gpgpuNoiseMapScale} min={0.001} max={0.1} step={0.001} onChange={(v) => updateConfig('gpgpuNoiseMapScale', v)} />
+      <Toggle
+        label="Noise Kind"
+        value={config.gpgpuNoiseMapKind}
+        options={[{ label: 'Perlin', val: 'perlin' }, { label: 'Ridge', val: 'ridge' }, { label: 'Turbulence', val: 'turbulence' }]}
+        onChange={(v) => updateConfig('gpgpuNoiseMapKind', v)}
+      />
+      <Slider label="Noise Octaves" value={config.gpgpuNoiseMapOctaves} min={1} max={5} step={1} onChange={(v) => updateConfig('gpgpuNoiseMapOctaves', Math.round(v))} />
       <Slider label="Noise Evolve" value={config.gpgpuNoiseMapEvolve} min={0} max={4} step={0.01} onChange={(v) => updateConfig('gpgpuNoiseMapEvolve', v)} />
       <Slider label="Noise Size Amount" value={config.gpgpuNoiseMapSizeAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuNoiseMapSizeAmount', v)} />
       <Slider label="Noise Displace Amount" value={config.gpgpuNoiseMapDisplaceAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuNoiseMapDisplaceAmount', v)} />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-        画像ではなく空間ノイズ場そのものをマップ源にします。粒子は自分の位置の場の値（0〜1）を引き、サイズ倍率・半径方向の変位に使います。色は Color Gradient の Driver を Noise Field にすると同じ場で決まります。Evolve は場の時間発展で、0 では静止した場、上げるほど色・大きさ・変位がゆっくり流れます（決定レンダーでも同じ時刻で同じ場になります）。変位は画像変位（上の Map Displace）が有効な間はそちらが優先されます。
+        画像ではなく空間ノイズ場そのものをマップ源にします。粒子は自分の位置の場の値（0〜1）を引き、サイズ倍率・半径方向の変位に使います。色は Color Gradient の Driver を Noise Field にすると同じ場で決まります。Kind は場の読み方（Perlin＝通常／Ridge＝尾根／Turbulence＝乱流）、Octaves は細部の重ね数（fBm）で、Perlin＋1 では従来の場そのものです。Evolve は場の時間発展で、0 では静止した場、上げるほど色・大きさ・変位がゆっくり流れます（決定レンダーでも同じ時刻で同じ場になります）。変位は画像変位（上の Map Displace）が有効な間はそちらが優先されます。同じ場は内部供給「ノイズ場（静的スライス）」としてマスクや各 Map の源にも選べます（そちらは Scale／Kind／Octaves で決まる静止した断面で、Evolve は効きません）。
       </div>
     </div>
 

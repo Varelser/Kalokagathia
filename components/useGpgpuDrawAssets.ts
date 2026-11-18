@@ -62,6 +62,10 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uNoiseMapTime:           { value: 0 },
       uNoiseMapSizeAmount:     { value: 0 },
       uNoiseMapDisplaceAmount: { value: 0 },
+      // Phase BJ field grammar: perlin (0) / 1 octave — the
+      // Phase AY field exactly while the amounts keep it inert.
+      uNoiseMapKind:           { value: 0 },
+      uNoiseMapOctaves:        { value: 1 },
       uMaskTex:                { value: null },
       uMaskReady:              { value: false },
       uMaskMode:               { value: 0 },

@@ -22,6 +22,20 @@
 // legacy path, the evaluation is skipped), and the colour path
 // is a new gradient driver value — the default configuration
 // ('life' driver, amounts 0, evolve 0) never samples the field.
+//
+// Phase BJ generalises the field itself: a KIND (perlin /
+// turbulence / ridge — the octave value read as-is, as an
+// absolute value, or as one-minus-absolute) and an OCTAVE count
+// (fBm: frequency ×2, amplitude ×0.5 per octave, normalised by
+// the amplitude sum). The vocabulary mirrors the tile side
+// (lib/texturePack.ts) but the definition is independent — a
+// different noise family (3D gradient vs 2D value) and the tile
+// side is never touched. The default (perlin, 1 octave) is
+// bit-identical to the Phase AY field: the fBm sum is the single
+// octave value times amplitude 1 over an amplitude sum of 1,
+// and the perlin transform is the identity. The same field also
+// supplies map / mask sources as a static slice (Phase BJ,
+// lib/mapSourceSupply.ts 'noise-field').
 
 /** Evolution direction of the field sample offset (unit-ish,
  *  fixed so the field drifts diagonally through all three axes
@@ -89,10 +103,45 @@ export function noiseFieldOffset(
   ];
 }
 
-/** The map value of the field at a world position: the field
- *  mapped to [0, 1] (0.5 + 0.5 * vnoise, clamped), sampled at
- *  worldPos * scale + evolution offset. Deterministic in
- *  (position, scale, evolve, time). */
+/** Field kinds (Phase BJ): how one octave's gradient-noise
+ *  value is read before the fBm sum. 'perlin' is the raw value,
+ *  'turbulence' its absolute value, 'ridge' one minus the
+ *  absolute value — the same three readings the tile side's
+ *  textureNoiseKind names, over this field's own noise. */
+export type NoiseMapKind = 'perlin' | 'ridge' | 'turbulence';
+
+export const NOISE_MAP_KINDS: readonly NoiseMapKind[] = ['perlin', 'ridge', 'turbulence'];
+
+/** Coerce an arbitrary config value into a field kind
+ *  (anything unrecognised is the legacy 'perlin'). */
+export function normalizeNoiseMapKind(value: unknown): NoiseMapKind {
+  return value === 'ridge' || value === 'turbulence' ? value : 'perlin';
+}
+
+/** The kind as the GLSL uniform float (the NOISE_MAP_GLSL
+ *  branch thresholds): perlin 0, turbulence 1, ridge 2. */
+export function noiseMapKindIndex(kind: NoiseMapKind): number {
+  return kind === 'turbulence' ? 1 : kind === 'ridge' ? 2 : 0;
+}
+
+/** One octave's reading under a kind (the transform the fBm
+ *  sum accumulates). 'perlin' is the identity. */
+export function noiseFieldOctaveValue(value: number, kind: NoiseMapKind): number {
+  if (kind === 'turbulence') return Math.abs(value);
+  if (kind === 'ridge') return 1 - Math.abs(value);
+  return value;
+}
+
+/** The map value of the field at a world position: sampled at
+ *  worldPos * scale + evolution offset, accumulated as fBm
+ *  over `octaves` octaves (frequency ×2, amplitude ×0.5,
+ *  normalised by the amplitude sum) of the kind-transformed
+ *  gradient noise, then mapped to [0, 1] — perlin through
+ *  0.5 + 0.5 * v, turbulence / ridge as the (already
+ *  non-negative) sum itself — and clamped. Deterministic in
+ *  (position, scale, evolve, time, kind, octaves). The default
+ *  kind / octaves ('perlin', 1) reproduce the Phase AY sample
+ *  bit-for-bit. */
 export function sampleNoiseField01(
   x: number,
   y: number,
@@ -100,10 +149,28 @@ export function sampleNoiseField01(
   scale: number,
   evolve: number,
   timeSeconds: number,
+  kind: NoiseMapKind = 'perlin',
+  octaves = 1,
 ): number {
+  const k = normalizeNoiseMapKind(kind);
+  const oct = clampNoiseMapOctaves(octaves);
   const o = noiseFieldOffset(timeSeconds, evolve);
-  const v = noiseFieldValue(x * scale + o[0], y * scale + o[1], z * scale + o[2]);
-  return Math.min(1, Math.max(0, 0.5 + 0.5 * v));
+  const px = x * scale + o[0];
+  const py = y * scale + o[1];
+  const pz = z * scale + o[2];
+  let sum = 0;
+  let ampSum = 0;
+  let amp = 1;
+  let freq = 1;
+  for (let i = 0; i < oct; i++) {
+    sum += amp * noiseFieldOctaveValue(noiseFieldValue(px * freq, py * freq, pz * freq), k);
+    ampSum += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  const v = sum / ampSum;
+  const mapped = k === 'perlin' ? 0.5 + 0.5 * v : v;
+  return Math.min(1, Math.max(0, mapped));
 }
 
 /** Config clamps (the uniform site resolves through these, so
@@ -121,4 +188,11 @@ export function clampNoiseMapEvolve(value: number | undefined): number {
 export function clampNoiseMapAmount(value: number | undefined): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
   return Math.min(1, Math.max(0, value));
+}
+
+/** Octave count of the field's fBm (Phase BJ): an integer in
+ *  [1, 5]; anything non-finite is the legacy single octave. */
+export function clampNoiseMapOctaves(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1;
+  return Math.min(5, Math.max(1, Math.round(value)));
 }

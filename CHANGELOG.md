@@ -4,6 +4,49 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.66.0] — 2026-11-19
+
+Ninth-term Phase BJ: the noise field generalised — a kind /
+octave grammar for the field itself, and the field wired into
+the map-source supply. Two new config keys, both defaulting to
+the Phase AY field exactly; two new starters.
+
+### Added
+- **Field kind and octaves** (`gpgpuNoiseMapKind`:
+  'perlin' / 'ridge' / 'turbulence', default 'perlin';
+  `gpgpuNoiseMapOctaves`: 1–5, default 1). The field is now an
+  fBm sum (frequency ×2, amplitude ×0.5 per octave, normalised
+  by the amplitude sum) of kind-transformed gradient noise —
+  perlin reads the octave value as-is, turbulence its absolute
+  value, ridge one-minus-absolute — in both the TS reference
+  (`lib/noiseFieldMap.ts`) and its GLSL twin
+  (`kaloNoiseMap01`), so all three existing consumers (the
+  'noise' gradient driver, size, displacement) read the
+  generalised field. At the defaults the sum is the single
+  octave over an amplitude sum of 1 with the identity reading,
+  so every sample is bit-identical to the Phase AY field. The
+  tile side's noise (`lib/texturePack.ts`) is untouched: the
+  vocabulary matches, the definition stays independent.
+- **Noise field map supply** (`'noise-field'`, a new
+  `AfMapSourceKind`): the field as a static slice — the XY
+  plane at z = 0, time 0, evolve not applied — rasterised from
+  the field definition keys (scale / kind / octaves) by the
+  same pure sampler, cached per definition like the text /
+  path rasters. It reaches every source key that accepts the
+  AF supplies: the raster mask (`gpgpuMaskSource`, including
+  the kill mask and the feedback mask), the per-property Layer
+  Map sources (color / size / opacity / displace), and the
+  composite B layer (`postCompositeSource`). The mask picker
+  captures the slice's numeric grid at assignment time, like
+  text / path. Offered in the UI as 「ノイズ場（静的スライス）」
+  so the static nature is stated where it is chosen.
+- Starters: `starter-noise-ridge-octaves-relief` (ridge field
+  over 3 octaves driving displacement + colour) and
+  `starter-noise-field-mask-carve` (the 'noise-field' supply
+  as a clip mask).
+
+詳細は PHASE_BJ_REPORT.md（統合側で作成）。
+
 ## [1.65.0] — 2026-11-18
 
 Ninth-term Phase BI: bake-time attribute arithmetic (stage 1

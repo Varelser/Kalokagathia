@@ -16,7 +16,7 @@ import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { resolveIblEnvironment } from '../lib/iblEnvironment';
 import { horizonEquirectYawRadians } from '../lib/horizonBackground';
-import { clampNoiseMapAmount, clampNoiseMapEvolve, clampNoiseMapScale } from '../lib/noiseFieldMap';
+import { clampNoiseMapAmount, clampNoiseMapEvolve, clampNoiseMapOctaves, clampNoiseMapScale, noiseMapKindIndex, normalizeNoiseMapKind } from '../lib/noiseFieldMap';
 
 // Occlusion-map shadow (Phase Z): the bake is a pure function of
 // the shadow-relevant config, so it is cached by that config's
@@ -336,6 +336,8 @@ export function syncVisualUniforms(args: {
   if (drawMat.uniforms.uNoiseMapTime) drawMat.uniforms.uNoiseMapTime.value = time ?? 0;
   if (drawMat.uniforms.uNoiseMapSizeAmount) drawMat.uniforms.uNoiseMapSizeAmount.value = clampNoiseMapAmount(config.gpgpuNoiseMapSizeAmount);
   if (drawMat.uniforms.uNoiseMapDisplaceAmount) drawMat.uniforms.uNoiseMapDisplaceAmount.value = clampNoiseMapAmount(config.gpgpuNoiseMapDisplaceAmount);
+  if (drawMat.uniforms.uNoiseMapKind) drawMat.uniforms.uNoiseMapKind.value = noiseMapKindIndex(normalizeNoiseMapKind(config.gpgpuNoiseMapKind));
+  if (drawMat.uniforms.uNoiseMapOctaves) drawMat.uniforms.uNoiseMapOctaves.value = clampNoiseMapOctaves(config.gpgpuNoiseMapOctaves);
   if (drawMat.uniforms.uMaskTex) {
     const state = config.gpgpuMaskSource ? resolveMapSourceTexture(config.gpgpuMaskSource, config) : null;
     drawMat.uniforms.uMaskTex.value = state ? state.texture : null;

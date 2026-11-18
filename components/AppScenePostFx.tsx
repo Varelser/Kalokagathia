@@ -23,7 +23,7 @@ import { MoirePass } from './moirePass';
 import { getGradImageTexture } from '../lib/gradImageTexture';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { displaceChannelIndex } from '../lib/postFxMath';
-import { afMapSource, resolveAfMapSourceTexture } from '../lib/mapSourceSupply';
+import { afMapSource, parseAfMapSource, resolveAfMapSourceTexture } from '../lib/mapSourceSupply';
 import { compositeBlendModeIndex } from '../lib/compositeBlend';
 
 export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config }) => {
@@ -134,11 +134,11 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   compositePass.modeIndex = compositeBlendModeIndex(config.postCompositeMode);
   compositePass.mixAmount = config.postCompositeMix;
   if (config.postCompositeEnabled) {
-    const afKind = config.postCompositeSource === 'path-raster'
-      ? 'path'
-      : config.postCompositeSource === 'edge-output'
-        ? 'edge'
-        : 'text';
+    // The stored source parses through the shared AF parser
+    // (Phase BJ: 'noise-field' joins the original three; an
+    // unrecognised value keeps the AM fallback to the text
+    // supply, exactly as the original ternary resolved it).
+    const afKind = parseAfMapSource(config.postCompositeSource) ?? 'text';
     const layerState = resolveAfMapSourceTexture(afMapSource(afKind), config);
     compositePass.sourceTexture = layerState && layerState.ready ? layerState.texture : null;
   } else {

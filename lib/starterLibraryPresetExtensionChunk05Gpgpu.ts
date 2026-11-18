@@ -3361,6 +3361,66 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuNoiseMapDisplaceAmount: 0.7,
         gpgpuTrailEnabled: false,
       }),
+  // Phase BJ: ridge field relief — the generalised field: a
+  // ridge reading (1 − |v|) accumulated over 3 fBm octaves
+  // pushes a quiet shell radially, so the relief has crests
+  // instead of the perlin field's smooth swells; colour reads
+  // the same field through the 'noise' gradient driver.
+  createStarterPreset('starter-noise-ridge-octaves-relief', 'Noise Ridge Relief (Ridge Field × 3 Octaves)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'shell',
+        gpgpuColor: '#e6ebee',
+        gpgpuSize: 1.8,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.15,
+        gpgpuGradEnabled: true,
+        gpgpuGradDriver: 'noise',
+        gpgpuGradStart: '#10151c',
+        gpgpuGradMid: '#7d8ea3',
+        gpgpuGradEnd: '#eef3f7',
+        gpgpuNoiseMapScale: 0.01,
+        gpgpuNoiseMapKind: 'ridge',
+        gpgpuNoiseMapOctaves: 3,
+        gpgpuNoiseMapDisplaceAmount: 0.8,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase BJ: noise field mask — the field itself, as the
+  // static-slice supply ('noise-field'), is the raster mask:
+  // the field's bright regions keep their particles and the
+  // dark regions are clipped away, so the sphere is carved by
+  // the field's shape. The slice follows the field definition
+  // keys (here a turbulence reading over 2 octaves).
+  createStarterPreset('starter-noise-field-mask-carve', 'Noise Field Mask (Static Slice Carve)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#e6ebee',
+        gpgpuSize: 1.6,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.08,
+        gpgpuNoiseMapScale: 0.012,
+        gpgpuNoiseMapKind: 'turbulence',
+        gpgpuNoiseMapOctaves: 2,
+        gpgpuMaskSource: 'noise-field',
+        gpgpuMaskMode: 'clip',
+        gpgpuMaskThreshold: 0.45,
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AZ: parallax layer drift — three particle layers
   // carry graded shift factors against the camera, and a gentle
   // camera impulse keeps the viewpoint drifting so the layers

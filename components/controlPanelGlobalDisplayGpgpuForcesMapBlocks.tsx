@@ -6,6 +6,7 @@ import { extractLumaMap, extractTextLumaMap } from './controlPanelPartsSourceMed
 import { textLayoutOptionsFromTextMap } from '../lib/textColumnLayout';
 import {
   afMapSource,
+  getNoiseFieldLuma,
   getPathRasterLuma,
   isAfMapSource,
   parseAfMapSource,
@@ -147,9 +148,10 @@ const AF_SOURCE_KIND_LABELS: Record<AfMapSourceKind, string> = {
   text: '文字',
   path: 'パス',
   edge: 'エッジ',
+  noise: 'ノイズ場（静的スライス）',
 };
 
-const AF_SOURCE_KINDS: readonly AfMapSourceKind[] = ['text', 'path', 'edge'];
+const AF_SOURCE_KINDS: readonly AfMapSourceKind[] = ['text', 'path', 'edge', 'noise'];
 
 /** Internal supply picker (Phase AF): the current text, the
  *  authored SVG path and the post chain's edge field as map /
@@ -354,6 +356,8 @@ export const MapSourceBlock: React.FC<{
               ? parsePathRasterFillMode(source) !== 'none'
                 ? `パス塗り（${parsePathRasterFillMode(source) === 'evenodd' ? '偶奇' : '非ゼロ'}ルール）を設定済み: SVG パスの閉領域を塗った内部供給です。線幅は輪郭の太さとして効きます。`
                 : 'パスラスタを設定済み: 現在の SVG パス（モーフの SVG ソース）に追随する内部供給です。SVG が未設定の間は効きません。'
+              : parseAfMapSource(source) === 'noise'
+              ? 'ノイズ場（静的スライス）を設定済み: ノイズ場マップの定義（Scale／Kind／Octaves）で決まる静止した断面を供給する内部供給です。式ではなく場の定義キーで形が決まり、Evolve（時間発展）は供給には効きません。'
               : 'エッジ出力を設定済み: ポストの輪郭（前フレームのエッジ場）を供給する内部供給です。エッジ表示の ON/OFF とは独立に働きます。'
           : source ? '専用画像を設定済み: このプロパティは共通マップではなくこの画像を使います。' : '未設定: このプロパティは共通マップを使います。'}
       </div>
@@ -418,10 +422,17 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
   // kill / Layer Maps) resolve the live sentinel texture. The
   // edge field is a live frame product and has no numeric grid:
   // bake / placement consumers keep their legacy behaviour while
-  // the GPU consumers sample the captured field.
+  // the GPU consumers sample the captured field. The noise field
+  // (Phase BJ) is a pure function of its definition keys, so it
+  // captures its static slice the same way text and path do.
   const applyAf = (kind: AfMapSourceKind) => {
     updateConfig('gpgpuMaskSource', afMapSource(kind));
-    if (kind === 'text') {
+    if (kind === 'noise') {
+      const luma = getNoiseFieldLuma(config, 128);
+      updateConfig('gpgpuMaskMap', Array.from(luma));
+      updateConfig('gpgpuMaskMapWidth', 128);
+      updateConfig('gpgpuMaskMapHeight', 128);
+    } else if (kind === 'text') {
       const map = extractTextLumaMap(
         config.layer2TextMapText,
         128,
@@ -584,6 +595,8 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
                 : config.gpgpuMaskMap.length > 0
                 ? `パスラスタをマスクに供給中: 描画 clip と Kill は現在の SVG パスに追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点のパスから抽出済みです。パスを変えたら選び直してください。`
                 : 'パスラスタをマスクに供給中: ただし SVG ソースが未設定（または図形なし）のため、パスが設定されるまでマスクは効きません。'
+              : parseAfMapSource(source) === 'noise'
+              ? `ノイズ場（静的スライス）をマスクに供給中: 描画 clip と Kill はノイズ場マップの定義（Scale／Kind／Octaves）に追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点の場から抽出済みです。場の定義を変えたら選び直してください。供給は静止した断面で、Evolve は効きません。`
               : 'エッジ出力をマスクに供給中: 描画 clip と Kill はポストの輪郭（前フレームのエッジ場、閾値はエッジ表示と共用）に追随します。生きたフレーム由来のため輝度マップは無く、ベイクとメディア配置には効きません。エッジ表示の ON/OFF とは独立です。'
           : source
           ? `マスク設定済み（輝度マップ ${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight} を取り込み時に抽出）。白い領域が残り、黒い領域が間引かれます。`

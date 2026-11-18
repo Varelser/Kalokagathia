@@ -37,6 +37,16 @@
  *    are independent: the capture pass is a pass-through, so
  *    supplying edges never changes the picture, and the display
  *    edge pass need not be on.
+ *  - `noise-field` (Phase BJ) exposes the noise field itself
+ *    (lib/noiseFieldMap.ts) as a supply: a STATIC slice of the
+ *    field — the XY plane at z = 0, time 0, evolve not applied —
+ *    rasterised from the field definition keys (scale / kind /
+ *    octaves) with the same pure sampler the draw consumes, so
+ *    the supplied picture is the field's shape at those
+ *    settings. It is a snapshot by design: the live, evolving
+ *    field stays with the points draw's own consumers, and the
+ *    slice is regenerated only when a field definition key
+ *    changes.
  *
  * Row conventions mirror lib/mapImageTexture.ts: texture data
  * row 0 is the v = 0 (bottom) row, so a supplied texture samples
@@ -50,10 +60,18 @@ import { parseSvgPathGeometry, type PathGeometry } from './pathGeometry';
 import type { MapImageTextureState } from './mapImageTexture';
 import type { ParticleConfig } from '../types';
 import { verticalGlyphPlacements } from './textColumnLayout';
+import {
+  clampNoiseMapOctaves,
+  clampNoiseMapScale,
+  normalizeNoiseMapKind,
+  sampleNoiseField01,
+  type NoiseMapKind,
+} from './noiseFieldMap';
 
 export const TEXT_RASTER_SOURCE = 'text-raster';
 export const PATH_RASTER_SOURCE = 'path-raster';
 export const EDGE_OUTPUT_SOURCE = 'edge-output';
+export const NOISE_FIELD_SOURCE = 'noise-field';
 
 /** Fill modes of the path raster supply (Phase AF2), carried as
  *  source-string suffixes on the path-raster sentinel — the AE
@@ -69,7 +87,7 @@ export function parsePathRasterFillMode(source: string): PathFillMode {
   return 'none';
 }
 
-export type AfMapSourceKind = 'text' | 'path' | 'edge';
+export type AfMapSourceKind = 'text' | 'path' | 'edge' | 'noise';
 
 export function parseAfMapSource(source: string): AfMapSourceKind | null {
   if (source === TEXT_RASTER_SOURCE) return 'text';
@@ -77,6 +95,7 @@ export function parseAfMapSource(source: string): AfMapSourceKind | null {
     || source === PATH_RASTER_FILL_EVENODD_SOURCE
     || source === PATH_RASTER_FILL_NONZERO_SOURCE) return 'path';
   if (source === EDGE_OUTPUT_SOURCE) return 'edge';
+  if (source === NOISE_FIELD_SOURCE) return 'noise';
   return null;
 }
 
@@ -85,7 +104,10 @@ export function isAfMapSource(source: string): boolean {
 }
 
 export function afMapSource(kind: AfMapSourceKind): string {
-  return kind === 'text' ? TEXT_RASTER_SOURCE : kind === 'path' ? PATH_RASTER_SOURCE : EDGE_OUTPUT_SOURCE;
+  return kind === 'text' ? TEXT_RASTER_SOURCE
+    : kind === 'path' ? PATH_RASTER_SOURCE
+    : kind === 'noise' ? NOISE_FIELD_SOURCE
+    : EDGE_OUTPUT_SOURCE;
 }
 
 /** Every source key whose value can request the edge supply. */
@@ -487,6 +509,95 @@ export function getPathRasterTexture(
 }
 
 // ---------------------------------------------------------------------------
+// Noise field supply (Phase BJ, pure)
+
+export interface NoiseFieldSettings {
+  /** Field frequency, resolved through the AY clamp. */
+  scale: number;
+  kind: NoiseMapKind;
+  octaves: number;
+}
+
+/** The field definition the supply slice is taken from: the
+ *  same keys (and the same clamps / normalisation) the points
+ *  draw resolves its uniforms through, minus evolve — the
+ *  slice is static by design. */
+export function noiseFieldSettingsFromConfig(config: ParticleConfig): NoiseFieldSettings {
+  return {
+    scale: clampNoiseMapScale(config.gpgpuNoiseMapScale),
+    kind: normalizeNoiseMapKind(config.gpgpuNoiseMapKind),
+    octaves: clampNoiseMapOctaves(config.gpgpuNoiseMapOctaves),
+  };
+}
+
+export function noiseFieldCacheKey(settings: NoiseFieldSettings): string {
+  return [settings.scale, settings.kind, settings.octaves].join('|');
+}
+
+/**
+ * Rasterise the field's static slice into a luma grid (row 0 =
+ * top, the image-order convention of the numeric mask grids):
+ * each cell centre maps to the plane [-1, 1] × [-1, 1] (x
+ * right, y up) and takes sampleNoiseField01 at z = 0, time 0 —
+ * evolve is a property of the live field, never of the slice.
+ * Pure and deterministic: the same settings rasterise
+ * bit-identically anywhere.
+ */
+export function buildNoiseFieldLuma(settings: NoiseFieldSettings, size: number): Float32Array {
+  const n = Math.max(2, Math.floor(size));
+  const out = new Float32Array(n * n);
+  for (let cy = 0; cy < n; cy++) {
+    const py = 1 - ((cy + 0.5) / n) * 2;
+    for (let cx = 0; cx < n; cx++) {
+      const px = ((cx + 0.5) / n) * 2 - 1;
+      out[cy * n + cx] = sampleNoiseField01(px, py, 0, settings.scale, 0, 0, settings.kind, settings.octaves);
+    }
+  }
+  return out;
+}
+
+export const NOISE_FIELD_TEXTURE_SIZE = 256;
+
+interface NoiseFieldEntry {
+  key: string;
+  textureBySize: Map<number, THREE.DataTexture>;
+  lumaBySize: Map<number, Float32Array>;
+}
+
+let noiseFieldEntry: NoiseFieldEntry | null = null;
+
+function getNoiseFieldEntry(config: ParticleConfig): NoiseFieldEntry {
+  const key = noiseFieldCacheKey(noiseFieldSettingsFromConfig(config));
+  if (noiseFieldEntry && noiseFieldEntry.key === key) return noiseFieldEntry;
+  if (noiseFieldEntry) noiseFieldEntry.textureBySize.forEach((tex) => tex.dispose());
+  noiseFieldEntry = { key, textureBySize: new Map(), lumaBySize: new Map() };
+  return noiseFieldEntry;
+}
+
+export function getNoiseFieldLuma(config: ParticleConfig, size: number): Float32Array {
+  const entry = getNoiseFieldEntry(config);
+  const n = Math.max(2, Math.floor(size));
+  let luma = entry.lumaBySize.get(n);
+  if (!luma) {
+    luma = buildNoiseFieldLuma(noiseFieldSettingsFromConfig(config), n);
+    entry.lumaBySize.set(n, luma);
+  }
+  return luma;
+}
+
+export function getNoiseFieldTexture(config: ParticleConfig): MapImageTextureState {
+  const entry = getNoiseFieldEntry(config);
+  const size = NOISE_FIELD_TEXTURE_SIZE;
+  let texture = entry.textureBySize.get(size);
+  if (!texture) {
+    const luma = getNoiseFieldLuma(config, size);
+    texture = makeSupplyDataTexture(lumaGridToTextureData(luma, size, size), size, size);
+    entry.textureBySize.set(size, texture);
+  }
+  return { texture, ready: true };
+}
+
+// ---------------------------------------------------------------------------
 // Edge output supply (registered by the capture pass)
 
 let edgeCaptureTexture: THREE.Texture | null = null;
@@ -514,5 +625,6 @@ export function resolveAfMapSourceTexture(source: string, config: ParticleConfig
   if (kind === 'text') return getTextRasterTexture(config);
   if (kind === 'path') return getPathRasterTexture(config, parsePathRasterFillMode(source));
   if (kind === 'edge') return getEdgeCaptureTextureState();
+  if (kind === 'noise') return getNoiseFieldTexture(config);
   return null;
 }

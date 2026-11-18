@@ -528,6 +528,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuNoiseMapEvolve: 0,
   gpgpuNoiseMapSizeAmount: 0,
   gpgpuNoiseMapDisplaceAmount: 0,
+  // Noise field grammar (Phase BJ): kind 'perlin' and a single
+  // octave are the Phase AY field exactly.
+  gpgpuNoiseMapKind: 'perlin',
+  gpgpuNoiseMapOctaves: 1,
   gpgpuMaskSource: '',
   gpgpuMaskMode: 'off' as const,
   gpgpuMaskThreshold: 0.5,

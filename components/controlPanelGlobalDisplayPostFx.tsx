@@ -209,7 +209,7 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             <Toggle
               label="Composite Source （第2層）"
               value={config.postCompositeSource}
-              options={[{ label: 'Text Raster', val: 'text-raster' as const }, { label: 'Path Raster', val: 'path-raster' as const }, { label: 'Edge Output', val: 'edge-output' as const }]}
+              options={[{ label: 'Text Raster', val: 'text-raster' as const }, { label: 'Path Raster', val: 'path-raster' as const }, { label: 'Edge Output', val: 'edge-output' as const }, { label: 'Noise Field', val: 'noise-field' as const }]}
               onChange={(v) => updateConfig('postCompositeSource', v)}
             />
             <Toggle
@@ -220,7 +220,7 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             />
             <Slider label="Composite Mix" value={config.postCompositeMix} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postCompositeMix', v)} />
             <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-              フレームと第2層（供給テクスチャ）をブレンドモードで合成するポスト段です。第2層が未準備の間は入力をそのまま通します。Edge Output は前フレームのエッジ抽出結果を読みます。
+              フレームと第2層（供給テクスチャ）をブレンドモードで合成するポスト段です。第2層が未準備の間は入力をそのまま通します。Edge Output は前フレームのエッジ抽出結果を読みます。Noise Field はノイズ場の静的スライス（場の定義キーで決まる静止した断面）です。
             </div>
           </>
         )}

@@ -989,6 +989,13 @@ export interface ParticleConfigGpgpu {
   gpgpuNoiseMapEvolve: number;
   gpgpuNoiseMapSizeAmount: number;
   gpgpuNoiseMapDisplaceAmount: number;
+  // Noise field grammar (Phase BJ): the field's kind (the
+  // octave reading: perlin / ridge / turbulence) and its fBm
+  // octave count (1–5). The defaults ('perlin', 1) reproduce
+  // the Phase AY field bit-for-bit. The same pair also shapes
+  // the 'noise-field' map supply slice.
+  gpgpuNoiseMapKind: string;
+  gpgpuNoiseMapOctaves: number;
   gpgpuMaskSource: string;
   gpgpuMaskMode: 'off' | 'clip' | 'shape';
   gpgpuMaskThreshold: number;

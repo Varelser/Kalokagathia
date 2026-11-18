@@ -63,6 +63,12 @@ const AGE_CURVE_GLSL = /* glsl */ `
 // function of (position, time), so the deterministic render
 // reproduces it exactly. TS twin: lib/noiseFieldMap.ts
 // (sampleNoiseField01).
+// Phase BJ: the field carries a kind (0 perlin / 1 turbulence /
+// 2 ridge — the octave reading) and an fBm octave count (loop
+// capped at 5, cut by the octaves uniform), the same definition
+// as the TS twin. Kind 0 with 1 octave reduces to the Phase AY
+// expression above exactly (one term, amplitude sum 1, identity
+// reading, the perlin 0.5 + 0.5 * v mapping).
 const NOISE_MAP_GLSL = /* glsl */ `
   vec3 kaloNoiseHash3(vec3 p) {
     p = vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));
@@ -75,9 +81,27 @@ const NOISE_MAP_GLSL = /* glsl */ `
                mix(mix(dot(kaloNoiseHash3(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(kaloNoiseHash3(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),
                    mix(dot(kaloNoiseHash3(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(kaloNoiseHash3(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);
   }
-  float kaloNoiseMap01(vec3 worldPos, float scale, float evolve, float time) {
-    vec3 off = vec3(0.31, 0.47, 0.19) * (evolve * max(time, 0.0));
-    return clamp(0.5 + 0.5 * kaloNoiseValue(worldPos * scale + off), 0.0, 1.0);
+  float kaloNoiseOctave(float v, float kind) {
+    if (kind > 1.5) return 1.0 - abs(v);
+    if (kind > 0.5) return abs(v);
+    return v;
+  }
+  float kaloNoiseMap01(vec3 worldPos, float scale, float evolve, float time, float kind, float octaves) {
+    vec3 p = worldPos * scale + vec3(0.31, 0.47, 0.19) * (evolve * max(time, 0.0));
+    float sum = 0.0;
+    float ampSum = 0.0;
+    float amp = 1.0;
+    float freq = 1.0;
+    for (int i = 0; i < 5; i++) {
+      if (float(i) >= octaves) break;
+      sum += amp * kaloNoiseOctave(kaloNoiseValue(p * freq), kind);
+      ampSum += amp;
+      amp *= 0.5;
+      freq *= 2.0;
+    }
+    float v = sum / ampSum;
+    if (kind < 0.5) v = 0.5 + 0.5 * v;
+    return clamp(v, 0.0, 1.0);
   }
 `;
 
@@ -158,6 +182,8 @@ export const DRAW_VERT = /* glsl */ `
   uniform float     uNoiseMapTime;
   uniform float     uNoiseMapSizeAmount;
   uniform float     uNoiseMapDisplaceAmount;
+  uniform float     uNoiseMapKind;
+  uniform float     uNoiseMapOctaves;
   // 3D light (Phase T): brightness multiplier from the light object.
   uniform bool  uLightEnabled;
   uniform vec3  uLightPos;
@@ -280,7 +306,7 @@ export const DRAW_VERT = /* glsl */ `
       // particle's own position takes the luminance's place in
       // the same Phase X formula (radial, same radius). A ready
       // texture map keeps priority, mirroring the size map rule.
-      float nLuma = kaloNoiseMap01(worldPos, uNoiseMapScale, uNoiseMapEvolve, uNoiseMapTime);
+      float nLuma = kaloNoiseMap01(worldPos, uNoiseMapScale, uNoiseMapEvolve, uNoiseMapTime, uNoiseMapKind, uNoiseMapOctaves);
       float rLen = length(worldPos);
       if (rLen > 0.0001) {
         worldPos += (worldPos / rLen) * ((nLuma - 0.5) * uNoiseMapDisplaceAmount * uMapDisplaceRadius);
@@ -346,7 +372,7 @@ export const DRAW_VERT = /* glsl */ `
     // factor form with the field as the source. Layers on top of
     // the image map (both may apply); amount 0 skips it.
     if (uNoiseMapSizeAmount > 0.0) {
-      sizeMul *= mix(1.0, kaloNoiseMap01(worldPos, uNoiseMapScale, uNoiseMapEvolve, uNoiseMapTime), uNoiseMapSizeAmount);
+      sizeMul *= mix(1.0, kaloNoiseMap01(worldPos, uNoiseMapScale, uNoiseMapEvolve, uNoiseMapTime, uNoiseMapKind, uNoiseMapOctaves), uNoiseMapSizeAmount);
     }
     vPhaseMix = 1.0;
     vPlBright = 1.0;
@@ -404,6 +430,8 @@ export const DRAW_FRAG = /* glsl */ `
   uniform float     uNoiseMapScale;
   uniform float     uNoiseMapEvolve;
   uniform float     uNoiseMapTime;
+  uniform float     uNoiseMapKind;
+  uniform float     uNoiseMapOctaves;
   // Age curve (Phase U): opacity multiplier over normalised age.
   uniform bool      uAgeCurveOpacityEnabled;
   uniform float     uAgeCurveOpacity[5];
@@ -556,7 +584,7 @@ export const DRAW_FRAG = /* glsl */ `
           // noise field value at the particle's own position —
           // the field is the ramp's data source (map source), and
           // with evolve > 0 the colours drift as the field evolves.
-          gt = kaloNoiseMap01(vWorldPos, uNoiseMapScale, uNoiseMapEvolve, uNoiseMapTime);
+          gt = kaloNoiseMap01(vWorldPos, uNoiseMapScale, uNoiseMapEvolve, uNoiseMapTime, uNoiseMapKind, uNoiseMapOctaves);
         }
         col = texture2D(uGradLut, vec2(gt, 0.5)).rgb;
       }

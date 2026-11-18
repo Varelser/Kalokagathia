@@ -414,6 +414,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuNoiseMapEvolve', label: "Noise Map Evolve", tab: 'global', min: 0, max: 4, step: 0.01 },
   { key: 'gpgpuNoiseMapSizeAmount', label: "Noise Map Size Amount", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuNoiseMapDisplaceAmount', label: "Noise Map Displace Amount", tab: 'global', min: 0, max: 1, step: 0.01 },
+  { key: 'gpgpuNoiseMapOctaves', label: "Noise Map Octaves", tab: 'global', min: 1, max: 5, step: 1 },
   { key: 'gpgpuMaskThreshold', label: "Mask Threshold", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuNBodySoftening', label: "Softening", tab: 'global', min: 0.1, max: 20, step: 0.1 },
   { key: 'gpgpuWellSoftening', label: "Softening", tab: 'global', min: 1, max: 100, step: 1 },
