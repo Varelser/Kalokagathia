@@ -196,6 +196,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     posSimMat,
     vellumProjMat,
     vellumStateMat,
+    vellumVelMat,
     auxVelMat,
     auxPosMat,
     auxChainVelMat,
@@ -468,7 +469,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         rigidBodyTexRef.current.needsUpdate = true;
       }
       // Vellum (Phase AR): the tear state's ping-pong for this
-      // frame (the pool exists only while the tear key is live).
+      // frame (the pool exists only while a severing rule is
+      // live — tear, or Phase BB's glue break).
       const vellumState = vellumStateRtRef.current;
       const vellumStateIn = vellumState ? (vellumStatePingIsA.current ? vellumState.a : vellumState.b) : null;
       const vellumStateOut = vellumState ? (vellumStatePingIsA.current ? vellumState.b : vellumState.a) : null;
@@ -504,6 +506,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         vellumRestTex: vellumRestTexRef.current,
         vellumProjMat,
         vellumStateMat,
+        vellumVelMat,
         vellumStateIn,
         vellumStateOut,
         vellumSpareRT: prevPosRTRef.current,
@@ -515,8 +518,11 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         webgpuPingIsARef,
       });
       // The state pass inside wrote stateOut; make it next
-      // frame's input (only when it actually ran).
-      if (vellumState && config.gpgpuVellumEnabled && (config.gpgpuVellumTear || 0) > 0) {
+      // frame's input (only when it actually ran — the tear
+      // rule, or Phase BB's glue-break rule).
+      if (vellumState && config.gpgpuVellumEnabled
+        && ((config.gpgpuVellumTear || 0) > 0
+          || ((config.gpgpuVellumGlue || 0) > 0 && (config.gpgpuVellumGlueBreak || 0) > 0))) {
         vellumStatePingIsA.current = !vellumStatePingIsA.current;
       }
     }

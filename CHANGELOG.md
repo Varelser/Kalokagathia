@@ -4,6 +4,47 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.60.0] — 2026-11-18
+
+Seventh-term Phase BB: the Vellum constraints learn to pull,
+and the grains learn their angle. Four new config keys, all
+defaulting to the legacy behaviour exactly; two new starters.
+
+### Added
+- **Stitch — velocity coupling for Vellum**
+  (`gpgpuVellumStitch`, default 0): a dedicated pass
+  (`SIM_VELLUM_VEL_FRAG`) runs after the constraint projection
+  and blends each texel's velocity toward the average of its
+  live structural neighbours, so a pull on one end of the sheet
+  accelerates the other end through the links — momentum
+  exchange along the seams, where Phase AR's solver was
+  position-only. Torn links do not transmit; pinned texels act
+  as zero-velocity anchors. At 0 the pass never runs and the
+  frame is verbatim Phase AR.
+- **Glue — bake-point bonds for Vellum** (`gpgpuVellumGlue`,
+  default 0; `gpgpuVellumGlueBreak`, default 0 = unbreakable):
+  a zero-rest-length distance link from each texel to its own
+  bake point, solved inside the projection with its own rate,
+  so the cloth can be glued to its baked shape. With a break
+  threshold set, a bond whose texel strays farther than the
+  threshold (world units) releases monotonically — survival is
+  tracked in the state texture's .b channel, and the state pool
+  now also allocates while breakable glue is live.
+- **Angle of repose, direct specification**
+  (`gpgpuGrainsReposeAngle`, degrees, default 0 = off): while
+  set, the grains solver's friction coefficient is
+  μ = tan(angle) and the key overrides `gpgpuGrainsFriction`
+  (single resolution point: `lib/gpgpuGrains.ts`). A slope
+  steeper than the specified angle slides, a gentler one rests
+  — monotonic in the key, where the Phase AQ emergence from
+  friction alone measured non-monotonic. At 0 the friction key
+  rules exactly as before.
+- **Starters**: `starter-vellum-stitched-cloth` (the silk sheet
+  with stitch coupling at 0.8 — gusts swing the sheet as one
+  connected body) and `starter-grains-repose-pile` (the grain
+  pile with a 35° repose specified directly over a deliberately
+  low friction key).
+
 ## [1.59.0] — 2026-11-18
 
 Seventh-term Phase BA: the rigid-body floor stands on the

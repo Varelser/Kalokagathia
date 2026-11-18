@@ -3294,4 +3294,78 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuRigidFloorTerrain: true,
         gpgpuTrailEnabled: false,
       }),
+  // Phase BB: the stitched cloth — the silk sheet with the
+  // stitch coupling on. The wind still only pushes individual
+  // particles, but now the gusts' momentum travels along the
+  // structural seams: the sheet swings and billows as one
+  // connected body instead of being re-posed by the projection
+  // alone. Compare Stitch 0 (the AR behaviour) to feel the web
+  // carry a pull from one corner to the other.
+  createStarterPreset('starter-vellum-stitched-cloth', 'Vellum Stitched Cloth (Force-Transmitting Seams)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 65536,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#e2e7ec',
+        gpgpuSize: 1.6,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.35,
+        gpgpuTurbulence: 0.02,
+        gpgpuWindEnabled: true,
+        gpgpuWindStrength: 0.7,
+        gpgpuWindGust: 0.6,
+        gpgpuVellumEnabled: true,
+        gpgpuVellumMode: 'sheet',
+        gpgpuVellumStiffness: 0.85,
+        gpgpuVellumBend: 0.25,
+        gpgpuVellumSubsteps: 3,
+        gpgpuVellumPin: 'top',
+        gpgpuVellumPressure: 0,
+        gpgpuVellumTear: 0,
+        gpgpuVellumDamping: 0.05,
+        gpgpuVellumStitch: 0.8,
+        gpgpuVellumGlue: 0,
+        gpgpuVellumGlueBreak: 0,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase BB: the repose pile — the AQ grain pile with the
+  // angle of repose specified directly at 35 degrees instead of
+  // left to emerge from the friction key. The friction key is
+  // deliberately left low (0.2): while the repose key is set it
+  // is overridden by tan(35°), so the mound stands at the
+  // specified angle; set Repose Angle back to 0 and the same
+  // scene slumps to the low-friction spread.
+  createStarterPreset('starter-grains-repose-pile', 'Grain Repose Pile (Direct Angle of Repose)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 32768,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#dde1e6',
+        gpgpuSize: 1.6,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.3,
+        gpgpuTurbulence: 0.02,
+        gpgpuFloorEnabled: true,
+        gpgpuFloorY: -110.0,
+        gpgpuFloorBounce: 0.15,
+        gpgpuGrainsEnabled: true,
+        gpgpuGrainsSize: 8.0,
+        gpgpuGrainsStiffness: 2.0,
+        gpgpuGrainsFriction: 0.2,
+        gpgpuGrainsReposeAngle: 35,
+        gpgpuGrainsCohesion: 0,
+        gpgpuGrainsRestitution: 0,
+        gpgpuGrainsRestDamping: 0.7,
+        gpgpuTrailEnabled: false,
+      }),
 ];

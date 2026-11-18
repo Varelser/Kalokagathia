@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
 import { buildSpawnDistanceValues } from '../lib/gpgpuLifecycle';
-import { buildVellumBakeData, vellumTearActive } from '../lib/gpgpuVellum';
+import { buildVellumBakeData, vellumStatePoolActive } from '../lib/gpgpuVellum';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
 import { splitTextOnPathGlyphs, type TextGlyphRaster } from '../lib/gpgpuTextOnPath';
 import { traceContourGeometry } from '../lib/contourTrace';
@@ -968,13 +968,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   }, [gl, auxDepth]);
 
   // Vellum tear state pool (Phase AR): a texSize ping-pong pair
-  // holding link survival (.r = right link, .g = up link),
-  // allocated only while the tear key is live — in a dedicated
-  // effect like the aux chain pools, so toggling tear never
-  // reseeds the main pool. Both targets start fully alive
-  // (1,1,1,1); the state pass only ever clears bits, and a
-  // re-bake (any bake input changing) reallocates and resets.
-  const tearOn = vellumTearActive(config);
+  // holding link survival (.r = right link, .g = up link) and,
+  // since Phase BB, glue survival (.b) — allocated only while a
+  // severing rule is live (tear, or glue with a break
+  // threshold) — in a dedicated effect like the aux chain
+  // pools, so toggling a rule never reseeds the main pool. Both
+  // targets start fully alive (1,1,1,1); the state pass only
+  // ever clears bits, and a re-bake (any bake input changing)
+  // reallocates and resets.
+  const tearOn = vellumStatePoolActive(config);
   useEffect(() => {
     if (vellumStateRtRef.current) {
       vellumStateRtRef.current.a.dispose();

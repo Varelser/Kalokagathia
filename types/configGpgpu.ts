@@ -239,8 +239,9 @@ export interface ParticleConfigGpgpu {
   // neighbourhood as SPH (no position projection, no new passes).
   // Size is the grain diameter in world units (the SPH radius'
   // unit system). Enabled false (default) = the block is skipped
-  // and the pass is verbatim legacy. The angle of repose is an
-  // emergent value of Friction, not a key.
+  // and the pass is verbatim legacy. The angle of repose was an
+  // emergent value of Friction in Phase AQ; Phase BB adds the
+  // direct specification below.
   gpgpuGrainsEnabled: boolean;
   gpgpuGrainsSize: number;
   gpgpuGrainsStiffness: number;
@@ -248,6 +249,14 @@ export interface ParticleConfigGpgpu {
   gpgpuGrainsCohesion: number;
   gpgpuGrainsRestitution: number;
   gpgpuGrainsRestDamping: number;
+  // Angle of repose, direct specification (Phase BB): degrees,
+  // 0 (default) = off — the friction key rules and the repose is
+  // its emergent value, exactly as Phase AQ. While > 0 the key
+  // OVERRIDES Friction: the solver runs with μ = tan(angle)
+  // (lib/gpgpuGrains.ts is the single resolution point), so a
+  // slope steeper than the angle slides and a gentler one rests,
+  // monotonically in the key.
+  gpgpuGrainsReposeAngle: number;
   // Pyro (Phase AS): a particle-side temperature / buoyancy
   // solver in the velocity pass. Each particle's temperature is
   // derived deterministically from its normalised age —
@@ -681,6 +690,20 @@ export interface ParticleConfigGpgpu {
   gpgpuVellumPressure: number;
   gpgpuVellumTear: number;
   gpgpuVellumDamping: number;
+  // Constraint usages (Phase BB): stitch and glue. Stitch is a
+  // velocity-coupling pass over the structural links — after the
+  // projection each texel's velocity blends toward its live-link
+  // neighbours' average, so pulls transmit as momentum along the
+  // seams. 0 (default) = the pass never runs and velocities are
+  // verbatim legacy (the AR solver was position-only). Glue is a
+  // zero-rest-length distance link from each texel to its own
+  // bake point inside the projection (glue-to-target; the target
+  // is the pool's baked shape), with an optional break threshold
+  // in world units of displacement from the bake point
+  // (0 = unbreakable). Both 0 (defaults) = verbatim legacy.
+  gpgpuVellumStitch: number;
+  gpgpuVellumGlue: number;
+  gpgpuVellumGlueBreak: number;
   // SDF Collider ('gyroid' added by Kinetix integration B3: the TPMS
   // gyroid surface as a signed-distance collider, Kinetix 'gyro')
   gpgpuSdfEnabled: boolean;

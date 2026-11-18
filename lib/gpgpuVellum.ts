@@ -23,6 +23,23 @@
  * is not solved. Pressure is a normal-direction force, not a
  * volume-preserving pressure constraint. Tearing is link
  * severing, not fracture-surface generation.
+ *
+ * Phase BB adds the two constraint usages the AR scope lacked:
+ * stitch and glue. Stitch is a velocity-coupling pass over the
+ * structural links (lib/gpgpuShaderSimulationVellum.ts,
+ * SIM_VELLUM_VEL_FRAG): after the projection, each texel's
+ * velocity is blended toward the average of its live-link
+ * neighbours, so a pull on one end of the sheet accelerates the
+ * other end through the links instead of only re-posing it —
+ * momentum exchange along the seams, still not XPBD (no Δλ, no
+ * compliance). Glue is a zero-rest-length distance link from
+ * each texel to its own bake point, solved inside the
+ * projection with its own rate and an optional break threshold
+ * (displacement from the bake point, tracked in the state
+ * texture's .b channel). It is glue-to-target where the target
+ * is the pool's own baked shape — the pool is a single piece of
+ * cloth, so Houdini's cross-piece point-to-point glue has no
+ * second piece to bind to here.
  */
 
 import type { ParticleConfig } from '../types';
@@ -122,6 +139,15 @@ export interface VellumResolved {
   tear: number;
   /** Velocity damping while active, fraction per 1/60 s frame, 0..0.5. */
   damping: number;
+  /** Stitch (Phase BB): velocity-coupling rate over the structural
+   *  links, 0..1. 0 = the coupling pass never runs (legacy). */
+  stitch: number;
+  /** Glue (Phase BB): correction rate of the bake-point links in
+   *  the projection, 0..1. 0 = no glue links (legacy). */
+  glue: number;
+  /** Glue break (Phase BB): world-unit displacement from the
+   *  bake point at which a glue bond releases. 0 = unbreakable. */
+  glueBreak: number;
 }
 
 export const VELLUM_PIN_IDS: Record<VellumPinMode, 0 | 1 | 2 | 3> = {
@@ -151,6 +177,9 @@ export function resolveVellum(config: ParticleConfig): VellumResolved {
     // starts at 1.05. 0 stays off.
     tear: tearRaw > 0 ? Math.max(1.05, Math.min(3, tearRaw)) : 0,
     damping: Math.max(0, Math.min(0.5, config.gpgpuVellumDamping ?? 0.05)),
+    stitch: Math.max(0, Math.min(1, config.gpgpuVellumStitch ?? 0)),
+    glue: Math.max(0, Math.min(1, config.gpgpuVellumGlue ?? 0)),
+    glueBreak: Math.max(0, config.gpgpuVellumGlueBreak ?? 0),
   };
 }
 
@@ -158,4 +187,16 @@ export function resolveVellum(config: ParticleConfig): VellumResolved {
 export function vellumTearActive(config: ParticleConfig): boolean {
   const v = resolveVellum(config);
   return v.active && v.tear > 0;
+}
+
+/**
+ * State pool / state pass engage (Phase BB): the state texture
+ * carries link survival (.r / .g, tear) and glue survival (.b),
+ * so the pool must exist while EITHER severing rule is live —
+ * tear on, or glue on with a finite break threshold. Unbreakable
+ * glue (break 0) never reads the texture.
+ */
+export function vellumStatePoolActive(config: ParticleConfig): boolean {
+  const v = resolveVellum(config);
+  return v.active && (v.tear > 0 || (v.glue > 0 && v.glueBreak > 0));
 }

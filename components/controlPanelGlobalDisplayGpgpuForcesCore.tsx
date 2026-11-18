@@ -534,6 +534,7 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
           <Slider label="Grain Size （粒径）" value={config.gpgpuGrainsSize} min={1} max={60} step={0.5} onChange={(v) => updateConfig('gpgpuGrainsSize', v)} />
           <Slider label="Stiffness （接触の硬さ）" value={config.gpgpuGrainsStiffness} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuGrainsStiffness', v)} />
           <Slider label="Friction （摩擦・安息角は創発）" value={config.gpgpuGrainsFriction} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsFriction', v)} />
+          <Slider label="Repose Angle （安息角・度。0=創発、有効時は摩擦より優先）" value={config.gpgpuGrainsReposeAngle} min={0} max={90} step={0.5} onChange={(v) => updateConfig('gpgpuGrainsReposeAngle', v)} />
           <Slider label="Cohesion （凝集）" value={config.gpgpuGrainsCohesion} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsCohesion', v)} />
           <Slider label="Restitution （反発）" value={config.gpgpuGrainsRestitution} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsRestitution', v)} />
           <Slider label="Rest Damping （静止減衰）" value={config.gpgpuGrainsRestDamping} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsRestDamping', v)} />

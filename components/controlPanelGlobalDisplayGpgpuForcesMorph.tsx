@@ -355,6 +355,9 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Slider label="Pressure （圧力）" value={config.gpgpuVellumPressure} min={-5} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuVellumPressure', v)} />
           <Slider label="Tear （破れ閾値）" value={config.gpgpuVellumTear} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuVellumTear', v)} />
           <Slider label="Damping （減衰）" value={config.gpgpuVellumDamping} min={0} max={0.5} step={0.01} onChange={(v) => updateConfig('gpgpuVellumDamping', v)} />
+          <Slider label="Stitch （縫合・速度結合）" value={config.gpgpuVellumStitch} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuVellumStitch', v)} />
+          <Slider label="Glue （接着・ベイク位置へ）" value={config.gpgpuVellumGlue} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuVellumGlue', v)} />
+          <Slider label="Glue Break （接着の破断・変位）" value={config.gpgpuVellumGlueBreak} min={0} max={500} step={1} onChange={(v) => updateConfig('gpgpuVellumGlueBreak', v)} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             PBD 系の距離拘束ソルバです（XPBD の厳密実装ではなく、剛性は補正率×反復の実効値）。有効にするとプール全体が格子状に再配置され（リセット＝再ベイク）、年齢リスポーン／キル条件／スポーンゲート／モーフ／レプリカ独立 sim／ポインタペイントは格子を守るため無効化されます。自己衝突は解きません。圧力は体積保存ではなく面法線方向の力です。
           </div>

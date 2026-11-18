@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLUID_ADVECT_FRAG, SIM_POS_FRAG, SIM_VERT, SIM_VEL_FRAG, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildVelocityFragment } from "./gpgpuShaders";
-import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG } from "./gpgpuShaderSimulationVellum";
+import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG, SIM_VELLUM_VEL_FRAG } from "./gpgpuShaderSimulationVellum";
 import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG } from "./gpgpuShaderAux";
 import { useThree } from "@react-three/fiber";
 import { buildCustomForceHarness, compileCheckShader, setCustomForceStatus, validateCustomForceCode } from "../lib/gpgpuCustomForce";
@@ -346,6 +346,8 @@ export function createVellumProjMaterial(texSize: number): THREE.ShaderMaterial 
       uVellumStiffness: { value: 0.8 },
       uVellumBend:      { value: 0.3 },
       uVellumPin:       { value: 1 },
+      uVellumGlue:      { value: 0 },
+      uVellumGlueStateEnabled: { value: false },
       uTexSizeF:        { value: texSize },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_PROJ_FRAG,
@@ -362,9 +364,29 @@ export function createVellumStateMaterial(texSize: number): THREE.ShaderMaterial
       uVellumStateTex:  { value: null },
       uVellumTear:      { value: 0 },
       uVellumMode:      { value: 0 },
+      uVellumPin:       { value: 1 },
+      uVellumGlueBreak: { value: 0 },
       uTexSizeF:        { value: texSize },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_STATE_FRAG,
+  });
+}
+
+// Vellum stitch material (Phase BB): the velocity-coupling
+// sweep over the structural links. Shared-path only, like the
+// other Vellum materials.
+export function createVellumVelMaterial(texSize: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uVelTex:          { value: null },
+      uVellumStateTex:  { value: null },
+      uVellumTearEnabled: { value: false },
+      uVellumMode:      { value: 0 },
+      uVellumStitch:    { value: 0 },
+      uVellumPin:       { value: 1 },
+      uTexSizeF:        { value: texSize },
+    },
+    vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_VEL_FRAG,
   });
 }
 
@@ -377,6 +399,8 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   const vellumProjMat = useMemo(() => createVellumProjMaterial(texSize), []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const vellumStateMat = useMemo(() => createVellumStateMaterial(texSize), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vellumVelMat = useMemo(() => createVellumVelMaterial(texSize), []);
 
   // Aux event emission materials (B3): the shared event uniforms are
   // declared in gpgpuShaderAux's AUX_EVENT_GLSL chunk; the passes in
@@ -632,6 +656,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     posSimMat,
     vellumProjMat,
     vellumStateMat,
+    vellumVelMat,
     auxVelMat,
     auxPosMat,
     auxChainVelMat,

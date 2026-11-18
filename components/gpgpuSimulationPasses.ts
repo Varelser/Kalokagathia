@@ -7,6 +7,7 @@ import {
 } from '../lib/webgpuCompute';
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
 import { resolveVellum } from '../lib/gpgpuVellum';
+import { effectiveGrainsFriction } from '../lib/gpgpuGrains';
 import { resolveRigid } from '../lib/rigidBodies';
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
@@ -300,6 +301,7 @@ export function runSimulationPasses(args: {
   vellumRestTex?: THREE.Texture | null;
   vellumProjMat?: THREE.ShaderMaterial;
   vellumStateMat?: THREE.ShaderMaterial;
+  vellumVelMat?: THREE.ShaderMaterial;
   vellumStateIn?: THREE.WebGLRenderTarget | null;
   vellumStateOut?: THREE.WebGLRenderTarget | null;
   vellumSpareRT?: THREE.WebGLRenderTarget | null;
@@ -674,7 +676,11 @@ export function runSimulationPasses(args: {
     velSimMat.uniforms.uGrainsEnabled.value = config.gpgpuGrainsEnabled;
     velSimMat.uniforms.uGrainsSize.value = Math.max(0.001, config.gpgpuGrainsSize || 0);
     velSimMat.uniforms.uGrainsStiffness.value = Math.max(0, config.gpgpuGrainsStiffness || 0);
-    velSimMat.uniforms.uGrainsFriction.value = Math.max(0, config.gpgpuGrainsFriction || 0);
+    // Phase BB: the single friction resolution — while the
+    // repose-angle key is set it overrides the friction key
+    // with tan(angle) (lib/gpgpuGrains.ts). At the default the
+    // value is exactly the legacy friction key.
+    velSimMat.uniforms.uGrainsFriction.value = effectiveGrainsFriction(config);
     velSimMat.uniforms.uGrainsCohesion.value = Math.max(0, config.gpgpuGrainsCohesion || 0);
     velSimMat.uniforms.uGrainsRestitution.value = Math.max(0, config.gpgpuGrainsRestitution || 0);
     velSimMat.uniforms.uGrainsRestDamping.value = Math.max(0, config.gpgpuGrainsRestDamping || 0);
@@ -897,7 +903,11 @@ export function runSimulationPasses(args: {
   // solved positions in posOut, where every consumer reads them.
   if (vellum.active && args.vellumRestTex && args.vellumProjMat && args.vellumSpareRT && args.blitMat) {
     let stateTex: THREE.Texture | null = null;
-    if (vellum.tear > 0 && args.vellumStateMat && args.vellumStateIn && args.vellumStateOut) {
+    // The state pass maintains every severing channel at once:
+    // it runs while tear is on, or while glue is on with a
+    // finite break threshold (Phase BB — the .b channel).
+    const glueBreakLive = vellum.glue > 0 && vellum.glueBreak > 0;
+    if ((vellum.tear > 0 || glueBreakLive) && args.vellumStateMat && args.vellumStateIn && args.vellumStateOut) {
       // Strain is measured on the frame-start positions (posIn),
       // one frame behind the integration — deterministic, and
       // the severing is monotonic in the state pass itself.
@@ -907,6 +917,8 @@ export function runSimulationPasses(args: {
       stU.uVellumStateTex.value = args.vellumStateIn.texture;
       stU.uVellumTear.value = vellum.tear;
       stU.uVellumMode.value = vellum.modeId;
+      stU.uVellumPin.value = vellum.pinId;
+      stU.uVellumGlueBreak.value = glueBreakLive ? vellum.glueBreak : 0;
       stU.uTexSizeF.value = texSize;
       simMesh.material = args.vellumStateMat;
       gl.setRenderTarget(args.vellumStateOut);
@@ -921,6 +933,8 @@ export function runSimulationPasses(args: {
     projU.uVellumStiffness.value = vellum.stiffness;
     projU.uVellumBend.value = vellum.bend;
     projU.uVellumPin.value = vellum.pinId;
+    projU.uVellumGlue.value = vellum.glue;
+    projU.uVellumGlueStateEnabled.value = !!stateTex && glueBreakLive;
     projU.uTexSizeF.value = texSize;
     let cur: THREE.WebGLRenderTarget = posOut;
     for (let i = 0; i < vellum.substeps; i++) {
@@ -935,6 +949,30 @@ export function runSimulationPasses(args: {
       args.blitMat.uniforms.uTex.value = cur.texture;
       simMesh.material = args.blitMat;
       gl.setRenderTarget(posOut);
+      gl.render(simScene, simCamera);
+    }
+    // Stitch (Phase BB): the velocity-coupling sweep, after the
+    // solved positions have landed in posOut. It rewrites this
+    // frame's velocity output (velOut) through the spare target
+    // — free now that the projection ping-pong is done — so the
+    // transmission is part of the velocity every consumer and
+    // the next frame's integration see. At stitch 0 (default)
+    // the pass never runs and velOut is verbatim legacy.
+    if (vellum.stitch > 0 && args.vellumVelMat) {
+      const velU = args.vellumVelMat.uniforms;
+      velU.uVelTex.value = velOut.texture;
+      velU.uVellumStateTex.value = stateTex;
+      velU.uVellumTearEnabled.value = !!stateTex;
+      velU.uVellumMode.value = vellum.modeId;
+      velU.uVellumStitch.value = vellum.stitch;
+      velU.uVellumPin.value = vellum.pinId;
+      velU.uTexSizeF.value = texSize;
+      simMesh.material = args.vellumVelMat;
+      gl.setRenderTarget(args.vellumSpareRT);
+      gl.render(simScene, simCamera);
+      args.blitMat.uniforms.uTex.value = args.vellumSpareRT.texture;
+      simMesh.material = args.blitMat;
+      gl.setRenderTarget(velOut);
       gl.render(simScene, simCamera);
     }
   }

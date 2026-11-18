@@ -1,19 +1,19 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.59.0**（2026-11-18、第7期 Phase BA＝ソルバ格上げ: 地形床: 侵食ベイクの高度場を公開配列（lib/terrainHeightfield.ts）として RBD の床に渡し、平面／高度場の切替キーを追加。新規 config キー +1（既定 OFF＝従来同一、高度場が無い場面は平面へフォールバック）・スターター +2。詳細は PHASE_BA_REPORT.md。iMac ゲート・出荷は統合側で未実施。前版 v1.58.0 は第7期 Phase AZ＝パララックス）
+**現行バージョン: v1.60.0**（2026-11-18、第7期 Phase BB＝ソルバ格上げ: 結ぶ拘束と安息角: Vellum へ縫合（構造リンク越しの速度結合）と接着（ベイク点への距離拘束＋破断閾値）を追加し、Grains へ安息角の度数直接指定（有効時は tan(角度) が摩擦キーより優先）を追加。新規 config キー +4（全て既定で従来同一）・スターター +2。詳細は PHASE_BB_REPORT.md。iMac ゲート・出荷は統合側で未実施。前版 v1.59.0 は第7期 Phase BA＝地形床）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_BA_REPORT.md、前: PHASE_AZ_REPORT.md / PHASE_AY_REPORT.md / PHASE_AX_REPORT.md / PHASE_AW_REPORT.md）
+  （最新: PHASE_BB_REPORT.md、前: PHASE_BA_REPORT.md / PHASE_AZ_REPORT.md / PHASE_AY_REPORT.md / PHASE_AX_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.59.0] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.60.0] が最新項）
 
 ## 資産の実数（2026-11-18 実測）
 
-- config キー: **1,283件** ／ 内蔵スターター: **577件**
+- config キー: **1,287件** ／ 内蔵スターター: **579件**
 - 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

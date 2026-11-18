@@ -159,6 +159,8 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGrainsCohesion: 0,
   gpgpuGrainsRestitution: 0,
   gpgpuGrainsRestDamping: 0.5,
+  // Angle of repose, direct (Phase BB): 0 = off (friction rules).
+  gpgpuGrainsReposeAngle: 0,
   // Pyro (Phase AS, particle-side temperature / buoyancy solver):
   // disabled = off. Buoyancy is in gravity units (1.2 at full
   // temperature out-lifts the default gravity 0.2 and gravity 1.0
@@ -362,6 +364,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuVellumPressure: 0,
   gpgpuVellumTear: 0,
   gpgpuVellumDamping: 0.05,
+  // Constraint usages (Phase BB): 0 = off (legacy position-only).
+  gpgpuVellumStitch: 0,
+  gpgpuVellumGlue: 0,
+  gpgpuVellumGlueBreak: 0,
   // SDF Collider
   gpgpuSdfEnabled: false,
   gpgpuSdfShape: 'sphere' as const,
