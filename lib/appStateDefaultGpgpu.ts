@@ -464,6 +464,12 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGradThreeQuarter: '',
   gpgpuGradQuarterPos: 0.25,
   gpgpuGradThreeQuarterPos: 0.75,
+  // Arbitrary stop list (Phase BE): both empty = the ramp is derived
+  // from the legacy keys above, so existing configs stay bit-identical.
+  // When the pair resolves (>= 2 valid pairs), the list alone defines
+  // the ramp and the legacy colour keys are not consulted.
+  gpgpuGradStopPositions: [],
+  gpgpuGradStopColors: [],
   gpgpuGradPreset: 'nebula',
   gpgpuGradSpatialScale: 0.008,
   gpgpuGradImageSource: '',

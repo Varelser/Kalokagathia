@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { ParticleConfig } from "../types";
-import { createGradientLutTexture } from "../lib/kinetixGradients";
+import { createGradientLutTextureResolved } from "../lib/kinetixGradients";
 import { DRAW_FRAG, DRAW_VERT, STREAK_FRAG, STREAK_VERT } from "./gpgpuShaders";
 import { AUX_DRAW_FRAG, AUX_DRAW_VERT, AUX_TEX_SIZE } from "./gpgpuShaderAux";
 import { WW_DRAW_FRAG, WW_DRAW_VERT, WW_TEX_SIZE } from "./gpgpuShaderWhitewater";
@@ -104,7 +104,7 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uPointShape:        { value: 0 },
       uGradEnabled:       { value: false },
       uGradDriver:        { value: 0 },
-      uGradLut:           { value: createGradientLutTexture(config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd, config.gpgpuGradQuarter, config.gpgpuGradThreeQuarter, config.gpgpuGradQuarterPos, config.gpgpuGradThreeQuarterPos) },
+      uGradLut:           { value: createGradientLutTextureResolved(config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd, config.gpgpuGradQuarter, config.gpgpuGradThreeQuarter, config.gpgpuGradQuarterPos, config.gpgpuGradThreeQuarterPos, config.gpgpuGradStopPositions, config.gpgpuGradStopColors) },
       uGradSpatialScale:  { value: config.gpgpuGradSpatialScale },
       uGradTime:          { value: 0 },
       uGradImageTex:      { value: null },

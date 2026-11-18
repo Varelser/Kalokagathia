@@ -4,6 +4,33 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.62.0] — 2026-11-18
+
+Eighth-term Phase BE: the GPGPU colour gradient ramp gains an
+arbitrary stop list. Two new config keys, both defaulting to
+the legacy behaviour exactly; one new starter.
+
+### Added
+- **Gradient stop list** (`gpgpuGradStopPositions` /
+  `gpgpuGradStopColors`, both default empty): when the list
+  resolves to at least two valid stops, the gradient LUT is
+  built from the list (2–16 stops, positions clamped to [0,1],
+  ends pinned to 0 and 1, piecewise-linear interpolation —
+  the same fill the 5-stop path already used). When the list
+  is empty or invalid, the legacy 3-/5-stop derivation runs
+  verbatim, so existing presets render bit-identically (proven
+  by unit byte-equality tests and on the iMac real-GPU gate:
+  a list seeded from the legacy layout renders with zero
+  frame difference against the legacy path). The Aux/Color
+  panel gains a stop-list editor: seed the list from the
+  current legacy stops, edit each stop's position and colour
+  by row, add (up to 16) and delete stops, or clear the list
+  to return to the legacy 3-/5-stop editors. While the list
+  is active it defines the whole ramp and the legacy colour
+  keys are not read. Scope: the GPGPU gradient LUT only —
+  the output-grade 3-point ramp and the layer-side preset
+  gradient are unchanged.
+
 ## [1.61.0] — 2026-11-18
 
 Seventh-term Phase BC (the final phase of the term):

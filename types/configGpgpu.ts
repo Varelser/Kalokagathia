@@ -871,6 +871,12 @@ export interface ParticleConfigGpgpu {
   // matching stop colour is specified.
   gpgpuGradQuarterPos: number;
   gpgpuGradThreeQuarterPos: number;
+  // Arbitrary stop list (Phase BE): parallel arrays of positions
+  // (0..1) and colours. Both empty = derive the ramp from the legacy
+  // keys above (bit-identical); a resolved list (>= 2 valid pairs)
+  // replaces the legacy stops entirely.
+  gpgpuGradStopPositions: number[];
+  gpgpuGradStopColors: string[];
   gpgpuGradPreset: string;
   gpgpuGradSpatialScale: number;
   // Source image for the 'image' gradient driver, held in the config

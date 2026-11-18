@@ -4,7 +4,7 @@ import type { ParticleConfig } from '../types';
 import type { LodSystem } from '../lib/lodSystem';
 import type { GpgpuAssetBundle } from './useGpgpuAssets';
 import { MAX_TRAIL } from './gpgpuShaders';
-import { fillGradientLutDataAuto } from '../lib/kinetixGradients';
+import { fillGradientLutDataResolved, gradientStopsLutKey } from '../lib/kinetixGradients';
 import { getGradImageTexture } from '../lib/gradImageTexture';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { resolveMapSource } from '../lib/layerMask';
@@ -248,10 +248,10 @@ export function syncVisualUniforms(args: {
     drawMat.uniforms.uGradTime.value = time ?? 0;
     const lut = drawMat.uniforms.uGradLut.value as THREE.DataTexture | null;
     if (lut) {
-      const lutKey = `${config.gpgpuGradStart}|${config.gpgpuGradQuarter}|${config.gpgpuGradMid}|${config.gpgpuGradThreeQuarter}|${config.gpgpuGradEnd}|${config.gpgpuGradQuarterPos}|${config.gpgpuGradThreeQuarterPos}`;
+      const lutKey = `${config.gpgpuGradStart}|${config.gpgpuGradQuarter}|${config.gpgpuGradMid}|${config.gpgpuGradThreeQuarter}|${config.gpgpuGradEnd}|${config.gpgpuGradQuarterPos}|${config.gpgpuGradThreeQuarterPos}|${gradientStopsLutKey(config.gpgpuGradStopPositions, config.gpgpuGradStopColors)}`;
       if (drawMat.userData.gradLutKey !== lutKey) {
         drawMat.userData.gradLutKey = lutKey;
-        fillGradientLutDataAuto(lut.image.data as Uint8Array, config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd, config.gpgpuGradQuarter, config.gpgpuGradThreeQuarter, config.gpgpuGradQuarterPos, config.gpgpuGradThreeQuarterPos);
+        fillGradientLutDataResolved(lut.image.data as Uint8Array, config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd, config.gpgpuGradQuarter, config.gpgpuGradThreeQuarter, config.gpgpuGradQuarterPos, config.gpgpuGradThreeQuarterPos, config.gpgpuGradStopPositions, config.gpgpuGradStopColors);
         lut.needsUpdate = true;
       }
     }

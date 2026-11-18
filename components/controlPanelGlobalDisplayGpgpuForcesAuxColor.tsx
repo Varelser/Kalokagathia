@@ -3,8 +3,72 @@ import React from 'react';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
 
 import { Slider, Toggle } from './controlPanelParts';
-import { KINETIX_COLOR_GRADIENTS, getKinetixGradientPreset } from '../lib/kinetixGradients';
+import { KINETIX_COLOR_GRADIENTS, getKinetixGradientPreset, legacyGradientStopsList, resolveGradientStopsList } from '../lib/kinetixGradients';
 import { GradImageBlock } from './controlPanelGlobalDisplayGpgpuForcesMapBlocks';
+
+/**
+ * Arbitrary gradient stop list (Phase BE). While the config pair
+ * resolves, the list alone defines the ramp and this editor replaces
+ * the legacy colour controls (preset selection included, so presets
+ * cannot be applied until the list is cleared). While it does not
+ * resolve, a seed button turns the current legacy ramp into a list
+ * without changing the look.
+ */
+const GradStopListBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const stops = resolveGradientStopsList(config.gpgpuGradStopPositions, config.gpgpuGradStopColors);
+  const writeStops = (next: { pos: number; color: string }[]) => {
+    updateConfig('gpgpuGradStopPositions', next.map((s) => s.pos));
+    updateConfig('gpgpuGradStopColors', next.map((s) => s.color));
+  };
+  if (!stops) {
+    return (
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => writeStops(legacyGradientStopsList(config.gpgpuGradStart, config.gpgpuGradMid, config.gpgpuGradEnd, config.gpgpuGradQuarter, config.gpgpuGradThreeQuarter, config.gpgpuGradQuarterPos, config.gpgpuGradThreeQuarterPos))}
+          className="w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90"
+        >
+          ストップリストで編集（任意数）
+        </button>
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          現在の3点／5点グラデーションをそのままストップリスト化して、任意の個数（2〜16）のストップで編集できます。押しただけでは見た目は変わりません。
+        </div>
+      </div>
+    );
+  }
+  const addStop = () => {
+    let gapStart = 0;
+    let gap = -1;
+    for (let i = 0; i < stops.length - 1; i++) {
+      const g = stops[i + 1].pos - stops[i].pos;
+      if (g > gap) { gap = g; gapStart = i; }
+    }
+    const next = [...stops];
+    next.splice(gapStart + 1, 0, { pos: (stops[gapStart].pos + stops[gapStart + 1].pos) / 2, color: stops[gapStart].color });
+    writeStops(next);
+  };
+  return (
+    <div className="mt-3">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Gradient Stops （ストップリスト・Phase BE）</div>
+      {stops.map((stop, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <div className="flex-1">
+            <Slider label={`Stop ${i + 1}`} value={stop.pos} min={0} max={1} step={0.01} onChange={(v) => writeStops(stops.map((s, j) => (j === i ? { ...s, pos: v } : s)))} />
+          </div>
+          <input type="color" value={stop.color} onChange={(e) => writeStops(stops.map((s, j) => (j === i ? { ...s, color: e.target.value } : s)))} className="mt-5 h-8 w-12 cursor-pointer rounded border border-white/20 bg-transparent p-0.5" />
+          <button type="button" disabled={stops.length <= 2} onClick={() => writeStops(stops.filter((_, j) => j !== i))} className="mt-5 cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 disabled:cursor-not-allowed disabled:opacity-30">削除</button>
+        </div>
+      ))}
+      <div className="flex gap-2">
+        <button type="button" disabled={stops.length >= 16} onClick={addStop} className="flex-1 cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 disabled:cursor-not-allowed disabled:opacity-30">ストップを追加</button>
+        <button type="button" onClick={() => { updateConfig('gpgpuGradStopPositions', []); updateConfig('gpgpuGradStopColors', []); }} className="flex-1 cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90">従来の3点／5点に戻す</button>
+      </div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        ストップリスト使用中は、従来の色キー（Start／Mid／End、追加ストップ、プリセット）は使われません。リストがランプ全体を定義します（先頭の位置は0、末尾は1に固定され、位置の昇順に並びます）。
+      </div>
+    </div>
+  );
+};
 
 export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
@@ -130,6 +194,10 @@ export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffe
             <option value="image">Image（画像から色）</option>
             <option value="noise">Noise Field（ノイズ場の値）</option>
           </select>
+          {resolveGradientStopsList(config.gpgpuGradStopPositions, config.gpgpuGradStopColors) !== null ? (
+            <GradStopListBlock config={config} updateConfig={updateConfig} />
+          ) : (
+            <>
           <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Gradient Preset</div>
           <select
             value={config.gpgpuGradPreset}
@@ -198,6 +266,9 @@ export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffe
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             追加ストップ（Phase AH）: 1/4・3/4 位置に色を足して5点グラデーションにできます。両方とも未指定のときは従来の3点グラデーションと完全一致します。位置（Phase AW）は既定（0.25／0.75）で従来同一です。
           </div>
+          <GradStopListBlock config={config} updateConfig={updateConfig} />
+            </>
+          )}
           {config.gpgpuGradDriver === 'spatial' && (
             <Slider label="Spatial Scale" value={config.gpgpuGradSpatialScale} min={0.001} max={0.05} step={0.001} onChange={(v) => updateConfig('gpgpuGradSpatialScale', v)} />
           )}

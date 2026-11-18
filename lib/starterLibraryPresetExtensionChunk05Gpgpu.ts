@@ -2169,6 +2169,34 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuGradEnd: '#8b5cf6',
         gpgpuTrailEnabled: false,
       }),
+  // Phase BE: arbitrary stop list — a six-stop spectrum ramp that
+  // the legacy 3/5-point keys cannot express. While the list is set
+  // it alone defines the ramp; the legacy colours below only mirror
+  // its ends for coherence.
+  createStarterPreset('starter-gradient-multi-stop', 'Gradient Multi Stop (Arbitrary Ramp Stops)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 1.5,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.08,
+        gpgpuGradEnabled: true,
+        gpgpuGradDriver: 'life',
+        gpgpuGradPreset: 'custom',
+        gpgpuGradStart: '#0f172a',
+        gpgpuGradMid: '#2dd4bf',
+        gpgpuGradEnd: '#8b5cf6',
+        gpgpuGradStopPositions: [0, 0.2, 0.4, 0.6, 0.8, 1],
+        gpgpuGradStopColors: ['#0f172a', '#2563eb', '#2dd4bf', '#facc15', '#fb923c', '#8b5cf6'],
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AI: terrain collider — particles rain onto the height
   // field and bounce / settle on its surface (the derived
   // collider bake), instead of falling through the mesh.

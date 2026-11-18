@@ -557,6 +557,8 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuGradThreeQuarter: 'グラデーションの追加ストップ（位置3/4）。空文字＝未指定',
   gpgpuGradQuarterPos: '追加ストップ（1/4側）の位置（Phase AW）。既定0.25で従来同一。ストップ未指定のときは無効',
   gpgpuGradThreeQuarterPos: '追加ストップ（3/4側）の位置（Phase AW）。既定0.75で従来同一。ストップ未指定のときは無効',
+  gpgpuGradStopPositions: 'グラデーションの任意ストップリストの位置列（0..1、Phase BE）。色列 gpgpuGradStopColors と同長で2件以上そろうとリストがランプ全体を定義し、従来の色キーは使われない。空配列＝従来導出でビット同一',
+  gpgpuGradStopColors: 'グラデーションの任意ストップリストの色列（Phase BE）。位置列 gpgpuGradStopPositions と対で使う。空配列＝従来導出でビット同一',
   presetTransitionShape: 'プリセット遷移の形状（crossfade＝従来の一様モーフ／wipe＝キー順／dissolve＝決定的ランダム順／circle＝中央から、Phase AW）。既定 crossfade で従来同一',
   gpgpuGradSpatialScale: 'グラデーションの spatial ドライバで中心からの距離を色位置へ換算する倍率',
   gpgpuGradImageSource: 'グラデーションの image ドライバが色を拾う元画像（data URL、粒子位置でサンプリング）',

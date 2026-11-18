@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.61.0**（2026-11-18、第7期 Phase BC＝Whitewater（第7期の最終フェーズ）: FLIP 場の渦度＋収束が閾値を超えたセルから泡の二次粒子を放出する一方向の従属プールを追加。新規 config キー +5（全て既定で従来同一）・スターター +2。詳細は PHASE_BC_REPORT.md。iMac ゲート・出荷は統合側で未実施。前版 v1.60.0 は第7期 Phase BB＝結ぶ拘束と安息角）
+**現行バージョン: v1.62.0**（2026-11-18、第8期 Phase BE＝グラデーションランプのストップ数任意化: GPGPU グラデーション LUT に2〜16点のストップリスト＋キー列編集 UI を追加。新規 config キー +2（既定は空＝従来の3点/5点導出を逐語実行しバイト等値）・スターター +1。詳細は PHASE_BE_REPORT.md。前版 v1.61.0 は第7期 Phase BC＝Whitewater）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -13,7 +13,7 @@
 
 ## 資産の実数（2026-11-18 実測）
 
-- config キー: **1,292件** ／ 内蔵スターター: **581件**
+- config キー: **1,294件** ／ 内蔵スターター: **582件**
 - 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

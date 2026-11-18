@@ -195,3 +195,132 @@ export function createGradientLutTexture(start: string, mid: string, end: string
   tex.needsUpdate = true;
   return tex;
 }
+
+/** One stop of the arbitrary stop list (Phase BE): a position in
+ *  [0, 1] and the colour string as held in the config. */
+export interface GradientStopSpec {
+  pos: number;
+  color: string;
+}
+
+/** Maximum number of stops the arbitrary list may carry. */
+const GRADIENT_STOP_LIST_MAX = 16;
+
+/**
+ * Resolve the arbitrary stop list (Phase BE) from the parallel
+ * config arrays. Returns the normalised stop list, or null when the
+ * pair does not resolve — different lengths, or fewer than two valid
+ * pairs — in which case the ramp falls back to the legacy keys.
+ * Normalisation: pairs whose position is not a finite number or
+ * whose colour is not a non-empty string are dropped, positions are
+ * clamped to [0, 1] and sorted ascending, the list is capped at
+ * GRADIENT_STOP_LIST_MAX entries, and the first / last positions are
+ * pinned to 0 / 1 (the list describes the whole ramp).
+ */
+export function resolveGradientStopsList(
+  positions?: readonly number[] | null,
+  colors?: readonly string[] | null,
+): GradientStopSpec[] | null {
+  if (!Array.isArray(positions) || !Array.isArray(colors) || positions.length !== colors.length) return null;
+  const pairs: GradientStopSpec[] = [];
+  for (let i = 0; i < positions.length; i++) {
+    const pos = positions[i];
+    const color = colors[i];
+    if (typeof pos !== 'number' || !Number.isFinite(pos)) continue;
+    if (typeof color !== 'string' || color.trim() === '') continue;
+    pairs.push({ pos: Math.min(1, Math.max(0, pos)), color });
+  }
+  if (pairs.length < 2) return null;
+  pairs.sort((a, b) => a.pos - b.pos);
+  const trimmed = pairs.slice(0, GRADIENT_STOP_LIST_MAX);
+  trimmed[0] = { ...trimmed[0], pos: 0 };
+  trimmed[trimmed.length - 1] = { ...trimmed[trimmed.length - 1], pos: 1 };
+  return trimmed;
+}
+
+/**
+ * The stop list the legacy keys imply (Phase BE): start at 0, the
+ * optional quarter / three-quarter stops at their resolved (Phase
+ * AW) positions, mid at 0.5, end at 1. Mirrors the stop construction
+ * inside fillGradientLutDataAuto exactly, so a LUT filled from this
+ * list is byte-identical to the legacy path. Used to seed the list
+ * editor in the UI.
+ */
+export function legacyGradientStopsList(
+  start: string,
+  mid: string,
+  end: string,
+  quarter?: string,
+  threeQuarter?: string,
+  quarterPos?: number,
+  threeQuarterPos?: number,
+): GradientStopSpec[] {
+  const q = typeof quarter === 'string' && quarter.trim() !== '' ? quarter : null;
+  const tq = typeof threeQuarter === 'string' && threeQuarter.trim() !== '' ? threeQuarter : null;
+  const pos = resolveGradientStopPositions(quarterPos, threeQuarterPos);
+  const stops: GradientStopSpec[] = [{ pos: 0, color: start }];
+  if (q) stops.push({ pos: pos.quarterPos, color: q });
+  stops.push({ pos: 0.5, color: mid });
+  if (tq) stops.push({ pos: pos.threeQuarterPos, color: tq });
+  stops.push({ pos: 1, color: end });
+  return stops;
+}
+
+/**
+ * Fill with the arbitrary stop list when it resolves (Phase BE);
+ * otherwise call fillGradientLutDataAuto verbatim, so an empty (or
+ * unresolvable) list keeps the legacy LUT bit-identical.
+ */
+export function fillGradientLutDataResolved(
+  data: Uint8Array,
+  start: string,
+  mid: string,
+  end: string,
+  quarter?: string,
+  threeQuarter?: string,
+  quarterPos?: number,
+  threeQuarterPos?: number,
+  stopPositions?: readonly number[] | null,
+  stopColors?: readonly string[] | null,
+): void {
+  const list = resolveGradientStopsList(stopPositions, stopColors);
+  if (!list) {
+    fillGradientLutDataAuto(data, start, mid, end, quarter, threeQuarter, quarterPos, threeQuarterPos);
+    return;
+  }
+  fillGradientLutFromStops(data, list.map((s) => ({ pos: s.pos, color: new THREE.Color(s.color) })));
+}
+
+/** Resolved variant of createGradientLutTexture (Phase BE): same
+ *  texture settings, filled through fillGradientLutDataResolved. */
+export function createGradientLutTextureResolved(
+  start: string,
+  mid: string,
+  end: string,
+  quarter?: string,
+  threeQuarter?: string,
+  quarterPos?: number,
+  threeQuarterPos?: number,
+  stopPositions?: readonly number[] | null,
+  stopColors?: readonly string[] | null,
+): THREE.DataTexture {
+  const data = new Uint8Array(GRADIENT_LUT_SIZE * 4);
+  fillGradientLutDataResolved(data, start, mid, end, quarter, threeQuarter, quarterPos, threeQuarterPos, stopPositions, stopColors);
+  const tex = new THREE.DataTexture(data, GRADIENT_LUT_SIZE, 1, THREE.RGBAFormat);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** Serialise the stop-list arrays for the LUT rebake key (Phase BE):
+ *  positions at 4 decimal places, colours verbatim. */
+export function gradientStopsLutKey(
+  stopPositions?: readonly number[] | null,
+  stopColors?: readonly string[] | null,
+): string {
+  if (!Array.isArray(stopPositions) || !Array.isArray(stopColors)) return '';
+  return stopPositions.map((p, i) => `${Number(p).toFixed(4)}:${stopColors[i] ?? ''}`).join(',');
+}

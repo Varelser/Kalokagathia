@@ -705,6 +705,8 @@ const BOOLS: BoolDef[] = [
   ['gpgpuGradThreeQuarter', 'GPGPUグラデーションの追加ストップ（位置3/4、空文字＝未指定）'],
   ['gpgpuGradQuarterPos', '追加ストップ（1/4側）の位置（既定0.25＝従来同一、Phase AW）'],
   ['gpgpuGradThreeQuarterPos', '追加ストップ（3/4側）の位置（既定0.75＝従来同一、Phase AW）'],
+  ['gpgpuGradStopPositions', 'GPGPUグラデーションの任意ストップ位置列（0..1、色列と対・空＝従来導出、Phase BE）'],
+  ['gpgpuGradStopColors', 'GPGPUグラデーションの任意ストップ色列（位置列と対・空＝従来導出、Phase BE）'],
   ['presetTransitionShape', 'プリセット遷移の形状（crossfade＝従来／wipe／dissolve／circle、Phase AW）'],
   ['postRadialBlurEnabled', '放射ブラー（ズームぼかし）'],
   ['postBrandColorEnabled', 'ブランド単色デュオトーン（黒→ブランド色→白）'],
