@@ -372,8 +372,9 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Toggle label="Glue （接着）" value={config.gpgpuRigidGlueEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidGlueEnabled', v)} />
           <Slider label="Glue Strength （破断閾値）" value={config.gpgpuRigidGlueStrength} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuRigidGlueStrength', Math.round(v))} />
           <Toggle label="Start Sleeping （全スリープ開始）" value={config.gpgpuRigidStartSleeping} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidStartSleeping', v)} />
+          <Toggle label="Floor Terrain （地形床）" value={config.gpgpuRigidFloorTerrain} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidFloorTerrain', v)} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            破砕ベイクのセル（最大64体）を永続剛体として CPU で解くソルバです（質量・球近似の慣性・逐次インパルス接触・接着と破断・スリープ／活性化）。モーフ点群が前提で、破砕の Cells / Seed がそのまま体の分割になります。有効中は年齢リスポーン／キル条件／スポーンゲート／モーフ引力／レプリカ独立 sim は体を守るため無効化され、Vellum より優先されます。衝突形状はセルのバウンディング球近似のみ（開始時の重なりは初期距離を下限として許容）、凸包・メッシュ衝突・拘束ジョイント・地形との衝突は解きません。床とバウンス球には衝突します。
+            破砕ベイクのセル（最大64体）を永続剛体として CPU で解くソルバです（質量・球近似の慣性・逐次インパルス接触・接着と破断・スリープ／活性化）。モーフ点群が前提で、破砕の Cells / Seed がそのまま体の分割になります。有効中は年齢リスポーン／キル条件／スポーンゲート／モーフ引力／レプリカ独立 sim は体を守るため無効化され、Vellum より優先されます。衝突形状はセルのバウンディング球近似のみ（開始時の重なりは初期距離を下限として許容）、凸包・メッシュ衝突・拘束ジョイントは解きません。床とバウンス球には衝突します。地形床 ON のときは、侵食ベイクの高度場がある場面でのみ床がその地形になります（無い場面では平面の床のまま。地形との衝突は体の中心直下の高さで解くため、大きな体は急斜面の脇で地形にめり込むことがあります）。
           </div>
         </>
       )}

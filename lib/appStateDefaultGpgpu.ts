@@ -553,6 +553,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuRigidGlueEnabled: true,
   gpgpuRigidGlueStrength: 45,
   gpgpuRigidStartSleeping: false,
+  gpgpuRigidFloorTerrain: false,
   // WebGPU Compute Backend
   gpgpuWebGPUEnabled: false,
   gpgpuExecutionPreference: 'auto',

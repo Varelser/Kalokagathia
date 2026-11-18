@@ -40,6 +40,7 @@ import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
 import { resolveRigid, stepRigidBodies, writeRigidBodyTexture } from '../lib/rigidBodies';
+import { getTerrainHeightfield } from '../lib/terrainHeightfield';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { getDeterministicRotationFrame, isDeterministicJobActive } from '../lib/sceneRotationDeterminism';
 import {
@@ -452,6 +453,11 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           gravityY: -config.gpgpuGravity * 9.8 * 60,
           floorEnabled: config.gpgpuFloorEnabled,
           floorY: config.gpgpuFloorY,
+          // Terrain floor (Phase BA): the published erosion
+          // heightfield, resolved only while the Floor Terrain
+          // key is on; null (key off, or no baked field) keeps
+          // the flat plane at floorY verbatim.
+          heightfield: rigid.floorTerrain ? getTerrainHeightfield(config) : null,
           bounceRadius: config.gpgpuBounceRadius,
           restitution: rigid.restitution,
           friction: rigid.friction,

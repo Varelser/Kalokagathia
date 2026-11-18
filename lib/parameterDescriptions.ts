@@ -435,6 +435,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuRigidGlueEnabled: '接着（グルー）のON/OFF（初期配置で隣接するセル同士を溶接拘束で結ぶ）',
   gpgpuRigidGlueStrength: '接着の破断閾値（衝突で体の速度がこの値より大きく変化すると接着が切れる。大きいほど壊れにくい）',
   gpgpuRigidStartSleeping: '全剛体をスリープ状態で開始する（床に支持された集合は静止し続け、支持を失う・衝撃を受ける・接着が切れると目覚める）',
+  gpgpuRigidFloorTerrain: '剛体の床を地形にする（侵食ベイクの高度場を公開配列として床衝突に使う。侵食が無効な場面では平面の床へフォールバックし、Off では従来の平面のまま）',
   gpgpuVFieldStrength: 'ベクトル場（流れ場）の強さ',
   gpgpuVFieldScale: 'ベクトル場の細かさ',
   gpgpuGeomScale: 'GPGPU 形状全体の拡縮',

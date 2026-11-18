@@ -4,6 +4,41 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.59.0] — 2026-11-18
+
+Seventh-term Phase BA: the rigid-body floor stands on the
+terrain. One new config key, defaulting to off (the legacy flat
+plane exactly); two new starters.
+
+### Added
+- **Published terrain heightfield** (`lib/terrainHeightfield.ts`):
+  the erosion bake's field (Phase AP's `ErodedTerrainField`,
+  129×129 over [-1.05, +1.05]^2) published as a CPU-referenceable
+  array in world units — resolution, domain, row order and the
+  bilinear/clamped sampling rule are part of the module's
+  contract. The field exists only while the erosion grammar is
+  active (plane mode); otherwise publication returns null. The
+  existing attribute-texture / derived-map paths are unchanged:
+  the particle collider and slope force still read their GPU
+  texture bake, which is built from the same base grid through
+  the same erosion sim (cell-for-cell agreement by construction,
+  not a shared array).
+- **Terrain floor for rigid bodies** (`gpgpuRigidFloorTerrain`,
+  default off): while on and a published field exists, the RBD
+  floor collision samples the heightfield at the body's centre
+  (bilinear), applies the contact impulse along the field's
+  gradient normal, and the sleep support test reads the same
+  ground height. Positional correction stays vertical and the
+  collision shape stays the bounding sphere, so a large body can
+  still intersect a steep slope beside its centre. Fallbacks,
+  all to the flat plane at `gpgpuFloorY`: key off, erosion off,
+  tunnel mode. Sphere approximation, glue and sleep behaviour
+  are otherwise unchanged.
+- **Starters**: `starter-rbd-terrain-landing` (a glued shell
+  lands intact on an eroded landscape and sleeps in a hollow)
+  and `starter-rbd-terrain-debris` (weak glue — chunks break on
+  the slopes, roll down and settle in the carved valleys).
+
 ## [1.58.0] — 2026-11-18
 
 Seventh-term Phase AZ: parallax, on the conditional spike's

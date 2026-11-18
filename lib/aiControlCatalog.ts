@@ -404,6 +404,7 @@ const NUMS: NumDef[] = [
   ['gpgpuRigidGlueEnabled', '剛体の接着（グルー）のON/OFF'],
   ['gpgpuRigidGlueStrength', '接着の破断閾値（衝突の速度変化量）'],
   ['gpgpuRigidStartSleeping', '剛体を全スリープで開始するか'],
+  ['gpgpuRigidFloorTerrain', '剛体の床を侵食地形の高度場にするか（高度場が無い場面は平面へフォールバック、OFFで従来同一）'],
   ['gpgpuPyroEnabled', 'Pyroソルバ（粒子側の温度・浮力・攪拌）のON/OFF（OFFで従来同一）'],
   ['gpgpuPyroTemperature', 'Pyroの放出温度（年齢で冷却される温度の初期値）'],
   ['gpgpuPyroBuoyancy', 'Pyroの浮力（重力単位。熱い粒子が正の重力に逆らって昇る）'],

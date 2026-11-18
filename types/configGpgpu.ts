@@ -1015,6 +1015,12 @@ export interface ParticleConfigGpgpu {
   gpgpuRigidGlueEnabled: boolean;
   gpgpuRigidGlueStrength: number;
   gpgpuRigidStartSleeping: boolean;
+  // Terrain floor (Phase BA): while on, the solver's floor is
+  // the published erosion heightfield (lib/terrainHeightfield.ts)
+  // instead of the flat plane at gpgpuFloorY. No published field
+  // (erosion off / tunnel mode) falls back to the plane, and the
+  // default (off) keeps the plane path verbatim.
+  gpgpuRigidFloorTerrain: boolean;
   // WebGPU Compute Backend
   gpgpuWebGPUEnabled: boolean;
   gpgpuExecutionPreference: 'auto' | 'webgl' | 'webgpu';

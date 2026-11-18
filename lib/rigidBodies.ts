@@ -36,6 +36,20 @@
  * a body's velocity by more than the strength key) or on extreme
  * strain. Sleeping bodies wake on impact, on a bond breaking, or
  * when their whole contact component loses floor support.
+ *
+ * Terrain floor (Phase BA): while the Floor Terrain key is on
+ * AND a published heightfield is supplied (the publication
+ * point is lib/terrainHeightfield.ts — the erosion bake's field
+ * in world units), the floor
+ * is that heightfield instead of the flat plane: ground height
+ * is the bilinear sample at the body's XZ, the contact normal is
+ * the field's gradient normal, and the positional correction
+ * stays vertical (centre lifted to ground + radius), exactly
+ * like the plane path. With no field supplied — erosion off,
+ * tunnel mode, key off — the floor is the flat plane at floorY,
+ * verbatim. Sphere approximation is unchanged: a body rests on
+ * the sampled height under its CENTRE, so a large body can
+ * visually intersect a steep slope beside its centre.
  */
 
 import type { ParticleConfig } from '../types';
@@ -102,11 +116,73 @@ export interface RigidSolverState {
   time: number;
 }
 
+/**
+ * A published heightfield the floor can stand on (Phase BA),
+ * structurally typed so this solver stays free of the terrain
+ * modules: lib/terrainHeightfield.ts's TerrainHeightfield
+ * satisfies this shape. All units are world units; heights are
+ * row-major with row 0 = z = -extent, col along +X.
+ */
+export interface RigidHeightfieldSource {
+  size: number;
+  extent: number;
+  step: number;
+  heights: Float32Array;
+}
+
+/** Bilinear sample of a heightfield source at (x, z), clamped
+ *  to the domain edge (the sampleErodedField rule). */
+export function sampleRigidHeightfield(field: RigidHeightfieldSource, x: number, z: number): number {
+  const n = field.size;
+  const gx = Math.max(0, Math.min(n - 1, (x + field.extent) / field.step));
+  const gz = Math.max(0, Math.min(n - 1, (z + field.extent) / field.step));
+  const ix = Math.min(n - 2, Math.floor(gx));
+  const iz = Math.min(n - 2, Math.floor(gz));
+  const fx = gx - ix;
+  const fz = gz - iz;
+  const h = field.heights;
+  const h00 = h[iz * n + ix];
+  const h10 = h[iz * n + ix + 1];
+  const h01 = h[(iz + 1) * n + ix];
+  const h11 = h[(iz + 1) * n + ix + 1];
+  return (h00 * (1 - fx) + h10 * fx) * (1 - fz) + (h01 * (1 - fx) + h11 * fx) * fz;
+}
+
+/** Surface normal of a heightfield source at (x, z):
+ *  normalize(-dh/dx, 1, -dh/dz), central differences of the
+ *  sampler with one grid step. A flat field gives (0, 1, 0)
+ *  exactly. */
+export function rigidHeightfieldNormal(
+  field: RigidHeightfieldSource,
+  x: number,
+  z: number,
+): [number, number, number] {
+  const eps = field.step;
+  const gx = (sampleRigidHeightfield(field, x + eps, z) - sampleRigidHeightfield(field, x - eps, z)) / (2 * eps);
+  const gz = (sampleRigidHeightfield(field, x, z + eps) - sampleRigidHeightfield(field, x, z - eps)) / (2 * eps);
+  const inv = 1 / Math.hypot(gx, 1, gz);
+  return [-gx * inv, inv, -gz * inv];
+}
+
+/** Ground height under (x, z) for one step: the heightfield
+ *  sample while a field is supplied, the flat floorY otherwise
+ *  (the Phase BA fallback rule). */
+function floorSurfaceYAt(options: RigidStepOptions, x: number, z: number): number {
+  return options.heightfield
+    ? sampleRigidHeightfield(options.heightfield, x, z)
+    : options.floorY;
+}
+
 export interface RigidStepOptions {
   /** Signed gravity acceleration on Y, world units / s² (already includes the gravity key). */
   gravityY: number;
   floorEnabled: boolean;
   floorY: number;
+  /** Published terrain heightfield (Phase BA): while non-null
+   *  the floor stands on it; null keeps the flat plane at
+   *  floorY verbatim. The caller resolves it (key + field
+   *  availability), the solver only consumes it. */
+  heightfield?: RigidHeightfieldSource | null;
   /** Containment sphere radius (the scene bounce radius). */
   bounceRadius: number;
   restitution: number;
@@ -302,10 +378,21 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
     const body = bodies[i];
     if (body.sleeping) continue;
     if (options.floorEnabled) {
-      const floorDist = body.pos[1] - body.radius - options.floorY;
+      // Phase BA: the ground under the body's centre — the
+      // heightfield sample while a field is supplied (contact
+      // normal = the field's gradient normal), the flat plane
+      // otherwise (normal +Y, the legacy statement verbatim).
+      const hf = options.heightfield ?? null;
+      const groundY = hf
+        ? sampleRigidHeightfield(hf, body.pos[0], body.pos[2])
+        : options.floorY;
+      const floorDist = body.pos[1] - body.radius - groundY;
       if (floorDist < 0) {
         body.pos[1] -= floorDist;
-        applyContactImpulse(state, i, -1, [0, 1, 0], [body.pos[0], options.floorY, body.pos[2]], options);
+        const normal: [number, number, number] = hf
+          ? rigidHeightfieldNormal(hf, body.pos[0], body.pos[2])
+          : [0, 1, 0];
+        applyContactImpulse(state, i, -1, normal, [body.pos[0], groundY, body.pos[2]], options);
       }
     }
     const limit = Math.max(0, options.bounceRadius * 1.05 - body.radius);
@@ -600,7 +687,7 @@ function updateSleep(state: RigidSolverState, h: number, options: RigidStepOptio
     while (stack.length > 0) {
       const i = stack.pop() as number;
       const bi = bodies[i];
-      if (options.floorEnabled && bi.pos[1] - bi.radius <= options.floorY + 0.25) supported = true;
+      if (options.floorEnabled && bi.pos[1] - bi.radius <= floorSurfaceYAt(options, bi.pos[0], bi.pos[2]) + 0.25) supported = true;
       for (let j = 0; j < n; j++) {
         if (j === i || !bodies[j].sleeping || comp[j] !== -1) continue;
         const dx = bodies[j].pos[0] - bi.pos[0];
@@ -655,6 +742,11 @@ export interface RigidResolved {
   glueEnabled: boolean;
   glueStrength: number;
   startSleeping: boolean;
+  /** Floor Terrain key (Phase BA): while true the step is
+   *  supplied the published heightfield (when one exists) and
+   *  the floor stands on the terrain; false — or no field —
+   *  keeps the flat plane. */
+  floorTerrain: boolean;
 }
 
 /**
@@ -674,6 +766,7 @@ export function resolveRigid(config: ParticleConfig): RigidResolved {
     glueEnabled: config.gpgpuRigidGlueEnabled !== false,
     glueStrength: Math.max(0, Math.min(1000, config.gpgpuRigidGlueStrength ?? 45)),
     startSleeping: !!config.gpgpuRigidStartSleeping,
+    floorTerrain: !!config.gpgpuRigidFloorTerrain,
   };
 }
 
