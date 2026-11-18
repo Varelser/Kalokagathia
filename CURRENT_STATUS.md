@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.62.0**（2026-11-18、第8期 Phase BE＝グラデーションランプのストップ数任意化: GPGPU グラデーション LUT に2〜16点のストップリスト＋キー列編集 UI を追加。新規 config キー +2（既定は空＝従来の3点/5点導出を逐語実行しバイト等値）・スターター +1。詳細は PHASE_BE_REPORT.md。前版 v1.61.0 は第7期 Phase BC＝Whitewater）
+**現行バージョン: v1.63.0**（2026-11-18、第8期 Phase BF＝2D Boolean（ラスタマスク合成）: マスク A とオペランド B の輝度グリッドにソフト Boolean（union/intersection/difference/xor）を捕捉方式で適用。新規 config キー +4（既定は無効・空で描画不変）・スターター +1。詳細は PHASE_BF_REPORT.md。前版 v1.62.0 は第8期 Phase BE＝ランプのストップ数任意化）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること

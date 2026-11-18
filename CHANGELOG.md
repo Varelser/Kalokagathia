@@ -4,6 +4,37 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.63.0] — 2026-11-18
+
+Eighth-term Phase BF: 2D Boolean for the raster mask — a soft
+boolean combine of the current mask with a captured operand.
+Four new config keys, all defaulting to no change in rendering;
+one new starter.
+
+### Added
+- **Mask boolean combine** (new lib `lib/shapeBoolean.ts`):
+  two luma grids A (the current `gpgpuMaskMap`) and B (a
+  captured operand) combine per pixel — union = max,
+  intersection = min, difference = a×(1−b), xor = |a−b| —
+  which matches the boolean truth table exactly on binary
+  inputs and keeps antialiasing on grey inputs. B is
+  resampled (nearest) to A's grid; an empty B acts as the
+  empty set (union/difference/xor keep A, intersection
+  yields all zero). The combine runs capture-style, like the
+  existing mask supplies: capture B through the existing
+  routes (image / text / path fill / terrain-derived), pick
+  the operation (`gpgpuMaskBoolOp`, default 'union'), and
+  "合成してマスクに適用" writes the result into both
+  `gpgpuMaskMap` and `gpgpuMaskSource` (rendered data URL),
+  so bake/shape consumers and the GPU clip agree. A is
+  replaced by the result; B (`gpgpuMaskBoolOperandMap` /
+  `Width` / `Height`) is kept, so the operation can be
+  changed and re-applied. Out of scope: mesh CSG, vector
+  boolean, layer-side masks, per-frame live recombine.
+- **Starter** `starter-gpgpu-raster-mask-boolean-crescent`:
+  a ring minus a disc (difference) crescent mask in shape
+  mode, with the operand embedded for re-combining.
+
 ## [1.62.0] — 2026-11-18
 
 Eighth-term Phase BE: the GPGPU colour gradient ramp gains an

@@ -3,6 +3,7 @@ import { DEFAULT_CONFIG } from './appStateConfigDefaults';
 
 const CONFIG_ARRAY_KEYS = [
   'gpgpuMaskMap',
+  'gpgpuMaskBoolOperandMap',
   'gpgpuAgeCurveSizePoints',
   'gpgpuAgeCurveOpacityPoints',
   'gpgpuAgeCurveVelocityPoints',

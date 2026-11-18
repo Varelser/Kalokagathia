@@ -1,4 +1,5 @@
 import type { PresetRecord } from '../types';
+import { combineLumaMaps } from './shapeBoolean';
 import { createStarterPreset } from './starterLibraryCore';
 import { SAMPLE_SVG_STAR } from './svgMorph';
 import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT } from './objMorph';
@@ -33,6 +34,40 @@ const SAMPLE_MASK_RING = (() => {
     }
   }
   return { map, width, height };
+})();
+
+// Phase BF sample: a disc luminance map used as the Boolean
+// operand, and the crescent composed from the ring minus this
+// disc with lib/shapeBoolean.ts at module load — so the
+// crescent starter's mask map is the exact output of the same
+// code the UI's combine button runs.
+const SAMPLE_MASK_DISC = (() => {
+  const width = 64;
+  const height = 64;
+  const map = new Array<number>(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const nx = ((x + 0.5) / width) * 2 - 1;
+      const ny = ((y + 0.5) / height) * 2 - 1;
+      const dx = nx - 0.34;
+      const dy = ny + 0.12;
+      map[y * width + x] = dx * dx + dy * dy <= 0.52 * 0.52 ? 1 : 0;
+    }
+  }
+  return { map, width, height };
+})();
+
+const SAMPLE_MASK_CRESCENT = (() => {
+  const combined = combineLumaMaps(
+    SAMPLE_MASK_RING.map, SAMPLE_MASK_RING.width, SAMPLE_MASK_RING.height,
+    SAMPLE_MASK_DISC.map, SAMPLE_MASK_DISC.width, SAMPLE_MASK_DISC.height,
+    'difference',
+  );
+  return {
+    map: combined ? Array.from(combined) : SAMPLE_MASK_RING.map,
+    width: SAMPLE_MASK_RING.width,
+    height: SAMPLE_MASK_RING.height,
+  };
 })();
 
 export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
@@ -1412,6 +1447,43 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuMaskMap: SAMPLE_MASK_RING.map,
         gpgpuMaskMapWidth: SAMPLE_MASK_RING.width,
         gpgpuMaskMapHeight: SAMPLE_MASK_RING.height,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase BF: raster-mask Boolean — placement is drawn from a
+  // crescent mask composed at module load (ring difference disc
+  // via lib/shapeBoolean.ts, the same code the UI combine button
+  // runs). The operand disc travels with the preset, so the
+  // composition can be re-run or re-opped from the mask UI.
+  createStarterPreset('starter-gpgpu-raster-mask-boolean-crescent', 'GPGPU Raster Mask (Boolean Crescent)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 1.8,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.8,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.06,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'geodesic',
+        gpgpuMorphStrength: 2.8,
+        gpgpuMorphScale: 0.66,
+        gpgpuMorphJitter: 0.04,
+        gpgpuMorphOrbitSpeed: 0.25,
+        gpgpuMaskMode: 'shape',
+        gpgpuMaskThreshold: 0.5,
+        gpgpuMaskInvert: false,
+        gpgpuMaskMap: SAMPLE_MASK_CRESCENT.map,
+        gpgpuMaskMapWidth: SAMPLE_MASK_CRESCENT.width,
+        gpgpuMaskMapHeight: SAMPLE_MASK_CRESCENT.height,
+        gpgpuMaskBoolOp: 'difference',
+        gpgpuMaskBoolOperandMap: SAMPLE_MASK_DISC.map,
+        gpgpuMaskBoolOperandWidth: SAMPLE_MASK_DISC.width,
+        gpgpuMaskBoolOperandHeight: SAMPLE_MASK_DISC.height,
         gpgpuTrailEnabled: false,
       }),
   // Phase Y: volumetric cone from the 3D light — the beam is

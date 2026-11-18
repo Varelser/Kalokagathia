@@ -22,6 +22,7 @@ import {
   terrainOptionsFromConfig,
   type TerrainDerivedMapKind,
 } from '../lib/terrainDerivedMaps';
+import { combineLumaMaps, normalizeMaskBoolOp } from '../lib/shapeBoolean';
 import { saveBlobFile } from '../lib/platformFeatures';
 import type { ParticleConfig } from '../types';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
@@ -91,6 +92,28 @@ async function loadPickedImage(file: File): Promise<HTMLImageElement> {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/** Render a numeric luma grid as a grayscale PNG data URL
+ *  (Phase BF: the Boolean-combined mask's image side, so the
+ *  draw clip follows the combined grid exactly like an imported
+ *  mask image — the dual representation the supplies all use). */
+function lumaMapDataUrl(map: ArrayLike<number>, width: number, height: number): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+  const img = ctx.createImageData(width, height);
+  for (let i = 0; i < width * height; i++) {
+    const v = Math.round(Math.min(1, Math.max(0, map[i] || 0)) * 255);
+    img.data[i * 4] = v;
+    img.data[i * 4 + 1] = v;
+    img.data[i * 4 + 2] = v;
+    img.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL('image/png');
 }
 
 /** Downscale an image to <= maxPx and return a JPEG data URL. */
@@ -444,6 +467,74 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
       updateConfig('gpgpuMaskMapHeight', 0);
     }
   };
+  // Boolean operand capture (Phase BF): the same capture paths
+  // as the mask supplies above, writing the operand grid (B)
+  // instead of the mask itself. Only the numeric grid is stored
+  // — B has no live source, it is a frozen capture by design.
+  const setOperand = (map: number[], width: number, height: number) => {
+    updateConfig('gpgpuMaskBoolOperandMap', map);
+    updateConfig('gpgpuMaskBoolOperandWidth', width);
+    updateConfig('gpgpuMaskBoolOperandHeight', height);
+  };
+  const clearOperand = () => setOperand([], 0, 0);
+  const handleOperandFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const img = await loadPickedImage(file);
+      const iw = img.naturalWidth || 1;
+      const ih = img.naturalHeight || 1;
+      const scale = Math.min(1, 128 / Math.max(iw, ih));
+      const w = Math.max(1, Math.round(iw * scale));
+      const h = Math.max(1, Math.round(ih * scale));
+      setOperand(extractLumaMap(img, w, h), w, h);
+    } catch {
+      // Unreadable file: keep the previous operand untouched.
+    }
+  };
+  const captureOperandDerived = (kind: TerrainDerivedMapKind) => {
+    const canvas = getTerrainDerivedMapCanvas(kind, terrainOptionsFromConfig(config), config.gpgpuSeed);
+    if (canvas) setOperand(extractLumaMap(canvas, 128, 128), 128, 128);
+  };
+  const captureOperandText = () => {
+    setOperand(
+      extractTextLumaMap(
+        config.layer2TextMapText,
+        128,
+        128,
+        config.layer2TextMapFontFamily,
+        config.layer2TextMapWeight,
+        config.layer2TextMapSize,
+        config.layer2TextMapPadding,
+        config.layer2TextMapInvert,
+      ),
+      128,
+      128,
+    );
+  };
+  const captureOperandPathFill = (mode: 'evenodd' | 'nonzero') => {
+    const luma = getPathRasterLuma(config, 128, mode);
+    if (luma) setOperand(Array.from(luma), 128, 128);
+  };
+  // Boolean composition (Phase BF): combine A (the current mask
+  // map) with the stored operand B under the selected op and
+  // write the result back as the mask — numeric grid plus a
+  // rendered data URL, the same dual representation the image
+  // import stores, so the GPU clip follows the combined grid.
+  // B is kept, so another op can be composed onto the result.
+  const applyBool = () => {
+    const combined = combineLumaMaps(
+      config.gpgpuMaskMap,
+      config.gpgpuMaskMapWidth,
+      config.gpgpuMaskMapHeight,
+      config.gpgpuMaskBoolOperandMap,
+      config.gpgpuMaskBoolOperandWidth,
+      config.gpgpuMaskBoolOperandHeight,
+      normalizeMaskBoolOp(config.gpgpuMaskBoolOp),
+    );
+    if (!combined) return;
+    updateConfig('gpgpuMaskMap', Array.from(combined));
+    updateConfig('gpgpuMaskSource', lumaMapDataUrl(combined, config.gpgpuMaskMapWidth, config.gpgpuMaskMapHeight));
+  };
   return (
     <div className="mb-2 mt-2 rounded border border-white/10 bg-white/5 p-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -496,6 +587,90 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
           : config.gpgpuMaskMap.length > 0
             ? `輝度マップのみ設定済み（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}、プリセット由来）。ベイクとメディア配置には効きますが、描画時のフラグメント clip には画像本体が必要です。`
             : 'マスク画像が未設定のため、Mode を切り替えてもマスクは効きません。'}
+      </div>
+      {/* Boolean composition (Phase BF): soft Boolean ops over
+          the captured luminance grids — A is the current mask,
+          B is the stored operand. Capture-time, like every
+          supply above; nothing is recomputed per frame. */}
+      <div className="mt-3 border-t border-white/10 pt-2">
+        <div className="mb-1 text-[9px] font-bold uppercase tracking-widest text-white/50">Boolean 合成（マスク同士の和・差・積・排他 — Phase BF）</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="cursor-pointer rounded border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10">
+            B の画像を開く
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                void handleOperandFile(event.target.files?.[0]);
+                event.target.value = '';
+              }}
+            />
+          </label>
+          <button
+            onClick={captureOperandText}
+            className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+          >
+            現在のテキストを B に
+          </button>
+          <button
+            onClick={() => captureOperandPathFill('evenodd')}
+            className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+          >
+            パス塗り（偶奇）を B に
+          </button>
+          <button
+            onClick={() => captureOperandPathFill('nonzero')}
+            className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+          >
+            パス塗り（非ゼロ）を B に
+          </button>
+          {config.gpgpuMaskBoolOperandMap.length > 0 && (
+            <button
+              onClick={clearOperand}
+              className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+            >
+              B をクリア
+            </button>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">地形を B に</span>
+          {TERRAIN_DERIVED_KINDS.map((kind) => (
+            <button
+              key={kind}
+              onClick={() => captureOperandDerived(kind)}
+              className="rounded-full border border-white/15 px-2.5 py-1 text-[10px] font-bold tracking-widest text-white/60 transition-colors hover:bg-white/10"
+            >
+              {DERIVED_KIND_LABELS[kind]}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select
+            value={config.gpgpuMaskBoolOp}
+            onChange={(e) => updateConfig('gpgpuMaskBoolOp', normalizeMaskBoolOp(e.target.value))}
+            className="cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="union">Union（和）</option>
+            <option value="difference">Difference（差 A−B）</option>
+            <option value="intersection">Intersection（積）</option>
+            <option value="xor">XOR（排他）</option>
+          </select>
+          <button
+            onClick={applyBool}
+            disabled={config.gpgpuMaskMap.length === 0}
+            className="rounded-full border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            合成してマスクに適用
+          </button>
+        </div>
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          {`合成は取り込み方式です。A（現在のマスク）は合成結果に置き換わり、B は保持されるので演算を変えて再合成できます。演算は輝度のソフト Boolean（二値では通常の真理表と一致）で、B の寸法が A と違う場合は A に合わせてリサンプルします。`
+            + (config.gpgpuMaskBoolOperandMap.length > 0
+              ? ` B は ${config.gpgpuMaskBoolOperandWidth}×${config.gpgpuMaskBoolOperandHeight} を取り込み済み。`
+              : ' B は未取り込みのため空集合として合成します（union / difference / xor は A のまま、intersection は全域 0）。')}
+        </div>
       </div>
     </div>
   );

@@ -532,6 +532,15 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMaskMap: [],
   gpgpuMaskMapWidth: 0,
   gpgpuMaskMapHeight: 0,
+  // Raster-mask Boolean composition (Phase BF): the operand grid
+  // is captured like the mask itself; composition runs only when
+  // the user presses the combine button in the UI (capture-time,
+  // never per frame), so the defaults keep every existing render
+  // bit-identical.
+  gpgpuMaskBoolOp: 'union' as const,
+  gpgpuMaskBoolOperandMap: [],
+  gpgpuMaskBoolOperandWidth: 0,
+  gpgpuMaskBoolOperandHeight: 0,
   gpgpuPathRasterStrokeWidth: 0.045,
   // Mouse Force
   gpgpuMouseEnabled: false,

@@ -990,6 +990,15 @@ export interface ParticleConfigGpgpu {
   gpgpuMaskMap: number[];
   gpgpuMaskMapWidth: number;
   gpgpuMaskMapHeight: number;
+  // Raster-mask Boolean composition (Phase BF): a second
+  // captured luminance grid (the operand) plus the selected op.
+  // The UI combines operand into gpgpuMaskMap on demand
+  // (lib/shapeBoolean.ts); nothing consumes these keys per
+  // frame, so they never change a render by themselves.
+  gpgpuMaskBoolOp: import('../lib/shapeBoolean').MaskBoolOp;
+  gpgpuMaskBoolOperandMap: number[];
+  gpgpuMaskBoolOperandWidth: number;
+  gpgpuMaskBoolOperandHeight: number;
   // Path raster supply stroke width (Phase AF2): the stroke
   // radius of the 'path-raster' internal supply, in normalised
   // cloud units. 0.045 is the Phase AF fixed convention, so the
