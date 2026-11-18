@@ -3544,4 +3544,38 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuGrainsRestDamping: 0.7,
         gpgpuTrailEnabled: false,
       }),
+  // Phase BG: vertical text — the TextMap string is laid out in
+  // tategaki columns (glyphs top → bottom, columns right → left,
+  // all upright; no tate-chu-yoko / ruby / kinsoku) and the text
+  // morph target bakes that raster, so the cloud forms
+  // 「型而上学」 in two columns of three and two glyphs.
+  createStarterPreset('starter-text-vertical-morph', 'Vertical Text Morph (Tategaki Columns)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.4,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.5,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.03,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'text',
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.02,
+        gpgpuMorphOrbitSpeed: 0.0,
+        layer2TextMapText: '型而上学',
+        layer2TextMapSize: 0.25,
+        layer2TextMapVertical: true,
+        layer2TextMapColumnLength: 3,
+        layer2TextMapColumnGap: 0.4,
+        layer2TextMapLetterSpacing: 0.1,
+        gpgpuTrailEnabled: false,
+      }),
 ];

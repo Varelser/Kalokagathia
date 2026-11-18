@@ -49,6 +49,7 @@ import * as THREE from 'three';
 import { parseSvgPathGeometry, type PathGeometry } from './pathGeometry';
 import type { MapImageTextureState } from './mapImageTexture';
 import type { ParticleConfig } from '../types';
+import { verticalGlyphPlacements } from './textColumnLayout';
 
 export const TEXT_RASTER_SOURCE = 'text-raster';
 export const PATH_RASTER_SOURCE = 'path-raster';
@@ -152,6 +153,12 @@ export interface TextRasterSettings {
   size: number;
   padding: number;
   invert: boolean;
+  // Vertical layout (Phase BG, lib/textColumnLayout.ts):
+  // vertical=false keeps the legacy horizontal layout verbatim.
+  vertical: boolean;
+  columnLength: number;
+  columnGap: number;
+  letterSpacing: number;
 }
 
 /** The layer-2 TextMap settings: the same source the 'text'
@@ -164,11 +171,18 @@ export function textRasterSettingsFromConfig(config: ParticleConfig): TextRaster
     size: config.layer2TextMapSize,
     padding: config.layer2TextMapPadding,
     invert: config.layer2TextMapInvert,
+    vertical: config.layer2TextMapVertical,
+    columnLength: config.layer2TextMapColumnLength,
+    columnGap: config.layer2TextMapColumnGap,
+    letterSpacing: config.layer2TextMapLetterSpacing,
   };
 }
 
 export function textRasterCacheKey(settings: TextRasterSettings): string {
-  return [settings.text, settings.fontFamily, settings.fontWeight, settings.size, settings.padding, settings.invert].join('|');
+  return [
+    settings.text, settings.fontFamily, settings.fontWeight, settings.size, settings.padding, settings.invert,
+    settings.vertical, settings.columnLength, settings.columnGap, settings.letterSpacing,
+  ].join('|');
 }
 
 /**
@@ -197,12 +211,30 @@ export function rasterizeTextCanvas(settings: TextRasterSettings, size: number):
   const clampedPadding = Math.max(0, Math.min(0.35, settings.padding || 0.1));
   const pxSize = Math.max(12, Math.floor(clampedSize * Math.min(width, height)));
   ctx.font = `${Math.max(100, Math.min(900, settings.fontWeight || 700))} ${pxSize}px ${settings.fontFamily || 'Arial'}`;
-  const usableHeight = height * (1 - clampedPadding * 2);
-  const lineHeight = usableHeight / Math.max(1, lines.length);
-  lines.forEach((line, index) => {
-    const y = height * clampedPadding + lineHeight * (index + 0.5);
-    ctx.fillText(line, width / 2, y, width * (1 - clampedPadding * 2));
-  });
+  if (settings.vertical) {
+    // Vertical layout (Phase BG): glyphs placed one by one from
+    // the shared pure layout (lib/textColumnLayout.ts) — columns
+    // right → left, glyphs top → bottom, all upright. Draws
+    // identically to extractTextLumaMap's vertical branch.
+    const placements = verticalGlyphPlacements(settings.text || 'TEXT', settings.columnLength, {
+      width,
+      height,
+      padding: clampedPadding,
+      pxSize,
+      columnGap: settings.columnGap,
+      letterSpacing: settings.letterSpacing,
+    });
+    placements.forEach((placement) => {
+      ctx.fillText(placement.glyph, placement.x, placement.y);
+    });
+  } else {
+    const usableHeight = height * (1 - clampedPadding * 2);
+    const lineHeight = usableHeight / Math.max(1, lines.length);
+    lines.forEach((line, index) => {
+      const y = height * clampedPadding + lineHeight * (index + 0.5);
+      ctx.fillText(line, width / 2, y, width * (1 - clampedPadding * 2));
+    });
+  }
   return canvas;
 }
 

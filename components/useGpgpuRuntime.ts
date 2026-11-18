@@ -20,6 +20,7 @@ import {
 } from '../lib/rigidBodies';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
+import { textLayoutOptionsFromTextMap } from '../lib/textColumnLayout';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
 import { parseSvgPathGeometry, type PathGeometry } from '../lib/pathGeometry';
 import { sampleObjPointCloudWithNormals } from '../lib/objMorph';
@@ -462,6 +463,7 @@ export function buildContourGeometryOption(config: ParticleConfig): PathGeometry
       config.layer2TextMapSize,
       config.layer2TextMapPadding,
       config.layer2TextMapInvert,
+      textLayoutOptionsFromTextMap(config),
     );
     mediaMap = { map, width: 128, height: 128 };
   }
@@ -490,6 +492,7 @@ export function buildMorphBakeData(
       config.layer2TextMapSize,
       config.layer2TextMapPadding,
       config.layer2TextMapInvert,
+      textLayoutOptionsFromTextMap(config),
     );
     mediaMap = { map, width: 128, height: 128 };
   } else if (
@@ -1164,6 +1167,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphTextSize = config.layer2TextMapSize;
   const morphTextPadding = config.layer2TextMapPadding;
   const morphTextInvert = config.layer2TextMapInvert;
+  // Vertical text layout (Phase BG): bake inputs of the 'text'
+  // morph target, captured like the other TextMap settings.
+  const morphTextVertical = config.layer2TextMapVertical;
+  const morphTextColumnLength = config.layer2TextMapColumnLength;
+  const morphTextColumnGap = config.layer2TextMapColumnGap;
+  const morphTextLetterSpacing = config.layer2TextMapLetterSpacing;
   const morphMediaMap = config.layer2MediaLumaMap;
   const morphMediaWidth = config.layer2MediaMapWidth;
   const morphMediaHeight = config.layer2MediaMapHeight;
@@ -1256,6 +1265,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         morphTextSize,
         morphTextPadding,
         morphTextInvert,
+        {
+          vertical: morphTextVertical,
+          columnLength: morphTextColumnLength,
+          columnGap: morphTextColumnGap,
+          letterSpacing: morphTextLetterSpacing,
+        },
       );
       mediaMap = { map, width: 128, height: 128 };
     } else if (morphTarget === 'image' && morphMediaMap.length > 0 && morphMediaWidth > 0 && morphMediaHeight > 0) {
@@ -1492,6 +1507,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTextSize,
     morphTextPadding,
     morphTextInvert,
+    morphTextVertical,
+    morphTextColumnLength,
+    morphTextColumnGap,
+    morphTextLetterSpacing,
     morphMediaMap,
     morphMediaWidth,
     morphMediaHeight,

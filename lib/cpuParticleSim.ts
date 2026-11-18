@@ -386,6 +386,18 @@ export function cpuShapeSignature(config: ParticleConfig): string {
       isCpuMorphActive(config) ? config.gpgpuMorphReplicaAgeStep : 0,
     ].join(',')}`;
   }
+  // Vertical text layout (Phase BG): the layout fields are bake
+  // inputs of the 'text' morph target, so they join the signature
+  // — but only while vertical writing is on, keeping the legacy
+  // string (and thus rebuild behaviour) untouched for the
+  // horizontal default, the same convention as the age block.
+  if (config.layer2TextMapVertical) {
+    sig += `|vtext:${[
+      config.layer2TextMapColumnLength,
+      config.layer2TextMapColumnGap,
+      config.layer2TextMapLetterSpacing,
+    ].join(',')}`;
+  }
   return sig;
 }
 

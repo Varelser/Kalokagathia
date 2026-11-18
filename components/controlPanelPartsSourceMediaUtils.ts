@@ -1,3 +1,5 @@
+import { verticalGlyphPlacements, type TextLayoutOptions } from '../lib/textColumnLayout';
+
 export const MEDIA_SAMPLE_SIZE = 64;
 
 export function extractLumaMap(source: CanvasImageSource, width: number, height: number, flipHorizontal = false) {
@@ -35,6 +37,9 @@ export function extractTextLumaMap(
   size: number,
   padding: number,
   invert: boolean,
+  // Vertical layout (Phase BG): optional; omitted or
+  // vertical=false runs the legacy horizontal layout verbatim.
+  layout?: TextLayoutOptions,
 ) {
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -54,12 +59,30 @@ export function extractTextLumaMap(
   const pxSize = Math.max(12, Math.floor(clampedSize * Math.min(width, height)));
   ctx.font = `${Math.max(100, Math.min(900, fontWeight || 700))} ${pxSize}px ${fontFamily || 'Arial'}`;
 
-  const usableHeight = height * (1 - clampedPadding * 2);
-  const lineHeight = usableHeight / Math.max(1, lines.length);
-  lines.forEach((line, index) => {
-    const y = height * clampedPadding + lineHeight * (index + 0.5);
-    ctx.fillText(line, width / 2, y, width * (1 - clampedPadding * 2));
-  });
+  if (layout?.vertical) {
+    // Vertical layout (Phase BG): glyphs placed one by one from
+    // the shared pure layout (lib/textColumnLayout.ts) — columns
+    // right → left, glyphs top → bottom, all upright. Draws
+    // identically to rasterizeTextCanvas' vertical branch.
+    const placements = verticalGlyphPlacements(text || 'TEXT', layout.columnLength, {
+      width,
+      height,
+      padding: clampedPadding,
+      pxSize,
+      columnGap: layout.columnGap,
+      letterSpacing: layout.letterSpacing,
+    });
+    placements.forEach((placement) => {
+      ctx.fillText(placement.glyph, placement.x, placement.y);
+    });
+  } else {
+    const usableHeight = height * (1 - clampedPadding * 2);
+    const lineHeight = usableHeight / Math.max(1, lines.length);
+    lines.forEach((line, index) => {
+      const y = height * clampedPadding + lineHeight * (index + 0.5);
+      ctx.fillText(line, width / 2, y, width * (1 - clampedPadding * 2));
+    });
+  }
 
   const imageData = ctx.getImageData(0, 0, width, height).data;
   const map = new Array<number>(width * height);

@@ -13,6 +13,7 @@ import {
 } from '../lib/cpuParticleSim';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
+import { textLayoutOptionsFromTextMap } from '../lib/textColumnLayout';
 import { buildContourGeometryOption, buildTextOnPathOption } from './useGpgpuRuntime';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
 import { parseSvgPathGeometry } from '../lib/pathGeometry';
@@ -83,6 +84,7 @@ function computeMorphBakeExtras(config: ParticleConfig): CpuMorphBakeExtras {
       config.layer2TextMapSize,
       config.layer2TextMapPadding,
       config.layer2TextMapInvert,
+      textLayoutOptionsFromTextMap(config),
     );
     mediaMap = { map, width: 128, height: 128 };
   } else if (

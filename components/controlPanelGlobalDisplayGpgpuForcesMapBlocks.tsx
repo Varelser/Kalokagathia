@@ -3,6 +3,7 @@ import React from 'react';
 import { Slider, Toggle } from './controlPanelParts';
 import { AGE_CURVE_POINT_MAX, AGE_CURVE_PRESETS, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { extractLumaMap, extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
+import { textLayoutOptionsFromTextMap } from '../lib/textColumnLayout';
 import {
   afMapSource,
   getPathRasterLuma,
@@ -430,6 +431,7 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
         config.layer2TextMapSize,
         config.layer2TextMapPadding,
         config.layer2TextMapInvert,
+        textLayoutOptionsFromTextMap(config),
       );
       updateConfig('gpgpuMaskMap', map);
       updateConfig('gpgpuMaskMapWidth', 128);
@@ -506,6 +508,7 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
         config.layer2TextMapSize,
         config.layer2TextMapPadding,
         config.layer2TextMapInvert,
+        textLayoutOptionsFromTextMap(config),
       ),
       128,
       128,

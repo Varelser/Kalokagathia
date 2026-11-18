@@ -26,6 +26,13 @@ export const APP_STATE_DEFAULT_LAYER_2: Partial<ParticleConfig> = {
   layer2TextMapSize: 0.76,
   layer2TextMapPadding: 0.1,
   layer2TextMapInvert: false,
+  // Vertical text layout (Phase BG): columns run right → left,
+  // glyphs top → bottom, all upright. Default OFF renders the
+  // legacy horizontal layout bit-identically.
+  layer2TextMapVertical: false,
+  layer2TextMapColumnLength: 0,
+  layer2TextMapColumnGap: 0.4,
+  layer2TextMapLetterSpacing: 0,
   layer2MotionMix: false,
   layer2Motions: [],
   layer2MotionChainEnabled: false,

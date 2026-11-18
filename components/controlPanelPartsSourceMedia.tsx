@@ -30,6 +30,17 @@ export type MediaSourceSettingsProps = {
   onTextPaddingChange?: (value: number) => void;
   textInvert?: boolean;
   onTextInvertChange?: (value: boolean) => void;
+  // Vertical text layout (Phase BG): optional props — only the
+  // layer-2 TextMap wiring passes them (the layer-2 TextMap keys
+  // are the ones the morph / supply / mask paths read).
+  textVertical?: boolean;
+  onTextVerticalChange?: (value: boolean) => void;
+  textColumnLength?: number;
+  onTextColumnLengthChange?: (value: number) => void;
+  textColumnGap?: number;
+  onTextColumnGapChange?: (value: number) => void;
+  textLetterSpacing?: number;
+  onTextLetterSpacingChange?: (value: number) => void;
 };
 
 export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
@@ -60,6 +71,14 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
   onTextPaddingChange,
   textInvert,
   onTextInvertChange,
+  textVertical,
+  onTextVerticalChange,
+  textColumnLength,
+  onTextColumnLengthChange,
+  textColumnGap,
+  onTextColumnGapChange,
+  textLetterSpacing,
+  onTextLetterSpacingChange,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -142,11 +161,17 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
       textSize || 0.76,
       textPadding || 0.1,
       textInvert || false,
+      {
+        vertical: textVertical || false,
+        columnLength: textColumnLength || 0,
+        columnGap: textColumnGap ?? 0.4,
+        letterSpacing: textLetterSpacing || 0,
+      },
     );
     onMapChange(map, sampleSize.width, sampleSize.height);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the status line reports the rasterization this effect just performed; it is an effect result, not derived render state.
     setStatus(`Text rasterized (${sampleSize.width}×${sampleSize.height})`);
-  }, [mode, textValue, textFontFamily, textWeight, textSize, textPadding, textInvert, onMapChange, sampleSize]);
+  }, [mode, textValue, textFontFamily, textWeight, textSize, textPadding, textInvert, textVertical, textColumnLength, textColumnGap, textLetterSpacing, onMapChange, sampleSize]);
 
   const handleLoadedImage = (file: File) => {
     const image = new window.Image();
@@ -308,6 +333,25 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
           <Slider label="Font Size" value={textSize ?? 0.76} min={0.2} max={1.4} step={0.01} onChange={(value) => onTextSizeChange?.(value)} />
           <Slider label="Padding" value={textPadding ?? 0.1} min={0} max={0.35} step={0.01} onChange={(value) => onTextPaddingChange?.(value)} />
           <Toggle label="Invert Text Mask" value={textInvert ?? false} options={[{ label: 'Off', val: false }, { label: 'On', val: true }]} onChange={(value) => onTextInvertChange?.(value)} />
+          {onTextVerticalChange && (
+            <Toggle label="Vertical Text (縦書き)" value={textVertical ?? false} options={[{ label: 'Off', val: false }, { label: 'On', val: true }]} onChange={(value) => onTextVerticalChange(value)} />
+          )}
+          {onTextVerticalChange && textVertical && (
+            <>
+              <div className="mb-3 rounded border border-white/10 bg-white/5 p-2 text-[10px] text-white/55">
+                縦書きは字形を正立のまま上から下へ、段は右から左へ配置します。縦中横・ルビ・禁則処理はありません。
+              </div>
+              {onTextColumnLengthChange && (
+                <Slider label="Column Length (0 = Auto)" value={textColumnLength ?? 0} min={0} max={40} step={1} onChange={(value) => onTextColumnLengthChange(value)} />
+              )}
+              {onTextColumnGapChange && (
+                <Slider label="Column Gap" value={textColumnGap ?? 0.4} min={0} max={1} step={0.05} onChange={(value) => onTextColumnGapChange(value)} />
+              )}
+              {onTextLetterSpacingChange && (
+                <Slider label="Letter Spacing" value={textLetterSpacing ?? 0} min={0} max={1} step={0.05} onChange={(value) => onTextLetterSpacingChange(value)} />
+              )}
+            </>
+          )}
         </>
       )}
       <Slider label="Mask Threshold" value={threshold} min={0} max={1} step={0.01} onChange={onThresholdChange} />

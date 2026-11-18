@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.63.0**（2026-11-18、第8期 Phase BF＝2D Boolean（ラスタマスク合成）: マスク A とオペランド B の輝度グリッドにソフト Boolean（union/intersection/difference/xor）を捕捉方式で適用。新規 config キー +4（既定は無効・空で描画不変）・スターター +1。詳細は PHASE_BF_REPORT.md。前版 v1.62.0 は第8期 Phase BE＝ランプのストップ数任意化）
+**現行バージョン: v1.64.0**（2026-11-18、第8期 Phase BG＝縦書き・組版: layer2 TextMap のラスタ化に縦書きカラム配置（段は右→左、字形は上→下、字形ごとの明示配置）を追加。新規 config キー +4（既定は横書きで描画不変）・スターター +1。詳細は PHASE_BG_REPORT.md。前版 v1.63.0 は第8期 Phase BF＝2D Boolean）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること

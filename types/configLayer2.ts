@@ -28,6 +28,11 @@ export interface ParticleConfigLayer2 {
   layer2TextMapSize: number;
   layer2TextMapPadding: number;
   layer2TextMapInvert: boolean;
+  // Vertical text layout (Phase BG, lib/textColumnLayout.ts).
+  layer2TextMapVertical: boolean;
+  layer2TextMapColumnLength: number;
+  layer2TextMapColumnGap: number;
+  layer2TextMapLetterSpacing: number;
 
   layer2MotionMix: boolean;
   layer2Motions: Layer2Type[];

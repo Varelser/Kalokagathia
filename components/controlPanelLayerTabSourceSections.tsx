@@ -119,6 +119,21 @@ export const SharedLayerTabSourceSections: React.FC<SharedLayerSourceSectionsPro
         onTextPaddingChange={(v) => write('TextMapPadding', v)}
         textInvert={read('TextMapInvert')}
         onTextInvertChange={(v) => write('TextMapInvert', v)}
+        {...(layerIndex === 2
+          ? {
+              // Vertical text layout (Phase BG): the keys exist
+              // only on layer 2 (the TextMap the morph / supply /
+              // mask paths read), so layer 3 keeps the legacy UI.
+              textVertical: read('TextMapVertical') as boolean,
+              onTextVerticalChange: (v: boolean) => write('TextMapVertical', v),
+              textColumnLength: read('TextMapColumnLength') as number,
+              onTextColumnLengthChange: (v: number) => write('TextMapColumnLength', v),
+              textColumnGap: read('TextMapColumnGap') as number,
+              onTextColumnGapChange: (v: number) => write('TextMapColumnGap', v),
+              textLetterSpacing: read('TextMapLetterSpacing') as number,
+              onTextLetterSpacingChange: (v: number) => write('TextMapLetterSpacing', v),
+            }
+          : {})}
       />
     )}
     {showSourceLayout && (

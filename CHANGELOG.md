@@ -4,6 +4,34 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.64.0] — 2026-11-18
+
+Eighth-term Phase BG: vertical text layout (tategaki columns)
+for the layer-2 TextMap raster. Four new config keys, all
+defaulting to the legacy horizontal rendering exactly; one new
+starter.
+
+### Added
+- **Vertical text layout** (`layer2TextMapVertical`, default
+  off): when on, the text raster is laid out as columns —
+  glyphs placed one by one, top → bottom, columns proceeding
+  right → left (column 0 holds the head of the text and is the
+  rightmost). `layer2TextMapColumnLength` (0 = one column per
+  newline segment) wraps columns by glyph count, newlines
+  always break columns, `layer2TextMapColumnGap` and
+  `layer2TextMapLetterSpacing` set the column step and glyph
+  advance as ratios of the glyph size. The layout is computed
+  by pure functions (`lib/textColumnLayout.ts`) shared by both
+  text drawing paths — `extractTextLumaMap` (numeric grid:
+  morph bake, CPU fallback, mask capture) and
+  `rasterizeTextCanvas` (GPU texture supply) — so every
+  consumer sees the same picture. With the flag off, both
+  paths run the legacy line layout verbatim. All glyphs stay
+  upright: no tate-chu-yoko, no ruby, no kinsoku processing,
+  no page-level multi-column typesetting.
+- **Starter** `starter-text-vertical-morph`: a text morph in
+  vertical columns (「型而上学」 in two columns of 3 + 1).
+
 ## [1.63.0] — 2026-11-18
 
 Eighth-term Phase BF: 2D Boolean for the raster mask — a soft
