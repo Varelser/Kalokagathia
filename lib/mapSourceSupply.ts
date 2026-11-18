@@ -181,6 +181,11 @@ export interface TextRasterSettings {
   columnLength: number;
   columnGap: number;
   letterSpacing: number;
+  // Vertical text finishing (Phase BK): kinsoku wrap adjustment
+  // and yakumono position correction; both false keep the Phase
+  // BG raster bit-identical.
+  kinsoku: boolean;
+  yakumono: boolean;
 }
 
 /** The layer-2 TextMap settings: the same source the 'text'
@@ -197,6 +202,8 @@ export function textRasterSettingsFromConfig(config: ParticleConfig): TextRaster
     columnLength: config.layer2TextMapColumnLength,
     columnGap: config.layer2TextMapColumnGap,
     letterSpacing: config.layer2TextMapLetterSpacing,
+    kinsoku: config.layer2TextMapKinsoku,
+    yakumono: config.layer2TextMapYakumono,
   };
 }
 
@@ -204,6 +211,7 @@ export function textRasterCacheKey(settings: TextRasterSettings): string {
   return [
     settings.text, settings.fontFamily, settings.fontWeight, settings.size, settings.padding, settings.invert,
     settings.vertical, settings.columnLength, settings.columnGap, settings.letterSpacing,
+    settings.kinsoku, settings.yakumono,
   ].join('|');
 }
 
@@ -245,7 +253,7 @@ export function rasterizeTextCanvas(settings: TextRasterSettings, size: number):
       pxSize,
       columnGap: settings.columnGap,
       letterSpacing: settings.letterSpacing,
-    });
+    }, { kinsoku: settings.kinsoku, yakumono: settings.yakumono });
     placements.forEach((placement) => {
       ctx.fillText(placement.glyph, placement.x, placement.y);
     });

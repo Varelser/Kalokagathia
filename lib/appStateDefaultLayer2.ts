@@ -33,6 +33,10 @@ export const APP_STATE_DEFAULT_LAYER_2: Partial<ParticleConfig> = {
   layer2TextMapColumnLength: 0,
   layer2TextMapColumnGap: 0.4,
   layer2TextMapLetterSpacing: 0,
+  // Vertical text finishing (Phase BK): both OFF keep the Phase
+  // BG split and placements bit-identical.
+  layer2TextMapKinsoku: false,
+  layer2TextMapYakumono: false,
   layer2MotionMix: false,
   layer2Motions: [],
   layer2MotionChainEnabled: false,

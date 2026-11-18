@@ -33,6 +33,10 @@ export interface ParticleConfigLayer2 {
   layer2TextMapColumnLength: number;
   layer2TextMapColumnGap: number;
   layer2TextMapLetterSpacing: number;
+  // Vertical text finishing (Phase BK): kinsoku wrap adjustment
+  // and yakumono position correction. Both default OFF.
+  layer2TextMapKinsoku: boolean;
+  layer2TextMapYakumono: boolean;
 
   layer2MotionMix: boolean;
   layer2Motions: Layer2Type[];

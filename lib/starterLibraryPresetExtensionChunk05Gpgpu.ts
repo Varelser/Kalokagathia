@@ -3692,4 +3692,75 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         layer2TextMapLetterSpacing: 0.1,
         gpgpuTrailEnabled: false,
       }),
+  // Phase BK: vertical text with kinsoku — at columnLength 4 the
+  // raw BG wrap of 「言葉には、力がある。」 starts its second column
+  // with 、; with kinsoku on, both punctuation glyphs are pulled
+  // back into the column they close, giving two clean columns
+  // 「言葉には、」「力がある。」.
+  createStarterPreset('starter-text-vertical-kinsoku', 'Vertical Text Kinsoku (No Punctuation at Column Head)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.4,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.5,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.03,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'text',
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.02,
+        gpgpuMorphOrbitSpeed: 0.0,
+        layer2TextMapText: '言葉には、力がある。',
+        layer2TextMapSize: 0.25,
+        layer2TextMapVertical: true,
+        layer2TextMapColumnLength: 4,
+        layer2TextMapColumnGap: 0.4,
+        layer2TextMapLetterSpacing: 0.1,
+        layer2TextMapKinsoku: true,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase BK: vertical text with yakumono position correction —
+  // the 、 and 。 of 「星の光、届く。」 sit at the bottom of their
+  // columns in the horizontal forms; with the correction on they
+  // shift toward the top-right of their cells, the vertical
+  // punctuation position. Glyphs themselves are not substituted
+  // or rotated.
+  createStarterPreset('starter-text-vertical-yakumono', 'Vertical Text Yakumono (Punctuation Position)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.4,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.5,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.03,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'text',
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.02,
+        gpgpuMorphOrbitSpeed: 0.0,
+        layer2TextMapText: '星の光、届く。',
+        layer2TextMapSize: 0.25,
+        layer2TextMapVertical: true,
+        layer2TextMapColumnLength: 4,
+        layer2TextMapColumnGap: 0.4,
+        layer2TextMapLetterSpacing: 0.1,
+        layer2TextMapYakumono: true,
+        gpgpuTrailEnabled: false,
+      }),
 ];

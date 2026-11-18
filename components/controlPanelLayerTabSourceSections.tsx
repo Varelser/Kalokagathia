@@ -132,6 +132,12 @@ export const SharedLayerTabSourceSections: React.FC<SharedLayerSourceSectionsPro
               onTextColumnGapChange: (v: number) => write('TextMapColumnGap', v),
               textLetterSpacing: read('TextMapLetterSpacing') as number,
               onTextLetterSpacingChange: (v: number) => write('TextMapLetterSpacing', v),
+              // Vertical text finishing (Phase BK): same layer-2
+              // only convention as the BG fields above.
+              textKinsoku: read('TextMapKinsoku') as boolean,
+              onTextKinsokuChange: (v: boolean) => write('TextMapKinsoku', v),
+              textYakumono: read('TextMapYakumono') as boolean,
+              onTextYakumonoChange: (v: boolean) => write('TextMapYakumono', v),
             }
           : {})}
       />

@@ -4,6 +4,45 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.67.0] — 2026-11-19
+
+Ninth-term Phase BK: the vertical text finishing — a minimal
+kinsoku set and yakumono position correction for the Phase BG
+tategaki layout. Two new config keys, both defaulting OFF, at
+which the split and placements are bit-identical to Phase BG;
+two new starters.
+
+### Added
+- **Kinsoku (禁則)** (`layer2TextMapKinsoku`, default false).
+  A fixed minimal character set (head-forbidden: punctuation,
+  closing brackets, the prolonged sound mark and small kana;
+  tail-forbidden: opening brackets) adjusts the columnLength
+  wrap boundaries inside `layoutTextColumns` — a wrapped column
+  never starts with a head-forbidden glyph (such glyphs are
+  pulled into the column they close, consecutively) and never
+  ends with a tail-forbidden glyph (sent to the next column's
+  head, unless that would empty the column). Newline breaks are
+  never adjusted, and coverage beyond the fixed set is not
+  attempted.
+- **Yakumono position correction (約物)**
+  (`layer2TextMapYakumono`, default false). The four
+  punctuation glyphs 、。，． shift toward the top-right of
+  their cell (+0.30em / −0.30em) in `verticalGlyphPlacements`.
+  Position only, by design: no code-point substitution and no
+  rotation, because substituted vertical forms would make the
+  bake depend on which glyphs a font carries, while a fixed
+  offset reproduces deterministically everywhere.
+- Both adjustments flow through the shared pure layout
+  (`lib/textColumnLayout.ts`), so the GPU texture supply and the
+  numeric luma grid stay the same picture; the text raster cache
+  key, the morph bake captures and the CPU bake signature all
+  track the two flags (the CPU signature only while one is on,
+  keeping the BG string for the default).
+- Starters: `starter-text-vertical-kinsoku` (「言葉には、力がある。」
+  wraps into two clean columns instead of starting a column
+  with 、) and `starter-text-vertical-yakumono` (「星の光、届く。」
+  with the punctuation shifted to the vertical position).
+
 ## [1.66.0] — 2026-11-19
 
 Ninth-term Phase BJ: the noise field generalised — a kind /

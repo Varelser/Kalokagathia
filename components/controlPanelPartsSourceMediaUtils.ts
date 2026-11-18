@@ -71,7 +71,7 @@ export function extractTextLumaMap(
       pxSize,
       columnGap: layout.columnGap,
       letterSpacing: layout.letterSpacing,
-    });
+    }, { kinsoku: layout.kinsoku, yakumono: layout.yakumono });
     placements.forEach((placement) => {
       ctx.fillText(placement.glyph, placement.x, placement.y);
     });

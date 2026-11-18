@@ -41,6 +41,12 @@ export type MediaSourceSettingsProps = {
   onTextColumnGapChange?: (value: number) => void;
   textLetterSpacing?: number;
   onTextLetterSpacingChange?: (value: number) => void;
+  // Vertical text finishing (Phase BK): same optional-prop
+  // convention as the BG fields above.
+  textKinsoku?: boolean;
+  onTextKinsokuChange?: (value: boolean) => void;
+  textYakumono?: boolean;
+  onTextYakumonoChange?: (value: boolean) => void;
 };
 
 export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
@@ -79,6 +85,10 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
   onTextColumnGapChange,
   textLetterSpacing,
   onTextLetterSpacingChange,
+  textKinsoku,
+  onTextKinsokuChange,
+  textYakumono,
+  onTextYakumonoChange,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -166,12 +176,14 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
         columnLength: textColumnLength || 0,
         columnGap: textColumnGap ?? 0.4,
         letterSpacing: textLetterSpacing || 0,
+        kinsoku: textKinsoku || false,
+        yakumono: textYakumono || false,
       },
     );
     onMapChange(map, sampleSize.width, sampleSize.height);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the status line reports the rasterization this effect just performed; it is an effect result, not derived render state.
     setStatus(`Text rasterized (${sampleSize.width}×${sampleSize.height})`);
-  }, [mode, textValue, textFontFamily, textWeight, textSize, textPadding, textInvert, textVertical, textColumnLength, textColumnGap, textLetterSpacing, onMapChange, sampleSize]);
+  }, [mode, textValue, textFontFamily, textWeight, textSize, textPadding, textInvert, textVertical, textColumnLength, textColumnGap, textLetterSpacing, textKinsoku, textYakumono, onMapChange, sampleSize]);
 
   const handleLoadedImage = (file: File) => {
     const image = new window.Image();
@@ -339,7 +351,7 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
           {onTextVerticalChange && textVertical && (
             <>
               <div className="mb-3 rounded border border-white/10 bg-white/5 p-2 text-[10px] text-white/55">
-                縦書きは字形を正立のまま上から下へ、段は右から左へ配置します。縦中横・ルビ・禁則処理はありません。
+                縦書きは字形を正立のまま上から下へ、段は右から左へ配置します。縦中横・ルビはありません。禁則は最小集合、約物は位置補正のみです。
               </div>
               {onTextColumnLengthChange && (
                 <Slider label="Column Length (0 = Auto)" value={textColumnLength ?? 0} min={0} max={40} step={1} onChange={(value) => onTextColumnLengthChange(value)} />
@@ -349,6 +361,12 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
               )}
               {onTextLetterSpacingChange && (
                 <Slider label="Letter Spacing" value={textLetterSpacing ?? 0} min={0} max={1} step={0.05} onChange={(value) => onTextLetterSpacingChange(value)} />
+              )}
+              {onTextKinsokuChange && (
+                <Toggle label="Kinsoku (禁則)" value={textKinsoku ?? false} options={[{ label: 'Off', val: false }, { label: 'On', val: true }]} onChange={(value) => onTextKinsokuChange(value)} />
+              )}
+              {onTextYakumonoChange && (
+                <Toggle label="Yakumono Position (約物)" value={textYakumono ?? false} options={[{ label: 'Off', val: false }, { label: 'On', val: true }]} onChange={(value) => onTextYakumonoChange(value)} />
               )}
             </>
           )}

@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.66.0**（2026-11-19、第9期 Phase BJ＝ノイズ場の汎用化: 場に種別（`gpgpuNoiseMapKind`＝perlin／ridge／turbulence）と fBm オクターブ（`gpgpuNoiseMapOctaves`＝1〜5）の文法を持たせ、場そのものを内部供給 `'noise-field'`（静的スライス）としてマスク／各 Map 源／コンポジット第2層へ配線した。新規 config キー +2（既定 perlin・1オクターブで従来とビット同一）・スターター +2。詳細は PHASE_BJ_REPORT.md（統合側で作成）。前版 v1.65.0 は第9期 Phase BI＝属性演算・段階1）
+**現行バージョン: v1.67.0**（2026-11-19、第9期 Phase BK＝縦書きの仕上げ: BG の縦書き配置へ禁則の最小集合（`layer2TextMapKinsoku`、折り返し境界のみ）と約物の位置補正（`layer2TextMapYakumono`、、。，． をセルの右上へ。置換・回転はしない）を追加した。新規 config キー +2（どちらも既定 OFF で BG の分割・配置とビット同一）・スターター +2。詳細は PHASE_BK_REPORT.md（統合側で作成）。前版 v1.66.0 は第9期 Phase BJ＝ノイズ場の汎用化）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -13,7 +13,7 @@
 
 ## 資産の実数（2026-11-19 実測）
 
-- config キー: **1,305件** ／ 内蔵スターター: **588件**
+- config キー: **1,307件** ／ 内蔵スターター: **590件**
 - 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 
