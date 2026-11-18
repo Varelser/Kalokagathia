@@ -4,6 +4,38 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.65.0] — 2026-11-18
+
+Ninth-term Phase BI: bake-time attribute arithmetic (stage 1
+of the attribute-operations foundation). One new config key,
+defaulting to no arithmetic anywhere; two new starters.
+
+### Added
+- **Bake-time attribute expressions** (`gpgpuAttrExprs`, one
+  expression per attribute slot, default all empty). When a
+  slot's expression is non-empty, the Phase AJ expression
+  language evaluates it once per particle at bake time: the
+  variables are the slot names (an earlier slot reads its
+  computed result, a later slot its source value, a slot reads
+  its own source value) plus `x` (the slot's own source value)
+  and `t` = 0. The result is clamped to [0, 1] and baked into
+  the same static attribute texture, so every existing
+  consumer (size / brightness / force drives, the group gate)
+  reads computed attributes with no consumer-side change. An
+  expression that fails to compile or yields a non-finite
+  result leaves the slot at its source value. The expression
+  language gained an additive extra-variables path
+  (`compileExpression(text, extraVars)` /
+  `evaluateCompiledExpressionWithVars`); the x / t-only
+  behaviour is unchanged, and with all four expressions empty
+  the bake never enters the expression code path, so the
+  default output is bit-identical to v1.64.0. Stage 2
+  (per-stage dynamic processing) is not included.
+- **Starters** `starter-attr-expr-product-size` (hash × radius
+  drives size, species/radius mean drives brightness) and
+  `starter-attr-expr-group-gravity` (radius² gates gravity to
+  the outer shell).
+
 ## [1.64.0] — 2026-11-18
 
 Eighth-term Phase BG: vertical text layout (tategaki columns)

@@ -411,6 +411,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuEmissionCurvePeriod: '放出カーブの周期（秒。カーブが繰り返し再生される長さ）',
   gpgpuAttrNames: '属性の名前（4スロット分。Data 源では点群の列名と一致させる）',
   gpgpuAttrSources: '属性の生成源（4スロット分。hash／index／species／radius／height／age／target／data）',
+  gpgpuAttrExprs: '属性のベイク時演算式（4スロット分。スロット名と x で生成値を計算し結果を属性にする。空文字は演算なし、不正な式は生成値のまま）',
   gpgpuAttrSizeSlot: '属性→サイズ駆動のスロット（-1でOFF）',
   gpgpuAttrSizeAmount: '属性→サイズ駆動の量（属性値でサイズを係数 mix する割合）',
   gpgpuAttrBrightSlot: '属性→明るさ駆動のスロット（-1でOFF）',

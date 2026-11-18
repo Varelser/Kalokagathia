@@ -2448,6 +2448,60 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuGroupTarget: 'gravity',
         gpgpuTrailEnabled: false,
       }),
+  // Phase BI: bake-time attribute arithmetic — slot a becomes
+  // the product of the hash and radius attributes and drives
+  // point size; slot b becomes the mean of species and radius
+  // and drives brightness. The arithmetic runs once at bake
+  // time; the drives read the computed values.
+  createStarterPreset('starter-attr-expr-product-size', 'Attribute Product Size (Hash × Radius)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.6,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.08,
+        gpgpuAttrExprs: ['a * c', '(b + c) / 2', '', ''],
+        gpgpuAttrSizeSlot: 0,
+        gpgpuAttrSizeAmount: 1,
+        gpgpuAttrBrightSlot: 1,
+        gpgpuAttrBrightAmount: 1,
+        gpgpuTrailEnabled: false,
+      }),
+  // Phase BI: bake-time attribute arithmetic feeding the group
+  // gate — slot c becomes radius squared (x is the slot's own
+  // source value), so the "above 0.36" gate selects roughly the
+  // outer 40% shell and only that shell feels gravity.
+  createStarterPreset('starter-attr-expr-group-gravity', 'Attribute Computed Group Gravity (Radius² Gate)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.35,
+        gpgpuTurbulence: 0.05,
+        gpgpuAttrExprs: ['', '', 'x * x', ''],
+        gpgpuGroupEnabled: true,
+        gpgpuGroupSlot: 2,
+        gpgpuGroupMode: 'above',
+        gpgpuGroupLow: 0.36,
+        gpgpuGroupTarget: 'gravity',
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AL: escape-time fractal — a Julia field (c = -0.8 +
   // 0.156i) rendered by the post stage, mixed over a sparse,
   // slowly drifting particle sphere.

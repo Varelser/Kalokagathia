@@ -15,6 +15,7 @@ const CONFIG_ARRAY_KEYS = [
   'gpgpuSmoothTubeHeightProfile',
   'gpgpuAttrNames',
   'gpgpuAttrSources',
+  'gpgpuAttrExprs',
   'gpgpuGradStopPositions',
   'gpgpuGradStopColors',
   'synthPattern',

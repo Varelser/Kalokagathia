@@ -46,6 +46,7 @@ import { createPosSimMaterial, createVelSimMaterial } from './useGpgpuSimulation
 import { getAttrPointCloud, useAttrPointCloud } from '../lib/attrPointCloud';
 import {
   buildAttributeData,
+  normalizeAttrExprs,
   normalizeAttrNames,
   normalizeAttrSources,
   resolveAttrConsumers,
@@ -1607,6 +1608,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const attrConsumers = resolveAttrConsumers(config);
   const attrNamesKey = normalizeAttrNames(config.gpgpuAttrNames).join(',');
   const attrSourcesKey = normalizeAttrSources(config.gpgpuAttrSources).join(',');
+  // Bake-time arithmetic (Phase BI): the expressions are bake
+  // inputs exactly like the names / sources, so they join the
+  // rebake signature (JSON-encoded — expressions may contain
+  // any separator character).
+  const attrExprsKey = JSON.stringify(normalizeAttrExprs(config.gpgpuAttrExprs));
   const attrSignature = attrConsumers.anyActive
     ? [
       texSize,
@@ -1617,6 +1623,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       config.gpgpuParticleLifeSpecies,
       attrNamesKey,
       attrSourcesKey,
+      attrExprsKey,
       attrCloud?.version ?? 0,
       // The initial cloud depends on the light position only for
       // the 'light' emit shape (the main effect's masking rule).
@@ -1646,6 +1653,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       cloud: getAttrPointCloud(),
       names: normalizeAttrNames(config.gpgpuAttrNames),
       sources: normalizeAttrSources(config.gpgpuAttrSources),
+      exprs: config.gpgpuAttrExprs,
     });
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;

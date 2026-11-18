@@ -74,6 +74,9 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // the legacy path runs verbatim.
   gpgpuAttrNames: ['a', 'b', 'c', 'd'],
   gpgpuAttrSources: ['hash', 'species', 'radius', 'height'],
+  // Bake-time attribute arithmetic (Phase BI): all empty = no
+  // arithmetic, the bake is the legacy one bit-for-bit.
+  gpgpuAttrExprs: ['', '', '', ''],
   gpgpuAttrSizeSlot: -1,
   gpgpuAttrSizeAmount: 1,
   gpgpuAttrBrightSlot: -1,

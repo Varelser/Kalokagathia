@@ -25,6 +25,18 @@
  * Infinity and the CALLER decides the fallback (the modulation
  * engine falls back to the raw input x), so a bad expression can
  * never inject NaN into a rendered parameter.
+ *
+ * Phase BI extension (additive only): compileExpression accepts
+ * an optional set of EXTRA variable names (the attribute slot
+ * names, for the bake-time attribute arithmetic in
+ * lib/gpgpuAttributes.ts). Calls without extraVars behave exactly
+ * as before — unknown identifiers are still compile errors. An
+ * extra name that collides with a built-in (x / t, a constant or
+ * a function name) is ignored: the built-in wins. ASTs containing
+ * extra variables are evaluated through
+ * evaluateCompiledExpressionWithVars with an environment record
+ * (x / t are read from the record too); the (x, t) evaluator
+ * below is untouched.
  */
 
 export const EXPRESSION_MAX_LENGTH = 240;
@@ -32,7 +44,7 @@ export const EXPRESSION_MAX_NODES = 200;
 
 type AstNode =
   | { type: 'num'; value: number }
-  | { type: 'var'; name: 'x' | 't' }
+  | { type: 'var'; name: string }
   | { type: 'const'; value: number }
   | { type: 'unary'; op: '-' | '!'; arg: AstNode }
   | { type: 'binary'; op: string; left: AstNode; right: AstNode }
@@ -148,12 +160,14 @@ function tokenize(text: string): Token[] | { error: string } {
 
 class Parser {
   private tokens: Token[];
+  private extraVars: ReadonlySet<string>;
   private index = 0;
   private nodes = 0;
   error: string | null = null;
 
-  constructor(tokens: Token[]) {
+  constructor(tokens: Token[], extraVars: ReadonlySet<string> = new Set()) {
     this.tokens = tokens;
+    this.extraVars = extraVars;
   }
 
   private peek(): Token {
@@ -327,7 +341,13 @@ class Parser {
         this.count();
         return { type: 'const', value: CONSTANTS[name] };
       }
-      this.error = `未知の名前 '${name}' です (使える変数は x と t)`;
+      if (this.extraVars.has(name)) {
+        this.count();
+        return { type: 'var', name };
+      }
+      this.error = this.extraVars.size > 0
+        ? `未知の名前 '${name}' です (使える変数は x と t と属性名)`
+        : `未知の名前 '${name}' です (使える変数は x と t)`;
       return null;
     }
     if (!this.error) this.error = `予期しない内容です (${token.pos} 文字目)`;
@@ -335,8 +355,36 @@ class Parser {
   }
 }
 
-/** Parse an expression into an AST, or report a Japanese error. */
-export function compileExpression(text: string): ExpressionCompileResult {
+/**
+ * Normalise caller-supplied extra variable names for
+ * compileExpression: lowercased (the tokenizer lowercases
+ * identifiers), trimmed, and stripped of anything that collides
+ * with a built-in — x / t, the constants and the function names
+ * always win, so a colliding extra name is simply inert and
+ * never an error.
+ */
+function normalizeExtraVars(extraVars?: Iterable<string>): Set<string> {
+  const out = new Set<string>();
+  if (!extraVars) return out;
+  for (const raw of extraVars) {
+    if (typeof raw !== 'string') continue;
+    const name = raw.trim().toLowerCase();
+    if (!name) continue;
+    if (name === 'x' || name === 't') continue;
+    if (name in CONSTANTS) continue;
+    if (name in FUNCTIONS) continue;
+    out.add(name);
+  }
+  return out;
+}
+
+/**
+ * Parse an expression into an AST, or report a Japanese error.
+ * `extraVars` (Phase BI) optionally names additional variables
+ * the expression may reference; omitting it keeps the original
+ * x / t-only behaviour exactly.
+ */
+export function compileExpression(text: string, extraVars?: Iterable<string>): ExpressionCompileResult {
   if (typeof text !== 'string' || text.trim().length === 0) {
     return { ok: false, error: '式が空です' };
   }
@@ -345,7 +393,7 @@ export function compileExpression(text: string): ExpressionCompileResult {
   }
   const tokens = tokenize(text);
   if (!Array.isArray(tokens)) return { ok: false, error: tokens.error };
-  const parser = new Parser(tokens);
+  const parser = new Parser(tokens, normalizeExtraVars(extraVars));
   const ast = parser.parse();
   if (!ast) return { ok: false, error: parser.error ?? '式を解釈できませんでした' };
   return { ok: true, ast };
@@ -411,6 +459,76 @@ function evaluateNode(node: AstNode, x: number, t: number): number {
  *  pathological inputs — the caller owns the fallback. */
 export function evaluateCompiledExpression(ast: AstNode, x: number, t: number): number {
   return evaluateNode(ast, x, t);
+}
+
+function evaluateNodeWithVars(node: AstNode, vars: Record<string, number>): number {
+  switch (node.type) {
+    case 'num':
+      return node.value;
+    case 'const':
+      return node.value;
+    case 'var': {
+      const value = vars[node.name];
+      return typeof value === 'number' ? value : NaN;
+    }
+    case 'unary': {
+      const value = evaluateNodeWithVars(node.arg, vars);
+      return node.op === '-' ? -value : value === 0 ? 1 : 0;
+    }
+    case 'ternary':
+      return evaluateNodeWithVars(node.cond, vars) !== 0
+        ? evaluateNodeWithVars(node.then, vars)
+        : evaluateNodeWithVars(node.else, vars);
+    case 'call': {
+      const spec = FUNCTIONS[node.name];
+      const args = node.args.map((arg) => evaluateNodeWithVars(arg, vars));
+      return spec.fn(...args);
+    }
+    case 'binary': {
+      const left = evaluateNodeWithVars(node.left, vars);
+      const right = evaluateNodeWithVars(node.right, vars);
+      switch (node.op) {
+        case '+':
+          return left + right;
+        case '-':
+          return left - right;
+        case '*':
+          return left * right;
+        case '/':
+          return left / right;
+        case '%':
+          return right === 0 ? 0 : left - right * Math.floor(left / right);
+        case '^':
+          return Math.pow(left, right);
+        case '<':
+          return left < right ? 1 : 0;
+        case '<=':
+          return left <= right ? 1 : 0;
+        case '>':
+          return left > right ? 1 : 0;
+        case '>=':
+          return left >= right ? 1 : 0;
+        case '==':
+          return left === right ? 1 : 0;
+        case '!=':
+          return left !== right ? 1 : 0;
+        default:
+          return NaN;
+      }
+    }
+  }
+}
+
+/**
+ * Evaluate a compiled expression against an environment record
+ * (Phase BI). Every variable — x and t included — is read from
+ * `vars`; a name missing from the record evaluates to NaN, so
+ * the caller's non-finite fallback applies. Same contract as
+ * evaluateCompiledExpression: NaN / Infinity may come back and
+ * the caller owns the fallback.
+ */
+export function evaluateCompiledExpressionWithVars(ast: AstNode, vars: Record<string, number>): number {
+  return evaluateNodeWithVars(ast, vars);
 }
 
 const compileCache = new Map<string, ExpressionCompileResult>();

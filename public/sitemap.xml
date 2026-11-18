@@ -1475,18 +1475,72 @@
   <url><loc>https://monosphere.pages.dev/share/ray-blobs</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/ray-columns</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/ray-mandelbulb</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-attr-radius-group-gravity</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-attr-species-size</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-burst-spin-sprites</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-cellular-life-field</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-contour-text-outline</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-distance-bloom</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-emission-curve-pulse</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-emission-curve-swell</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-flip-planar-pool</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-flip-vortex-ferry</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-fractal-julia-field</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-age-curve-mountain</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-agecurve-velocity-fade</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-chain-burst2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-chain-burst3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-child-antigravity</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-child-vortex</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-deathburst</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-curl-slow-evolution</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-flipbook-grow</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-fog-self-shadow</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-form-twist-knot</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-geom-torus</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-gradient-blackbody</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-gradient-nebula-blur</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-gradient-prism</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-layer-map-blob</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-layer-maps-per-property</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-life-avoid-swarm</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-life-meander-swarm</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-life-predator-chase</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-light-cone-beam</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-light-emitter</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-light-point-core</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-light-trail-ribbon</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-light-volume-cone</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-galaxy</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-gyroid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-obj-knot</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-obj-normal-burst</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-obj-sphere</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-obj-volume-sphere</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-replica-independent-curl</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-replica-independent-drift</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-replica-knot-chain</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-replica-sphere-scale</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-svg-logo</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-svg-path-along</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-svg-path-writeon</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-svg-stamp-star</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-terrain-range</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-terrain-valley-mist</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-morph-trefoil</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-quadra-wells</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-raster-mask-boolean-crescent</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-raster-mask-ring</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-shadow-terrain</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-shape-lightning</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-spawn-burst-bloom</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-sprite-image-star</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-symmetry-radial6</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gradient-five-stop</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gradient-multi-stop</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-grains-cohesive-clumps</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-grains-pile</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-grains-repose-pile</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-audio-pulse-crown</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-blackhole-quasar</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-ember-fountain</loc><priority>0.6</priority></url>
@@ -1513,9 +1567,53 @@
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-text-typography</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-trefoil-sculpture</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-voxel-matrix</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-layer2-age-gradient-sumie</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-lsys-dragon-rules</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-moire-grid-veil</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-multitouch-attract</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-noise-field-chroma</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-noise-relief-drift</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-obj-geom-knot-swarm</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-obj-mesh-knot-grid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-obj-mesh-radial-chain</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-parallax-gpgpu-depth</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-parallax-layer-drift</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-polygon-hex-plate</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-post-horizon-mist-radial</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-post-horizon-obsidian-fade</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-lux-spot</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-shine-logo</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-starglow-field</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-starglow-shimmer</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-post-tone-print</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pyro-smoke-column</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pyro-stirred-plume</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-rbd-glued-drop</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-rbd-shatter-pile</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-rbd-terrain-debris</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-rbd-terrain-landing</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ridge-scatter-terrain</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-simple-clean</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-spawn-pulse-waves</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-terrain-collider-bounce</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-terrain-derived-layermap</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-terrain-eroded-canyon</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-terrain-mesh-range</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-terrain-mesh-tunnel</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-terrain-slope-flow</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-terrain-talused-ridge</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-terrain-texture-repeat</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-terrain-tunnel-cruise</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-text-on-path</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-text-raster-mask</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-morph</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-vellum-balloon</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-vellum-silk-cloth</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-vellum-stitched-cloth</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-voronoi-fracture</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-whitewater-pool-churn</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-whitewater-vortex-foam</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-wind-volume-jet</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/theory-att-aizawa</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/theory-att-chen</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/theory-att-dejong</loc><priority>0.6</priority></url>

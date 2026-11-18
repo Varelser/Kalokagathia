@@ -130,6 +130,12 @@ export interface ParticleConfigGpgpu {
   // or 0..3; a drive also needs a non-zero amount.
   gpgpuAttrNames: string[];
   gpgpuAttrSources: string[];
+  // Bake-time attribute arithmetic (Phase BI): one expression
+  // per slot ('' = none), evaluated once at bake time against
+  // the slot names and x (the slot's own source value), with
+  // the result clamped to [0, 1] and baked into the same
+  // static texture. All-empty is the legacy bake, bit-identical.
+  gpgpuAttrExprs: string[];
   gpgpuAttrSizeSlot: number;
   gpgpuAttrSizeAmount: number;
   gpgpuAttrBrightSlot: number;

@@ -450,6 +450,7 @@ const NUMS: NumDef[] = [
   ['gpgpuEmissionCurvePeriod', '放出カーブの周期（秒）'],
   ['gpgpuAttrNames', '名前付き属性の名前（文字列4件の配列。Data 源では属性点群の列名と一致させる）'],
   ['gpgpuAttrSources', '名前付き属性の生成源（文字列4件の配列。hash/index/species/radius/height/age/target/data）'],
+  ['gpgpuAttrExprs', '属性のベイク時演算式（文字列4件の配列。スロット名と x を変数に生成値を計算し 0..1 に収めて属性にする。空文字は演算なし）'],
   ['gpgpuAttrSizeSlot', '属性→サイズ駆動のスロット（-1でOFF、0..3）'],
   ['gpgpuAttrSizeAmount', '属性→サイズ駆動の量（0..1）'],
   ['gpgpuAttrBrightSlot', '属性→明るさ駆動のスロット（-1でOFF、0..3）'],

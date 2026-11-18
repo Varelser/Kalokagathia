@@ -14,6 +14,7 @@ import { useAttrPointCloud } from '../lib/attrPointCloud';
 import {
   ATTR_SOURCES,
   ATTR_SOURCE_LABELS,
+  normalizeAttrExprs,
   normalizeAttrNames,
   normalizeAttrSources,
 } from '../lib/gpgpuAttributes';
@@ -105,6 +106,7 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
   const cloud = useAttrPointCloud();
   const names = normalizeAttrNames(config.gpgpuAttrNames);
   const sources = normalizeAttrSources(config.gpgpuAttrSources);
+  const exprs = normalizeAttrExprs(config.gpgpuAttrExprs);
   const slotOptions = [
     { label: 'OFF', val: '-1' },
     { label: `Slot 1（${names[0]}）`, val: '0' },
@@ -122,6 +124,11 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
     const next = [...sources];
     next[slot] = value as (typeof sources)[number];
     updateConfig('gpgpuAttrSources', next);
+  };
+  const setExpr = (slot: number, value: string) => {
+    const next = [...exprs];
+    next[slot] = value;
+    updateConfig('gpgpuAttrExprs', next);
   };
   return (
     <div className="mt-4 border-t border-white/10 pt-4">
@@ -143,10 +150,21 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
               onChange={(v) => setSource(slot, v)}
             />
           </div>
+          <input
+            type="text"
+            value={exprs[slot]}
+            onChange={(e) => setExpr(slot, e.target.value)}
+            placeholder="a * b"
+            className="min-w-0 flex-1 rounded border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/90 outline-none focus:border-white/40"
+            aria-label={`Attribute expression slot ${slot + 1}`}
+          />
         </div>
       ))}
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         属性は粒子ごとの数値（0..1）で、生成時に固定されます。Data 源は Play タブで登録した属性点群の同名列（名前が一致しない場合は 0）を使います。属性点群: {cloud ? `登録済み（${cloud.table.rows.length} 行）` : '未登録（Play タブ → Data Source）'}。
+      </div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        式（Phase BI）は生成時のベイクで一度だけ計算され、結果が属性値になります（毎フレームは変わりません）。使える変数はスロット名（例: a * b、先のスロットは計算結果・後のスロットは生成値）と x（そのスロット自身の生成値）で、結果は 0..1 に収められます。不正な式は生成値のままになります。空欄は演算なしです。
       </div>
       <AttrSelect label="Attr → Size（サイズ駆動）" value={String(config.gpgpuAttrSizeSlot)} options={slotOptions} onChange={(v) => updateConfig('gpgpuAttrSizeSlot', Number(v))} />
       {config.gpgpuAttrSizeSlot >= 0 && (

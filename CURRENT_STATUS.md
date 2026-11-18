@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.64.0**（2026-11-18、第8期 Phase BG＝縦書き・組版: layer2 TextMap のラスタ化に縦書きカラム配置（段は右→左、字形は上→下、字形ごとの明示配置）を追加。新規 config キー +4（既定は横書きで描画不変）・スターター +1。詳細は PHASE_BG_REPORT.md。前版 v1.63.0 は第8期 Phase BF＝2D Boolean）
+**現行バージョン: v1.65.0**（2026-11-18、第9期 Phase BI＝属性演算・段階1（ベイク時演算）: 属性スロットごとに式（`gpgpuAttrExprs`）を書き、生成源の値をスロット名と x で計算した結果を既存の属性テクスチャへ静的ベイクできるようにした。新規 config キー +1（既定は全スロット空＝演算なしで従来とビット同一）・スターター +2。詳細は PHASE_BI_REPORT.md（統合側で作成）。前版 v1.64.0 は第8期 Phase BG＝縦書き・組版）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -13,7 +13,7 @@
 
 ## 資産の実数（2026-11-18 実測）
 
-- config キー: **1,294件** ／ 内蔵スターター: **582件**
+- config キー: **1,303件** ／ 内蔵スターター: **586件**
 - 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

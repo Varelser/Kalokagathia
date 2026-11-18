@@ -1,5 +1,11 @@
 import type { ParticleConfig } from '../types';
 import { sampleAttrColumn, type AttrPointCloud } from './attrPointCloud';
+import {
+  compileExpression,
+  evaluateCompiledExpressionWithVars,
+  EXPRESSION_MAX_LENGTH,
+  type ExpressionCompileResult,
+} from './expression';
 
 /**
  * Named point attributes (Phase AK).
@@ -88,6 +94,23 @@ export function normalizeAttrNames(input: unknown): string[] {
   return names;
 }
 
+/**
+ * Coerce arbitrary input into exactly 4 bake-time expression
+ * strings (Phase BI). Non-strings become '' (no arithmetic) and
+ * each entry is capped at the expression language's length
+ * limit; '' is the identity element — with all four empty the
+ * bake never touches the expression code path at all.
+ */
+export function normalizeAttrExprs(input: unknown): string[] {
+  const raw = Array.isArray(input) ? input : [];
+  const exprs: string[] = [];
+  for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
+    const value = raw[slot];
+    exprs.push(typeof value === 'string' ? value.slice(0, EXPRESSION_MAX_LENGTH) : '');
+  }
+  return exprs;
+}
+
 /** Coerce arbitrary input into exactly 4 valid sources. */
 export function normalizeAttrSources(input: unknown): AttrSource[] {
   const raw = Array.isArray(input) ? input : [];
@@ -173,6 +196,14 @@ export interface BuildAttributeDataArgs {
   cloud?: AttrPointCloud | null;
   names: string[];
   sources: AttrSource[];
+  /**
+   * Bake-time arithmetic per slot (Phase BI, config
+   * gpgpuAttrExprs). An empty string means no arithmetic for
+   * that slot; when ALL slots are empty the bake runs the
+   * legacy path verbatim (the expression code is never
+   * entered), which is the structural identity guarantee.
+   */
+  exprs?: readonly string[];
 }
 
 /**
@@ -192,11 +223,24 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
   const morphData = args.morphData ?? null;
   const morphScale = Math.max(args.morphWorldScale ?? 0, 0.001);
   const cloud = args.cloud ?? null;
+  // Bake-time arithmetic (Phase BI): compile each non-empty
+  // slot expression ONCE per bake, with the slot names
+  // (lowercased — the tokenizer lowercases identifiers) as the
+  // extra variables. When every expression is empty this whole
+  // block is skipped and the per-particle loop below runs the
+  // legacy path verbatim, so the default bake is bit-identical.
+  const exprs = normalizeAttrExprs(args.exprs);
+  const hasExprs = exprs.some((expr) => expr.trim().length > 0);
+  const lowerNames = hasExprs ? names.map((name) => name.toLowerCase()) : [];
+  const compiledExprs: (ExpressionCompileResult | null)[] = hasExprs
+    ? exprs.map((expr) => (expr.trim().length > 0 ? compileExpression(expr, lowerNames) : null))
+    : [];
   for (let i = 0; i < count; i++) {
     const px = posData[i * 4] ?? 0;
     const py = posData[i * 4 + 1] ?? 0;
     const pz = posData[i * 4 + 2] ?? 0;
     const radius = clamp01(Math.sqrt(px * px + py * py + pz * pz) / radiusDenom);
+    const values: number[] = [0, 0, 0, 0];
     for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
       let value = 0;
       switch (sources[slot]) {
@@ -231,7 +275,34 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
           value = sampleAttrColumn(cloud, names[slot], i);
           break;
       }
-      out[i * ATTR_SLOT_COUNT + slot] = value;
+      values[slot] = value;
+    }
+    if (hasExprs) {
+      // Slots are processed in order 0 → 3. The environment for
+      // slot k is: x = slot k's own source value, t = 0, and
+      // each slot name → that slot's CURRENT value (slots
+      // already processed hold their arithmetic result, the
+      // rest — including slot k itself — hold their source
+      // value). Duplicate names (after lowercasing) resolve to
+      // the FIRST matching slot. A failed compile or a
+      // non-finite result leaves the slot at its source value
+      // (the Phase AJ fallback discipline: never throw, never
+      // inject NaN); finite results are clamped to [0, 1].
+      for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
+        const compiled = compiledExprs[slot];
+        if (!compiled || !compiled.ok) continue;
+        const sourceValue = values[slot];
+        const vars: Record<string, number> = { x: sourceValue, t: 0 };
+        for (let s = 0; s < ATTR_SLOT_COUNT; s++) {
+          const key = lowerNames[s];
+          if (!(key in vars)) vars[key] = values[s];
+        }
+        const result = evaluateCompiledExpressionWithVars(compiled.ast, vars);
+        values[slot] = Number.isFinite(result) ? clamp01(result) : sourceValue;
+      }
+    }
+    for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
+      out[i * ATTR_SLOT_COUNT + slot] = values[slot];
     }
   }
   return out;
