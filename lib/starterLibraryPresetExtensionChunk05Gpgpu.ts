@@ -3468,7 +3468,7 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuNoiseMapOctaves: 2,
         gpgpuMaskSource: 'noise-field',
         gpgpuMaskMode: 'clip',
-        gpgpuMaskThreshold: 0.45,
+        gpgpuMaskThreshold: 0.25,
         gpgpuTrailEnabled: false,
       }),
   // Phase AZ: parallax layer drift — three particle layers

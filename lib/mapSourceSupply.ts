@@ -43,10 +43,15 @@
  *    rasterised from the field definition keys (scale / kind /
  *    octaves) with the same pure sampler the draw consumes, so
  *    the supplied picture is the field's shape at those
- *    settings. It is a snapshot by design: the live, evolving
- *    field stays with the points draw's own consumers, and the
- *    slice is regenerated only when a field definition key
- *    changes.
+ *    settings. The slice spans the world box ±gpgpuBounceRadius
+ *    (Phase BR): every consumer maps the supplied texture over
+ *    that box (uv = worldPos.xy * (1 / (2 * max(R, 1))) + 0.5),
+ *    so the texel at plane coords (x, y) holds the field at
+ *    world position (x * R, y * R) — the field as the consumers
+ *    see it, not a ±1 world-unit patch around the origin. It
+ *    is a snapshot by design: the live, evolving field stays
+ *    with the points draw's own consumers, and the slice is
+ *    regenerated only when a field definition key changes.
  *
  * Row conventions mirror lib/mapImageTexture.ts: texture data
  * row 0 is the v = 0 (bottom) row, so a supplied texture samples
@@ -524,41 +529,57 @@ export interface NoiseFieldSettings {
   scale: number;
   kind: NoiseMapKind;
   octaves: number;
+  /** Domain radius of the slice: the supplied picture spans
+   *  the world box ±domainRadius — the same box every
+   *  consumer's UV mapping covers (Phase BR). */
+  domainRadius: number;
+}
+
+/** The effective domain radius for a raw radius value: a
+ *  finite number > 0 resolves to max(1, value) (mirroring the
+ *  consumers' max(R, 1) clamp); anything else falls back to
+ *  the default bounce radius, 150. */
+export function resolveNoiseFieldDomainRadius(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.max(1, value) : 150;
 }
 
 /** The field definition the supply slice is taken from: the
  *  same keys (and the same clamps / normalisation) the points
  *  draw resolves its uniforms through, minus evolve — the
- *  slice is static by design. */
+ *  slice is static by design. The domain radius comes from
+ *  gpgpuBounceRadius, the box the consumers sample over. */
 export function noiseFieldSettingsFromConfig(config: ParticleConfig): NoiseFieldSettings {
   return {
     scale: clampNoiseMapScale(config.gpgpuNoiseMapScale),
     kind: normalizeNoiseMapKind(config.gpgpuNoiseMapKind),
     octaves: clampNoiseMapOctaves(config.gpgpuNoiseMapOctaves),
+    domainRadius: resolveNoiseFieldDomainRadius(config.gpgpuBounceRadius),
   };
 }
 
 export function noiseFieldCacheKey(settings: NoiseFieldSettings): string {
-  return [settings.scale, settings.kind, settings.octaves].join('|');
+  return [settings.scale, settings.kind, settings.octaves, resolveNoiseFieldDomainRadius(settings.domainRadius)].join('|');
 }
 
 /**
  * Rasterise the field's static slice into a luma grid (row 0 =
  * top, the image-order convention of the numeric mask grids):
  * each cell centre maps to the plane [-1, 1] × [-1, 1] (x
- * right, y up) and takes sampleNoiseField01 at z = 0, time 0 —
- * evolve is a property of the live field, never of the slice.
- * Pure and deterministic: the same settings rasterise
- * bit-identically anywhere.
+ * right, y up), which stands for the world box ±domainRadius,
+ * and takes sampleNoiseField01 at (plane * domainRadius),
+ * z = 0, time 0 — evolve is a property of the live field,
+ * never of the slice. Pure and deterministic: the same
+ * settings rasterise bit-identically anywhere.
  */
 export function buildNoiseFieldLuma(settings: NoiseFieldSettings, size: number): Float32Array {
   const n = Math.max(2, Math.floor(size));
   const out = new Float32Array(n * n);
+  const r = resolveNoiseFieldDomainRadius(settings.domainRadius);
   for (let cy = 0; cy < n; cy++) {
     const py = 1 - ((cy + 0.5) / n) * 2;
     for (let cx = 0; cx < n; cx++) {
       const px = ((cx + 0.5) / n) * 2 - 1;
-      out[cy * n + cx] = sampleNoiseField01(px, py, 0, settings.scale, 0, 0, settings.kind, settings.octaves);
+      out[cy * n + cx] = sampleNoiseField01(px * r, py * r, 0, settings.scale, 0, 0, settings.kind, settings.octaves);
     }
   }
   return out;

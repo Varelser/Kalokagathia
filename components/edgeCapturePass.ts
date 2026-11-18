@@ -13,6 +13,13 @@
 // The kernel and threshold convention mirror EdgeDetectPass /
 // lib/postFxMath.ts sobelMagnitude exactly; the capture always
 // stores the 'only' field (white contours on black).
+// Registration timing (Phase BR): the capture texture is
+// registered only after the first captured frame completes, so
+// consumers see the source as ready only once a real previous
+// frame exists. Registering the still-empty target up front
+// made an 'edge-output' clip mask discard every particle from
+// frame 1 — the finished frame then stayed black and the
+// capture never acquired edges (a self-sealing deadlock).
 
 import { Pass } from 'postprocessing';
 import * as THREE from 'three';
@@ -72,6 +79,11 @@ export class EdgeCapturePass extends Pass {
 
   private copyMaterial: THREE.ShaderMaterial;
 
+  /** True once the capture target has been registered as the
+   *  edge supply — set after the first captured frame (Phase
+   *  BR), never in the constructor. */
+  private captureRegistered = false;
+
   constructor() {
     super('EdgeCapturePass');
     this.captureTarget = new THREE.WebGLRenderTarget(1, 1, {
@@ -100,7 +112,6 @@ export class EdgeCapturePass extends Pass {
       depthWrite: false,
     });
     this.needsSwap = true;
-    registerEdgeCaptureTexture(this.captureTarget.texture);
   }
 
   override render(
@@ -118,6 +129,14 @@ export class EdgeCapturePass extends Pass {
     this.fullscreenMaterial = this.sobelMaterial;
     renderer.setRenderTarget(this.captureTarget);
     renderer.render(this.scene, this.camera);
+    // The target now holds a real frame's edge field: publish
+    // it as the edge supply (Phase BR — before this capture the
+    // source must read as not ready, never as an empty black
+    // texture).
+    if (!this.captureRegistered) {
+      registerEdgeCaptureTexture(this.captureTarget.texture);
+      this.captureRegistered = true;
+    }
 
     // 2. Pass the frame through untouched (full vec4 copy).
     this.copyMaterial.uniforms.tDiffuse.value = inputBuffer.texture;
@@ -132,6 +151,7 @@ export class EdgeCapturePass extends Pass {
 
   override dispose(): void {
     registerEdgeCaptureTexture(null);
+    this.captureRegistered = false;
     this.captureTarget.dispose();
     this.sobelMaterial.dispose();
     this.copyMaterial.dispose();

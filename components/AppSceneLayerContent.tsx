@@ -55,6 +55,7 @@ const MetaballSystem = React.lazy(() =>
 import {
   getGpgpuRenderOutputPlan,
   getLayerSceneRenderPlan,
+  gpgpuSceneNeedsTubeLights,
 } from '../lib/sceneRenderRouting';
 import { ParallaxGroup } from './sceneParallaxGroup';
 import { resolveParallaxFactors } from '../lib/parallax';
@@ -270,6 +271,20 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
       )}
       </ParallaxGroup>
       <ParallaxGroup config={config} factor={parallaxFactors.gpgpu}>
+      {/* Lit-material fallback lights (Phase BR): the Smooth
+          Tube / Metaball MeshStandardMaterials shade black in
+          a scene with no lights, and only TerrainMesh /
+          ObjMesh bring lights. When neither is mounted, supply
+          TerrainMesh's light set so the tubes / metaballs read;
+          configs with terrain / obj keep exactly their own
+          lighting (helper in lib/sceneRenderRoutingPlans.ts). */}
+      {gpgpuSceneNeedsTubeLights(config, gpgpuPlan) && (
+        <>
+          <ambientLight intensity={0.65} />
+          <directionalLight position={[90, 160, 70]} intensity={1.7} />
+          <directionalLight position={[-110, 40, -90]} intensity={0.35} />
+        </>
+      )}
       {gpgpuPlan.core && (
         <GpgpuSystem config={config} audioRef={audioRef} isPlaying={isPlaying} posReadbackRef={metaballPosRef} pointCloudCaptureRef={pointCloudCaptureRef} />
       )}

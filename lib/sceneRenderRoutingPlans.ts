@@ -103,6 +103,31 @@ export function getGpgpuSceneBranches(config: ParticleConfig, route?: GpgpuExecu
   return getGpgpuRenderOutputPlan(config, route).sceneBranches;
 }
 
+/**
+ * Lit-material light fallback (Phase BR): the Smooth Tube and
+ * the Metaball system shade with THREE.MeshStandardMaterial,
+ * which renders black when the scene contains no lights. The
+ * only light-bearing components are TerrainMesh (mounted when
+ * gpgpuTerrainMeshEnabled) and ObjMesh (mounted when
+ * gpgpuObjMeshEnabled with a usable source), so a pure-GPGPU
+ * scene — all layers off, no terrain / obj — left its tubes
+ * and metaballs black-on-black. Returns true when such a
+ * scene mounts a lit-material branch and no light-bearing
+ * component is present, i.e. when the scene must supply its
+ * own light set (mirroring TerrainMesh's). Configs with
+ * terrain / obj lights see no change (no double lighting).
+ * The obj exclusion is the config-level approximation of
+ * ObjMesh's mount predicate: enabled + a non-empty source
+ * (whether the source actually parses is runtime-only).
+ */
+export function gpgpuSceneNeedsTubeLights(config: ParticleConfig, plan?: GpgpuRenderOutputPlan): boolean {
+  const resolved = plan ?? getGpgpuRenderOutputPlan(config);
+  if (!resolved.smoothTubes && !resolved.metaballs) return false;
+  if (config.gpgpuTerrainMeshEnabled) return false;
+  if (config.gpgpuObjMeshEnabled && config.gpgpuMorphObjSource) return false;
+  return true;
+}
+
 export function getGpgpuRenderOutputPlan(config: ParticleConfig, route?: GpgpuExecutionRoute): GpgpuRenderOutputPlan {
   const resolvedRoute = route ?? getGpgpuRoute(config);
   const core = doesGpgpuRouteRenderCore(resolvedRoute);
