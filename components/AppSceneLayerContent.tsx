@@ -56,6 +56,8 @@ import {
   getGpgpuRenderOutputPlan,
   getLayerSceneRenderPlan,
 } from '../lib/sceneRenderRouting';
+import { ParallaxGroup } from './sceneParallaxGroup';
+import { resolveParallaxFactors } from '../lib/parallax';
 import type { SceneAudioRef } from './AppSceneTypes';
 import type { PointCloudCaptureState } from '../lib/pointCloudExport';
 
@@ -79,6 +81,10 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
   const layer2Plan = getLayerSceneRenderPlan(config, 2);
   const layer3Plan = getLayerSceneRenderPlan(config, 3);
   const gpgpuPlan = getGpgpuRenderOutputPlan(config);
+  // Parallax (Phase AZ): the five families below are wrapped in
+  // ParallaxGroups. Every factor defaults to 0, where the wrapper
+  // sits at the identity and the render is the legacy one exactly.
+  const parallaxFactors = resolveParallaxFactors(config);
 
   React.useEffect(() => {
     noteSceneComposition(getSceneGeneration(), gpgpuPlan.core);
@@ -87,9 +93,12 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
   return (
     <SceneGroup config={config} isPlaying={isPlaying}>
       <React.Suspense fallback={null}>
+      <ParallaxGroup config={config} factor={parallaxFactors.layer1}>
       {config.layer1Enabled && (
         <ParticleSystem config={config} layerIndex={1} audioRef={audioRef} isPlaying={isPlaying} contactAmount={interLayerContactAmount} />
       )}
+      </ParallaxGroup>
+      <ParallaxGroup config={config} factor={parallaxFactors.layer2}>
       {layer2Plan.particleCore && (
         <ParticleSystem config={config} layerIndex={2} audioRef={audioRef} isPlaying={isPlaying} contactAmount={interLayerContactAmount} />
       )}
@@ -171,6 +180,8 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
       {layer2Plan.sparkParticles && (
         <ParticleSystem config={config} layerIndex={2} isAux={true} auxMode="spark" audioRef={audioRef} isPlaying={isPlaying} contactAmount={interLayerContactAmount} />
       )}
+      </ParallaxGroup>
+      <ParallaxGroup config={config} factor={parallaxFactors.layer3}>
       {layer3Plan.particleCore && (
         <ParticleSystem config={config} layerIndex={3} audioRef={audioRef} isPlaying={isPlaying} contactAmount={interLayerContactAmount} />
       )}
@@ -252,9 +263,13 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
       {layer3Plan.sparkParticles && (
         <ParticleSystem config={config} layerIndex={3} isAux={true} auxMode="spark" audioRef={audioRef} isPlaying={isPlaying} contactAmount={interLayerContactAmount} />
       )}
+      </ParallaxGroup>
+      <ParallaxGroup config={config} factor={parallaxFactors.ambient}>
       {config.ambientEnabled && (
         <ParticleSystem config={config} layerIndex={4} audioRef={audioRef} isPlaying={isPlaying} contactAmount={interLayerContactAmount} />
       )}
+      </ParallaxGroup>
+      <ParallaxGroup config={config} factor={parallaxFactors.gpgpu}>
       {gpgpuPlan.core && (
         <GpgpuSystem config={config} audioRef={audioRef} isPlaying={isPlaying} posReadbackRef={metaballPosRef} pointCloudCaptureRef={pointCloudCaptureRef} />
       )}
@@ -271,6 +286,7 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
           isPlaying={isPlaying}
         />
       )}
+      </ParallaxGroup>
       </React.Suspense>
     </SceneGroup>
   );

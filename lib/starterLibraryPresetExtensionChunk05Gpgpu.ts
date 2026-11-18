@@ -3131,4 +3131,49 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuNoiseMapDisplaceAmount: 0.7,
         gpgpuTrailEnabled: false,
       }),
+  // Phase AZ: parallax layer drift — three particle layers
+  // carry graded shift factors against the camera, and a gentle
+  // camera impulse keeps the viewpoint drifting so the layers
+  // slide against each other without any user input. Orbiting
+  // widens the separation.
+  createStarterPreset('starter-parallax-layer-drift', 'Parallax Layer Drift (Graded Layer Shift)', {
+        renderQuality: 'balanced',
+        layer1Enabled: true,
+        layer2Enabled: true,
+        layer2Source: 'ring',
+        layer3Enabled: true,
+        layer3Source: 'grid',
+        ambientEnabled: true,
+        gpgpuEnabled: false,
+        cameraImpulseStrength: 0.55,
+        cameraImpulseSpeed: 0.7,
+        parallaxLayer1: 0.18,
+        parallaxLayer2: 0,
+        parallaxLayer3: -0.22,
+        parallaxAmbient: 0.38,
+      }),
+  // Phase AZ: parallax GPGPU depth — a GPGPU sphere counter-
+  // shifts against the ambient dust field; the impulse drift
+  // makes the core breathe against its halo of dust.
+  createStarterPreset('starter-parallax-gpgpu-depth', 'Parallax GPGPU Depth (Counter-Shift Core + Dust)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: true,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#e6ebee',
+        gpgpuSize: 2.0,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.2,
+        gpgpuTrailEnabled: false,
+        cameraImpulseStrength: 0.5,
+        cameraImpulseSpeed: 0.6,
+        parallaxGpgpu: -0.28,
+        parallaxAmbient: 0.34,
+      }),
 ];

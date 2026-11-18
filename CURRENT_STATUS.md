@@ -1,19 +1,19 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.57.0**（2026-11-18、第7期 Phase AY＝ノイズの map source 化: ノイズ場（curl と同一の vnoise）を色（'noise' グラデーションドライバ）・サイズ・変位の源泉として消費する経路＋時間発展。新規 config キー +4（全て既定で従来同一）・スターター +2。詳細は PHASE_AY_REPORT.md。iMac ゲート・出荷は統合側で未実施。前版 v1.56.0 は第7期 Phase AX＝文法の残り束・放出と散布）
+**現行バージョン: v1.58.0**（2026-11-18、第7期 Phase AZ＝シーングラフ再構成＋パララックス【条件付き→可】: レイヤー群5つ（Layer 1／2／3・アンビエント・GPGPU 系）を視差グループ化し、カメラ移動に対する群ごとのずれ係数キーを追加。新規 config キー +5（全て既定 0＝従来同一）・スターター +2。詳細は PHASE_AZ_REPORT.md。iMac ゲート・出荷は統合側で未実施。前版 v1.57.0 は第7期 Phase AY＝ノイズの map source 化）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_AY_REPORT.md、前: PHASE_AX_REPORT.md / PHASE_AW_REPORT.md / PHASE_AV_REPORT.md）
+  （最新: PHASE_AZ_REPORT.md、前: PHASE_AY_REPORT.md / PHASE_AX_REPORT.md / PHASE_AW_REPORT.md / PHASE_AV_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.57.0] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.58.0] が最新項）
 
 ## 資産の実数（2026-11-18 実測）
 
-- config キー: **1,277件** ／ 内蔵スターター: **573件**
+- config キー: **1,282件** ／ 内蔵スターター: **575件**
 - 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

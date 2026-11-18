@@ -25,6 +25,18 @@ export interface ParticleConfigCore {
   cameraImpulseSpeed: number;
   cameraImpulseDrift: number;
   cameraBurstBoost: number;
+  // Parallax (Phase AZ): per-group view-shift coefficients for
+  // the scene's layer families. Each group is translated by
+  // (camera position − the config's default camera position) *
+  // factor (lib/parallax.ts). 0 (default for all five) leaves the
+  // group's wrapper at the identity, so the render is exactly the
+  // legacy one; deterministic renders pin the camera to the
+  // default position, so exports stay parallax-free at any value.
+  parallaxLayer1: number;
+  parallaxLayer2: number;
+  parallaxLayer3: number;
+  parallaxAmbient: number;
+  parallaxGpgpu: number;
 
   opacity: number;
   contrast: number;

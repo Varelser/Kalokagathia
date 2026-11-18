@@ -37,6 +37,11 @@ const NUMS: NumDef[] = [
   ['layer1LineDashLength', 'ライン描画の破線ダッシュ長（0で実線＝従来同一、Phase AM）'],
   ['layer1LineDashGap', 'ライン描画の破線の間隔（Phase AM）'],
   ['cameraImpulseStrength', 'カメラの揺れ・ドリフトの強さ'],
+  ['parallaxLayer1', '視差: Layer 1 のカメラ連動ずれ係数（0で従来同一）'],
+  ['parallaxLayer2', '視差: Layer 2 のカメラ連動ずれ係数（0で従来同一）'],
+  ['parallaxLayer3', '視差: Layer 3 のカメラ連動ずれ係数（0で従来同一）'],
+  ['parallaxAmbient', '視差: アンビエント層のカメラ連動ずれ係数（0で従来同一）'],
+  ['parallaxGpgpu', '視差: GPGPU 系のカメラ連動ずれ係数（0で従来同一）'],
   // Post FX
   ['postBrightness', '画面の明るさ'],
   ['postBloomIntensity', '光のにじみ（ブルーム）の強さ'],

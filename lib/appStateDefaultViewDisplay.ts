@@ -18,6 +18,13 @@ export const APP_STATE_DEFAULT_VIEW_DISPLAY: Partial<ParticleConfig> = {
   cameraImpulseSpeed: 1.1,
   cameraImpulseDrift: 0.2,
   cameraBurstBoost: 0.35,
+  // Parallax (Phase AZ): all five group factors default to 0 —
+  // no group shifts and the render is the legacy one exactly.
+  parallaxLayer1: 0,
+  parallaxLayer2: 0,
+  parallaxLayer3: 0,
+  parallaxAmbient: 0,
+  parallaxGpgpu: 0,
 
   // Display
   opacity: 0.85,

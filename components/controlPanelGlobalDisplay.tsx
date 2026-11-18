@@ -427,6 +427,19 @@ export const GlobalDisplaySection: React.FC<ControlPanelContentProps> = ({
         <Slider label="Impulse Drift" value={config.cameraImpulseDrift} min={0} max={2} step={0.01} onChange={(value) => updateConfig('cameraImpulseDrift', value)} />
         <Slider label="Burst Camera Boost" value={config.cameraBurstBoost} min={0} max={2} step={0.01} onChange={(value) => updateConfig('cameraBurstBoost', value)} />
         <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2 text-[10px] uppercase tracking-widest font-medium opacity-70 mb-1">Parallax (Layer Shift)</div>
+          <div className="col-span-2">
+            <Slider label="Layer 1" value={config.parallaxLayer1} min={-1} max={1} step={0.01} onChange={(value) => updateConfig('parallaxLayer1', value)} />
+            <Slider label="Layer 2" value={config.parallaxLayer2} min={-1} max={1} step={0.01} onChange={(value) => updateConfig('parallaxLayer2', value)} />
+            <Slider label="Layer 3" value={config.parallaxLayer3} min={-1} max={1} step={0.01} onChange={(value) => updateConfig('parallaxLayer3', value)} />
+            <Slider label="Ambient" value={config.parallaxAmbient} min={-1} max={1} step={0.01} onChange={(value) => updateConfig('parallaxAmbient', value)} />
+            <Slider label="GPGPU" value={config.parallaxGpgpu} min={-1} max={1} step={0.01} onChange={(value) => updateConfig('parallaxGpgpu', value)} />
+          </div>
+          <div className="col-span-2 text-[10px] text-white/45">
+            Phase AZ: each layer family shifts by (camera position − default position) × its factor as the camera orbits, pans or dollies. 0 (default) is the legacy framing exactly; deterministic renders pin the camera to the default position, so exports never carry parallax.
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2 text-[10px] uppercase tracking-widest font-medium opacity-70 mb-1">Manual Axis Rotation</div>
           <div className="col-span-2">
             <Slider label="X Axis" value={config.manualRotationX} min={0} max={Math.PI * 2} step={0.05} onChange={(value) => updateConfig('manualRotationX', value)} />

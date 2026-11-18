@@ -4,6 +4,40 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.58.0] — 2026-11-18
+
+Seventh-term Phase AZ: parallax, on the conditional spike's
+"feasible" verdict. Five new config keys, every one defaulting
+to 0 (the legacy framing exactly); two new starters.
+
+### Added
+- **Parallax layer shift** (`parallaxLayer1`, `parallaxLayer2`,
+  `parallaxLayer3`, `parallaxAmbient`, `parallaxGpgpu`): the
+  scene's five layer families — Layer 1, Layer 2, Layer 3, the
+  ambient layer and the GPGPU family (core + smooth tubes +
+  light volume + metaballs, which share one shift so their
+  readback coupling stays aligned) — are wrapped in plain
+  groups under the SceneGroup, and each group is translated by
+  (camera position − the config's default camera position) ×
+  its factor as the camera orbits, pans or dollies (pure math
+  in `lib/parallax.ts`, driver in
+  `components/sceneParallaxGroup.tsx`). Factor 0 leaves the
+  wrapper at the identity, so the composed world matrices are
+  numerically the legacy ones and the render is bit-identical.
+  Deterministic renders pin the camera to the default position,
+  so the delta is zero and exports never carry parallax at any
+  factor. The SceneGroup's auto-rotation is not a drive signal
+  (that would be differential rotation, not parallax).
+  Non-participants, by design: the raymarch system (its SDF
+  scene is camera-anchored and never followed the SceneGroup
+  rotation either), TerrainMesh / ObjMesh (world-anchored,
+  outside the SceneGroup), the background and screen-space
+  passes, and the CPU fallback renderer.
+- **Starters**: `starter-parallax-layer-drift` (three layers
+  with graded factors over a gentle camera impulse) and
+  `starter-parallax-gpgpu-depth` (a GPGPU sphere counter-shifted
+  against the ambient dust).
+
 ## [1.57.0] — 2026-11-18
 
 Seventh-term Phase AY: the noise field becomes a map source.
