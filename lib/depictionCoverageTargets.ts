@@ -129,19 +129,41 @@ export const TARGET_SOLVER_FAMILIES = [
 ] as const;
 
 /**
- * Honesty note (roadmap 8E): these three "solver" families are
- * look-classifications, not literal solvers. They are resolved in
- * depictionCoverageFamilyResolvers.ts from shader modes —
- * pbd-solver from cloth/elastic/granular modes, mpm-material from
- * sediment/viscous/melt modes, destruction-fracture from fracture
- * modes. There is no position-based-dynamics constraint solver, no
- * material-point simulation, and no destruction physics in the
- * engine; the names describe the *appearance* a config evokes.
- * UI surfaces should present them as shader emulations.
+ * Honesty note (roadmap 8E, revised 2026-11-18 after the sixth-term
+ * solver phases): as resolved in depictionCoverageFamilyResolvers.ts
+ * from layer modes, these three "solver" families are
+ * look-classifications — pbd-solver from cloth/elastic/granular
+ * modes, mpm-material from sediment/viscous/melt modes,
+ * destruction-fracture from fracture modes. The names describe the
+ * *appearance* a config evokes. The classification itself says
+ * nothing about whether a literal solver exists elsewhere in the
+ * engine, and the two must not be conflated:
+ *
+ * - pbd-solver and destruction-fracture now also have LIMITED real
+ *   counterparts (LIMITED_REAL_SOLVER_FAMILIES below). Since
+ *   Phase AR (v1.50.0) the GPGPU system carries a real
+ *   position-based constraint solver (Vellum: distance constraints
+ *   solved by position projection with Jacobi averaging — not an
+ *   XPBD compliance formulation, and no self-collision). Since
+ *   Phase AU (v1.53.0) a real CPU rigid-body solver stands on the
+ *   fracture bake (bounding-sphere collision, glue breakage,
+ *   sleep/activation — no convex-hull or mesh collision, no
+ *   constraint joints, and the fracture itself is not
+ *   stress-based). UI surfaces may name these two as
+ *   real-but-limited solvers; they must not present the layer-mode
+ *   looks themselves as those solvers.
+ * - mpm-material has no counterpart: there is no material-point
+ *   simulation anywhere in the engine, and none of the sixth-term
+ *   solvers is one (Pyro is particle-side, not a grid solver;
+ *   FLIP is a 2D planar layer). UI surfaces should present
+ *   mpm-material as a shader emulation.
  */
 export const SHADER_EMULATED_SOLVER_FAMILIES = [
-  'pbd-solver',
   'mpm-material',
+] as const;
+
+export const LIMITED_REAL_SOLVER_FAMILIES = [
+  'pbd-solver',
   'destruction-fracture',
 ] as const;
 

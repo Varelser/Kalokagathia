@@ -4,6 +4,27 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.53.1] — 2026-11-18
+
+Maintenance release: the depiction honesty note catches up with
+the sixth-term solver phases. No behaviour change.
+
+### Fixed
+- **Depiction honesty note** (`lib/depictionCoverageTargets.ts`):
+  the roadmap-8E note claimed engine-wide that there is no
+  position-based-dynamics constraint solver and no destruction
+  physics, which stopped being true in Phase AR (v1.50.0, Vellum)
+  and Phase AU (v1.53.0, RBD). The note now separates the
+  layer-mode look-classifications from what exists elsewhere in
+  the engine: `SHADER_EMULATED_SOLVER_FAMILIES` is reduced to
+  `mpm-material` (there is still no material-point simulation
+  anywhere), and a new `LIMITED_REAL_SOLVER_FAMILIES` names
+  `pbd-solver` and `destruction-fracture` with their limits
+  spelled out (Jacobi position projection, not XPBD compliance;
+  bounding-sphere rigid bodies, not mesh collision or
+  stress-based fracture). Coverage targets and the mode resolver
+  are unchanged.
+
 ## [1.53.0] — 2026-11-18
 
 Sixth-term Phase AU: rigid-body dynamics (RBD) — a CPU
