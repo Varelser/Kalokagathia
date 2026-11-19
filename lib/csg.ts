@@ -20,6 +20,7 @@
 
 import CsgWorkerClass from '../workers/csgWorker?worker';
 import { checkWatertightGate } from './csgGate';
+import { generateExtrudeProfile, validateExtrudePolygons } from './csgExtrude';
 import {
   CSG_TIMEOUT_MS,
   CsgError,
@@ -129,12 +130,21 @@ export function runCsgOperation(
       lastRun = { a, b, op, result: hit, fromCache: true };
       return hit;
     }
-    // Gate (a) on mesh operands, before transfer.
+    // Gate (a) on mesh operands, before transfer; the same
+    // discipline for extrusion profiles (Phase CF): the
+    // pre-checks of lib/csgExtrude.ts run here so a refused
+    // profile never reaches the worker either.
     for (const operand of [a, b]) {
-      if (operand.type !== 'mesh') continue;
-      const gate = checkWatertightGate(operand.positions, operand.indices);
-      if (!gate.ok && !gate.skipped) {
-        throw new CsgError('NOT_MANIFOLD', gate.reason);
+      if (operand.type === 'mesh') {
+        const gate = checkWatertightGate(operand.positions, operand.indices);
+        if (!gate.ok && !gate.skipped) {
+          throw new CsgError('NOT_MANIFOLD', gate.reason);
+        }
+      } else if (operand.type === 'extrude') {
+        const check = validateExtrudePolygons([generateExtrudeProfile(operand.spec)]);
+        if (!check.ok) {
+          throw new CsgError('NOT_MANIFOLD', check.reason);
+        }
       }
     }
     const reply = await postRequest({ kind: 'op', a, b, op });

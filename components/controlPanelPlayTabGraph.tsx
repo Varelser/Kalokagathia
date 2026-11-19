@@ -864,12 +864,15 @@ export const ExportSection: React.FC<{
   );
 };
 
-const CSG_PRIMITIVE_OPTIONS: { value: CsgPrimitiveKind; label: string }[] = [
+type CsgOperandKindUi = CsgPrimitiveKind | 'extrude';
+
+const CSG_PRIMITIVE_OPTIONS: { value: CsgOperandKindUi; label: string }[] = [
   { value: 'cube', label: '立方体' },
   { value: 'sphere', label: '球' },
   { value: 'cylinder', label: '円柱' },
   { value: 'cone', label: '円錐' },
   { value: 'torus', label: 'トーラス' },
+  { value: 'extrude', label: '押し出し（断面→立体）' },
 ];
 
 // Phase CC: CSG panel (final CSG brief, 第1弾). Primitives are
@@ -887,28 +890,47 @@ export const CsgSection: React.FC<{
   const [result, setResult] = React.useState<CsgResultData | null>(() => getLastCsgRun()?.result ?? null);
   const [fromCache, setFromCache] = React.useState(false);
 
+  const buildOperand = (
+    kind: CsgOperandKindUi,
+    size: number,
+    offset: readonly [number, number, number],
+  ): CsgOperand => {
+    if (kind === 'extrude') {
+      return {
+        type: 'extrude',
+        spec: {
+          profile: config.gpgpuCsgExtrudeProfile,
+          size,
+          segments: config.gpgpuCsgSegments,
+          height: config.gpgpuCsgExtrudeHeight,
+          divisions: config.gpgpuCsgExtrudeDivisions,
+          twistDegrees: config.gpgpuCsgExtrudeTwist,
+          scaleTop: config.gpgpuCsgExtrudeScaleTop,
+          offset,
+        },
+      };
+    }
+    return {
+      type: 'primitive',
+      spec: {
+        kind,
+        size,
+        segments: config.gpgpuCsgSegments,
+        offset,
+      },
+    };
+  };
+
   const run = async () => {
     if (busy) return;
     setBusy(true);
     setStatus('CSG を計算しています…（初回は WASM の読み込みを含みます）');
-    const a: CsgOperand = {
-      type: 'primitive',
-      spec: {
-        kind: config.gpgpuCsgPrimitiveA,
-        size: config.gpgpuCsgSizeA,
-        segments: config.gpgpuCsgSegments,
-        offset: [0, 0, 0],
-      },
-    };
-    const b: CsgOperand = {
-      type: 'primitive',
-      spec: {
-        kind: config.gpgpuCsgPrimitiveB,
-        size: config.gpgpuCsgSizeB,
-        segments: config.gpgpuCsgSegments,
-        offset: [config.gpgpuCsgOffsetBX, config.gpgpuCsgOffsetBY, config.gpgpuCsgOffsetBZ],
-      },
-    };
+    const a: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveA, config.gpgpuCsgSizeA, [0, 0, 0]);
+    const b: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveB, config.gpgpuCsgSizeB, [
+      config.gpgpuCsgOffsetBX,
+      config.gpgpuCsgOffsetBY,
+      config.gpgpuCsgOffsetBZ,
+    ]);
     try {
       const out = await runCsgOperation(a, b, config.gpgpuCsgOperation);
       const cached = getLastCsgRun()?.fromCache ?? false;
@@ -916,7 +938,7 @@ export const CsgSection: React.FC<{
       setFromCache(cached);
       setStatus(
         `完了: 体積 ${out.volume.toFixed(4)} / ${out.triangles.toLocaleString()} 三角形` +
-          `（出力再検査: 閉・オイラー標数 ${out.gate.euler}・成分 ${out.gate.components}）` +
+          `（出力再検査: 閉・オイラー標数 ${out.gate.euler}・成分 ${out.gate.components}・種数 ${out.gate.genus}）` +
           (cached ? ' ※同じ被演算子・演算のキャッシュ結果です' : ''),
       );
     } catch (e) {
@@ -950,7 +972,7 @@ export const CsgSection: React.FC<{
     <section>
       <SectionTitle icon={<Box size={12} />}>CSG · メッシュ演算</SectionTitle>
       <p className="text-[11px] leading-relaxed text-white/45 mb-4">
-        プリミティブ同士の和・差・積を manifold-3d（Worker＋WASM）で計算し、結果をモーフ経路へ取り込めます。
+        プリミティブ同士、または断面の押し出しとの和・差・積を manifold-3d（Worker＋WASM）で計算し、結果をモーフ経路へ取り込めます。
         演算は1回実行型で、同じ被演算子・演算の再実行はキャッシュを返します。完全に一致する形同士の演算は通常より時間がかかる場合があります。
         無効の間は Worker も WASM も読み込まれません。
       </p>
@@ -970,7 +992,7 @@ export const CsgSection: React.FC<{
               <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">被演算子 A</span>
               <select
                 value={config.gpgpuCsgPrimitiveA}
-                onChange={(e) => updateConfig('gpgpuCsgPrimitiveA', e.target.value as CsgPrimitiveKind)}
+                onChange={(e) => updateConfig('gpgpuCsgPrimitiveA', e.target.value as CsgOperandKindUi)}
                 className={selectClass}
                 style={selectStyle}
               >
@@ -983,7 +1005,7 @@ export const CsgSection: React.FC<{
               <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">被演算子 B</span>
               <select
                 value={config.gpgpuCsgPrimitiveB}
-                onChange={(e) => updateConfig('gpgpuCsgPrimitiveB', e.target.value as CsgPrimitiveKind)}
+                onChange={(e) => updateConfig('gpgpuCsgPrimitiveB', e.target.value as CsgOperandKindUi)}
                 className={selectClass}
                 style={selectStyle}
               >
@@ -1009,6 +1031,31 @@ export const CsgSection: React.FC<{
           <Slider label="B オフセット X" value={config.gpgpuCsgOffsetBX} min={-3} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuCsgOffsetBX', v)} />
           <Slider label="B オフセット Y" value={config.gpgpuCsgOffsetBY} min={-3} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuCsgOffsetBY', v)} />
           <Slider label="B オフセット Z" value={config.gpgpuCsgOffsetBZ} min={-3} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuCsgOffsetBZ', v)} />
+          {(config.gpgpuCsgPrimitiveA === 'extrude' || config.gpgpuCsgPrimitiveB === 'extrude') && (
+            <div className="mt-2">
+              <label className="block mb-3">
+                <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">押し出しの断面</span>
+                <select
+                  value={config.gpgpuCsgExtrudeProfile}
+                  onChange={(e) => updateConfig('gpgpuCsgExtrudeProfile', e.target.value as 'square' | 'circle' | 'polygon')}
+                  className={selectClass}
+                  style={selectStyle}
+                >
+                  <option value="square" className="bg-neutral-900">四角形</option>
+                  <option value="circle" className="bg-neutral-900">円</option>
+                  <option value="polygon" className="bg-neutral-900">多角形（辺数＝円分割数）</option>
+                </select>
+              </label>
+              <Slider label="押し出しの高さ" value={config.gpgpuCsgExtrudeHeight} min={0.1} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCsgExtrudeHeight', v)} />
+              <Slider label="ねじり（度）" value={config.gpgpuCsgExtrudeTwist} min={-360} max={360} step={5} onChange={(v) => updateConfig('gpgpuCsgExtrudeTwist', v)} />
+              <Slider label="先端スケール" value={config.gpgpuCsgExtrudeScaleTop} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuCsgExtrudeScaleTop', v)} />
+              <Slider label="ねじり分割数" value={config.gpgpuCsgExtrudeDivisions} min={0} max={32} step={1} onChange={(v) => updateConfig('gpgpuCsgExtrudeDivisions', v)} />
+              <p className="text-[11px] leading-relaxed text-white/45 mt-1">
+                押し出しは A・B 共通の設定です。サイズは断面の大きさ（四角形の一辺／円の直径／多角形の外接直径）に使います。
+                ねじると体積が変わり、変わり方は分割数に依存します。
+              </p>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <button
               onClick={run}

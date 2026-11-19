@@ -13,6 +13,39 @@ import type { CsgGateReport } from './csgGate';
 export type CsgPrimitiveKind = 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus';
 export type CsgOperationKind = 'union' | 'difference' | 'intersection';
 
+/** Phase CF (CSG second release, U1): extrusion profiles. The
+ *  profile is generated deterministically from the spec, so a
+ *  spec fully identifies the operand (cache keys, panel state).
+ *  Free-form point input is U2's open question; the raw-polygon
+ *  entry point lives in lib/csgExtrude.ts. */
+export type CsgExtrudeProfileKind = 'square' | 'circle' | 'polygon';
+export const CSG_EXTRUDE_PROFILE_KINDS: readonly CsgExtrudeProfileKind[] = [
+  'square', 'circle', 'polygon',
+];
+
+export interface CsgExtrudeSpec {
+  profile: CsgExtrudeProfileKind;
+  /** Square edge / circle diameter / polygon circumdiameter. */
+  size: number;
+  /** Circle segments / polygon sides (square ignores it). */
+  segments: number;
+  /** Extrusion height (the solid is centred on z afterwards). */
+  height: number;
+  /** Twist interpolation divisions (nDivisions). */
+  divisions: number;
+  /** Twist over the height, degrees. Twist changes the volume
+   *  and the change depends on `divisions` (library behaviour,
+   *  measured in the round-11 API spike) — it is not an error. */
+  twistDegrees: number;
+  /** Uniform top scale. The builder converts this to a Vec2
+   *  pair before calling the library: passing the bare number
+   *  to Manifold.extrude silently rescales (1 -> x0.5 volume),
+   *  the trap measured in the final brief. Never pass it raw. */
+  scaleTop: number;
+  /** World offset applied after construction. */
+  offset: readonly [number, number, number];
+}
+
 export const CSG_PRIMITIVE_KINDS: readonly CsgPrimitiveKind[] = [
   'cube', 'sphere', 'cylinder', 'cone', 'torus',
 ];
@@ -33,6 +66,7 @@ export interface CsgPrimitiveSpec {
 
 export type CsgOperand =
   | { type: 'primitive'; spec: CsgPrimitiveSpec }
+  | { type: 'extrude'; spec: CsgExtrudeSpec }
   | { type: 'mesh'; positions: Float32Array; indices: Uint32Array | null };
 
 export interface CsgMeshData {
@@ -69,6 +103,9 @@ export const CSG_TIMEOUT_MS = 5000;
 
 export function isCsgPrimitiveKind(v: unknown): v is CsgPrimitiveKind {
   return typeof v === 'string' && (CSG_PRIMITIVE_KINDS as readonly string[]).includes(v);
+}
+export function isCsgExtrudeProfileKind(v: unknown): v is CsgExtrudeProfileKind {
+  return typeof v === 'string' && (CSG_EXTRUDE_PROFILE_KINDS as readonly string[]).includes(v);
 }
 export function isCsgOperationKind(v: unknown): v is CsgOperationKind {
   return typeof v === 'string' && (CSG_OPERATION_KINDS as readonly string[]).includes(v);
@@ -132,6 +169,11 @@ export function csgOperandKey(operand: CsgOperand): string {
   if (operand.type === 'primitive') {
     const s = operand.spec;
     return `p:${s.kind}:${s.size}:${s.segments}:${s.offset[0]},${s.offset[1]},${s.offset[2]}`;
+  }
+  if (operand.type === 'extrude') {
+    const s = operand.spec;
+    return `x:${s.profile}:${s.size}:${s.segments}:${s.height}:${s.divisions}:` +
+      `${s.twistDegrees}:${s.scaleTop}:${s.offset[0]},${s.offset[1]},${s.offset[2]}`;
   }
   return `m:${operand.positions.length}:${hashTypedArray(operand.positions)}:` +
     (operand.indices ? hashTypedArray(operand.indices) : 'flat');

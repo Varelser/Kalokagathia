@@ -4,6 +4,39 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.79.0] — 2026-11-19
+
+Eleventh-term CSG second release, Phase CF (brief unit U1
+plus the G0 genus decision): the watertight gate's Euler
+rule is generalised from genus 0 only to any closed
+orientable manifold — 2C − (V − E + F) must be a
+non-negative even number, and the gate report now carries
+the total genus. Valid tori, torus knots and boolean
+results with handles pass gates (a) and (c); broken
+topology (odd or negative deficit, e.g. vertex-pinched
+solids) is still refused, and edge sharing plus the
+worker-side Manifold construction remain the arbiters.
+New extrusion operands (Manifold.extrude) join the CSG
+panel: square / circle / polygon profiles with height,
+twist, top scale and twist divisions, through the same
+worker, cache and morph import path as the primitives.
+Because the library silently unions overlapping polygons,
+silently returns a partial solid for self-intersecting
+polygons, and throws a bare TypeError on empty input, all
+three are rejected beforehand by implementation-side
+pre-checks with user-facing reasons (also run on the
+client before transfer). scaleTop is always passed as a
+Vec2 pair — the bare-number form silently rescales.
+Twist changes the volume depending on the division count;
+this is stated in the UI and the parameter descriptions,
+not treated as an error. Five new config keys, all inert
+at default; a new starter (CSG Extrude Twist) embeds its
+precomputed result (volume 6.114757, 504 triangles).
+Verified: 67 test suites (new phasecf suite, 63 checks),
+the iMac real-GPU gate (identity 12 frames bit-identical,
+extrusion and genus values through the production worker
+and the real panel, fps ~60), verify:shaders PASS.
+
 ## [1.78.0] — 2026-11-19
 
 Eleventh-term GLSL extension Phase 2 (Phase CE): the fourth

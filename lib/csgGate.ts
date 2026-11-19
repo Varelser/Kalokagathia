@@ -13,9 +13,18 @@
 //      and slip past the edge test),
 //   2. vertices are welded on a 1e-6 grid,
 //   3. every undirected edge is shared by exactly two faces,
-//   4. Euler characteristic V - E + F equals 2 x components
-//      (NOT just 2: a hollow two-component input has Euler 4
-//      and must pass),
+//   4. Euler characteristic: 2 x components - (V - E + F) is a
+//      non-negative even number — equivalently V - E + F equals
+//      2C - 2G where G is the total genus (handles) summed over
+//      components. A hollow two-component input (genus 0) has
+//      Euler 4 and passes; a torus or a torus knot (genus 1)
+//      has Euler 0 and passes. (Phase CF generalisation, the
+//      user's decision 2026-11-19: the Phase CC rule fixed
+//      G = 0, which refused valid genus >= 1 manifolds and any
+//      boolean result with a handle. Edge sharing above and
+//      the worker-side construction (b) remain the arbiters
+//      of manifoldness — this rule only rejects Euler values
+//      no closed orientable manifold can have.)
 //   5. components are counted on the welded face graph.
 //
 // Above CSG_GATE_FACE_LIMIT faces the check reports `skipped`
@@ -37,6 +46,10 @@ export interface CsgGateReport {
   faces: number;
   components: number;
   euler: number;
+  /** Total genus (handles) summed over components, derived
+   *  from the Euler characteristic when it is consistent with
+   *  a closed orientable manifold; 0 otherwise. */
+  genus: number;
   badEdges: number;
   nonFinite: number;
 }
@@ -74,6 +87,7 @@ export function checkWatertightGate(
     faces: faceCount,
     components: 0,
     euler: 0,
+    genus: 0,
     badEdges: 0,
     nonFinite: 0,
   };
@@ -173,6 +187,13 @@ export function checkWatertightGate(
   base.components = roots.size;
   base.euler = base.vertices - base.edges + faceCount;
   base.badEdges = badEdges;
+  // Total genus from the Euler characteristic: for a closed
+  // orientable manifold, euler = 2C - 2G, so the deficit
+  // 2C - euler must be a non-negative even number and G is
+  // half of it. Anything else (negative, odd) is an Euler
+  // value no such manifold can have.
+  const deficit = 2 * base.components - base.euler;
+  base.genus = deficit >= 0 && deficit % 2 === 0 ? deficit / 2 : 0;
 
   // (4) verdict.
   if (badEdges > 0) {
@@ -181,11 +202,11 @@ export function checkWatertightGate(
       '開いたメッシュや位相の壊れたメッシュは CSG の被演算子にできません。';
     return base;
   }
-  if (base.euler !== 2 * base.components) {
+  if (deficit < 0 || deficit % 2 !== 0) {
     base.reason =
-      `オイラー標数が閉多様体の条件と合いません（V − E + F = ${base.euler}、` +
-      `成分数 ${base.components} に対して期待値は ${2 * base.components}）。` +
-      '穴や余分な殻があるメッシュは CSG の被演算子にできません。';
+      `オイラー標数が閉じた多様体の条件と合いません（V − E + F = ${base.euler}、` +
+      `成分数 ${base.components} では 2×成分数 − (V − E + F) が 0 以上の偶数になりません）。` +
+      '位相の壊れたメッシュは CSG の被演算子にできません。';
     return base;
   }
   base.ok = true;

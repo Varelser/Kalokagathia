@@ -16,6 +16,7 @@
 
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import { checkWatertightGate } from './csgGate';
+import { buildCsgExtrude } from './csgExtrude';
 import type {
   CsgOperand,
   CsgOperationKind,
@@ -61,6 +62,7 @@ export function buildCsgPrimitive(wasm: ManifoldToplevel, spec: CsgPrimitiveSpec
 
 export function buildCsgOperand(wasm: ManifoldToplevel, operand: CsgOperand): Manifold {
   if (operand.type === 'primitive') return buildCsgPrimitive(wasm, operand.spec);
+  if (operand.type === 'extrude') return buildCsgExtrude(wasm, operand.spec);
   const { Manifold, Mesh } = wasm;
   const triVerts =
     operand.indices ??

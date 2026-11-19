@@ -328,8 +328,8 @@ export interface ParticleConfigGpgpu {
   // primitives below (size = cube edge / sphere diameter /
   // cylinder+cone height / torus scale; B carries the offset).
   gpgpuCsgEnabled: boolean;
-  gpgpuCsgPrimitiveA: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus';
-  gpgpuCsgPrimitiveB: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus';
+  gpgpuCsgPrimitiveA: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'extrude';
+  gpgpuCsgPrimitiveB: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'extrude';
   gpgpuCsgOperation: 'union' | 'difference' | 'intersection';
   gpgpuCsgSizeA: number;
   gpgpuCsgSizeB: number;
@@ -337,6 +337,11 @@ export interface ParticleConfigGpgpu {
   gpgpuCsgOffsetBX: number;
   gpgpuCsgOffsetBY: number;
   gpgpuCsgOffsetBZ: number;
+  gpgpuCsgExtrudeProfile: 'square' | 'circle' | 'polygon';
+  gpgpuCsgExtrudeHeight: number;
+  gpgpuCsgExtrudeTwist: number;
+  gpgpuCsgExtrudeScaleTop: number;
+  gpgpuCsgExtrudeDivisions: number;
   // Vector Field
   gpgpuVFieldEnabled: boolean;
   gpgpuVFieldType: 'dipole' | 'saddle' | 'spiral' | 'source' | 'abc' | 'gyre' | 'worley';

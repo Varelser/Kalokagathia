@@ -206,6 +206,11 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuCsgOffsetBX: 1,
   gpgpuCsgOffsetBY: 0,
   gpgpuCsgOffsetBZ: 0,
+  gpgpuCsgExtrudeProfile: 'square' as const,
+  gpgpuCsgExtrudeHeight: 1,
+  gpgpuCsgExtrudeTwist: 0,
+  gpgpuCsgExtrudeScaleTop: 1,
+  gpgpuCsgExtrudeDivisions: 0,
   // Vector Field
   gpgpuVFieldEnabled: false,
   gpgpuVFieldType: 'spiral' as const,
