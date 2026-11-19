@@ -281,6 +281,23 @@ export interface ParticleConfigCore {
   // rendering stays bit-identical.
   particlePointsVertexGlslEnabled: boolean;
   particlePointsVertexGlslCode: string;
+  // Particle points fragment GLSL (Phase CE): the fourth
+  // injection point, spliced into the particle points fragment
+  // shader at both write seams (mask branch + final write),
+  // after the colour is fully determined. The snippet reads
+  // vUv / vLife / vVelocity / vAlpha / uTime and writes the
+  // composed `color` (vec4). Defaults keep the stock fragment
+  // shader in use as-is (bit-identical rendering).
+  particlePointsFragmentGlslEnabled: boolean;
+  particlePointsFragmentGlslCode: string;
+  // Volume fog fragment GLSL (Phase CE): the fifth injection
+  // point, spliced into the volume fog fragment shader where
+  // the density application completes, before the fades. The
+  // snippet reads vUv / vSlice / uTime and writes `alpha`. The
+  // same built shader serves every slice material. Defaults
+  // keep the stock fragment shader in use as-is.
+  volumeFogGlslEnabled: boolean;
+  volumeFogGlslCode: string;
   // LightFX (Phase D): Trapcode Shine / Starglow / Lux equivalents as
   // a single post stage. One shared light-source position (UV) feeds
   // the Shine ray centre and the Lux source. Every sub-effect defaults

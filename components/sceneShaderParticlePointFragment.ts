@@ -139,6 +139,7 @@ export const FRAGMENT_SHADER = `
         float shapeMask = particleShapeMask(uSdfShape + 1, p * 2.0, vVariant);
         if (shapeMask < 0.01) discard;
         alpha = clamp(vAlpha * shapeMask * velocityAlpha * flicker, 0.0, 1.0);
+        // __CUSTOM_PARTICLE_FRAGMENT__
         gl_FragColor = vec4(finalColor, alpha);
         return;
       }
@@ -176,6 +177,27 @@ export const FRAGMENT_SHADER = `
       finalColor = finalColor * lighting;
     }
 
+    // __CUSTOM_PARTICLE_FRAGMENT__
     gl_FragColor = vec4(finalColor, alpha);
   }
 `;
+
+// Particle points fragment GLSL (Phase CE): builds the fragment
+// shader with a validated user snippet spliced in. The stock
+// shader carries the seam marker at two places — inside the
+// Kinetix mask branch (uSdfShape >= 4), just before its early
+// write + return, and after the SDF block, just before the
+// final write — because no single point downstream covers both
+// the mask branch (which returns early) and every other path.
+// Both seams sit after every built-in discard and after the
+// colour is fully determined, and each runs the same block:
+// compose the contract's `color` (vec4) from the current
+// finalColor / alpha, run the snippet, split the result back.
+// An empty snippet yields the stock shader unchanged (the
+// marker comments are inert), so the defaults stay identical.
+export function buildParticleFragmentShader(customCode: string): string {
+  const snippet = customCode.trim();
+  if (!snippet) return FRAGMENT_SHADER;
+  const block = `{ // particle points fragment (user GLSL)\n    vec4 color = vec4(finalColor, alpha);\n${snippet}\n    finalColor = color.rgb;\n    alpha = color.a;\n    }`;
+  return FRAGMENT_SHADER.split('// __CUSTOM_PARTICLE_FRAGMENT__').join(block);
+}

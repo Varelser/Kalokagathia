@@ -731,6 +731,8 @@ const BOOLS: BoolDef[] = [
   ['postCustomGlslEnabled', 'カスタム GLSL ポスト段（output-grade 直前）の有効化'],
   ['postCustomGlslLumaLock', 'カスタム GLSL ポストの輝度ロック（結果を輝度へ射影）'],
   ['particlePointsVertexGlslEnabled', '粒子ポイント頂点 GLSL（pos 確定直前への差し込み）の有効化'],
+  ['particlePointsFragmentGlslEnabled', '粒子ポイント断片 GLSL（色確定後・書き込み直前への差し込み）の有効化'],
+  ['volumeFogGlslEnabled', 'ボリューム霧断片 GLSL（密度適用直後・フェード直前への差し込み）の有効化'],
   ['postShineEnabled', 'Shine（光源からの放射光条）'],
   ['postStarglowEnabled', 'Starglow（ハイライトの十字グリント）'],
   ['postStarglowDiagonal', 'Starglow を8方向の星形にする'],

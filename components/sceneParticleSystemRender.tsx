@@ -5,7 +5,6 @@ import type { AuxMode, ParticleData } from './particleData';
 import { getLayerRuntimeLineSnapshot } from '../lib/sceneRenderRouting';
 import { LineSystem } from './sceneLineSystem';
 import { getParticleBlendMode } from './sceneShared';
-import { FRAGMENT_SHADER } from './sceneShaders';
 
 type ParticleSystemRenderProps = {
   config: ParticleConfig;
@@ -24,6 +23,10 @@ type ParticleSystemRenderProps = {
   // unless a Phase CD snippet passed validation + compile check
   // and was built into it by the owning component.
   vertexShader: string;
+  // The effective fragment shader: the stock FRAGMENT_SHADER
+  // unless a Phase CE snippet passed validation + compile check
+  // and was built into it by the owning component.
+  fragmentShader: string;
 };
 
 // Cheap content key so the material is recreated (and the
@@ -69,8 +72,9 @@ export function renderParticleSystemContent({
   contactAmount,
   isPlaying,
   vertexShader,
+  fragmentShader,
 }: ParticleSystemRenderProps) {
-  const shaderKey = vertexShaderKeyPart(vertexShader);
+  const shaderKey = vertexShaderKeyPart(vertexShader) + '-' + vertexShaderKeyPart(fragmentShader);
   const lineRuntime = !isAux && (layerIndex === 2 || layerIndex === 3)
     ? getLayerRuntimeLineSnapshot(config, layerIndex)
     : null;
@@ -86,7 +90,7 @@ export function renderParticleSystemContent({
         <shaderMaterial
           key={`mat-${config.backgroundColor}-${shaderKey}`}
           vertexShader={vertexShader}
-          fragmentShader={FRAGMENT_SHADER}
+          fragmentShader={fragmentShader}
           uniforms={uniforms}
           transparent={true}
           depthWrite={false}

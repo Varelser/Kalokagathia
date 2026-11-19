@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.77.0**（2026-11-19、第11期 Phase CD＝GLSL 拡張の第1フェーズ: 共通基盤（Phase BX）のレジストリへ粒子頂点経路 `particle-points-vertex` を追加。粒子ポイント頂点シェーダの pos 確定直前に利用者 GLSL を差し込み、読み値は pos／lifeProgress／aVariant／uTime、書き戻しは disp（vec3）のみ。同じ disp を prevPos にも加え、トレイルの差分が変位で汚れない形にした。検証・実GLコンパイル確認・失敗時の前の動作版維持は共通基盤の作法どおり。新規 config キー +2、既定で従来出力とビット同一。詳細は PHASE_CD_REPORT.md。前版 v1.76.0 は Phase CC＝CSG 第1弾）
+**現行バージョン: v1.78.0**（2026-11-19、第11期 Phase CE＝GLSL 拡張の第2フェーズ: 共通基盤（Phase BX）のレジストリへ粒子フラグメント経路 `particle-points-fragment` とボリューム霧経路 `volume-fog-fragment` を追加。粒子フラグメントは色確定後の書き込み直前2か所（マスク分岐内＋最終書き込み前）で合成色 color（vec4）を読み書き、霧は密度適用直後・フェード直前で alpha を読み書きし、全スライスへ同じ文字列が効く。有効時の霧シェーダに限りフラグメント側の vSlice 宣言を足す。レジストリは vec4 型と段2件を追加。検証・実GLコンパイル確認・失敗時の前の動作版維持は共通基盤の作法どおり。新規 config キー +4、既定で従来出力とビット同一。詳細は PHASE_CE_REPORT.md。前版 v1.77.0 は Phase CD＝GLSL 拡張の第1フェーズ）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -13,8 +13,8 @@
 
 ## 資産の実数（2026-11-19 実測）
 
-- config キー: **1,343件** ／ 内蔵スターター: **600件**
-- 生成カタログ: **1,659件**（catalog／presets／share が 1:1:1、fps 実測 100%）
+- config キー: **1,349件** ／ 内蔵スターター: **600件**
+- 生成カタログ: **1,660件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 
 ## 残件（2026-11-17 時点）

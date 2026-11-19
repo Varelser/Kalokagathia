@@ -4,6 +4,45 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.78.0] — 2026-11-19
+
+Eleventh-term GLSL extension Phase 2 (Phase CE): the fourth
+and fifth injection points on the shared GLSL foundation
+(Phase BX). `particle-points-fragment` is spliced into the
+particle points fragment shader at both write seams — inside
+the Kinetix mask branch (uSdfShape >= 4), just before its
+early write + return, and after the SDF block, just before the
+final write — where the colour is fully determined and every
+built-in discard is already behind the seam. The snippet reads
+`vUv` / `vLife` / `vVelocity` / `vAlpha` / `uTime` and
+read/writes the composed `color` (vec4); the registry's
+variable types gained `vec4` for it. `volume-fog-fragment` is
+spliced into the volume fog fragment shader where the density
+application completes (base density + the Pyro grid density
+feed), before the edge / slice fades; the snippet reads `vUv`
+/ `vSlice` / `uTime` and read/writes `alpha`, and the same
+built shader serves every slice material. The built fog
+fragment — only the built one — declares the fragment-side
+`varying float vSlice` the stock fragment never had (the
+vertex shader already writes it), so the stock string stays
+byte-identical while disabled. Validation, the real-GL compile
+check (fragment harnesses mirroring the production seams) and
+the keep-the-previous-working-shader fallback are the shared
+foundation's, unchanged. Four new config keys, all inert at
+their defaults — while disabled or empty the stock shader
+strings are used as-is, so output is bit-identical to v1.77.0.
+
+### Added
+- **Particle points fragment GLSL** (`lib/particlePointsFragmentGlsl.ts`):
+  the contract, forbidden-token validation (including
+  `discard` and texture sampling), the fragment harness, the
+  status store and the panel block.
+- **Volume fog fragment GLSL** (`lib/volumeFogGlsl.ts`): the
+  contract, validation, harness, status store and panel block
+  (with the per-slice cost noted in the UI).
+- Registry: stages `particle-fragment` / `volume-fragment`
+  and the `vec4` variable type (`lib/glslInjection.ts`).
+
 ## [1.77.0] — 2026-11-19
 
 Eleventh-term GLSL extension Phase 1 (Phase CD): a third

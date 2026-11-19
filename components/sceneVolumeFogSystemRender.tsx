@@ -25,7 +25,26 @@ export const VolumeFogSystemRender: React.FC<{ layerIndex: 2 | 3; runtime: Volum
     globalRadius,
     pyroDensityAmount,
     pyroTempAmount,
+    fogFragmentShader,
   } = runtime;
+
+  // Materials are created from materialsRef during this
+  // render (below), so when the effective fragment shader (or
+  // the slice layout the materials were built for) changes,
+  // the ref is reset HERE, in the same render that recreates
+  // them. Resetting in an effect instead left the meshes
+  // rendering the disposed previous materials whenever no
+  // further render followed the effect — in a settled live
+  // session the second and later GLSL swaps never reached the
+  // screen (Phase CE gate finding). The key mirrors the
+  // former effect's dependency set.
+  const materialsKey = `${fogFragmentShader}|${sliceCount}|${layerMode}|${layerSource}`;
+  const materialsKeyRef = React.useRef(materialsKey);
+  if (materialsKeyRef.current !== materialsKey) {
+    materialsRef.current.forEach((material) => material.dispose());
+    materialsRef.current = [];
+    materialsKeyRef.current = materialsKey;
+  }
 
   return (
     <group ref={rootRef}>
@@ -48,6 +67,7 @@ export const VolumeFogSystemRender: React.FC<{ layerIndex: 2 | 3; runtime: Volum
           pyroTempAmount,
           pyroHalfExtent: 150,
           sliceIndex: index,
+          fragmentShader: fogFragmentShader,
         });
         materialsRef.current[index] = material;
         const transform = getFogSliceTransform(

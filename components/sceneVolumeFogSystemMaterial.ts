@@ -61,7 +61,7 @@ export function applyVolumeFogMaterialUniforms(
   material.blending = profile.blending === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
 }
 
-export function createVolumeFogMaterial(params: VolumeFogUniformParams & { sliceIndex: number }) {
+export function createVolumeFogMaterial(params: VolumeFogUniformParams & { sliceIndex: number; fragmentShader?: string }) {
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -107,7 +107,12 @@ export function createVolumeFogMaterial(params: VolumeFogUniformParams & { slice
       uPyroGridBounds: { value: new THREE.Vector4(0, 0, 0, 150) },
     },
     vertexShader: VERTEX_SHADER,
-    fragmentShader: FRAGMENT_SHADER,
+    // The effective fragment shader (Phase CE): the stock
+    // FRAGMENT_SHADER unless a validated user snippet was built
+    // into it by the fog runtime. The same string is used for
+    // every slice material — the snippet is slice-independent
+    // by contract.
+    fragmentShader: params.fragmentShader ?? FRAGMENT_SHADER,
   });
   return material;
 }

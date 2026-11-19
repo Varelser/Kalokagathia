@@ -169,7 +169,12 @@ export function createGlslInjectionStatusStore(): GlslInjectionStatusStore {
 // ---------------------------------------------------------------------------
 // The contract type and the registry
 
-export type GlslInjectionStage = 'simulation-fragment' | 'post-fragment' | 'particle-vertex';
+export type GlslInjectionStage =
+  | 'simulation-fragment'
+  | 'post-fragment'
+  | 'particle-vertex'
+  | 'particle-fragment'
+  | 'volume-fragment';
 
 export type GlslInjectionBackend = 'webgl' | 'webgpu' | 'cpu';
 
@@ -177,7 +182,9 @@ export type GlslInjectionBackendSupport = 'supported' | 'unsupported';
 
 export interface GlslInjectionVariable {
   name: string;
-  type: 'float' | 'vec2' | 'vec3';
+  // 'vec4' joined in Phase CE: the particle fragment point's
+  // write-back `color` is a vec4 (rgb + alpha in one variable).
+  type: 'float' | 'vec2' | 'vec3' | 'vec4';
   access: 'read' | 'readwrite';
 }
 

@@ -143,6 +143,7 @@ export const FRAGMENT_SHADER = `
     alpha += runePattern * uRuneAmount * 0.16;
     alpha *= (0.28 + uDensity * 1.35) * (0.78 + uAudio * 0.3) * anisotropicLift;
     alpha *= 1.0 + min(gridDens, 24.0) * uPyroDensityAmount;
+    // __CUSTOM_VOLUME_FOG__
     alpha *= smoothstep(1.08, 0.12 + uEdgeFade * 0.26, radius);
     alpha *= smoothstep(0.0, 0.18, sliceT + 0.02) * smoothstep(0.0, 0.18, 1.02 - sliceT);
     alpha *= 0.92 + mix(-0.18, 0.2, grain) * uGrain;
@@ -193,4 +194,31 @@ export const FRAGMENT_SHADER = `
     gl_FragColor = vec4(color, alpha * uOpacity);
   }
 `;
+
+// Volume fog fragment GLSL (Phase CE): builds the fragment
+// shader with a validated user snippet spliced in. The stock
+// shader carries the seam marker at the point where the density
+// application is complete (base density scaling + the Pyro grid
+// density feed) and before the edge fade / slice fade; the
+// snippet reads vUv / vSlice / uTime and read/writes the local
+// `alpha`, which the body's later stages (fades, grain, velvet,
+// soot, vertical bias, material styles, the alpha <= 0.003
+// cull and the final uOpacity multiply) still process.
+//
+// The vertex shader declares and writes `varying float
+// vSlice`, but the stock fragment never declared it (it had no
+// reader). The built shader — only the built one — adds the
+// fragment-side declaration after vWorldPos, so a snippet can
+// read vSlice. An empty snippet yields the stock shader
+// unchanged (no declaration, marker comment inert), so the
+// defaults stay byte-identical.
+export function buildVolumeFogShader(customCode: string): string {
+  const snippet = customCode.trim();
+  if (!snippet) return FRAGMENT_SHADER;
+  const block = `{ // volume fog fragment (user GLSL)\n${snippet}\n    }`;
+  return FRAGMENT_SHADER
+    .replace('  varying vec3 vWorldPos;', '  varying vec3 vWorldPos;\n  varying float vSlice;')
+    .split('// __CUSTOM_VOLUME_FOG__')
+    .join(block);
+}
 

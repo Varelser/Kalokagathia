@@ -36,6 +36,14 @@ export const APP_STATE_DEFAULT_VIEW_DISPLAY: Partial<ParticleConfig> = {
   // the stock vertex shader is used unchanged.
   particlePointsVertexGlslEnabled: false,
   particlePointsVertexGlslCode: '',
+  // Particle points fragment GLSL (Phase CE): disabled / empty
+  // — the stock fragment shader is used unchanged.
+  particlePointsFragmentGlslEnabled: false,
+  particlePointsFragmentGlslCode: '',
+  // Volume fog fragment GLSL (Phase CE): disabled / empty —
+  // the stock fog fragment shader is used unchanged.
+  volumeFogGlslEnabled: false,
+  volumeFogGlslCode: '',
   backgroundColor: 'black',
   backgroundHex: '',
   // Horizon background (Phase I): 'solid' is the legacy background

@@ -13,6 +13,7 @@ import { createParticleGhostMaterials } from './sceneParticleSystemGhostMats';
 import { updateParticleSystemFrame, type ParticleSystemCollider, type ParticleSystemAudioRef } from './sceneParticleSystemRuntime';
 import { runLayerPositionFeedback, type LayerFeedbackState } from '../lib/positionFeedback';
 import { buildParticleVertexShader, PARTICLE_VERTEX_SHADER } from './sceneShaderParticlePointVertex';
+import { buildParticleFragmentShader, FRAGMENT_SHADER } from './sceneShaderParticlePointFragment';
 import { compileCheckShader } from '../lib/glslInjection';
 import {
   buildParticlePointsVertexHarness,
@@ -20,6 +21,12 @@ import {
   setParticlePointsVertexGlslStatus,
   validateParticlePointsVertexGlslCode,
 } from '../lib/particlePointsVertexGlsl';
+import {
+  buildParticlePointsFragmentHarness,
+  PARTICLE_POINTS_FRAGMENT_CHECK_VERTEX,
+  setParticlePointsFragmentGlslStatus,
+  validateParticlePointsFragmentGlslCode,
+} from '../lib/particlePointsFragmentGlsl';
 
 export const ParticleSystem: React.FC<{
   config: ParticleConfig;
@@ -114,10 +121,49 @@ export const ParticleSystem: React.FC<{
     setParticlePointsVertexGlslStatus({ state: 'active' });
   }, [config.particlePointsVertexGlslEnabled, config.particlePointsVertexGlslCode, gl]);
 
+  // Particle points fragment GLSL (Phase CE): the same
+  // validate + compile-check + swap flow as the vertex point
+  // above, for the fragment shader. The harness is a fragment
+  // harness paired with a minimal vertex; the built shader
+  // splices the snippet at both seams of the stock fragment
+  // (the Kinetix mask branch and the final write). On any
+  // failure the previously working shader stays active.
+  const [fragmentShader, setFragmentShader] = useState(FRAGMENT_SHADER);
+  const appliedFragmentCodeRef = useRef<string | null>(null);
+  useEffect(() => {
+    const code = config.particlePointsFragmentGlslEnabled ? config.particlePointsFragmentGlslCode : '';
+    if (!code.trim()) {
+      if (appliedFragmentCodeRef.current !== null) {
+        setFragmentShader(FRAGMENT_SHADER);
+        appliedFragmentCodeRef.current = null;
+      }
+      setParticlePointsFragmentGlslStatus({ state: 'inactive' });
+      return;
+    }
+    if (appliedFragmentCodeRef.current === code) return;
+    const validation = validateParticlePointsFragmentGlslCode(code);
+    if (!validation.ok) {
+      setParticlePointsFragmentGlslStatus({ state: 'error', message: validation.error ?? 'invalid code' });
+      return;
+    }
+    const check = compileCheckShader(
+      gl.getContext() as WebGL2RenderingContext,
+      PARTICLE_POINTS_FRAGMENT_CHECK_VERTEX,
+      buildParticlePointsFragmentHarness(code),
+    );
+    if (!check.ok) {
+      setParticlePointsFragmentGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
+      return;
+    }
+    setFragmentShader(buildParticleFragmentShader(code));
+    appliedFragmentCodeRef.current = code;
+    setParticlePointsFragmentGlslStatus({ state: 'active' });
+  }, [config.particlePointsFragmentGlslEnabled, config.particlePointsFragmentGlslCode, gl]);
+
   const maxGhost = 8;
   const ghostMats = useMemo(
-    () => createParticleGhostMaterials({ config, layerIndex, isAux, uniforms, maxGhost, vertexShader }),
-    [config, layerIndex, isAux, uniforms, vertexShader],
+    () => createParticleGhostMaterials({ config, layerIndex, isAux, uniforms, maxGhost, vertexShader, fragmentShader }),
+    [config, layerIndex, isAux, uniforms, vertexShader, fragmentShader],
   );
 
   useFrame((state, delta) => {
@@ -176,6 +222,7 @@ export const ParticleSystem: React.FC<{
     contactAmount,
     isPlaying,
     vertexShader,
+    fragmentShader,
   });
 });
 ParticleSystem.displayName = 'ParticleSystem';
