@@ -4,6 +4,46 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.71.0] — 2026-11-19
+
+Eleventh-term Phase BX: GLSL injection generalised. The one
+user-GLSL point the app had (the GPGPU custom force) becomes
+the first entry of a shared injection foundation, and a second
+point opens in the post chain. Three new config keys, all
+defaulting to the stage being absent, so the output is
+bit-identical to v1.70.0 while unused; one new starter.
+
+### Added
+- **GLSL injection foundation** (`lib/glslInjection.ts`): one
+  contract type (id / stage / read-write variables / per-backend
+  support / harness builder), one validation core (length cap +
+  forbidden-token scan), one compile check and one status store,
+  shared by every injection point. The custom force
+  (`lib/gpgpuCustomForce.ts`) is registered as the first entry
+  and now delegates to the shared implementations; its config
+  keys, UI and snippet behaviour are unchanged. Backends are
+  declared per point — user GLSL cannot be compiled to WGSL, so
+  WebGPU / CPU declare 'unsupported' instead of dropping the
+  effect silently.
+- **Custom Post GLSL** (`postCustomGlslEnabled` /
+  `postCustomGlslCode` / `postCustomGlslLumaLock`, all default
+  OFF / empty): a fullscreen post stage `custom-glsl-post`
+  immediately before 'output-grade' in every stack profile. The
+  snippet reads/writes `color` (vec3) and reads `vUv` /
+  `uTime` / `uResolution`; the input texture is not exposed
+  (sampling tokens are rejected). Snippets are token-scanned and
+  harness-compile-checked against the live GL context before
+  being swapped in; on failure the previous working fragment
+  stays active and the panel reports the error. The luminance
+  lock re-projects the result onto luminance (Rec. 709) so
+  colour-producing snippets cannot silently dissolve the
+  monochrome policy. `uTime` advances from the pass's own frame
+  counter, so deterministic renders reproduce time-dependent
+  snippets frame for frame.
+- Starter: `starter-post-custom-glsl-lumalock` (the point's
+  example warm-tint snippet with the luminance lock ON — the
+  tint folds back to a luminance lift).
+
 ## [1.70.0] — 2026-11-19
 
 Eleventh-term Phase BV: attribute feedback — the Phase BO

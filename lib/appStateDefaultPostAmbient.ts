@@ -88,6 +88,11 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postToneMapping: 'legacy' as const,
   postBrandColorEnabled: false,
   postBrandColor: '#c8372d',
+  // Custom GLSL post (Phase BX): stage absent while disabled or
+  // empty — the defaults keep the output unchanged.
+  postCustomGlslEnabled: false,
+  postCustomGlslCode: '',
+  postCustomGlslLumaLock: false,
   // LightFX (Phase D): all sub-effects OFF by default — the stage is
   // not inserted and the output is unchanged. Light position is the
   // frame centre; the Lux cone defaults to pointing down-screen

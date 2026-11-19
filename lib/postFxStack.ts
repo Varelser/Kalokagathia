@@ -1,5 +1,6 @@
 import type { ParticleConfig } from '../types';
 import { configUsesEdgeSupply } from './mapSourceSupply';
+import { validateCustomPostGlslCode } from './customPostGlsl';
 
 export type PostFxStageId =
   | 'brightness-contrast'
@@ -22,6 +23,7 @@ export type PostFxStageId =
   | 'halftone'
   | 'edge-detect'
   | 'composite'
+  | 'custom-glsl-post'
   | 'edge-capture'
   | 'radial-blur'
   | 'light-fx'
@@ -61,12 +63,16 @@ export type PostFxStackProfile = ParticleConfig['postFxStackProfile'];
 // Phase AW: 'moire' is a generated pattern field like 'fractal' /
 // 'cellular', so it sits after 'cellular' and before 'feedback'
 // (feedback then smears the interference field, same idiom).
+// Phase BX: 'custom-glsl-post' (the user's own GLSL, spliced by
+// the shared injection foundation) sits after 'composite' and
+// immediately before 'output-grade' in every profile, so the
+// grade stage keeps the final word on the finished frame.
 const STACK_ORDERS: Record<PostFxStackProfile, PostFxStageId[]> = {
-  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'output-grade', 'edge-capture'],
-  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'output-grade', 'edge-capture'],
-  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'output-grade', 'edge-capture'],
-  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'output-grade', 'edge-capture'],
-  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'output-grade', 'edge-capture'],
+  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture'],
+  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture'],
+  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture'],
+  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture'],
+  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture'],
 };
 
 export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[] {
@@ -118,6 +124,20 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   }
   if (config.postCompositeEnabled && config.postCompositeMix > 0.001) {
     active.add('composite');
+  }
+  // Phase BX: the custom GLSL post stage exists only while an
+  // enabled snippet passes the static token scan — empty or
+  // invalid code never inserts the stage (structural identity,
+  // the same rule as the other opt-in stages). Compile-level
+  // failure is handled in the composer component, which keeps
+  // the previously working fragment (the custom-force fallback
+  // rule), so this gate stays a pure function of the config.
+  if (
+    config.postCustomGlslEnabled
+    && config.postCustomGlslCode.trim().length > 0
+    && validateCustomPostGlslCode(config.postCustomGlslCode).ok
+  ) {
+    active.add('custom-glsl-post');
   }
   if (config.postFeedbackEnabled) {
     active.add('feedback');

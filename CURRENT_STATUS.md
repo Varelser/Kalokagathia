@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.70.0**（2026-11-19、第11期 Phase BV＝属性フィードバック: 属性式に予約変数 `p`（自スロットの前回値、初期値=ベイク）を追加し BO の段階2パスをピンポン化。新規 config キー +1（`gpgpuAttrFeedbackEnabled`、既定 OFF で従来経路とビット同一）・スターター +1。詳細は PHASE_BV_REPORT.md。前版 v1.69.0 は Phase BP＝縦中横とルビ）
+**現行バージョン: v1.71.0**（2026-11-19、第11期 Phase BX＝GLSL 差し込みの一般化: 既存のカスタムフォースを共通基盤 `lib/glslInjection.ts` の最初の登録として移行し、ポスト段 `custom-glsl-post` を output-grade の直前へ追加。新規 config キー +3（`postCustomGlslEnabled`／`postCustomGlslCode`／`postCustomGlslLumaLock`、全て既定で段自体が無効＝従来出力とビット同一）・スターター +1。詳細は PHASE_BX_REPORT.md。前版 v1.70.0 は Phase BV＝属性フィードバック）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -13,7 +13,7 @@
 
 ## 資産の実数（2026-11-19 実測）
 
-- config キー: **1,312件** ／ 内蔵スターター: **595件**
+- config キー: **1,315件** ／ 内蔵スターター: **596件**
 - 生成カタログ: **1,654件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

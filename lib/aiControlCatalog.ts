@@ -728,6 +728,8 @@ const BOOLS: BoolDef[] = [
   ['presetTransitionShape', 'プリセット遷移の形状（crossfade＝従来／wipe／dissolve／circle、Phase AW）'],
   ['postRadialBlurEnabled', '放射ブラー（ズームぼかし）'],
   ['postBrandColorEnabled', 'ブランド単色デュオトーン（黒→ブランド色→白）'],
+  ['postCustomGlslEnabled', 'カスタム GLSL ポスト段（output-grade 直前）の有効化'],
+  ['postCustomGlslLumaLock', 'カスタム GLSL ポストの輝度ロック（結果を輝度へ射影）'],
   ['postShineEnabled', 'Shine（光源からの放射光条）'],
   ['postStarglowEnabled', 'Starglow（ハイライトの十字グリント）'],
   ['postStarglowDiagonal', 'Starglow を8方向の星形にする'],

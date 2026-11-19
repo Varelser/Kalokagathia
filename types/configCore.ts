@@ -260,6 +260,18 @@ export interface ParticleConfigCore {
   // (disabled) keep the stage inactive and the output unchanged.
   postBrandColorEnabled: boolean;
   postBrandColor: string;
+  // Custom GLSL post (Phase BX): the user's own GLSL snippet in a
+  // fullscreen post stage immediately before 'output-grade',
+  // registered on the shared injection foundation
+  // (lib/glslInjection.ts). The stage only exists while an
+  // enabled, statically valid snippet is set; the defaults
+  // (disabled / empty) keep the composer output bit-identical.
+  // The luminance lock re-projects the snippet's result onto
+  // luminance so colour-producing snippets cannot silently
+  // dissolve the monochrome policy. Default OFF.
+  postCustomGlslEnabled: boolean;
+  postCustomGlslCode: string;
+  postCustomGlslLumaLock: boolean;
   // LightFX (Phase D): Trapcode Shine / Starglow / Lux equivalents as
   // a single post stage. One shared light-source position (UV) feeds
   // the Shine ray centre and the Lux source. Every sub-effect defaults

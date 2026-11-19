@@ -23,8 +23,24 @@
 // snippet alone: it isolates the snippet from any unrelated breakage in
 // the stock shader (which historically had one of its own — a vnoise
 // mix() missing its third argument, fixed 2026-11-08).
+//
+// Phase BX: this point is registered on the shared GLSL injection
+// foundation (lib/glslInjection.ts) as its first entry. The
+// validation core, the compile check and the status store are the
+// shared implementations; this module keeps its own forbidden
+// token list (the reasons are contract-specific) and its harness
+// builder, and re-exports compileCheckShader so existing imports
+// are unchanged. The config keys and the UI are untouched.
 
-import React from 'react';
+import {
+  createGlslInjectionStatusStore,
+  registerGlslInjection,
+  validateGlslSnippet,
+  type GlslInjectionContract,
+  type GlslInjectionStatus,
+} from './glslInjection';
+
+export { compileCheckShader } from './glslInjection';
 
 export const CUSTOM_FORCE_MAX_LENGTH = 4000;
 
@@ -46,15 +62,7 @@ export interface CustomForceValidation {
 }
 
 export function validateCustomForceCode(code: string): CustomForceValidation {
-  if (code.length > CUSTOM_FORCE_MAX_LENGTH) {
-    return { ok: false, error: `コードが長すぎます（最大 ${CUSTOM_FORCE_MAX_LENGTH} 文字）` };
-  }
-  for (const { token, reason } of FORBIDDEN_TOKENS) {
-    if (code.includes(token)) {
-      return { ok: false, error: reason };
-    }
-  }
-  return { ok: true };
+  return validateGlslSnippet(code, FORBIDDEN_TOKENS, CUSTOM_FORCE_MAX_LENGTH);
 }
 
 export const CUSTOM_FORCE_EXAMPLE = `// 渦巻き上昇: 中心軸の周りに回転しながら持ち上げる
@@ -69,36 +77,15 @@ vel.y += pull * 18.0 * uDelta;`;
 // Compile status, shared between the simulation assets hook (which compiles
 // and swaps shaders) and the panel UI (which reports the outcome).
 
-export type CustomForceStatus =
-  | { state: 'inactive' }
-  | { state: 'active' }
-  | { state: 'error'; message: string };
+export type CustomForceStatus = GlslInjectionStatus;
 
-let status: CustomForceStatus = { state: 'inactive' };
-const listeners = new Set<() => void>();
+const statusStore = createGlslInjectionStatusStore();
 
-export function setCustomForceStatus(next: CustomForceStatus): void {
-  if (status.state === next.state && (next.state !== 'error' || (status as { message?: string }).message === next.message)) {
-    return;
-  }
-  status = next;
-  for (const listener of listeners) listener();
-}
+export const setCustomForceStatus = statusStore.set;
 
-export function getCustomForceStatus(): CustomForceStatus {
-  return status;
-}
+export const getCustomForceStatus = statusStore.get;
 
-function subscribeCustomForceStatus(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-export function useCustomForceStatus(): CustomForceStatus {
-  return React.useSyncExternalStore(subscribeCustomForceStatus, getCustomForceStatus, getCustomForceStatus);
-}
+export const useCustomForceStatus = statusStore.useStatus;
 
 // Builds the harness fragment shader used for the compile check: the
 // snippet sits in the same block scope it will occupy in the velocity
@@ -119,61 +106,30 @@ ${customCode}
 `;
 }
 
-// Compile-checks a vertex+fragment pair against a live GL context. three
-// r187 is WebGL2-only and compiles GLSL1-style ShaderMaterial sources by
-// prepending '#version 300 es' plus compatibility defines (attribute →
-// in, varying → in/out, gl_FragColor → pc_fragColor, texture2D →
-// texture). The prefixes below mirror that transform, so this check
-// compiles the same language level the renderer will — including its
-// reserved words. Only compilation is verified (the sim's own program
-// performs the link at render time); injected snippets cannot declare
-// varyings or uniforms, so link-level mismatch is out of reach for them.
-const CHECK_VERTEX_PREFIX = `#version 300 es
-#define attribute in
-#define varying out
-#define texture2D texture
-precision highp float;
-uniform mat4 modelViewMatrix;
-uniform mat4 projectionMatrix;
-uniform vec3 cameraPosition;
-attribute vec3 position;
-attribute vec3 normal;
-attribute vec2 uv;
-`;
+// The compile check itself is the shared implementation in
+// lib/glslInjection.ts (Phase BX), re-exported at the top of
+// this module so existing imports keep working unchanged.
 
-const CHECK_FRAGMENT_PREFIX = `#version 300 es
-#define varying in
-out highp vec4 pc_fragColor;
-#define gl_FragColor pc_fragColor
-#define texture2D texture
-precision highp float;
-uniform mat4 viewMatrix;
-uniform vec3 cameraPosition;
-`;
+// ---------------------------------------------------------------------------
+// The contract, registered on the shared foundation (Phase BX) as
+// its first entry. Backends: the snippet is spliced into the
+// WebGL velocity shader; user GLSL cannot be compiled to WGSL,
+// and the CPU fallback runs no velocity shader — both declare
+// 'unsupported' (the capability registry routes such configs to
+// WebGL instead of dropping the effect).
 
-export function compileCheckShader(
-  gl: WebGL2RenderingContext | WebGLRenderingContext,
-  vertexSource: string,
-  fragmentSource: string,
-): CustomForceValidation {
-  const compile = (type: number, source: string): { shader: WebGLShader | null; log: string } => {
-    const shader = gl.createShader(type);
-    if (!shader) return { shader: null, log: 'shader allocation failed' };
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    const ok = gl.getShaderParameter(shader, gl.COMPILE_STATUS) as boolean;
-    const log = gl.getShaderInfoLog(shader) ?? '';
-    if (!ok) {
-      gl.deleteShader(shader);
-      return { shader: null, log };
-    }
-    return { shader, log };
-  };
-  const vertex = compile(gl.VERTEX_SHADER, CHECK_VERTEX_PREFIX + vertexSource);
-  if (!vertex.shader) return { ok: false, error: `頂点シェーダ: ${vertex.log}` };
-  const fragment = compile(gl.FRAGMENT_SHADER, CHECK_FRAGMENT_PREFIX + fragmentSource);
-  if (vertex.shader) gl.deleteShader(vertex.shader);
-  if (!fragment.shader) return { ok: false, error: fragment.log || 'コンパイルに失敗しました' };
-  gl.deleteShader(fragment.shader);
-  return { ok: true };
-}
+export const CUSTOM_FORCE_CONTRACT: GlslInjectionContract = {
+  id: 'gpgpu-custom-force',
+  stage: 'simulation-fragment',
+  variables: [
+    { name: 'pos', type: 'vec3', access: 'read' },
+    { name: 'vel', type: 'vec3', access: 'readwrite' },
+    { name: 'uTime', type: 'float', access: 'read' },
+    { name: 'uDelta', type: 'float', access: 'read' },
+  ],
+  backends: { webgl: 'supported', webgpu: 'unsupported', cpu: 'unsupported' },
+  maxLength: CUSTOM_FORCE_MAX_LENGTH,
+  buildHarness: buildCustomForceHarness,
+};
+
+registerGlslInjection(CUSTOM_FORCE_CONTRACT);

@@ -4,6 +4,7 @@ import type { ParticleConfig } from '../types';
 import { buildPostFxStackPatch, getPostFxStackBundleById, POST_FX_STACK_BUNDLES, inferPostFxStackBundleId } from '../lib/postFxLibrary';
 import { getOrderedActivePostFxStageIds } from '../lib/postFxStack';
 import { Slider, Toggle } from './controlPanelParts';
+import { CustomPostGlslBlock } from './controlPanelGlobalDisplayPostFxCustom';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
 
 export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
@@ -513,6 +514,7 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             </div>
           </>
         )}
+        <CustomPostGlslBlock config={config} updateConfig={updateConfig} />
       </div>
     </>
   );

@@ -1,9 +1,17 @@
 import React from 'react';
 import { EffectComposer, Bloom, BrightnessContrast, ChromaticAberration, DepthOfField, Noise, Vignette } from '@react-three/postprocessing';
+import { useThree } from '@react-three/fiber';
 import { BlendFunction } from 'postprocessing';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { getOrderedActivePostFxStageIds } from '../lib/postFxStack';
+import { compileCheckShader } from '../lib/glslInjection';
+import {
+  buildCustomPostGlslHarness,
+  setCustomPostGlslStatus,
+  validateCustomPostGlslCode,
+  CUSTOM_POST_GLSL_CHECK_VERTEX,
+} from '../lib/customPostGlsl';
 import { FeedbackPass } from './feedbackPass';
 import { KaleidoscopePass } from './kaleidoscopePass';
 import { SlitScanPass } from './slitScanPass';
@@ -16,6 +24,7 @@ import { EdgeCapturePass } from './edgeCapturePass';
 import { DisplacePass } from './displacePass';
 import { FractalPass } from './fractalPass';
 import { CompositePass } from './compositePass';
+import { CustomGlslPostPass } from './customGlslPostPass';
 import { GlitchPass } from './glitchPass';
 import { PixelSortPass } from './pixelSortPass';
 import { CellularPass } from './cellularPass';
@@ -181,6 +190,47 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   moirePass.angle = config.postMoireAngle;
   moirePass.phase = config.postMoirePhase;
   moirePass.mixAmount = config.postMoireMix;
+  // Custom GLSL post (Phase BX): validate + compile-check the
+  // snippet against the live GL context, and only then swap it
+  // into the pass. On any failure the previously working fragment
+  // stays active and the panel shows the error via the status
+  // store — the custom-force fallback rule, on the shared
+  // injection foundation. The stage itself is inserted by the
+  // stack only while an enabled, statically valid snippet is set.
+  const customGlslPostPass = React.useMemo(() => new CustomGlslPostPass(), []);
+  React.useEffect(() => () => customGlslPostPass.dispose(), [customGlslPostPass]);
+  customGlslPostPass.lumaLock = config.postCustomGlslLumaLock;
+  const gl = useThree((state) => state.gl);
+  const appliedPostCodeRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const code = config.postCustomGlslEnabled ? config.postCustomGlslCode : '';
+    if (!code.trim()) {
+      if (appliedPostCodeRef.current !== null) {
+        customGlslPostPass.setUserCode(null);
+        appliedPostCodeRef.current = null;
+      }
+      setCustomPostGlslStatus({ state: 'inactive' });
+      return;
+    }
+    if (appliedPostCodeRef.current === code) return;
+    const validation = validateCustomPostGlslCode(code);
+    if (!validation.ok) {
+      setCustomPostGlslStatus({ state: 'error', message: validation.error ?? 'invalid code' });
+      return;
+    }
+    const check = compileCheckShader(
+      gl.getContext() as WebGL2RenderingContext,
+      CUSTOM_POST_GLSL_CHECK_VERTEX,
+      buildCustomPostGlslHarness(code),
+    );
+    if (!check.ok) {
+      setCustomPostGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
+      return;
+    }
+    customGlslPostPass.setUserCode(code);
+    appliedPostCodeRef.current = code;
+    setCustomPostGlslStatus({ state: 'active' });
+  }, [config.postCustomGlslEnabled, config.postCustomGlslCode, gl, customGlslPostPass]);
 
   if (orderedPostFxStages.length === 0) {
     return null;
@@ -264,6 +314,8 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
             return <primitive key={stage} object={moirePass} />;
           case 'composite':
             return <primitive key={stage} object={compositePass} />;
+          case 'custom-glsl-post':
+            return <primitive key={stage} object={customGlslPostPass} />;
           case 'feedback':
             return <primitive key={stage} object={feedbackPass} />;
           case 'posterize':

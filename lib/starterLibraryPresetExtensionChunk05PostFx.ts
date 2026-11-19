@@ -1,5 +1,6 @@
 import type { PresetRecord } from '../types';
 import { buildPostFxStackPatch } from './postFxLibrary';
+import { CUSTOM_POST_GLSL_EXAMPLE } from './customPostGlsl';
 import { createStarterPreset } from './starterLibraryCore';
 import { SAMPLE_SVG_STAR } from './svgMorph';
 
@@ -244,5 +245,27 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_POST_FX: PresetRecord[] = [
         layer3Type: 'prism_smoke',
         screenPersistenceIntensity: 0.06,
         ...buildPostFxStackPatch('post-stack-dream-smear'),
+      }),
+  // Phase BX: the custom GLSL post point, demonstrated with its
+  // own example snippet and the luminance lock ON — the snippet
+  // writes a warm tint, the lock folds it back to a luminance
+  // lift, so the demo lands monochrome by construction.
+  createStarterPreset('starter-post-custom-glsl-lumalock', 'Post Custom GLSL Luma Lock (Warm Tint, Locked Mono)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.12,
+        postCustomGlslEnabled: true,
+        postCustomGlslCode: CUSTOM_POST_GLSL_EXAMPLE,
+        postCustomGlslLumaLock: true,
       }),
 ];
