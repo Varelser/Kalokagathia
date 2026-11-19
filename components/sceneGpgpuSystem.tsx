@@ -40,6 +40,8 @@ import {
 import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
 import { GpgpuAttrDynPass } from './gpgpuAttrDynPass';
 import { buildAttrDynFragment } from '../lib/expressionGlsl';
+import { GpgpuAttrFeedbackPass } from './gpgpuAttrFeedbackPass';
+import { buildAttrFeedbackFragment } from '../lib/expressionGlslFeedback';
 import {
   normalizeAttrExprs,
   normalizeAttrNames,
@@ -231,6 +233,24 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     trailHead,
   } = assets;
 
+  // Phase BV: attribute feedback. The feedback fragment is
+  // null unless the key is on AND at least one compilable slot
+  // expression references p — with a null fragment the feedback
+  // pass is never built (the structural identity guarantee,
+  // same discipline as BO below). When the feedback fragment
+  // exists it takes over the stage-2 re-evaluation and the BO
+  // fragment is suppressed, so the two passes never both run.
+  const attrFeedbackFragment = config.gpgpuAttrFeedbackEnabled
+    ? buildAttrFeedbackFragment(config.gpgpuAttrExprs, config.gpgpuAttrNames)
+    : null;
+  const attrFeedbackSignature = attrFeedbackFragment
+    ? `fb|${JSON.stringify(normalizeAttrExprs(config.gpgpuAttrExprs))}|${normalizeAttrNames(config.gpgpuAttrNames).join(',')}|${resolveAttrDynInterval(config.gpgpuAttrDynInterval)}|${texSize}`
+    : '';
+  const attrFeedbackPassRef = useRef<GpgpuAttrFeedbackPass | null>(null);
+  const attrFeedbackSignatureRef = useRef('');
+  const attrFeedbackTextureRef = useRef<THREE.Texture | null>(null);
+  const attrFeedbackFrameRef = useRef(0);
+
   // Phase BO: dynamic attribute re-evaluation (stage 2). The
   // generated fragment is null unless the key is on AND at least
   // one slot expression compiles to GLSL — with a null fragment
@@ -238,7 +258,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   // texture verbatim (the structural identity guarantee). The
   // signature covers everything the pass depends on, so the
   // useFrame below rebuilds it only when one of them changes.
-  const attrDynFragment = config.gpgpuAttrDynEnabled
+  const attrDynFragment = !attrFeedbackFragment && config.gpgpuAttrDynEnabled
     ? buildAttrDynFragment(config.gpgpuAttrExprs, config.gpgpuAttrNames)
     : null;
   const attrDynInterval = resolveAttrDynInterval(config.gpgpuAttrDynInterval);
@@ -253,6 +273,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   useEffect(() => () => {
     attrDynPassRef.current?.dispose();
     attrDynPassRef.current = null;
+    attrFeedbackPassRef.current?.dispose();
+    attrFeedbackPassRef.current = null;
   }, []);
 
   const runtime = useGpgpuRuntime({ gl, texSize, config });
@@ -454,7 +476,39 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // between runs the held output is reused. With no fragment
     // (disabled, or nothing compilable) the pass is disposed
     // and the consumers below receive the bake texture verbatim.
+    // Phase BV: while the feedback fragment exists, the
+    // feedback pass runs INSTEAD (the BO fragment is suppressed
+    // above, so its branch below only disposes the dyn pass).
+    // The cadence is shared with BO: on frame counter multiples
+    // of the interval the state advances by one evaluation —
+    // the state is a function of the evaluation count, not of
+    // the frame count (brief J3). A bake texture change resets
+    // the state inside the pass (p restarts from the bake).
     let attrDynTexture: THREE.Texture | null = null;
+    if (attrFeedbackFragment) {
+      if (attrFeedbackSignatureRef.current !== attrFeedbackSignature || !attrFeedbackPassRef.current) {
+        attrFeedbackSignatureRef.current = attrFeedbackSignature;
+        attrFeedbackPassRef.current?.dispose();
+        attrFeedbackPassRef.current = new GpgpuAttrFeedbackPass(texSize, attrFeedbackFragment);
+        attrFeedbackTextureRef.current = null;
+        attrFeedbackFrameRef.current = 0;
+      }
+      const attrFeedbackPass = attrFeedbackPassRef.current;
+      const bakeAttrTex = attrTexRef.current;
+      if (attrFeedbackPass && bakeAttrTex) {
+        if (attrFeedbackFrameRef.current % attrDynInterval === 0) {
+          attrFeedbackTextureRef.current = attrFeedbackPass.run(glCtx, bakeAttrTex, timeRef.current);
+        }
+        attrDynTexture = attrFeedbackTextureRef.current;
+      }
+      attrFeedbackFrameRef.current += 1;
+    } else if (attrFeedbackPassRef.current) {
+      attrFeedbackPassRef.current.dispose();
+      attrFeedbackPassRef.current = null;
+      attrFeedbackTextureRef.current = null;
+      attrFeedbackSignatureRef.current = '';
+      attrFeedbackFrameRef.current = 0;
+    }
     if (attrDynFragment) {
       if (attrDynSignatureRef.current !== attrDynSignature || !attrDynPassRef.current) {
         attrDynSignatureRef.current = attrDynSignature;
@@ -482,8 +536,10 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // Sim-side consumers (the force drive / the group gate) read
     // the re-evaluated texture on the WebGL route only; on the
     // WebGPU route they keep the bake (declared gap, Phase BO
-    // brief). The draw readout (syncVisualUniforms below) always
-    // reads the re-evaluated texture.
+    // brief; Phase BV inherits it for the feedback texture and
+    // declares it in the capability registry). The draw readout
+    // (syncVisualUniforms below) always reads the re-evaluated
+    // texture.
     const simAttrTex = !routing.useWebGPU && attrDynTexture ? attrDynTexture : attrTexRef.current;
 
     if (stacksActive) {

@@ -4,6 +4,41 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.70.0] — 2026-11-19
+
+Eleventh-term Phase BV: attribute feedback — the Phase BO
+attribute expressions gain state. One new config key,
+defaulting OFF, at which nothing is built and the BO bake /
+dyn paths run bit-identically to v1.69.0; one new starter.
+
+### Added
+- **Attribute Feedback** (`gpgpuAttrFeedbackEnabled`,
+  default false). The attribute expressions may reference
+  the reserved variable `p`: the slot's own previous-pass
+  value, seeded with the Phase AK bake (initial value =
+  bake). The Phase BO dyn pass becomes a ping-pong
+  (`buildAttrFeedbackFragment` in
+  `lib/expressionGlslFeedback.ts`, `AttrFeedbackPass` in
+  `components/gpgpuAttrFeedbackPass.ts`): each run reads the
+  previous state texture and writes the next, so slots can
+  accumulate, decay and propagate (`p * 0.9 + drive * 0.1`).
+  Finite-guarded: a non-finite result keeps the previous
+  value on `p` slots and falls back to the bake on the
+  others. The feedback pass and the dyn pass are exclusive
+  — with feedback on, the feedback expressions are the live
+  re-evaluation. Evaluation timing shares the dyn cadence
+  (`gpgpuAttrDynInterval`): state advances per evaluation
+  run, not per wall-clock frame. Only the slot's own
+  previous value is visible (no cross-slot history, no sim
+  quantities). Draw-side consumers read the state on both
+  backends; on the WebGPU sim path the forces keep reading
+  the bake (declared via the `attr-feedback` capability).
+  A bake change reseeds the state.
+- Starter: `starter-attr-feedback-accumulate` (heat is the
+  leaky integral `p * 0.9 + drive * 0.1`; glow reads heat
+  and drives the point size, so the sphere swells toward
+  its species mix and holds it).
+
 ## [1.69.0] — 2026-11-19
 
 Eleventh-term Phase BP: the vertical text finishing, part 2 —

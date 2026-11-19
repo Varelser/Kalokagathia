@@ -143,6 +143,20 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // every path already.
   if (config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) features.push('attr-force');
   if (config.gpgpuGroupEnabled) features.push('attr-group');
+  // Attribute feedback (Phase BV): the feedback pass's output
+  // reaches the draw-side drives on every path (the draw shader
+  // is WebGL throughout, exactly as with Phase BO's dynamic
+  // re-evaluation), but its SIM-side consumption — the force
+  // drive / group gate reading the feedback texture — is
+  // WebGL-only; on the WebGPU route those consumers keep the
+  // bake (the Phase BO gap, inherited). Declared here, under
+  // the same conditions as 'attr-force' / 'attr-group' above,
+  // so the gap is named in the capability report instead of
+  // being dropped silently.
+  if (config.gpgpuAttrFeedbackEnabled
+    && ((config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) || config.gpgpuGroupEnabled)) {
+    features.push('attr-feedback');
+  }
   // Wind volume (Phase AL): the placed wind localisation lives in
   // the WebGL velocity pass only — declaring it routes to WebGL.
   if (config.gpgpuWindVolumeEnabled) features.push('wind-volume');

@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.69.0**（2026-11-19、第11期 Phase BP＝縦書きの仕上げ・その2: 縦中横（`layer2TextMapTateChuYoko`、半角英数字2〜4字の横組み）とルビ（`layer2TextMapRuby`、青空文庫式記法・親文字の右側へ半分の大きさで配置）。新規 config キー +2（どちらも既定 OFF で従来の分割・配置とビット同一）・スターター +2。詳細は PHASE_BP_REPORT.md。前版 v1.68.1 は Phase BR＝黒スターター3件の経路バグ修正）
+**現行バージョン: v1.70.0**（2026-11-19、第11期 Phase BV＝属性フィードバック: 属性式に予約変数 `p`（自スロットの前回値、初期値=ベイク）を追加し BO の段階2パスをピンポン化。新規 config キー +1（`gpgpuAttrFeedbackEnabled`、既定 OFF で従来経路とビット同一）・スターター +1。詳細は PHASE_BV_REPORT.md。前版 v1.69.0 は Phase BP＝縦中横とルビ）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -13,8 +13,8 @@
 
 ## 資産の実数（2026-11-19 実測）
 
-- config キー: **1,311件** ／ 内蔵スターター: **594件**
-- 生成カタログ: **1,647件**（catalog／presets／share が 1:1:1、fps 実測 100%）
+- config キー: **1,312件** ／ 内蔵スターター: **595件**
+- 生成カタログ: **1,654件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 
 ## 残件（2026-11-17 時点）

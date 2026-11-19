@@ -1475,6 +1475,7 @@
   <url><loc>https://monosphere.pages.dev/share/ray-blobs</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/ray-columns</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/ray-mandelbulb</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-script-text-hologram</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-dyn-flow</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-dyn-pulse</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-expr-group-gravity</loc><priority>0.6</priority></url>
@@ -1487,6 +1488,7 @@
   <url><loc>https://monosphere.pages.dev/share/starter-distance-bloom</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-emission-curve-pulse</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-emission-curve-swell</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-erosion-manuscript</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-flip-planar-pool</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-flip-vortex-ferry</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-fractal-julia-field</loc><priority>0.6</priority></url>
@@ -1545,6 +1547,7 @@
   <url><loc>https://monosphere.pages.dev/share/starter-grains-cohesive-clumps</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-grains-pile</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-grains-repose-pile</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hologram-script-text</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-audio-pulse-crown</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-blackhole-quasar</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-ember-fountain</loc><priority>0.6</priority></url>
@@ -1599,6 +1602,7 @@
   <url><loc>https://monosphere.pages.dev/share/starter-rbd-terrain-debris</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-rbd-terrain-landing</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-ridge-scatter-terrain</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-shell-text-sigil</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-simple-clean</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-spawn-pulse-waves</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-terrain-collider-bounce</loc><priority>0.6</priority></url>
@@ -1610,10 +1614,13 @@
   <url><loc>https://monosphere.pages.dev/share/starter-terrain-talused-ridge</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-terrain-texture-repeat</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-terrain-tunnel-cruise</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-text-glyph-weave-codex</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-on-path</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-raster-mask</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-kinsoku</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-morph</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-ruby</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-tatechuyoko</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-yakumono</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-vellum-balloon</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-vellum-silk-cloth</loc><priority>0.6</priority></url>

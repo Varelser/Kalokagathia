@@ -144,6 +144,16 @@ export interface ParticleConfigGpgpu {
   // builds the pass, so the legacy bake runs bit-identically.
   gpgpuAttrDynEnabled: boolean;
   gpgpuAttrDynInterval: number;
+  // Attribute feedback (Phase BV): while enabled, the stage-2
+  // re-evaluation becomes stateful — the expression language
+  // gains the reserved variable p (the slot's own value in the
+  // previous evaluation's output), so accumulation / decay can
+  // be written. Shares the gpgpuAttrDynInterval cadence; the
+  // state advances once per evaluation, and p starts from the
+  // bake value. Disabled (the default), or with no expression
+  // referencing p, the feedback pass is never built and the
+  // stage-2 / bake behaviour is bit-identical.
+  gpgpuAttrFeedbackEnabled: boolean;
   gpgpuAttrSizeSlot: number;
   gpgpuAttrSizeAmount: number;
   gpgpuAttrBrightSlot: number;

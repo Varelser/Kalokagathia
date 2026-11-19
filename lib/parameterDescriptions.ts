@@ -418,6 +418,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuAttrExprs: '属性のベイク時演算式（4スロット分。スロット名と x で生成値を計算し結果を属性にする。空文字は演算なし、不正な式は生成値のまま）',
   gpgpuAttrDynEnabled: '属性の動的再評価（段階2、Phase BO）: 式を毎フレーム再評価し変数 t（シミュレーション時刻）も使える。OFFで従来のベイクと完全同一',
   gpgpuAttrDynInterval: '属性の動的再評価の間隔（フレーム数。1で毎フレーム再評価）',
+  gpgpuAttrFeedbackEnabled: '属性フィードバック（Phase BV）: 式の予約変数 p で自スロットの前回評価値を参照でき、蓄積・減衰（例: p * 0.9 + drive * 0.1）が書ける。p の初期値はベイク値で、状態は再評価の実行回数だけ進む（間隔指定時もフレーム実数では進まない）。OFF、または p を使わない式では従来の再評価／ベイクと完全同一',
   gpgpuAttrSizeSlot: '属性→サイズ駆動のスロット（-1でOFF）',
   gpgpuAttrSizeAmount: '属性→サイズ駆動の量（属性値でサイズを係数 mix する割合）',
   gpgpuAttrBrightSlot: '属性→明るさ駆動のスロット（-1でOFF）',

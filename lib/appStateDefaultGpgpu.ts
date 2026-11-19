@@ -82,6 +82,11 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // and the bake is the legacy one bit-for-bit.
   gpgpuAttrDynEnabled: false,
   gpgpuAttrDynInterval: 1,
+  // Attribute feedback (Phase BV): disabled — while disabled
+  // (or while no expression references p) the feedback pass is
+  // never built and the stage-2 / bake behaviour is bit-for-bit
+  // the legacy one.
+  gpgpuAttrFeedbackEnabled: false,
   gpgpuAttrSizeSlot: -1,
   gpgpuAttrSizeAmount: 1,
   gpgpuAttrBrightSlot: -1,

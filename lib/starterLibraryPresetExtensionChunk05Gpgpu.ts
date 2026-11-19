@@ -2552,6 +2552,37 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuAttrBrightAmount: 1,
         gpgpuTrailEnabled: false,
       }),
+  // Phase BV: attribute feedback — slot heat (radius source)
+  // is a leaky integral p * 0.9 + drive * 0.1 toward slot drive
+  // (species source), so particles are gradually "stained" by
+  // their species value the longer the sim runs; slot glow just
+  // reads heat by name in the same frame and drives the point
+  // size, so the staining becomes visible as growth. At bake
+  // time the p expression cannot compile (p is feedback-only),
+  // so the bake keeps the plain radius source, as designed.
+  createStarterPreset('starter-attr-feedback-accumulate', 'Attribute Feedback Accumulate (Dwell-Stained Size)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.6,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 0.7,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.08,
+        gpgpuAttrNames: ['heat', 'drive', 'glow', 'd'],
+        gpgpuAttrSources: ['radius', 'species', 'hash', 'index'],
+        gpgpuAttrExprs: ['p * 0.9 + drive * 0.1', '', 'heat', ''],
+        gpgpuAttrFeedbackEnabled: true,
+        gpgpuAttrSizeSlot: 2,
+        gpgpuAttrSizeAmount: 1,
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AL: escape-time fractal — a Julia field (c = -0.8 +
   // 0.156i) rendered by the post stage, mixed over a sparse,
   // slowly drifting particle sphere.

@@ -457,6 +457,7 @@ const NUMS: NumDef[] = [
   ['gpgpuAttrExprs', '属性のベイク時演算式（文字列4件の配列。スロット名と x を変数に生成値を計算し 0..1 に収めて属性にする。空文字は演算なし）'],
   ['gpgpuAttrDynEnabled', '属性の動的再評価（段階2）のON/OFF（式を毎フレーム再評価し t が使える。OFFで従来同一）'],
   ['gpgpuAttrDynInterval', '属性の動的再評価の間隔（フレーム数、1〜240）'],
+  ['gpgpuAttrFeedbackEnabled', '属性フィードバックのON/OFF（式の p で自スロットの前回評価値を参照し蓄積・減衰が書ける。間隔時は実行回数で状態が進む。OFFまたは p 不使用で従来同一）'],
   ['gpgpuAttrSizeSlot', '属性→サイズ駆動のスロット（-1でOFF、0..3）'],
   ['gpgpuAttrSizeAmount', '属性→サイズ駆動の量（0..1）'],
   ['gpgpuAttrBrightSlot', '属性→明るさ駆動のスロット（-1でOFF、0..3）'],
