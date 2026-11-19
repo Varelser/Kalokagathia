@@ -3,7 +3,7 @@ import { combineLumaMaps } from './shapeBoolean';
 import { createStarterPreset } from './starterLibraryCore';
 import { SAMPLE_SVG_STAR } from './svgMorph';
 import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT } from './objMorph';
-import { SAMPLE_OBJ_CSG_CUBE_MINUS_SPHERE, SAMPLE_OBJ_CSG_EXTRUDE_TWIST_MINUS_SPHERE, SAMPLE_OBJ_CSG_HULL_BRIDGE, SAMPLE_OBJ_CSG_REFINE_DIFF } from './csgSampleObj';
+import { SAMPLE_OBJ_CSG_CUBE_MINUS_SPHERE, SAMPLE_OBJ_CSG_EXTRUDE_TWIST_MINUS_SPHERE, SAMPLE_OBJ_CSG_HULL_BRIDGE, SAMPLE_OBJ_CSG_REFINE_DIFF, SAMPLE_OBJ_CSG_CUSTOM_STAR } from './csgSampleObj';
 
 
 // Phase U samples: tiny embedded images for the sprite / Layer Map
@@ -4186,6 +4186,49 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuCsgOffsetBZ: 0,
         gpgpuCsgFinish: 'refine',
         gpgpuCsgRefineDivisions: 2,
+        gpgpuTrailEnabled: true,
+        gpgpuTrailLength: 8,
+        gpgpuTrailFade: 0.74,
+      }),
+  createStarterPreset('starter-csg-extrude-custom-star', 'CSG Custom Extrude (Free-Form Star)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.12,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'obj',
+        gpgpuMorphObjSource: SAMPLE_OBJ_CSG_CUSTOM_STAR,
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.05,
+        gpgpuMorphOrbitSpeed: 0.15,
+        gpgpuObjMeshEnabled: true,
+        gpgpuCsgEnabled: true,
+        gpgpuCsgPrimitiveA: 'extrude',
+        gpgpuCsgPrimitiveB: 'sphere',
+        gpgpuCsgOperation: 'difference',
+        gpgpuCsgSizeA: 2,
+        gpgpuCsgSizeB: 2,
+        gpgpuCsgSegments: 32,
+        gpgpuCsgOffsetBX: 1,
+        gpgpuCsgOffsetBY: 0,
+        gpgpuCsgOffsetBZ: 0,
+        gpgpuCsgExtrudeProfile: 'custom',
+        gpgpuCsgExtrudeCustomText: '0, 1.1\n-0.2939, 0.4045\n-1.0462, 0.3399\n-0.4755, -0.1545\n-0.6466, -0.8899\n0, -0.5\n0.6466, -0.8899\n0.4755, -0.1545\n1.0462, 0.3399\n0.2939, 0.4045',
+        gpgpuCsgExtrudeHeight: 1.2,
+        gpgpuCsgExtrudeTwist: 0,
+        gpgpuCsgExtrudeScaleTop: 1,
+        gpgpuCsgExtrudeDivisions: 0,
         gpgpuTrailEnabled: true,
         gpgpuTrailLength: 8,
         gpgpuTrailFade: 0.74,

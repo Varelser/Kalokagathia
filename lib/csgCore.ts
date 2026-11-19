@@ -46,9 +46,9 @@ export function clampCsgRefineDivisions(v: unknown): number {
  *  spec fully identifies the operand (cache keys, panel state).
  *  Free-form point input is U2's open question; the raw-polygon
  *  entry point lives in lib/csgExtrude.ts. */
-export type CsgExtrudeProfileKind = 'square' | 'circle' | 'polygon';
+export type CsgExtrudeProfileKind = 'square' | 'circle' | 'polygon' | 'custom';
 export const CSG_EXTRUDE_PROFILE_KINDS: readonly CsgExtrudeProfileKind[] = [
-  'square', 'circle', 'polygon',
+  'square', 'circle', 'polygon', 'custom',
 ];
 
 export interface CsgExtrudeSpec {
@@ -70,6 +70,12 @@ export interface CsgExtrudeSpec {
    *  to Manifold.extrude silently rescales (1 -> x0.5 volume),
    *  the trap measured in the final brief. Never pass it raw. */
   scaleTop: number;
+  /** Phase CI (U2): the parsed free-form polygons, present
+   *  only when profile is 'custom'. Coordinates are world
+   *  units as written by the user (size does not apply).
+   *  Structurally ExtrudePolygon[] from lib/csgExtrude.ts;
+   *  spelled out here to keep this module import-free. */
+  customPolygons?: readonly (readonly (readonly [number, number])[])[];
   /** World offset applied after construction. */
   offset: readonly [number, number, number];
 }
@@ -200,8 +206,23 @@ export function csgOperandKey(operand: CsgOperand): string {
   }
   if (operand.type === 'extrude') {
     const s = operand.spec;
-    return `x:${s.profile}:${s.size}:${s.segments}:${s.height}:${s.divisions}:` +
+    const base = `x:${s.profile}:${s.size}:${s.segments}:${s.height}:${s.divisions}:` +
       `${s.twistDegrees}:${s.scaleTop}:${s.offset[0]},${s.offset[1]},${s.offset[2]}`;
+    if (s.profile === 'custom') {
+      // The point content IS the identity of a custom
+      // profile: hash its canonical serialization (the
+      // mesh-operand discipline, applied to points).
+      const canonical = (s.customPolygons ?? [])
+        .map((poly) => poly.map(([x, y]) => `${x},${y}`).join(';'))
+        .join('|');
+      let h = 0x811c9dc5;
+      for (let i = 0; i < canonical.length; i++) {
+        h ^= canonical.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+      }
+      return `${base}:h${(h >>> 0).toString(16)}`;
+    }
+    return base;
   }
   return `m:${operand.positions.length}:${hashTypedArray(operand.positions)}:` +
     (operand.indices ? hashTypedArray(operand.indices) : 'flat');

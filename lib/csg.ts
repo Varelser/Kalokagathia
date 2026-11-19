@@ -20,7 +20,7 @@
 
 import CsgWorkerClass from '../workers/csgWorker?worker';
 import { checkWatertightGate } from './csgGate';
-import { generateExtrudeProfile, validateExtrudePolygons } from './csgExtrude';
+import { resolveExtrudePolygons, validateExtrudePolygons } from './csgExtrude';
 import {
   CSG_TIMEOUT_MS,
   CsgError,
@@ -146,7 +146,7 @@ export function runCsgOperation(
           throw new CsgError('NOT_MANIFOLD', gate.reason);
         }
       } else if (operand.type === 'extrude') {
-        const check = validateExtrudePolygons([generateExtrudeProfile(operand.spec)]);
+        const check = validateExtrudePolygons(resolveExtrudePolygons(operand.spec));
         if (!check.ok) {
           throw new CsgError('NOT_MANIFOLD', check.reason);
         }

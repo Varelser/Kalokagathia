@@ -19,6 +19,8 @@ import {
   type CsgPrimitiveKind,
   type CsgResultData,
 } from '../lib/csgCore';
+import { parseFreeformText } from '../lib/csgFreeform';
+import { CsgFreeformEditor } from './csgFreeformEditor';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { DeterministicRenderControls } from './controlPanelPlayTabRender';
 import { SectionTitle } from './controlPanelPlayTabShared';
@@ -890,10 +892,18 @@ export const CsgSection: React.FC<{
   const [result, setResult] = React.useState<CsgResultData | null>(() => getLastCsgRun()?.result ?? null);
   const [fromCache, setFromCache] = React.useState(false);
 
+  const customParseUi = React.useMemo(
+    () => (config.gpgpuCsgExtrudeProfile === 'custom'
+      ? parseFreeformText(config.gpgpuCsgExtrudeCustomText)
+      : null),
+    [config.gpgpuCsgExtrudeProfile, config.gpgpuCsgExtrudeCustomText],
+  );
+
   const buildOperand = (
     kind: CsgOperandKindUi,
     size: number,
     offset: readonly [number, number, number],
+    customPolygons?: readonly (readonly (readonly [number, number])[])[],
   ): CsgOperand => {
     if (kind === 'extrude') {
       return {
@@ -907,6 +917,9 @@ export const CsgSection: React.FC<{
           twistDegrees: config.gpgpuCsgExtrudeTwist,
           scaleTop: config.gpgpuCsgExtrudeScaleTop,
           offset,
+          ...(config.gpgpuCsgExtrudeProfile === 'custom'
+            ? { customPolygons: customPolygons ?? [] }
+            : {}),
         },
       };
     }
@@ -925,12 +938,20 @@ export const CsgSection: React.FC<{
     if (busy) return;
     setBusy(true);
     setStatus('CSG を計算しています…（初回は WASM の読み込みを含みます）');
-    const a: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveA, config.gpgpuCsgSizeA, [0, 0, 0]);
+    const usesCustom = (config.gpgpuCsgPrimitiveA === 'extrude' || config.gpgpuCsgPrimitiveB === 'extrude')
+      && config.gpgpuCsgExtrudeProfile === 'custom';
+    const customParse = usesCustom ? parseFreeformText(config.gpgpuCsgExtrudeCustomText) : null;
+    if (customParse && !customParse.ok) {
+      setStatus(`カスタム断面を読めません: ${customParse.reason}`);
+      setBusy(false);
+      return;
+    }
+    const a: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveA, config.gpgpuCsgSizeA, [0, 0, 0], customParse?.polygons);
     const b: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveB, config.gpgpuCsgSizeB, [
       config.gpgpuCsgOffsetBX,
       config.gpgpuCsgOffsetBY,
       config.gpgpuCsgOffsetBZ,
-    ]);
+    ], customParse?.polygons);
     try {
       const out = await runCsgOperation(a, b, config.gpgpuCsgOperation, config.gpgpuCsgFinish, config.gpgpuCsgRefineDivisions);
       const cached = getLastCsgRun()?.fromCache ?? false;
@@ -1054,13 +1075,14 @@ export const CsgSection: React.FC<{
                 <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">押し出しの断面</span>
                 <select
                   value={config.gpgpuCsgExtrudeProfile}
-                  onChange={(e) => updateConfig('gpgpuCsgExtrudeProfile', e.target.value as 'square' | 'circle' | 'polygon')}
+                  onChange={(e) => updateConfig('gpgpuCsgExtrudeProfile', e.target.value as 'square' | 'circle' | 'polygon' | 'custom')}
                   className={selectClass}
                   style={selectStyle}
                 >
                   <option value="square" className="bg-neutral-900">四角形</option>
                   <option value="circle" className="bg-neutral-900">円</option>
                   <option value="polygon" className="bg-neutral-900">多角形（辺数＝円分割数）</option>
+                  <option value="custom" className="bg-neutral-900">カスタム（自由形）</option>
                 </select>
               </label>
               <Slider label="押し出しの高さ" value={config.gpgpuCsgExtrudeHeight} min={0.1} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCsgExtrudeHeight', v)} />
@@ -1069,8 +1091,47 @@ export const CsgSection: React.FC<{
               <Slider label="ねじり分割数" value={config.gpgpuCsgExtrudeDivisions} min={0} max={32} step={1} onChange={(v) => updateConfig('gpgpuCsgExtrudeDivisions', v)} />
               <p className="text-[11px] leading-relaxed text-white/45 mt-1">
                 押し出しは A・B 共通の設定です。サイズは断面の大きさ（四角形の一辺／円の直径／多角形の外接直径）に使います。
-                ねじると体積が変わり、変わり方は分割数に依存します。
+                ねじると体積が変わり、変わり方は分割数に依存します。カスタム断面は座標がそのまま世界単位で、サイズは適用されません。
               </p>
+              {config.gpgpuCsgExtrudeProfile === 'custom' && (
+                <div className="mt-2">
+                  <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">カスタム断面（点リスト／SVG）</span>
+                  <textarea
+                    value={config.gpgpuCsgExtrudeCustomText}
+                    onChange={(event) => updateConfig('gpgpuCsgExtrudeCustomText', event.target.value.slice(0, 200_000))}
+                    spellCheck={false}
+                    rows={5}
+                    className="w-full rounded border border-white/15 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40"
+                    placeholder={'点リスト: "0, 1.1" のような行（空行で図形を区切る）／ SVG パス "M ... Z" ／ SVG 文書そのまま'}
+                  />
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <label className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 cursor-pointer">
+                      SVG／テキストを読み込む
+                      <input
+                        type="file"
+                        accept=".svg,.txt,image/svg+xml,text/plain"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void f.text().then((t) => updateConfig('gpgpuCsgExtrudeCustomText', t.slice(0, 200_000)));
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                    <span className="text-[10px] text-white/50">
+                      {customParseUi
+                        ? customParseUi.ok
+                          ? `${customParseUi.polygons.length} 図形・${customParseUi.pointCount} 点（${customParseUi.format === 'points' ? '点リスト' : customParseUi.format === 'svg-path' ? 'SVG パス' : 'SVG 文書'}）`
+                          : `読めません: ${customParseUi.reason}`
+                        : ''}
+                    </span>
+                  </div>
+                  <CsgFreeformEditor
+                    text={config.gpgpuCsgExtrudeCustomText}
+                    onChange={(t) => updateConfig('gpgpuCsgExtrudeCustomText', t)}
+                  />
+                </div>
+              )}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2 mt-2">

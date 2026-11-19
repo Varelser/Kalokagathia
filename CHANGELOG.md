@@ -4,6 +4,39 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.82.0] — 2026-11-20
+
+Eleventh-term CSG second release, Phase CI (brief unit
+U2): free-form cross-sections for the extrude operand.
+The profile choice gains a fourth option — custom —
+whose shape comes from a new text key
+(gpgpuCsgExtrudeCustomText) parsed three ways: a point
+list (one "x, y" per line, blank lines separate
+multiple polygons), SVG path data (M/L/H/V/C/S/Q/T/A/Z,
+absolute and relative; curves and arcs are flattened),
+and whole SVG documents (path / polygon / polyline /
+rect / circle / ellipse elements are extracted). A file
+loader in the panel accepts .svg/.txt directly, and a
+point editor (click to add, drag to move, undo / next
+shape / clear) writes point-list text back into the
+same key — the text stays the single source of truth.
+Coordinates are world units as written (the size key
+does not apply, matching the OBJ discipline of U5);
+multiple disjoint polygons are allowed, holes are not
+(the shared cross-section validation refuses
+containment, self-intersection and overlap with a
+reason). Preset profiles keep byte-identical cache
+keys; custom profiles key on a hash of the points.
+One new starter (CSG Custom Extrude, a star prism minus
+a sphere, 1.242676 / 218 triangles). Found and fixed
+while gate-testing: the editor originally re-derived
+its points from the strict parse, which refuses the
+1-2 point drafts a shape passes through while being
+drawn, so every click restarted from empty — the
+editor now falls back to a lenient point-list parse
+for draft states; the strict parse remains the only
+entry for running an operation.
+
 ## [1.81.0] — 2026-11-20
 
 Eleventh-term CSG second release, Phase CH (brief unit

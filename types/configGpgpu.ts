@@ -337,11 +337,12 @@ export interface ParticleConfigGpgpu {
   gpgpuCsgOffsetBX: number;
   gpgpuCsgOffsetBY: number;
   gpgpuCsgOffsetBZ: number;
-  gpgpuCsgExtrudeProfile: 'square' | 'circle' | 'polygon';
+  gpgpuCsgExtrudeProfile: 'square' | 'circle' | 'polygon' | 'custom';
   gpgpuCsgExtrudeHeight: number;
   gpgpuCsgExtrudeTwist: number;
   gpgpuCsgExtrudeScaleTop: number;
   gpgpuCsgExtrudeDivisions: number;
+  gpgpuCsgExtrudeCustomText: string;
   gpgpuCsgFinish: 'none' | 'hull' | 'refine';
   gpgpuCsgRefineDivisions: number;
   // Vector Field

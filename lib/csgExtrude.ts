@@ -282,9 +282,18 @@ export function buildExtrudeFromPolygons(
   );
 }
 
+/** The polygons a spec extrudes: the generated profile
+ *  for preset kinds, the user's parsed polygons for
+ *  'custom' (Phase CI, U2). */
+export function resolveExtrudePolygons(
+  spec: CsgExtrudeSpec,
+): readonly ExtrudePolygon[] {
+  if (spec.profile === 'custom') return spec.customPolygons ?? [];
+  return [generateExtrudeProfile(spec)];
+}
+
 export function buildCsgExtrude(wasm: ManifoldToplevel, spec: CsgExtrudeSpec): Manifold {
-  const profile = generateExtrudeProfile(spec);
-  const m = buildExtrudeFromPolygons(wasm, [profile], {
+  const m = buildExtrudeFromPolygons(wasm, resolveExtrudePolygons(spec), {
     height: spec.height,
     divisions: spec.divisions,
     twistDegrees: spec.twistDegrees,

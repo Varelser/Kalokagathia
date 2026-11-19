@@ -211,6 +211,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuCsgExtrudeTwist: 0,
   gpgpuCsgExtrudeScaleTop: 1,
   gpgpuCsgExtrudeDivisions: 0,
+  gpgpuCsgExtrudeCustomText: '0, 1.1\n-0.2939, 0.4045\n-1.0462, 0.3399\n-0.4755, -0.1545\n-0.6466, -0.8899\n0, -0.5\n0.6466, -0.8899\n0.4755, -0.1545\n1.0462, 0.3399\n0.2939, 0.4045',
   gpgpuCsgFinish: 'none' as const,
   gpgpuCsgRefineDivisions: 2,
   // Vector Field
