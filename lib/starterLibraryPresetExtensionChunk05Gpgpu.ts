@@ -3123,6 +3123,53 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuPyroDisturbanceHeat: 2.0,
         gpgpuTrailEnabled: false,
       }),
+  // Phase CB: the 3D Pyro grid made visible — the grid solver
+  // steps its density / temperature field, the volume-fog layer
+  // renders that field as smoke, the particles are two-way
+  // coupled to the rising plume (PIC/FLIP blend), vorticity
+  // confinement keeps the curl alive, and combustion burns the
+  // fuel channel at the source for extra heat.
+  createStarterPreset('starter-pyro-grid-plume', 'Pyro Grid Plume (Grid Solver + Fog Feed)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: true,
+        layer2Type: 'volume_fog',
+        layer2Source: 'sphere',
+        layer2Count: 7000,
+        layer2FogOpacity: 0.3,
+        layer2FogDensity: 0.4,
+        layer2FogDepth: 0.8,
+        layer2FogScale: 1.1,
+        layer2FogSlices: 22,
+        layer2PyroDensityAmount: 0.5,
+        layer2PyroTempAmount: 0.6,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuColor: '#e8e2d6',
+        gpgpuSize: 2.0,
+        gpgpuOpacity: 0.55,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.25,
+        gpgpuTurbulence: 0.05,
+        gpgpuAgeEnabled: true,
+        gpgpuAgeMax: 5.0,
+        gpgpuPyroEnabled: true,
+        gpgpuPyroTemperature: 1.3,
+        gpgpuPyroBuoyancy: 1.8,
+        gpgpuPyroCooling: 0.8,
+        gpgpuPyroDisturbance: 1.2,
+        gpgpuPyroDisturbanceHeat: 1.0,
+        gpgpuPyroGridEnabled: true,
+        gpgpuPyroGridResolution: 0,
+        gpgpuPyroGridJacobiIterations: 16,
+        gpgpuPyroGridBlend: 0.85,
+        gpgpuPyroGridTransfer: 0.9,
+        gpgpuPyroVorticityEpsilon: 0.8,
+        gpgpuPyroFuelRate: 0.8,
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AT: a planar pool on the FLIP grid — a flat disc of
   // particles two-way coupled to the 64x64 field; the pressure
   // projection keeps the sheet's occupied area from collapsing

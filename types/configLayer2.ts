@@ -310,6 +310,10 @@ export interface ParticleConfigLayer2 {
   layer2RaymarchOpacity: number;
   layer2FogOpacity: number;
   layer2FogDensity: number;
+  // Phase CB: Pyro grid fog feed amounts (0 = the feed sample is
+  // multiplied out and the fog output is bit-identical).
+  layer2PyroDensityAmount: number;
+  layer2PyroTempAmount: number;
   layer2FogDepth: number;
   layer2FogScale: number;
   layer2FogDrift: number;

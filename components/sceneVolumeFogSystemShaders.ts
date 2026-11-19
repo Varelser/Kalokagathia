@@ -1,15 +1,20 @@
+import { PYRO_GRID_SAMPLING, PYRO_GRID_UNIFORMS, PYRO_GRID_WORLD } from './gpgpuShaderPyroGrid';
+
 export const VERTEX_SHADER = `
   varying vec2 vUv;
   varying float vSlice;
+  varying vec3 vWorldPos;
   void main() {
     vUv = uv;
     vSlice = position.z;
+    vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
 export const FRAGMENT_SHADER = `
   varying vec2 vUv;
+  varying vec3 vWorldPos;
   uniform float uTime;
   uniform vec3 uColor;
   uniform float uOpacity;
@@ -39,6 +44,16 @@ export const FRAGMENT_SHADER = `
   uniform float uVelvetAmount;
   uniform float uLedgerAmount;
   uniform float uEdgeFade;
+  // Pyro grid feed (Phase CB): the grid solver's scalar atlas,
+  // sampled through the solver's own shared chunks under the
+  // same uniform names. Amounts default to 0, and at 0 the
+  // sample below is skipped entirely — output is bit-identical.
+  uniform sampler2D uPyroDensityAtlas;
+  uniform float uPyroDensityAmount;
+  uniform float uPyroTempAmount;
+  ${PYRO_GRID_UNIFORMS}
+  ${PYRO_GRID_SAMPLING}
+  ${PYRO_GRID_WORLD}
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -105,6 +120,19 @@ export const FRAGMENT_SHADER = `
     float streak = pow(abs(sin((uv.x * (3.0 + uStreak * 12.0) + drift.x * 2.4) * 3.14159 + sliceT * 10.0)), mix(4.0, 18.0, clamp(uStreak, 0.0, 1.0)));
     float grain = noise(uv * (26.0 + uGrain * 44.0) + vec2(sliceT * 31.0, uTime * 0.45));
     float anisotropicLift = mix(1.0, 1.0 + forward * 1.8, clamp(uAnisotropy, 0.0, 2.0));
+    // Pyro grid feed sample (Phase CB): density (r) and
+    // temperature (g) at this fragment's world position, faded
+    // out at the domain boundary. Skipped unless a layer amount
+    // is above 0.
+    float gridDens = 0.0;
+    float gridTemp = 0.0;
+    if (uPyroDensityAmount > 0.0 || uPyroTempAmount > 0.0) {
+      vec3 cellPos = pyroCellOfWorld(vWorldPos);
+      vec4 gridSample = pyroSample(uPyroDensityAtlas, cellPos);
+      float domainFade = pyroDomainFade(cellPos);
+      gridDens = gridSample.r * domainFade;
+      gridTemp = gridSample.g * domainFade;
+    }
     float alpha = (core * 0.6 + veil * 0.85) * mix(0.6, 1.0, band * 0.25 + 0.75);
     alpha += streak * uStreak * (0.08 + (1.0 - radius) * 0.18);
     alpha += plumeColumn * uPlumeAmount * 0.22;
@@ -114,6 +142,7 @@ export const FRAGMENT_SHADER = `
     alpha += ledgerMask * uLedgerAmount * 0.14;
     alpha += runePattern * uRuneAmount * 0.16;
     alpha *= (0.28 + uDensity * 1.35) * (0.78 + uAudio * 0.3) * anisotropicLift;
+    alpha *= 1.0 + min(gridDens, 24.0) * uPyroDensityAmount;
     alpha *= smoothstep(1.08, 0.12 + uEdgeFade * 0.26, radius);
     alpha *= smoothstep(0.0, 0.18, sliceT + 0.02) * smoothstep(0.0, 0.18, 1.02 - sliceT);
     alpha *= 0.92 + mix(-0.18, 0.2, grain) * uGrain;
@@ -160,6 +189,7 @@ export const FRAGMENT_SHADER = `
     } else {
       color += uColor * (wisps * 0.08 + forward * uGlow * 0.14);
     }
+    color += uColor * min(gridTemp, 3.0) * uPyroTempAmount;
     gl_FragColor = vec4(color, alpha * uOpacity);
   }
 `;

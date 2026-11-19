@@ -28,9 +28,11 @@ export type VolumeFogRuntimeState = {
   sliceOffsets: number[];
   planeScale: number;
   globalRadius: number;
+  pyroDensityAmount: number;
+  pyroTempAmount: number;
 };
 
-export function useVolumeFogRuntime({ config, layerIndex, audioRef, isPlaying }: VolumeFogSystemProps): VolumeFogRuntimeState {
+export function useVolumeFogRuntime({ config, layerIndex, audioRef, isPlaying, pyroFeedRef }: VolumeFogSystemProps): VolumeFogRuntimeState {
   const { camera } = useThree();
   const rootRef = React.useRef<THREE.Group>(null);
   const materialsRef = React.useRef<THREE.ShaderMaterial[]>([]);
@@ -83,6 +85,7 @@ export function useVolumeFogRuntime({ config, layerIndex, audioRef, isPlaying }:
       ? (audioRef.current.pulse * 0.65 + audioRef.current.bass * 0.35) * fogAudioReactive
       : 0;
 
+    const pyroFeed = pyroFeedRef?.current;
     materialsRef.current.forEach((material, index) => {
       applyVolumeFogMaterialUniforms(material, {
         sharedColor,
@@ -95,6 +98,12 @@ export function useVolumeFogRuntime({ config, layerIndex, audioRef, isPlaying }:
         materialStyleIndex,
         sliceCount,
         profile,
+        pyroTexture: pyroFeed?.texture ?? null,
+        pyroResolution: pyroFeed?.resolution ?? 0,
+        pyroFloatLinear: pyroFeed?.floatLinear ?? false,
+        pyroDensityAmount: fogRuntime.pyroDensityAmount,
+        pyroTempAmount: fogRuntime.pyroTempAmount,
+        pyroHalfExtent: config.gpgpuBounceRadius,
         audio,
         time: t * (isPlaying ? 1 : 0.1),
         sliceIndex: index,
@@ -139,5 +148,7 @@ export function useVolumeFogRuntime({ config, layerIndex, audioRef, isPlaying }:
     sliceOffsets,
     planeScale,
     globalRadius,
+    pyroDensityAmount: fogRuntime.pyroDensityAmount,
+    pyroTempAmount: fogRuntime.pyroTempAmount,
   };
 }

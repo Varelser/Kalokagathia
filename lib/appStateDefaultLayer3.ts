@@ -245,6 +245,8 @@ export const APP_STATE_DEFAULT_LAYER_3: Partial<ParticleConfig> = {
   layer3RaymarchOpacity: 1.0,
   layer3FogOpacity: 0.2,
   layer3FogDensity: 0.42,
+  layer3PyroDensityAmount: 0,
+  layer3PyroTempAmount: 0,
   layer3FogDepth: 0.7,
   layer3FogScale: 1.0,
   layer3FogDrift: 0.22,

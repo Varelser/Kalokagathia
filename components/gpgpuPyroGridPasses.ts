@@ -7,11 +7,20 @@
 //   advect scalar : scalarCur  -> scalarScratch   (reads velCur)
 //   advect vel    : velCur     -> velScratch      (reads velCur)
 //   forces        : velScratch -> velCur          (reads scalarScratch)
-//   scalar update : scalarScratch -> scalarCur
-//   divergence    : velCur     -> div
+//   scalar update : scalarScratch -> scalarCur    (CB: + combustion)
+//   vorticity     : velCur -> curl; velCur -> velScratch  (CB, eps > 0
+//                   only; the live/free pair swaps, see below)
+//   divergence    : velLive    -> div
 //   jacobi x N    : presA <-> presB (both cleared first, FLIP rule)
-//   subtract      : velCur     -> velScratch      (reads final pressure)
-//   velCur := velScratch (ping flip recorded on the targets)
+//   subtract      : velLive    -> velFree         (reads final pressure)
+//   velCur := velFree (ping recorded on the targets)
+//
+// Phase CB: the velocity entering the projection is tracked as
+// velLive with velFree as its write slot. Without vorticity
+// velLive/velFree are exactly velCur/velScratch (the CA flow,
+// unchanged); the confinement force consumes velCur into
+// velScratch, so the pair swaps. baseVelTexture records velLive
+// (the pre-projection velocity) for the particle FLIP coupling.
 //
 // The runner is a no-op unless the grid is enabled AND targets
 // exist — targets are only allocated while the key is on and the
@@ -25,11 +34,17 @@ import {
   PYRO_GRID_DENSITY_DECAY_RATE,
   PYRO_GRID_EMIT_DENSITY,
   PYRO_GRID_EMIT_TEMP_RATE,
+  PYRO_GRID_FUEL_EMIT,
+  PYRO_GRID_FUEL_HEAT,
+  PYRO_GRID_FUEL_IGNITE_HI,
+  PYRO_GRID_FUEL_IGNITE_LO,
+  PYRO_GRID_FUEL_REACTION_K,
   PYRO_GRID_JACOBI_MAX,
   PYRO_GRID_MAX_SPEED_CELLS,
   PYRO_GRID_SCALAR_DIFFUSE,
   PYRO_GRID_SOURCE_Y,
   PYRO_GRID_TEMP_COOL_RATE,
+  PYRO_GRID_TEMP_MAX,
   pyroGridPassCount,
   pyroGridSourceRadius,
   setPyroGridRuntimeStatus,
@@ -43,6 +58,13 @@ export type PyroGridTargets = {
   presA: THREE.WebGLRenderTarget;
   presB: THREE.WebGLRenderTarget;
   div: THREE.WebGLRenderTarget;
+  // Vorticity confinement field (Phase CB): rgb = curl,
+  // a = |curl|. Allocated with the other targets; only written
+  // on steps where epsilon > 0.
+  curl: THREE.WebGLRenderTarget;
+  // Pre-projection velocity texture of the latest step (the
+  // particle coupling's FLIP base). Null until the first step.
+  baseVelTexture: THREE.Texture | null;
   resolution: number;
   atlasWidth: number;
   atlasHeight: number;
@@ -63,6 +85,8 @@ export type PyroGridMaterials = {
   pyroDivergenceMat: THREE.ShaderMaterial;
   pyroJacobiMat: THREE.ShaderMaterial;
   pyroSubtractMat: THREE.ShaderMaterial;
+  pyroCurlMat: THREE.ShaderMaterial;
+  pyroVorticityForceMat: THREE.ShaderMaterial;
   pyroClearMat: THREE.ShaderMaterial;
 };
 
@@ -161,15 +185,48 @@ export function runPyroGridPasses(args: {
       (n - 1) / 2,
     );
     mat.uniforms.uSourceRadius.value = pyroGridSourceRadius(n);
+    mat.uniforms.uFuelRate.value = config.gpgpuPyroFuelRate;
+    mat.uniforms.uFuelEmit.value = PYRO_GRID_FUEL_EMIT;
+    mat.uniforms.uFuelReactionK.value = PYRO_GRID_FUEL_REACTION_K;
+    mat.uniforms.uFuelHeat.value = PYRO_GRID_FUEL_HEAT;
+    mat.uniforms.uIgniteLo.value = PYRO_GRID_FUEL_IGNITE_LO;
+    mat.uniforms.uIgniteHi.value = PYRO_GRID_FUEL_IGNITE_HI;
+    mat.uniforms.uTempMax.value = PYRO_GRID_TEMP_MAX;
     drawInto(mat, scalarCur);
   }
+
+  // 4b. Vorticity confinement (Phase CB): curl of the forced
+  // velocity, then the confinement force into the free buffer.
+  // Only on steps where epsilon > 0 — at epsilon 0 the pair of
+  // passes does not exist and the CA flow runs unchanged.
+  let velLive = velCur;
+  let velFree = velScratch;
+  const vorticityActive = config.gpgpuPyroVorticityEpsilon > 0;
+  if (vorticityActive) {
+    const curlMat = materials.pyroCurlMat;
+    setPyroCommonUniforms(curlMat, targets);
+    curlMat.uniforms.uVelIn.value = velCur.texture;
+    drawInto(curlMat, targets.curl);
+    const forceMat = materials.pyroVorticityForceMat;
+    setPyroCommonUniforms(forceMat, targets);
+    forceMat.uniforms.uVelIn.value = velCur.texture;
+    forceMat.uniforms.uCurlIn.value = targets.curl.texture;
+    forceMat.uniforms.uDelta.value = dt;
+    forceMat.uniforms.uEpsilon.value = config.gpgpuPyroVorticityEpsilon;
+    forceMat.uniforms.uMaxSpeed.value = maxSpeed;
+    drawInto(forceMat, velScratch);
+    velLive = velScratch;
+    velFree = velCur;
+  }
+  // The pre-projection velocity (the coupling's FLIP base).
+  targets.baseVelTexture = velLive.texture;
 
   // 5. Divergence of the forced velocity (computed once; the
   // Jacobi iteration reads it every pass).
   {
     const mat = materials.pyroDivergenceMat;
     setPyroCommonUniforms(mat, targets);
-    mat.uniforms.uVelIn.value = velCur.texture;
+    mat.uniforms.uVelIn.value = velLive.texture;
     drawInto(mat, targets.div);
   }
 
@@ -197,20 +254,33 @@ export function runPyroGridPasses(args: {
   {
     const mat = materials.pyroSubtractMat;
     setPyroCommonUniforms(mat, targets);
-    mat.uniforms.uVelIn.value = velCur.texture;
+    mat.uniforms.uVelIn.value = velLive.texture;
     mat.uniforms.uPresTex.value = presIn.texture;
     mat.uniforms.uMaxSpeed.value = maxSpeed;
-    drawInto(mat, velScratch);
+    drawInto(mat, velFree);
   }
 
-  targets.velPingIsA = !targets.velPingIsA;
+  targets.velPingIsA = velFree === targets.velA;
   targets.framesStepped += 1;
   setPyroGridRuntimeStatus({
     active: true,
     resolution: n,
-    passesPerStep: pyroGridPassCount(jacobiIterations),
+    passesPerStep: pyroGridPassCount(jacobiIterations, vorticityActive),
     framesStepped: targets.framesStepped,
   });
+}
+
+// The velocity field as it stands after the latest step
+// (post-projection) — the particle coupling's PIC/FLIP source.
+export function pyroGridCurrentVelTexture(targets: PyroGridTargets): THREE.Texture {
+  return (targets.velPingIsA ? targets.velA : targets.velB).texture;
+}
+
+// The scalar field as it stands after the latest step — the fog
+// feed's source. The scalar buffers never ping (scalarA always
+// holds the current value; see the step-1/4 pairing above).
+export function pyroGridCurrentScalarTexture(targets: PyroGridTargets): THREE.Texture {
+  return targets.scalarA.texture;
 }
 
 export function disposePyroGridTargets(targets: PyroGridTargets | null): void {
@@ -222,4 +292,5 @@ export function disposePyroGridTargets(targets: PyroGridTargets | null): void {
   targets.presA.dispose();
   targets.presB.dispose();
   targets.div.dispose();
+  targets.curl.dispose();
 }

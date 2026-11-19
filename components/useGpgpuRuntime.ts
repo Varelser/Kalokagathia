@@ -168,6 +168,8 @@ function createPyroGridTargets(
     presA: makePyroScalarRT(size.width, size.height),
     presB: makePyroScalarRT(size.width, size.height),
     div: makePyroScalarRT(size.width, size.height),
+    curl: makePyroFieldRT(size.width, size.height, floatLinear),
+    baseVelTexture: null,
     resolution,
     atlasWidth: size.width,
     atlasHeight: size.height,
@@ -187,7 +189,7 @@ function createPyroGridTargets(
   copyMat.blending = THREE.NoBlending;
   const copyMesh = new THREE.Mesh(copyGeo, copyMat);
   copyScene.add(copyMesh);
-  for (const rt of [targets.velA, targets.velB, targets.scalarA, targets.scalarB, targets.presA, targets.presB, targets.div]) {
+  for (const rt of [targets.velA, targets.velB, targets.scalarA, targets.scalarB, targets.presA, targets.presB, targets.div, targets.curl]) {
     gl.setRenderTarget(rt);
     gl.render(copyScene, copyCam);
   }

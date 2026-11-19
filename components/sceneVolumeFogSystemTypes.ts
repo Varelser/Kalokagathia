@@ -1,12 +1,17 @@
 import React from 'react';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
+import type { PyroGridFogFeed } from '../lib/pyroGrid';
 
 export type VolumeFogSystemProps = {
   config: ParticleConfig;
   layerIndex: 2 | 3;
   audioRef: React.MutableRefObject<{ bass: number; treble: number; pulse: number; bandA: number; bandB: number }>;
   isPlaying: boolean;
+  // Phase CB: the Pyro grid's shared fog feed (written by the
+  // GPGPU system). Optional — without it the feed amounts
+  // resolve to no-ops.
+  pyroFeedRef?: React.MutableRefObject<PyroGridFogFeed>;
 };
 
 export type FogMode = ParticleConfig['layer2Type'];
@@ -61,4 +66,13 @@ export type VolumeFogUniformParams = {
   materialStyleIndex: number;
   sliceCount: number;
   profile: FogProfile;
+  // Phase CB: Pyro grid feed state for this frame. A null
+  // texture (grid not stepped) forces both amounts to 0 in the
+  // material apply, so the shader block stays skipped.
+  pyroTexture: THREE.Texture | null;
+  pyroResolution: number;
+  pyroFloatLinear: boolean;
+  pyroDensityAmount: number;
+  pyroTempAmount: number;
+  pyroHalfExtent: number;
 };

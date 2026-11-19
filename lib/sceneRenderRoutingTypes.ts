@@ -68,6 +68,9 @@ export interface LayerRuntimeFogSnapshot extends LayerRuntimeConfigSnapshot {
   glow: number;
   anisotropy: number;
   audioReactive: number;
+  // Phase CB: Pyro grid fog feed amounts (0 = bit-identical fog).
+  pyroDensityAmount: number;
+  pyroTempAmount: number;
 }
 
 export interface LayerRuntimeSourceLayoutSnapshot extends LayerRuntimeConfigSnapshot {

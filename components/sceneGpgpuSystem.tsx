@@ -28,6 +28,7 @@ import {
   syncVisualUniforms,
 } from './gpgpuVisualUpdates';
 import {
+  applyPyroGridCoupleUniforms,
   blitPreviousPositionPass,
   runAuxChainSimulationPasses,
   runAuxSimulationPasses,
@@ -38,7 +39,8 @@ import {
   updateMouseWorldPosition,
 } from './gpgpuSimulationPasses';
 import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
-import { runPyroGridPasses } from './gpgpuPyroGridPasses';
+import { pyroGridCurrentScalarTexture, runPyroGridPasses } from './gpgpuPyroGridPasses';
+import { EMPTY_PYRO_GRID_FOG_FEED, type PyroGridFogFeed } from '../lib/pyroGrid';
 import { GpgpuAttrDynPass } from './gpgpuAttrDynPass';
 import { buildAttrDynFragment } from '../lib/expressionGlsl';
 import { GpgpuAttrFeedbackPass } from './gpgpuAttrFeedbackPass';
@@ -71,9 +73,12 @@ type GpgpuSystemProps = {
   isPlaying: boolean;
   posReadbackRef?: RefObject<Float32Array | null>;
   pointCloudCaptureRef?: RefObject<PointCloudCaptureState | null>;
+  // Phase CB: the Pyro grid fog feed this system publishes to
+  // (read by the volume-fog layers).
+  pyroFeedRef?: MutableRefObject<PyroGridFogFeed>;
 };
 
-export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config, isPlaying, posReadbackRef, pointCloudCaptureRef }) => {
+export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config, isPlaying, posReadbackRef, pointCloudCaptureRef, pyroFeedRef }) => {
   const { gl, camera } = useThree();
   const mouseNDC = useRef(new THREE.Vector2(0, 0));
   // Multi-pointer tracking (Phase AO): insertion-ordered set of
@@ -233,6 +238,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     pyroDivergenceMat,
     pyroJacobiMat,
     pyroSubtractMat,
+    pyroCurlMat,
+    pyroVorticityForceMat,
     pyroClearMat,
     drawGeo,
     streakGeo,
@@ -616,6 +623,18 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       const vellumState = vellumStateRtRef.current;
       const vellumStateIn = vellumState ? (vellumStatePingIsA.current ? vellumState.a : vellumState.b) : null;
       const vellumStateOut = vellumState ? (vellumStatePingIsA.current ? vellumState.b : vellumState.a) : null;
+      // Pyro grid coupling (Phase CB): fill the velocity
+      // material's pyro uniforms from the grid's latest
+      // completed step, right before the passes consume the
+      // material (the grid steps later in this frame, so the
+      // coupling reads the previous frame's field — the
+      // standard one-frame lag of a staggered coupling).
+      applyPyroGridCoupleUniforms({
+        config,
+        velSimMat,
+        targets: pyroGridRef.current,
+        useWebGPU: routing.useWebGPU,
+      });
       runSimulationPasses({
         useWebGPU: routing.useWebGPU,
         config,
@@ -671,10 +690,11 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
 
     // Pyro grid (Phase CA, WebGL path only — the WebGPU compute
     // backend has no grid solver; round-2 spec: while WebGPU is
-    // active the grid is ineffective). The grid is uncoupled from
-    // the particle pool this round (coupling is a later phase),
-    // so its position in the frame order is free; it steps here,
-    // after routing is resolved, with the frame's dt.
+    // active the grid is ineffective). Phase CB couples it both
+    // ways out: the particle coupling reads the previous step
+    // (filled before runSimulationPasses above), and the fog
+    // feed below publishes this step's scalar field. It steps
+    // here, after routing is resolved, with the frame's dt.
     if (!routing.useWebGPU && config.gpgpuPyroGridEnabled && pyroGridRef.current && simMeshRef.current) {
       runPyroGridPasses({
         config,
@@ -687,6 +707,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           pyroDivergenceMat,
           pyroJacobiMat,
           pyroSubtractMat,
+          pyroCurlMat,
+          pyroVorticityForceMat,
           pyroClearMat,
         },
         simMesh: simMeshRef.current,
@@ -695,6 +717,23 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         simCamera,
         dt,
       });
+    }
+
+    // Fog feed (Phase CB): publish the scalar field the fog
+    // layers sample. Cleared whenever the grid did not step
+    // this frame (disabled, WebGPU session, or no targets), so
+    // a stale field can never linger into a grid-off frame.
+    if (pyroFeedRef) {
+      const feedTargets = pyroGridRef.current;
+      if (!routing.useWebGPU && config.gpgpuPyroGridEnabled && feedTargets && feedTargets.framesStepped > 0) {
+        pyroFeedRef.current = {
+          texture: pyroGridCurrentScalarTexture(feedTargets),
+          resolution: feedTargets.resolution,
+          floatLinear: feedTargets.floatLinear,
+        };
+      } else if (pyroFeedRef.current.texture) {
+        pyroFeedRef.current = EMPTY_PYRO_GRID_FOG_FEED;
+      }
     }
 
     // Whitewater (Phase BC, WebGL path only — the WebGPU compute

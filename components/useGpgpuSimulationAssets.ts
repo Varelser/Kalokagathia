@@ -7,11 +7,13 @@ import { WW_POS_FRAG, WW_VEL_FRAG } from "./gpgpuShaderWhitewater";
 import {
   PYRO_GRID_ADVECT_SCALAR_FRAG,
   PYRO_GRID_ADVECT_VEL_FRAG,
+  PYRO_GRID_CURL_FRAG,
   PYRO_GRID_DIVERGENCE_FRAG,
   PYRO_GRID_FORCES_VEL_FRAG,
   PYRO_GRID_JACOBI_FRAG,
   PYRO_GRID_SCALAR_UPDATE_FRAG,
   PYRO_GRID_SUBTRACT_FRAG,
+  PYRO_GRID_VORTICITY_FORCE_FRAG,
 } from "./gpgpuShaderPyroGrid";
 import { useThree } from "@react-three/fiber";
 import { buildCustomForceHarness, compileCheckShader, setCustomForceStatus, validateCustomForceCode } from "../lib/gpgpuCustomForce";
@@ -262,6 +264,22 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uFlipBaseTex:     { value: null },
       uFlipBlend:       { value: 0.95 },
       uFlipTransfer:    { value: 1.0 },
+      // Pyro grid coupling (Phase CB): set only by
+      // applyPyroGridCoupleUniforms on the main velocity
+      // material; the defaults keep the G2P block inert (and
+      // replica stacks, which never get them set, stay inert
+      // like the FLIP layer above).
+      uPyroGridCouple:  { value: false },
+      uPyroGridVelTex:  { value: null },
+      uPyroGridBaseTex: { value: null },
+      uPyroGridBlend:   { value: 0 },
+      uPyroGridTransfer: { value: 1.0 },
+      uPyroGridVelScale: { value: 0 },
+      uGridN:           { value: 1 },
+      uAtlasSize:       { value: new THREE.Vector2(1, 1) },
+      uAtlasTiles:      { value: new THREE.Vector2(1, 1) },
+      uManualTrilinear: { value: false },
+      uPyroGridBounds:  { value: new THREE.Vector4(0, 0, 0, 150) },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_VEL_FRAG,
   });
@@ -691,6 +709,13 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uEmitTempRate: { value: 8 },
       uSourceCenter: { value: new THREE.Vector3(15.5, 2, 15.5) },
       uSourceRadius: { value: 2.67 },
+      uFuelRate: { value: 0 },
+      uFuelEmit: { value: 60 },
+      uFuelReactionK: { value: 2.5 },
+      uFuelHeat: { value: 3 },
+      uIgniteLo: { value: 0.15 },
+      uIgniteHi: { value: 0.35 },
+      uTempMax: { value: 4 },
     },
     vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_SCALAR_UPDATE_FRAG,
   }), []);
@@ -717,6 +742,24 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uMaxSpeed: { value: 128 },
     },
     vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_SUBTRACT_FRAG,
+  }), []);
+  const pyroCurlMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uVelIn: { value: null },
+    },
+    vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_CURL_FRAG,
+  }), []);
+  const pyroVorticityForceMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uVelIn: { value: null },
+      uCurlIn: { value: null },
+      uDelta: { value: 0.016 },
+      uEpsilon: { value: 0 },
+      uMaxSpeed: { value: 128 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_VORTICITY_FORCE_FRAG,
   }), []);
   const pyroClearMat = flipClearMat;
 
@@ -834,6 +877,8 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     pyroDivergenceMat,
     pyroJacobiMat,
     pyroSubtractMat,
+    pyroCurlMat,
+    pyroVorticityForceMat,
     pyroClearMat,
   };
 }

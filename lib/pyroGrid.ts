@@ -88,8 +88,11 @@ export function pyroGridCellUv(
 // solver figure), the FLIP-matching default 16 -> 22. The two
 // pressure clears per step follow the FLIP accounting convention
 // and are not counted (same as FLIP's clearInto calls).
-export function pyroGridPassCount(jacobiIterations: number): number {
-  return 6 + Math.max(0, Math.floor(jacobiIterations));
+// Phase CB: vorticity confinement (sub-phase 7) inserts two more
+// passes (curl + confinement force) ahead of the projection, but
+// only on steps where epsilon > 0 — the count follows the step.
+export function pyroGridPassCount(jacobiIterations: number, vorticity = false): number {
+  return 6 + Math.max(0, Math.floor(jacobiIterations)) + (vorticity ? 2 : 0);
 }
 
 export const PYRO_GRID_JACOBI_DEFAULT = 16;
@@ -118,6 +121,78 @@ export const PYRO_GRID_MAX_SPEED_CELLS = 4.0; // x N, cells/s clamp
 export function pyroGridSourceRadius(n: number): number {
   return Math.max(2.0, n / 12);
 }
+
+// Combustion constants (Phase CB, sub-phase 8). The fuel field
+// rides the scalar atlas's spare b channel — no extra field.
+// The reaction is folded into the scalar-update pass: where the
+// temperature crosses the ignition window, fuel burns at a rate
+// proportional to the fuel present (so the burn is bounded by
+// the fuel itself), releases PYRO_GRID_FUEL_HEAT of temperature
+// per unit fuel, and the temperature is capped at
+// PYRO_GRID_TEMP_MAX — the reaction cannot run away. The fuel
+// key (gpgpuPyroFuelRate) scales both the source emission and
+// the reaction rate; at key 0 nothing is emitted and nothing
+// burns, so the channel stays zero by construction.
+export const PYRO_GRID_FUEL_EMIT = 60.0; // fuel/s at falloff 1, at fuel key 1
+export const PYRO_GRID_FUEL_REACTION_K = 2.5; // 1/s at fuel key 1 and full ignition
+export const PYRO_GRID_FUEL_HEAT = 3.0; // temperature per unit fuel burned
+// Ignition window, calibrated to the solver's measured field
+// temperatures (Phase CA gate probe: the 32^3 field peaks at
+// ~0.56 after 60 steps — the emit temperature is a relaxation
+// target the field itself never reaches). A window at 0.45-0.8
+// would sit above almost the whole field and combustion would
+// never ignite; 0.15-0.35 puts full ignition on the hot source
+// cells and partial ignition down the plume core.
+export const PYRO_GRID_FUEL_IGNITE_LO = 0.15; // ignition smoothstep window (temperature)
+export const PYRO_GRID_FUEL_IGNITE_HI = 0.35;
+export const PYRO_GRID_TEMP_MAX = 4.0; // combustion temperature cap
+
+// World <-> grid mapping (Phase CB, shared by the fog feed and
+// the particle coupling). The grid domain is the cube centred on
+// the origin with half-extent = the particle bounce radius: cell
+// coordinates are continuous, cell i's centre sits at coordinate
+// i, and the cube's faces sit at cell -0.5 and N - 0.5. The GLSL
+// twin is PYRO_GRID_WORLD in components/gpgpuShaderPyroGrid.ts;
+// the test-suite round-trips the pair.
+export function pyroGridCellOfWorld(
+  world: { x: number; y: number; z: number },
+  halfExtent: number,
+  n: number,
+): { x: number; y: number; z: number } {
+  const s = n / (2 * halfExtent);
+  return {
+    x: (world.x + halfExtent) * s - 0.5,
+    y: (world.y + halfExtent) * s - 0.5,
+    z: (world.z + halfExtent) * s - 0.5,
+  };
+}
+
+// Grid velocity (cells/second) -> particle velocity unit. The
+// position pass integrates pos += vel * dt * speed * 60, so one
+// particle-velocity unit is 60 world units/second; one cell is
+// 2 * halfExtent / N world units. The scale is therefore
+// (2 * halfExtent / N) / 60 — decided in Phase CB (the round-7
+// brief's open item) from the position pass's own integration.
+export function pyroGridVelScale(halfExtent: number, n: number): number {
+  return (2 * halfExtent) / n / 60;
+}
+
+// Fog feed (Phase CB, sub-phase 5): the GPGPU system publishes
+// the scalar atlas's current read texture here every frame it
+// steps the grid; the volume-fog layers sample it. A null
+// texture means no grid has stepped (disabled, unsupported, or
+// WebGPU session) and the fog amounts must resolve to no-ops.
+export type PyroGridFogFeed = {
+  texture: import('three').Texture | null;
+  resolution: number;
+  floatLinear: boolean;
+};
+
+export const EMPTY_PYRO_GRID_FOG_FEED: PyroGridFogFeed = {
+  texture: null,
+  resolution: 0,
+  floatLinear: false,
+};
 
 // Runtime status for the passes -> diagnostics consumers (same
 // store shape as the custom-force status). Written by the pass

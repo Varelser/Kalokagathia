@@ -23,6 +23,8 @@ export const VolumeFogSystemRender: React.FC<{ layerIndex: 2 | 3; runtime: Volum
     sliceOffsets,
     planeScale,
     globalRadius,
+    pyroDensityAmount,
+    pyroTempAmount,
   } = runtime;
 
   return (
@@ -39,6 +41,12 @@ export const VolumeFogSystemRender: React.FC<{ layerIndex: 2 | 3; runtime: Volum
           materialStyleIndex,
           sliceCount,
           profile,
+          pyroTexture: null,
+          pyroResolution: 0,
+          pyroFloatLinear: false,
+          pyroDensityAmount,
+          pyroTempAmount,
+          pyroHalfExtent: 150,
           sliceIndex: index,
         });
         materialsRef.current[index] = material;

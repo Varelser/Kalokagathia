@@ -588,6 +588,31 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       )}
     </div>
 
+    {/* Pyro Grid (Phase CA/CB): atlas grid solver — density /
+        temperature / pressure projection on a real 3D grid, fog
+        feed, particle coupling, vorticity, combustion. */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Pyro Grid （グリッドソルバ）" value={config.gpgpuPyroGridEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuPyroGridEnabled', v)} />
+      {config.gpgpuPyroGridEnabled && (
+        <>
+          <Toggle
+            label="Grid Resolution （解像度）"
+            value={config.gpgpuPyroGridResolution}
+            options={[{ label: 'Auto', val: 0 }, { label: '32³', val: 32 }, { label: '48³', val: 48 }, { label: '64³', val: 64 }, { label: '96³', val: 96 }]}
+            onChange={(v) => updateConfig('gpgpuPyroGridResolution', v)}
+          />
+          <Slider label="Jacobi Iterations （圧力反復）" value={config.gpgpuPyroGridJacobiIterations} min={0} max={32} step={1} onChange={(v) => updateConfig('gpgpuPyroGridJacobiIterations', v)} />
+          <Slider label="Grid Blend （PIC↔FLIP結合）" value={config.gpgpuPyroGridBlend} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuPyroGridBlend', v)} />
+          <Slider label="Grid Transfer （結合の移転率）" value={config.gpgpuPyroGridTransfer} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuPyroGridTransfer', v)} />
+          <Slider label="Vorticity ε （渦度閉じ込め）" value={config.gpgpuPyroVorticityEpsilon} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuPyroVorticityEpsilon', v)} />
+          <Slider label="Fuel Rate （燃焼）" value={config.gpgpuPyroFuelRate} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuPyroFuelRate', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            密度・温度をフォグ層へ供給し（レイヤー側の Pyro 量で効きます）、粒子結合は Blend が 0 より大きいときだけ働きます。ε と燃料は 0 で従来同一です。
+          </div>
+        </>
+      )}
+    </div>
+
     {/* Vector Field */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Vector Field" value={config.gpgpuVFieldEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuVFieldEnabled', v)} />

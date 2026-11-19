@@ -1,3 +1,5 @@
+import { PYRO_GRID_SAMPLING, PYRO_GRID_UNIFORMS, PYRO_GRID_WORLD } from './gpgpuShaderPyroGrid';
+
 // ── Velocity sim fragment, part 1 of 5: preamble: precision + all uniform declarations ──
 // Split from gpgpuShaderSimulationVelocity.ts in Phase AV
 // (behaviour-zero maintenance): this chunk is a verbatim slice
@@ -296,6 +298,24 @@ export const VEL_FRAG_PREAMBLE = /* glsl */ `
   uniform sampler2D uFlipBaseTex;
   uniform float uFlipBlend;
   uniform float uFlipTransfer;
+  // Pyro grid coupling (Phase CB): G2P transfer from the grid
+  // solver's atlas fields, in the FLIP pattern but on all three
+  // components (the grid solves y motion too, unlike the 2.5D
+  // FLIP field). uPyroGridCouple is only ever true while the
+  // grid is enabled, stepped, and its blend key is above 0 —
+  // set by applyPyroGridCoupleUniforms on the CPU side; off,
+  // the block in the main tail never runs. The atlas sampling
+  // and the world->grid mapping are the grid solver's own
+  // shared chunks (PYRO_GRID_*), not a second copy.
+  uniform bool  uPyroGridCouple;
+  uniform sampler2D uPyroGridVelTex;
+  uniform sampler2D uPyroGridBaseTex;
+  uniform float uPyroGridBlend;
+  uniform float uPyroGridTransfer;
+  uniform float uPyroGridVelScale;
+  ${PYRO_GRID_UNIFORMS}
+  ${PYRO_GRID_SAMPLING}
+  ${PYRO_GRID_WORLD}
   varying vec2 vUv;
 
 `;

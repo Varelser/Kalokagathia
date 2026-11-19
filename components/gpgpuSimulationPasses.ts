@@ -24,6 +24,11 @@ import {
   getMeshSdfCollider,
   meshSdfWorldScale,
 } from '../lib/meshSdfCollider';
+import {
+  pyroGridCurrentVelTexture,
+  type PyroGridTargets,
+} from './gpgpuPyroGridPasses';
+import { pyroGridVelScale } from '../lib/pyroGrid';
 
 // Particle Life matrix cache: the flat uniform array only changes when
 // preset / species / seed change, so avoid reallocating it every frame.
@@ -242,6 +247,47 @@ export function runFluidAdvectionPass(args: {
 
   velSimMat.uniforms.uFluidEnabled.value = false;
   if (velSimMat.uniforms.uFlipEnabled) velSimMat.uniforms.uFlipEnabled.value = false;
+}
+
+// Pyro grid coupling (Phase CB): fills the velocity material's
+// pyro uniforms from the grid targets' latest step, in the same
+// shape as the FLIP fill at the end of runFluidAdvectionPass.
+// The block in the shader only runs while the grid is enabled,
+// has stepped at least once, and the blend key is above 0 — at
+// blend 0 (the default) the couple flag stays false and the
+// velocity pass is untouched, which is what keeps grid-ON with
+// default coupling keys byte-identical.
+export function applyPyroGridCoupleUniforms(args: {
+  config: ParticleConfig;
+  velSimMat: THREE.ShaderMaterial;
+  targets: PyroGridTargets | null;
+  useWebGPU: boolean;
+}): void {
+  const { config, velSimMat, targets, useWebGPU } = args;
+  const u = velSimMat.uniforms;
+  if (!u.uPyroGridCouple) return;
+  const active = !useWebGPU
+    && config.gpgpuPyroGridEnabled
+    && targets !== null
+    && targets.framesStepped > 0
+    && targets.baseVelTexture !== null
+    && config.gpgpuPyroGridBlend > 0;
+  if (!active) {
+    u.uPyroGridCouple.value = false;
+    return;
+  }
+  const t = targets as PyroGridTargets;
+  u.uPyroGridCouple.value = true;
+  u.uPyroGridVelTex.value = pyroGridCurrentVelTexture(t);
+  u.uPyroGridBaseTex.value = t.baseVelTexture;
+  u.uPyroGridBlend.value = config.gpgpuPyroGridBlend;
+  u.uPyroGridTransfer.value = config.gpgpuPyroGridTransfer;
+  u.uPyroGridVelScale.value = pyroGridVelScale(config.gpgpuBounceRadius, t.resolution);
+  if (u.uGridN) u.uGridN.value = t.resolution;
+  if (u.uAtlasSize) (u.uAtlasSize.value as THREE.Vector2).set(t.atlasWidth, t.atlasHeight);
+  if (u.uAtlasTiles) (u.uAtlasTiles.value as THREE.Vector2).set(t.tilesX, t.tilesY);
+  if (u.uManualTrilinear) u.uManualTrilinear.value = !t.floatLinear;
+  if (u.uPyroGridBounds) (u.uPyroGridBounds.value as THREE.Vector4).set(0, 0, 0, config.gpgpuBounceRadius);
 }
 
 export function runSimulationPasses(args: {

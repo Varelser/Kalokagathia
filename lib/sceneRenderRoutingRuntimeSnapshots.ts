@@ -301,6 +301,8 @@ export function getLayerRuntimeFogSnapshot(config: ParticleConfig, layerIndex: 2
     glow: layerIndex === 2 ? config.layer2FogGlow : config.layer3FogGlow,
     anisotropy: layerIndex === 2 ? config.layer2FogAnisotropy : config.layer3FogAnisotropy,
     audioReactive: layerIndex === 2 ? config.layer2FogAudioReactive : config.layer3FogAudioReactive,
+    pyroDensityAmount: layerIndex === 2 ? config.layer2PyroDensityAmount : config.layer3PyroDensityAmount,
+    pyroTempAmount: layerIndex === 2 ? config.layer2PyroTempAmount : config.layer3PyroTempAmount,
   };
 }
 

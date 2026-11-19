@@ -288,6 +288,9 @@ export interface ParticleConfigLayer3 {
   layer3RaymarchOpacity: number;
   layer3FogOpacity: number;
   layer3FogDensity: number;
+  // Phase CB: Pyro grid fog feed amounts (0 = bit-identical).
+  layer3PyroDensityAmount: number;
+  layer3PyroTempAmount: number;
   layer3FogDepth: number;
   layer3FogScale: number;
   layer3FogDrift: number;

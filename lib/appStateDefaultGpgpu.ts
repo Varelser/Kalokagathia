@@ -189,6 +189,11 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuPyroGridEnabled: false,
   gpgpuPyroGridResolution: 0,
   gpgpuPyroGridJacobiIterations: 16,
+  // Phase CB: coupling / vorticity / combustion (all inert at 0).
+  gpgpuPyroGridBlend: 0,
+  gpgpuPyroGridTransfer: 1.0,
+  gpgpuPyroVorticityEpsilon: 0,
+  gpgpuPyroFuelRate: 0,
   // Vector Field
   gpgpuVFieldEnabled: false,
   gpgpuVFieldType: 'spiral' as const,

@@ -310,6 +310,16 @@ export interface ParticleConfigGpgpu {
   gpgpuPyroGridEnabled: boolean;
   gpgpuPyroGridResolution: number;
   gpgpuPyroGridJacobiIterations: number;
+  // Phase CB: grid -> particle coupling (G2P in the FLIP pattern;
+  // blend 0 = PIC, 1 = FLIP; the shader block only runs while
+  // blend > 0, so the default keeps output bit-identical),
+  // vorticity confinement strength epsilon (0 = the two passes
+  // do not exist), and the combustion fuel rate (0 = no fuel is
+  // emitted or burned; the scalar b channel stays zero).
+  gpgpuPyroGridBlend: number;
+  gpgpuPyroGridTransfer: number;
+  gpgpuPyroVorticityEpsilon: number;
+  gpgpuPyroFuelRate: number;
   // Vector Field
   gpgpuVFieldEnabled: boolean;
   gpgpuVFieldType: 'dipole' | 'saddle' | 'spiral' | 'source' | 'abc' | 'gyre' | 'worley';

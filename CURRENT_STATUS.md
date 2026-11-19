@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.74.0**（2026-11-19、第11期 Phase CA＝Pyro グリッド化の前半（下位フェーズ1〜4）: 2D アトラス化 3D グリッドの stable-fluids ソルバー基盤（移流・浮力・明示拡散・圧力射影のフルソルバー、6＋Jacobi パス）を粒子側 Pyro と並立させた。解像度は性能ティア連動（entry 32³／standard 48³／high・flagship 64³、96³ は flagship 手動のみ）。新規 config キー +3（`gpgpuPyroGridEnabled`／`gpgpuPyroGridResolution`／`gpgpuPyroGridJacobiIterations`、既定 OFF で確保もパスも無く従来出力とビット同一）。スターター追加なし（描画経路は後半フェーズのため）。iMac 実GPUゲートで identity 差分 0・全ティア fps が上限維持（48³ 既定を確定）・本番 GLSL の数値検証（密度蓄積／重心上昇／発散低減）を確認。詳細は PHASE_CA_REPORT.md。前版 v1.73.0 は Phase BZ＝ポイントキャッシュ取り込み）
+**現行バージョン: v1.75.0**（2026-11-19、第11期 Phase CB＝Pyro グリッド化の後半（下位フェーズ5〜8）: グリッド場を描画と粒子へ供給した。フォグ供給（密度→alpha／温度→色、レイヤー別キー）、粒子結合（PIC/FLIP G2P、blend 0 でブロック自体が不発）、渦度閉じ込め（ε 既定 0 でパス自体が無い）、燃焼（燃料はスカラー b チャネル、着火窓は実測温度域に較正、温度上限つき）。新規 config キー +8（結合 blend／transfer、渦度 ε、燃料率、フォグ量×4）、スターター +1（Pyro Grid Plume）。全キー既定で従来出力とビット同一。詳細は PHASE_CB_REPORT.md。前版 v1.74.0 は Phase CA＝Pyro グリッド化の前半）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -13,7 +13,7 @@
 
 ## 資産の実数（2026-11-19 実測）
 
-- config キー: **1,322件** ／ 内蔵スターター: **598件**
+- config キー: **1,333件** ／ 内蔵スターター: **599件**
 - 生成カタログ: **1,654件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

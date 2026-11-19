@@ -61,6 +61,7 @@ import { ParallaxGroup } from './sceneParallaxGroup';
 import { resolveParallaxFactors } from '../lib/parallax';
 import type { SceneAudioRef } from './AppSceneTypes';
 import type { PointCloudCaptureState } from '../lib/pointCloudExport';
+import type { PyroGridFogFeed } from '../lib/pyroGrid';
 
 type LayerContentProps = {
   audioRef: SceneAudioRef;
@@ -69,6 +70,7 @@ type LayerContentProps = {
   isPlaying: boolean;
   metaballPosRef: React.MutableRefObject<Float32Array | null>;
   pointCloudCaptureRef?: React.RefObject<PointCloudCaptureState>;
+  pyroFeedRef?: React.MutableRefObject<PyroGridFogFeed>;
 };
 
 export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
@@ -78,6 +80,7 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
   isPlaying,
   metaballPosRef,
   pointCloudCaptureRef,
+  pyroFeedRef,
 }) => {
   const layer2Plan = getLayerSceneRenderPlan(config, 2);
   const layer3Plan = getLayerSceneRenderPlan(config, 3);
@@ -167,7 +170,7 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
         <RaymarchSystem config={config} layerIndex={2} audioRef={audioRef} isPlaying={isPlaying} />
       )}
       {layer2Plan.proceduralSystemId === 'volume-fog' && (
-        <VolumeFogSystem config={config} layerIndex={2} audioRef={audioRef} isPlaying={isPlaying} />
+        <VolumeFogSystem config={config} layerIndex={2} audioRef={audioRef} isPlaying={isPlaying} pyroFeedRef={pyroFeedRef} />
       )}
       {layer2Plan.hybridSystemId === 'volume-fog' && (
         <VolumetricFieldSystem config={config} layerIndex={2} audioRef={audioRef} isPlaying={isPlaying} />
@@ -250,7 +253,7 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
         <RaymarchSystem config={config} layerIndex={3} audioRef={audioRef} isPlaying={isPlaying} />
       )}
       {layer3Plan.proceduralSystemId === 'volume-fog' && (
-        <VolumeFogSystem config={config} layerIndex={3} audioRef={audioRef} isPlaying={isPlaying} />
+        <VolumeFogSystem config={config} layerIndex={3} audioRef={audioRef} isPlaying={isPlaying} pyroFeedRef={pyroFeedRef} />
       )}
       {layer3Plan.hybridSystemId === 'volume-fog' && (
         <VolumetricFieldSystem config={config} layerIndex={3} audioRef={audioRef} isPlaying={isPlaying} />
@@ -286,7 +289,7 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
         </>
       )}
       {gpgpuPlan.core && (
-        <GpgpuSystem config={config} audioRef={audioRef} isPlaying={isPlaying} posReadbackRef={metaballPosRef} pointCloudCaptureRef={pointCloudCaptureRef} />
+        <GpgpuSystem config={config} audioRef={audioRef} isPlaying={isPlaying} posReadbackRef={metaballPosRef} pointCloudCaptureRef={pointCloudCaptureRef} pyroFeedRef={pyroFeedRef} />
       )}
       {gpgpuPlan.smoothTubes && (
         <GpgpuSmoothTube config={config} posReadbackRef={metaballPosRef} isPlaying={isPlaying} />

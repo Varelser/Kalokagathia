@@ -20,23 +20,19 @@
 // All shaders early-out on the unused atlas tiles (96^3 packs 96
 // slices into 100 tiles) so garbage can never accumulate there.
 
-export const PYRO_GRID_COMMON = /* glsl */ `
-precision highp float;
-uniform float uGridN;
+// The common block is composed from named pieces (Phase CB)
+// so the fog fragment shader and the particle velocity shader
+// can embed the sampling half — and only that half — under
+// the same uniform names. PYRO_GRID_COMMON itself stays
+// byte-identical to the Phase CA original; the test suite
+// pins the composition.
+export const PYRO_GRID_UNIFORMS = /* glsl */ `uniform float uGridN;
 uniform vec2 uAtlasSize;
 uniform vec2 uAtlasTiles;
 uniform bool uManualTrilinear;
-varying vec2 vUv;
+`;
 
-vec3 pyroCellOf(vec2 uv) {
-  vec2 px = uv * uAtlasSize;
-  vec2 tile = floor(px / uGridN);
-  vec2 inTile = px - tile * uGridN;
-  float z = tile.y * uAtlasTiles.x + tile.x;
-  return vec3(floor(inTile), z);
-}
-
-vec2 pyroUvOfCell(vec3 cell) {
+export const PYRO_GRID_SAMPLING = /* glsl */ `vec2 pyroUvOfCell(vec3 cell) {
   vec2 tile = vec2(mod(cell.z, uAtlasTiles.x), floor(cell.z / uAtlasTiles.x));
   return (tile * uGridN + cell.xy + 0.5) / uAtlasSize;
 }
@@ -73,7 +69,39 @@ vec4 pyroSample(sampler2D tex, vec3 p) {
   vec4 s1 = texture2D(tex, (tile1 * uGridN + xy) / uAtlasSize);
   return mix(s0, s1, f.z);
 }
+`;
 
+// World -> grid mapping (Phase CB), the GLSL twin of
+// pyroGridCellOfWorld in lib/pyroGrid.ts: the domain is the
+// cube centred on uPyroGridBounds.xyz with half-extent
+// uPyroGridBounds.w (the particle bounce radius). Requires
+// the PYRO_GRID_UNIFORMS names (uGridN) in scope.
+export const PYRO_GRID_WORLD = /* glsl */ `uniform vec4 uPyroGridBounds;
+
+vec3 pyroCellOfWorld(vec3 worldPos) {
+  return ((worldPos - uPyroGridBounds.xyz) / (2.0 * uPyroGridBounds.w) + 0.5) * uGridN - 0.5;
+}
+
+float pyroDomainFade(vec3 cellPos) {
+  vec3 d = min(cellPos, vec3(uGridN - 1.0) - cellPos);
+  float m = min(d.x, min(d.y, d.z));
+  return clamp(m + 0.5, 0.0, 1.0);
+}
+`;
+
+export const PYRO_GRID_COMMON = /* glsl */ `
+precision highp float;
+${PYRO_GRID_UNIFORMS}varying vec2 vUv;
+
+vec3 pyroCellOf(vec2 uv) {
+  vec2 px = uv * uAtlasSize;
+  vec2 tile = floor(px / uGridN);
+  vec2 inTile = px - tile * uGridN;
+  float z = tile.y * uAtlasTiles.x + tile.x;
+  return vec3(floor(inTile), z);
+}
+
+${PYRO_GRID_SAMPLING}
 // Closed-box walls: the normal velocity component at a domain
 // face is zeroed (both signs — no through-flow and no suction).
 // Applied after buoyancy and again after the projection, which
@@ -153,6 +181,13 @@ uniform float uEmitDensity;
 uniform float uEmitTempRate;
 uniform vec3 uSourceCenter;
 uniform float uSourceRadius;
+uniform float uFuelRate;
+uniform float uFuelEmit;
+uniform float uFuelReactionK;
+uniform float uFuelHeat;
+uniform float uIgniteLo;
+uniform float uIgniteHi;
+uniform float uTempMax;
 void main() {
   vec3 cell = pyroCellOf(vUv);
   if (cell.z >= uGridN) { gl_FragColor = vec4(0.0); return; }
@@ -169,6 +204,21 @@ void main() {
   // Exponential cooling (temperature) and decay (density).
   s.g *= exp(-uCooling * uTempCoolRate * uDelta);
   s.r *= exp(-uDensityDecayRate * uDelta);
+  // Combustion (Phase CB, sub-phase 8): the fuel field rides the
+  // spare b channel. Where the cooled temperature crosses the
+  // ignition window, fuel burns at a rate proportional to the
+  // fuel present — the burn is bounded by the fuel itself — and
+  // releases heat, with the temperature capped so the reaction
+  // cannot run away. The reaction runs before this step's
+  // emission, so fresh fuel starts burning next step. At fuel
+  // rate 0 the burn is exactly 0 and no fuel is emitted below:
+  // the channel stays zero by construction.
+  if (uFuelRate > 0.0 && s.b > 0.0) {
+    float ignite = smoothstep(uIgniteLo, uIgniteHi, s.g);
+    float burn = min(s.b, uFuelRate * uFuelReactionK * ignite * s.b * uDelta);
+    s.b -= burn;
+    s.g = min(s.g + burn * uFuelHeat, uTempMax);
+  }
   // Source: a smooth sphere at the bottom centre of the domain
   // emitting density and relaxing temperature toward the emit
   // temperature (the particle solver's emitter analogue).
@@ -177,6 +227,7 @@ void main() {
   if (w > 0.0) {
     s.r += uEmitDensity * w * uDelta;
     s.g += (uEmitTemp - s.g) * min(1.0, w * uDelta * uEmitTempRate);
+    s.b += uFuelRate * uFuelEmit * w * uDelta;
   }
   // Density / temperature never go negative; the spare channels
   // stay zero by construction (diffusion of zeros).
@@ -236,6 +287,60 @@ void main() {
   vel.x -= pyroFetch(uPresTex, cell + vec3(1.0, 0.0, 0.0)).r - pC;
   vel.y -= pyroFetch(uPresTex, cell + vec3(0.0, 1.0, 0.0)).r - pC;
   vel.z -= pyroFetch(uPresTex, cell + vec3(0.0, 0.0, 1.0)).r - pC;
+  vel = pyroApplyWalls(vel, cell);
+  gl_FragColor = vec4(clamp(vel, vec3(-uMaxSpeed), vec3(uMaxSpeed)), 1.0);
+}
+`;
+
+// Vorticity confinement V1 (Phase CB, sub-phase 7): the curl of
+// the velocity field, central differences on the collocated grid
+// (cell spacing 1), stored as rgb = curl, a = |curl| so the
+// confinement pass and the gate's enstrophy readback share one
+// field. Runs only on steps where epsilon > 0.
+export const PYRO_GRID_CURL_FRAG = /* glsl */ `
+${PYRO_GRID_COMMON}
+uniform sampler2D uVelIn;
+void main() {
+  vec3 cell = pyroCellOf(vUv);
+  if (cell.z >= uGridN) { gl_FragColor = vec4(0.0); return; }
+  float duz_dy = (pyroFetch(uVelIn, cell + vec3(0.0, 1.0, 0.0)).z - pyroFetch(uVelIn, cell - vec3(0.0, 1.0, 0.0)).z) * 0.5;
+  float duy_dz = (pyroFetch(uVelIn, cell + vec3(0.0, 0.0, 1.0)).y - pyroFetch(uVelIn, cell - vec3(0.0, 0.0, 1.0)).y) * 0.5;
+  float dux_dz = (pyroFetch(uVelIn, cell + vec3(0.0, 0.0, 1.0)).x - pyroFetch(uVelIn, cell - vec3(0.0, 0.0, 1.0)).x) * 0.5;
+  float duz_dx = (pyroFetch(uVelIn, cell + vec3(1.0, 0.0, 0.0)).z - pyroFetch(uVelIn, cell - vec3(1.0, 0.0, 0.0)).z) * 0.5;
+  float duy_dx = (pyroFetch(uVelIn, cell + vec3(1.0, 0.0, 0.0)).y - pyroFetch(uVelIn, cell - vec3(1.0, 0.0, 0.0)).y) * 0.5;
+  float dux_dy = (pyroFetch(uVelIn, cell + vec3(0.0, 1.0, 0.0)).x - pyroFetch(uVelIn, cell - vec3(0.0, 1.0, 0.0)).x) * 0.5;
+  vec3 w = vec3(duz_dy - duy_dz, dux_dz - duz_dx, duy_dx - dux_dy);
+  gl_FragColor = vec4(w, length(w));
+}
+`;
+
+// Vorticity confinement V2 (Phase CB, sub-phase 7): the Fedkiw
+// confinement force F = epsilon * h * (N x w), with h = 1 cell,
+// N = grad|w| / |grad|w||, integrated as vel += F * dt, then the
+// same wall treatment and speed clamp as the other velocity
+// writers. Where the curl magnitude is flat (gradient ~ 0) the
+// direction is undefined and the force is exactly zero.
+export const PYRO_GRID_VORTICITY_FORCE_FRAG = /* glsl */ `
+${PYRO_GRID_COMMON}
+uniform sampler2D uVelIn;
+uniform sampler2D uCurlIn;
+uniform float uDelta;
+uniform float uEpsilon;
+uniform float uMaxSpeed;
+void main() {
+  vec3 cell = pyroCellOf(vUv);
+  if (cell.z >= uGridN) { gl_FragColor = vec4(0.0); return; }
+  vec3 vel = pyroFetch(uVelIn, cell).xyz;
+  vec3 eta = vec3(
+    pyroFetch(uCurlIn, cell + vec3(1.0, 0.0, 0.0)).w - pyroFetch(uCurlIn, cell - vec3(1.0, 0.0, 0.0)).w,
+    pyroFetch(uCurlIn, cell + vec3(0.0, 1.0, 0.0)).w - pyroFetch(uCurlIn, cell - vec3(0.0, 1.0, 0.0)).w,
+    pyroFetch(uCurlIn, cell + vec3(0.0, 0.0, 1.0)).w - pyroFetch(uCurlIn, cell - vec3(0.0, 0.0, 1.0)).w
+  ) * 0.5;
+  float etaLen = length(eta);
+  if (etaLen > 1e-6) {
+    vec3 w = pyroFetch(uCurlIn, cell).xyz;
+    vel += uEpsilon * cross(eta / etaLen, w) * uDelta;
+  }
   vel = pyroApplyWalls(vel, cell);
   gl_FragColor = vec4(clamp(vel, vec3(-uMaxSpeed), vec3(uMaxSpeed)), 1.0);
 }

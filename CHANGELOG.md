@@ -4,6 +4,56 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.75.0] — 2026-11-19
+
+Eleventh-term Phase CB: Pyro grid second half (sub-phases 5–8
+of the grid plan). The grid solver now feeds the rest of the
+app: its density / temperature field renders through the
+existing volume-fog slices, its velocity field couples back
+into the particle pool (PIC/FLIP G2P, in the FLIP pattern but
+on all three components), vorticity confinement counteracts
+the solver's numerical dissipation, and a combustion model
+(fuel field on the scalar atlas's spare channel, ignition
+window, heat release, capped temperature) burns at the
+source. Eight new config keys, every one defaulting to the
+feature being absent, so the output is bit-identical to
+v1.74.0 while unused. One new starter (Pyro Grid Plume)
+turns the whole path on.
+
+### Added
+- **Fog feed** (sub-phase 5): the GPGPU system publishes the
+  scalar atlas's current texture through a shared ref; the
+  volume-fog fragment shader samples it through the solver's
+  own atlas chunks (world→grid mapping shared, not copied)
+  and modulates alpha by density and colour by temperature,
+  per layer (`layer2/3PyroDensityAmount`, `layer2/3PyroTempAmount`,
+  default 0 = skipped entirely).
+- **Particle coupling** (sub-phase 6): G2P transfer in the
+  velocity pass — PIC takes the grid velocity, FLIP takes the
+  particle velocity plus the grid's change this step
+  (projected minus pre-projection base, recorded by the
+  runner). `gpgpuPyroGridBlend` (0 = PIC; the block only runs
+  above 0) and `gpgpuPyroGridTransfer`. The velocity scale is
+  derived from the position pass's own integration
+  (cell world size / 60). No P2G (particles do not write into
+  the grid this round, as the plan allows).
+- **Vorticity confinement** (sub-phase 7): curl + Fedkiw
+  confinement force passes ahead of the projection, only on
+  steps where `gpgpuPyroVorticityEpsilon` > 0 (default 0 =
+  the passes do not exist). Pass count 6 + Jacobi + 2 when on.
+- **Combustion** (sub-phase 8): fuel rides the scalar b
+  channel; the scalar-update pass burns it where the cooled
+  temperature crosses the ignition window (calibrated to the
+  solver's measured field temperatures), at a rate bounded by
+  the fuel present, releasing heat under a temperature cap.
+  `gpgpuPyroFuelRate` (default 0 = no fuel, no burn, channel
+  stays zero by construction) scales both emission and
+  reaction. Panel UI for the whole grid section (resolution /
+  Jacobi / blend / transfer / ε / fuel) in the Forces panel.
+- **Starter**: `starter-pyro-grid-plume` — grid solver +
+  fog feed + coupling + vorticity + combustion, visibly
+  distinct with everything on.
+
 ## [1.74.0] — 2026-11-19
 
 Eleventh-term Phase CA: Pyro grid solver foundation (sub-phases

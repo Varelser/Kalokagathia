@@ -12,6 +12,7 @@ import { TerrainMesh } from './TerrainMesh';
 import { ObjMesh } from './ObjMesh';
 import { isHorizonActive, isHorizonSuppressed } from '../lib/horizonBackground';
 import { AppSceneLayerContent } from './AppSceneLayerContent';
+import { EMPTY_PYRO_GRID_FOG_FEED, type PyroGridFogFeed } from '../lib/pyroGrid';
 import { AppScenePostFx } from './AppScenePostFx';
 import { useAppSceneTemporalConfig } from './useAppSceneTemporalConfig';
 import type { AppSceneProps } from './AppSceneTypes';
@@ -64,6 +65,10 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
   const controlsRef = React.useRef<OrbitControlsImpl | null>(null);
   const isInteractingRef = React.useRef(false);
   const metaballPosRef = React.useRef<Float32Array | null>(null);
+  // Phase CB: Pyro grid fog feed — written by the GPGPU system,
+  // read by the volume-fog layers (both live below in
+  // AppSceneLayerContent).
+  const pyroFeedRef = React.useRef<PyroGridFogFeed>(EMPTY_PYRO_GRID_FOG_FEED);
 
   const effectiveConfig = useAppSceneTemporalConfig(config, isPlaying, audioRef, isSequencePlaying);
   const sceneGeneration = useSceneGeneration();
@@ -181,6 +186,7 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
         isPlaying={isPlaying}
         metaballPosRef={metaballPosRef}
         pointCloudCaptureRef={pointCloudCaptureRef}
+        pyroFeedRef={pyroFeedRef}
       />
       <ScreenOverlay
         audioRef={audioRef}

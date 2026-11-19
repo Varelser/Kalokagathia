@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import type { VolumeFogUniformParams } from './sceneVolumeFogSystemTypes';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './sceneVolumeFogSystemShaders';
+import { PYRO_GRID_LAYOUTS, pyroGridAtlasSize } from '../lib/pyroGrid';
 
 export function getVolumeFogPlaneScale(config: ParticleConfig, fogDepth: number) {
   return 140 + Math.max(config.layer2RadiusScale, config.layer3RadiusScale) * 6.5 + fogDepth * 0.45;
@@ -41,6 +42,22 @@ export function applyVolumeFogMaterialUniforms(
   material.uniforms.uVelvetAmount.value = profile.velvetAmount;
   material.uniforms.uLedgerAmount.value = profile.ledgerAmount;
   material.uniforms.uEdgeFade.value = profile.edgeFade;
+  // Pyro grid feed (Phase CB): amounts only take effect with a
+  // live feed texture; the layout uniforms follow the feed's
+  // resolution so the shared atlas sampling reads the right
+  // tiles.
+  const pyroLayout = params.pyroTexture ? PYRO_GRID_LAYOUTS[params.pyroResolution] : undefined;
+  const pyroSize = params.pyroTexture ? pyroGridAtlasSize(params.pyroResolution) : null;
+  material.uniforms.uPyroDensityAtlas.value = pyroLayout && pyroSize ? params.pyroTexture : null;
+  material.uniforms.uPyroDensityAmount.value = pyroLayout ? params.pyroDensityAmount : 0;
+  material.uniforms.uPyroTempAmount.value = pyroLayout ? params.pyroTempAmount : 0;
+  if (pyroLayout && pyroSize) {
+    material.uniforms.uGridN.value = params.pyroResolution;
+    (material.uniforms.uAtlasSize.value as THREE.Vector2).set(pyroSize.width, pyroSize.height);
+    (material.uniforms.uAtlasTiles.value as THREE.Vector2).set(pyroLayout.cols, pyroLayout.rows);
+    material.uniforms.uManualTrilinear.value = !params.pyroFloatLinear;
+    (material.uniforms.uPyroGridBounds.value as THREE.Vector4).set(0, 0, 0, params.pyroHalfExtent);
+  }
   material.blending = profile.blending === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
 }
 
@@ -80,6 +97,14 @@ export function createVolumeFogMaterial(params: VolumeFogUniformParams & { slice
       uVelvetAmount: { value: params.profile.velvetAmount },
       uLedgerAmount: { value: params.profile.ledgerAmount },
       uEdgeFade: { value: params.profile.edgeFade },
+      uPyroDensityAtlas: { value: null },
+      uPyroDensityAmount: { value: 0 },
+      uPyroTempAmount: { value: 0 },
+      uGridN: { value: 1 },
+      uAtlasSize: { value: new THREE.Vector2(1, 1) },
+      uAtlasTiles: { value: new THREE.Vector2(1, 1) },
+      uManualTrilinear: { value: false },
+      uPyroGridBounds: { value: new THREE.Vector4(0, 0, 0, 150) },
     },
     vertexShader: VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,

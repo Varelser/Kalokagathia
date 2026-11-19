@@ -295,6 +295,28 @@ export const VEL_FRAG_MAIN_TAIL = /* glsl */ `    // Morph Target Attraction (Ki
       }
     }
 
+    // Pyro grid coupling (Phase CB): G2P transfer from the 3D
+    // grid solver, in the FLIP pattern above but on all three
+    // components — the grid solves y motion too. PIC takes the
+    // grid velocity itself; FLIP takes the particle velocity
+    // plus the grid's change this step (projected minus the
+    // pre-projection base). The scale converts the grid's
+    // cells/second into the particle velocity unit: a cell is
+    // 2*bounceRadius/N world units and the position pass
+    // integrates vel * dt * 60, so one vel unit is 60 world
+    // units/second (uPyroGridVelScale is set CPU-side from
+    // lib/pyroGrid.ts pyroGridVelScale). The block is skipped
+    // entirely unless the grid is live and its blend key > 0.
+    if (uPyroGridCouple) {
+      vec3 cellPos = pyroCellOfWorld(pos);
+      vec3 gridVel = pyroSample(uPyroGridVelTex, cellPos).xyz;
+      vec3 baseVel = pyroSample(uPyroGridBaseTex, cellPos).xyz;
+      vec3 picVel = gridVel * uPyroGridVelScale;
+      vec3 flipVel = vel + (gridVel - baseVel) * uPyroGridVelScale;
+      vec3 target = mix(picVel, flipVel, uPyroGridBlend);
+      vel = mix(vel, target, uPyroGridTransfer);
+    }
+
     // __CUSTOM_FORCE__
 
     // Force over Lifetime (Phase AC): scale only the built-in
