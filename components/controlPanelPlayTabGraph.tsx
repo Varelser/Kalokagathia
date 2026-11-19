@@ -1026,6 +1026,34 @@ export const CsgSection: React.FC<{
     );
   };
 
+  const exportResult = async (format: 'glb' | '3mf' | 'stl') => {
+    if (!result || busy) return;
+    setBusy(true);
+    try {
+      const { exportCsgResult } = await import('../lib/csgExport');
+      const out = await exportCsgResult(result, format);
+      const blob = new Blob([out.bytes], { type: out.mime });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = out.filename;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+      setStatus(
+        `CSG 結果を ${format.toUpperCase()} に書き出しました（${out.bytes.byteLength.toLocaleString()} バイト）。` +
+          (format === 'glb'
+            ? 'GLB は m・Y-up、EXT_mesh_manifold つきです。'
+            : format === '3mf'
+              ? '3MF は mm・Z-up に変換済みです（スライサでそのまま開けます）。'
+              : 'STL は互換用フォーマットです。'),
+      );
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const selectClass =
     'bg-white/5 border border-white/10 rounded px-2 py-2 text-xs outline-none focus:border-white/40 w-full';
   const selectStyle = { backgroundColor: undefined } as const;
@@ -1231,8 +1259,32 @@ export const CsgSection: React.FC<{
             >
               結果をモーフへ取り込む
             </button>
+            <button
+              onClick={() => void exportResult('glb')}
+              disabled={!result || busy}
+              className="px-4 py-2 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+            >
+              GLBで書き出し
+            </button>
+            <button
+              onClick={() => void exportResult('3mf')}
+              disabled={!result || busy}
+              className="px-4 py-2 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+            >
+              3MFで書き出し
+            </button>
+            <button
+              onClick={() => void exportResult('stl')}
+              disabled={!result || busy}
+              className="px-4 py-2 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+            >
+              STLで書き出し
+            </button>
             {fromCache && result && <span className="text-[10px] text-white/40">キャッシュ済み結果を表示中</span>}
           </div>
+          <p className="text-[11px] leading-relaxed text-white/45 mt-1">
+            書き出し: GLB は m・Y-up（EXT_mesh_manifold つき）、3MF はスライサ用に mm・Z-up へ変換して書き出します。STL は互換用です。
+          </p>
         </div>
       )}
       {status && <p className="text-[11px] text-white/55 mt-3">{status}</p>}

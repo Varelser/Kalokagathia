@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.83.0**（2026-11-20、第11期 Phase CJ＝CSG 第2弾の U5 OBJ 読み込み: 被演算子に「メッシュ（OBJ読み込み）」を追加。新規テキストキーに OBJ を貼る／ファイルで読むと、そのメッシュとプリミティブ・押し出しの和・差・積が取れる。座標は生の世界単位（サイズ不適用、配置はオフセットのみ＝M3 をブリーフの生単位方針で確定）。頂点は 1e-6 で同一視してからゲート(a)で判定し、開いたメッシュは理由つきで拒否（自動修復なし）。新規 config キー +1、スターター +1（CSG Mesh＝トーラス−球、種数 1→0）。全71スイート＋iMac 実GPUゲート合格（identity 差分 0、fps 約60）。詳細は PHASE_CJ_REPORT.md。前版 v1.82.0 は Phase CI＝U2 自由形入力）
+**現行バージョン: v1.84.0**（2026-11-20、第11期 Phase CK＝CSG の書き出し側（G0 残り）: CSG 結果を GLB（EXT_mesh_manifold つき、m・Y-up）／3MF（mm・Z-up へ D8 変換を明示適用）／STL（互換用）の3形式でダウンロード可能に。書き出し前に閉検査を行い、開いたメッシュは理由つきで拒否（無言で落とさない）。往復誤差は GLB 0%、3MF でも 0.000002% 級で D14 の受け入れ桁を維持。10万三角形級でも往復は1秒未満。新規 config キー・スターターなし（キー 1,358・スターター 605 のまま）。全72スイート＋iMac 実GPUゲート合格（identity 差分 0、fps 約60）。詳細は PHASE_CK_REPORT.md。前版 v1.83.0 は Phase CJ＝U5 OBJ 読み込み）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること

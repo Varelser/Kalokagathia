@@ -4,6 +4,41 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.84.0] — 2026-11-20
+
+Eleventh-term CSG, Phase CK: the export side of the
+brief's G0 remainder. CSG results can now be
+downloaded from the CSG section in three formats, in
+the brief's D3 order. GLB carries EXT_mesh_manifold
+(metres, Y-up — the app's own convention), written
+through manifold-3d's glTF helpers so the manifold
+run data round-trips exactly. 3MF is the slicer
+format (millimetres, Z-up): the D8 unit/axis
+conversion is applied explicitly in the new export
+module, because the library's 3MF writer performs no
+conversion at all — measured again in this phase, it
+writes the glTF-convention coordinates verbatim
+under a "millimeter" unit declaration, which is the
+1/1000-scale sideways import the brief's spike
+recorded. Binary STL is included for compatibility.
+Before anything is written, the result passes the
+same closed-manifold gate that judges CSG inputs; a
+mesh that fails is refused with the gate's reason
+instead of being silently dropped (the library 3MF
+writer drops non-manifold meshes without a word).
+Round-trip fidelity re-measured at this version
+(checklist C4): GLB volume 0% / area 0%, OBJ
+0.000004% / 0.000005%, 3MF 0.000002% / 0.000001% —
+the D14 acceptance order throughout. Round-trip cost
+at 102,152 triangles (C5): GLB 63 ms out / 19 ms
+back, 3MF 687 ms out / 114 ms back. No new config
+keys and no new starter; the export module loads
+lazily on first use, so the initial bundle is
+unchanged in structure. This phase also adds the
+Phase CC–CJ implementation and gate reports to the
+repository root, where code comments already
+referenced them.
+
 ## [1.83.0] — 2026-11-20
 
 Eleventh-term CSG second release, Phase CJ (brief unit
