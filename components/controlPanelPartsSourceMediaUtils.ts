@@ -71,9 +71,22 @@ export function extractTextLumaMap(
       pxSize,
       columnGap: layout.columnGap,
       letterSpacing: layout.letterSpacing,
-    }, { kinsoku: layout.kinsoku, yakumono: layout.yakumono });
+    }, { kinsoku: layout.kinsoku, yakumono: layout.yakumono, tatechuyoko: layout.tatechuyoko, ruby: layout.ruby });
+    // Phase BP: same per-placement font swap as
+    // rasterizeTextCanvas (lib/mapSourceSupply.ts) — a placement
+    // with a font scale swaps the font for its own draw and
+    // restores it; scale-free placements draw exactly as before.
+    const baseFont = ctx.font;
+    const scaledWeight = Math.max(100, Math.min(900, fontWeight || 700));
+    const scaledFamily = fontFamily || 'Arial';
     placements.forEach((placement) => {
-      ctx.fillText(placement.glyph, placement.x, placement.y);
+      if (placement.scale !== undefined && placement.scale !== 1) {
+        ctx.font = `${scaledWeight} ${pxSize * placement.scale}px ${scaledFamily}`;
+        ctx.fillText(placement.glyph, placement.x, placement.y);
+        ctx.font = baseFont;
+      } else {
+        ctx.fillText(placement.glyph, placement.x, placement.y);
+      }
     });
   } else {
     const usableHeight = height * (1 - clampedPadding * 2);

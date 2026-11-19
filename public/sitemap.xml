@@ -1475,6 +1475,10 @@
   <url><loc>https://monosphere.pages.dev/share/ray-blobs</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/ray-columns</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/ray-mandelbulb</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-attr-dyn-flow</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-attr-dyn-pulse</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-attr-expr-group-gravity</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-attr-expr-product-size</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-radius-group-gravity</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-species-size</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-burst-spin-sprites</loc><priority>0.6</priority></url>
@@ -1572,7 +1576,9 @@
   <url><loc>https://monosphere.pages.dev/share/starter-moire-grid-veil</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-multitouch-attract</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-noise-field-chroma</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-noise-field-mask-carve</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-noise-relief-drift</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-noise-ridge-octaves-relief</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-obj-geom-knot-swarm</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-obj-mesh-knot-grid</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-obj-mesh-radial-chain</loc><priority>0.6</priority></url>
@@ -1606,7 +1612,9 @@
   <url><loc>https://monosphere.pages.dev/share/starter-terrain-tunnel-cruise</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-on-path</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-raster-mask</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-kinsoku</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-morph</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-yakumono</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-vellum-balloon</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-vellum-silk-cloth</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-vellum-stitched-cloth</loc><priority>0.6</priority></url>

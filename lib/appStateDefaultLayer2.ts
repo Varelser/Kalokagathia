@@ -37,6 +37,10 @@ export const APP_STATE_DEFAULT_LAYER_2: Partial<ParticleConfig> = {
   // BG split and placements bit-identical.
   layer2TextMapKinsoku: false,
   layer2TextMapYakumono: false,
+  // Vertical text finishing (Phase BP): both OFF keep the Phase
+  // BK split and placements bit-identical.
+  layer2TextMapTateChuYoko: false,
+  layer2TextMapRuby: false,
   layer2MotionMix: false,
   layer2Motions: [],
   layer2MotionChainEnabled: false,

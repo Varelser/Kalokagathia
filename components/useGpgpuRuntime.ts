@@ -1178,6 +1178,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // fields above — toggling either re-bakes the 'text' target.
   const morphTextKinsoku = config.layer2TextMapKinsoku;
   const morphTextYakumono = config.layer2TextMapYakumono;
+  // Vertical text finishing (Phase BP): bake inputs like the BK
+  // fields above — toggling either re-bakes the 'text' target.
+  const morphTextTateChuYoko = config.layer2TextMapTateChuYoko;
+  const morphTextRuby = config.layer2TextMapRuby;
   const morphMediaMap = config.layer2MediaLumaMap;
   const morphMediaWidth = config.layer2MediaMapWidth;
   const morphMediaHeight = config.layer2MediaMapHeight;
@@ -1277,6 +1281,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
           letterSpacing: morphTextLetterSpacing,
           kinsoku: morphTextKinsoku,
           yakumono: morphTextYakumono,
+          tatechuyoko: morphTextTateChuYoko,
+          ruby: morphTextRuby,
         },
       );
       mediaMap = { map, width: 128, height: 128 };
@@ -1520,6 +1526,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTextLetterSpacing,
     morphTextKinsoku,
     morphTextYakumono,
+    morphTextTateChuYoko,
+    morphTextRuby,
     morphMediaMap,
     morphMediaWidth,
     morphMediaHeight,

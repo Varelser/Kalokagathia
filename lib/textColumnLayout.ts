@@ -31,6 +31,27 @@
  *   substitution would make the bake depend on which vertical
  *   glyph forms a font happens to carry, while a fixed offset
  *   reproduces deterministically in every environment.
+ *
+ * Phase BP adds two more opt-in refinements, again both OFF by
+ * default (the defaults reproduce the Phase BK layout
+ * bit-identically; with either on, the layout runs on tokens —
+ * one token per cell — instead of raw glyphs):
+ * - Tate-chu-yoko (縦中横): a run of 2–4 half-width alphanumeric
+ *   glyphs (plus the decimal point) folds into a single cell and
+ *   is drawn horizontally at a font scale of min(1, 2/n), under
+ *   a fixed glyph-width model (half-width = 0.5em; no font
+ *   measurement, so the bake is environment-independent, the
+ *   same reasoning as BK's yakumono). A run never splits across
+ *   columns.
+ * - Ruby (ルビ): Aozora-bunko markup — ｜親文字《るび》, or the
+ *   abbreviated 親《るび》 whose parent is exactly the one
+ *   preceding glyph — is parsed per newline segment. The parent
+ *   glyphs lay out exactly as they would without ruby; the ruby
+ *   glyphs are additional placements at a fixed 0.5 scale along
+ *   the parent's right side, spread evenly over the parent
+ *   span. Invalid markup is not an error: the marker glyphs
+ *   pass through as ordinary glyphs. A parent group is never
+ *   split across columns.
  */
 
 /** The vertical-layout inputs shared by both text drawing paths. */
@@ -46,6 +67,10 @@ export interface TextLayoutOptions {
   kinsoku: boolean;
   /** Phase BK: yakumono position correction (see header). */
   yakumono: boolean;
+  /** Phase BP: tate-chu-yoko run folding (see header). */
+  tatechuyoko: boolean;
+  /** Phase BP: ruby markup parsing and placement (see header). */
+  ruby: boolean;
 }
 
 /** The subset of the config the layout options are read from
@@ -57,6 +82,8 @@ export interface TextMapLayoutSource {
   layer2TextMapLetterSpacing: number;
   layer2TextMapKinsoku: boolean;
   layer2TextMapYakumono: boolean;
+  layer2TextMapTateChuYoko: boolean;
+  layer2TextMapRuby: boolean;
 }
 
 export function textLayoutOptionsFromTextMap(source: TextMapLayoutSource): TextLayoutOptions {
@@ -67,14 +94,19 @@ export function textLayoutOptionsFromTextMap(source: TextMapLayoutSource): TextL
     letterSpacing: source.layer2TextMapLetterSpacing,
     kinsoku: source.layer2TextMapKinsoku,
     yakumono: source.layer2TextMapYakumono,
+    tatechuyoko: source.layer2TextMapTateChuYoko,
+    ruby: source.layer2TextMapRuby,
   };
 }
 
-/** The Phase BK adjustments consumed by the layout functions.
- *  Both default to off; off reproduces the Phase BG behaviour. */
+/** The adjustments consumed by the layout functions. All default
+ *  to off; all off reproduces the Phase BG behaviour. kinsoku /
+ *  yakumono are Phase BK, tatechuyoko / ruby are Phase BP. */
 export interface TextColumnAdjustments {
   kinsoku?: boolean;
   yakumono?: boolean;
+  tatechuyoko?: boolean;
+  ruby?: boolean;
 }
 
 /**
@@ -142,6 +174,254 @@ function normalizeRatio(value: number): number {
   return value;
 }
 
+/** Tate-chu-yoko target glyphs (Phase BP, fixed set): half-width
+ *  alphanumerics and the decimal point. Judged per code point. */
+export const TATECHUYOKO_GLYPHS = new Set(splitTextGlyphs(
+  '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.',
+));
+/** Longest tate-chu-yoko run folded into one cell (Phase BP). */
+export const TATECHUYOKO_MAX_RUN = 4;
+/** Fixed ruby glyph scale (Phase BP; deliberately not a key). */
+export const RUBY_SCALE = 0.5;
+/** Ruby offset from the parent column centre, in em: the parent
+ *  cell's right edge (0.5) plus the ruby half width (0.25). */
+export const RUBY_OFFSET_EM = 0.75;
+
+/** One ruby annotation over a parsed glyph list (Phase BP). */
+export interface RubyAnnotation {
+  /** Index of the first parent glyph in the parsed glyph list. */
+  start: number;
+  /** Parent glyph count. */
+  length: number;
+  /** The ruby string (drawn glyph by glyph). */
+  ruby: string;
+}
+
+export interface RubyParseResult {
+  /** The plain glyph sequence (markup removed where valid). */
+  glyphs: string[];
+  annotations: RubyAnnotation[];
+}
+
+/**
+ * Parse the Aozora-bunko ruby markup of one newline-separated
+ * segment (Phase BP). Full form: ｜親文字《るび》; abbreviated
+ * form: 親《るび》 annotates exactly the one glyph before 《
+ * (no character-class guessing). Invalid markup is not an
+ * error — the marker glyphs pass through as ordinary glyphs
+ * (deterministic fallback): an unclosed 《, a ｜ that no 《…》
+ * follows, an empty ruby 《》, or an empty parent ｜《…》.
+ * Parsing is per segment, so markup never spans a newline, and
+ * a glyph already annotated cannot be annotated twice.
+ */
+export function parseRubyMarkup(segment: string): RubyParseResult {
+  const input = splitTextGlyphs(segment || '');
+  const glyphs: string[] = [];
+  const annotations: RubyAnnotation[] = [];
+  const annotated = new Set<number>();
+  const findFrom = (glyph: string, from: number): number => {
+    for (let i = from; i < input.length; i++) if (input[i] === glyph) return i;
+    return -1;
+  };
+  let i = 0;
+  while (i < input.length) {
+    const glyph = input[i];
+    if (glyph === '｜') {
+      const open = findFrom('《', i + 1);
+      const close = open > i + 1 ? findFrom('》', open + 1) : -1;
+      if (open > i + 1 && close > open + 1) {
+        const start = glyphs.length;
+        const parent = input.slice(i + 1, open);
+        parent.forEach((parentGlyph) => {
+          annotated.add(glyphs.length);
+          glyphs.push(parentGlyph);
+        });
+        annotations.push({ start, length: parent.length, ruby: input.slice(open + 1, close).join('') });
+        i = close + 1;
+        continue;
+      }
+      glyphs.push(glyph);
+      i += 1;
+      continue;
+    }
+    if (glyph === '《') {
+      const close = findFrom('》', i + 1);
+      const prev = glyphs.length - 1;
+      // The empty-parent form ｜《…》 reaches here with the ｜
+      // already emitted as a plain glyph; it stays invalid (the
+      // ｜ is the would-be parent), so the 《 passes through too.
+      if (close > i + 1 && prev >= 0 && !annotated.has(prev) && input[i - 1] !== '｜') {
+        annotated.add(prev);
+        annotations.push({ start: prev, length: 1, ruby: input.slice(i + 1, close).join('') });
+        i = close + 1;
+        continue;
+      }
+      glyphs.push(glyph);
+      i += 1;
+      continue;
+    }
+    glyphs.push(glyph);
+    i += 1;
+  }
+  return { glyphs, annotations };
+}
+
+/**
+ * One layout token (Phase BP): a single glyph, a tate-chu-yoko
+ * run (its text is the whole run; it occupies one cell), or one
+ * glyph of a ruby parent group (groupId links the group; ruby
+ * is set on the group's first token only).
+ */
+interface LayoutToken {
+  text: string;
+  scale?: number;
+  groupId?: number;
+  ruby?: string;
+}
+
+/**
+ * Tokenise one segment's parsed glyphs (Phase BP). Ruby parent
+ * glyphs are individual tokens and are never folded into runs;
+ * the remaining maximal sequences of tate-chu-yoko glyphs fold
+ * into runs of at most TATECHUYOKO_MAX_RUN — a leftover of one
+ * glyph stays a plain glyph token, a leftover of 2–4 becomes a
+ * run (5 → run 4 + plain 1, 6 → run 4 + run 2, …).
+ */
+function tokenizeSegment(glyphs: string[], annotations: RubyAnnotation[], tatechuyoko: boolean): LayoutToken[] {
+  const groupOf = new Map<number, number>();
+  annotations.forEach((annotation, groupId) => {
+    for (let k = 0; k < annotation.length; k++) groupOf.set(annotation.start + k, groupId);
+  });
+  const tokens: LayoutToken[] = [];
+  let i = 0;
+  while (i < glyphs.length) {
+    const groupId = groupOf.get(i);
+    if (groupId !== undefined) {
+      const annotation = annotations[groupId];
+      tokens.push({
+        text: glyphs[i],
+        groupId,
+        ...(i === annotation.start ? { ruby: annotation.ruby } : {}),
+      });
+      i += 1;
+      continue;
+    }
+    if (tatechuyoko && TATECHUYOKO_GLYPHS.has(glyphs[i])) {
+      let end = i;
+      while (end < glyphs.length && groupOf.get(end) === undefined && TATECHUYOKO_GLYPHS.has(glyphs[end])) end += 1;
+      let pos = i;
+      let remaining = end - i;
+      while (remaining > TATECHUYOKO_MAX_RUN) {
+        tokens.push({
+          text: glyphs.slice(pos, pos + TATECHUYOKO_MAX_RUN).join(''),
+          scale: Math.min(1, 2 / TATECHUYOKO_MAX_RUN),
+        });
+        pos += TATECHUYOKO_MAX_RUN;
+        remaining -= TATECHUYOKO_MAX_RUN;
+      }
+      if (remaining === 1) {
+        tokens.push({ text: glyphs[pos] });
+      } else if (remaining >= 2) {
+        tokens.push({
+          text: glyphs.slice(pos, pos + remaining).join(''),
+          scale: Math.min(1, 2 / remaining),
+        });
+      }
+      i = end;
+      continue;
+    }
+    tokens.push({ text: glyphs[i] });
+    i += 1;
+  }
+  return tokens;
+}
+
+function firstGlyphChar(token: LayoutToken): string {
+  return splitTextGlyphs(token.text)[0];
+}
+
+function lastGlyphChar(token: LayoutToken): string {
+  const glyphs = splitTextGlyphs(token.text);
+  return glyphs[glyphs.length - 1];
+}
+
+/**
+ * Keep a column boundary out of a ruby parent group (Phase BP):
+ * if the boundary would split a group, the group moves as a
+ * whole — its tail is sent to the next column, unless the
+ * column holds nothing but that group, in which case the rest
+ * of the group is pulled in (the column may exceed the limit,
+ * like a kinsoku pull-in).
+ */
+function fixGroupBoundary(column: LayoutToken[], rest: LayoutToken[]): void {
+  while (column.length > 0 && rest.length > 0) {
+    const groupId = column[column.length - 1].groupId;
+    if (groupId === undefined || rest[0].groupId !== groupId) return;
+    if (column.every((token) => token.groupId === groupId)) {
+      column.push(rest.shift() as LayoutToken);
+    } else {
+      rest.unshift(column.pop() as LayoutToken);
+    }
+  }
+}
+
+/**
+ * Wrap one segment's tokens into columns of at most `limit`
+ * tokens (Phase BP). With kinsoku on, the wrap boundaries are
+ * adjusted by the same rules as wrapSegmentKinsoku, judged on
+ * each token's first / last glyph (a run token's edge glyphs
+ * are never in the kinsoku sets, so runs behave as ordinary
+ * single glyphs there, as the brief fixes).
+ */
+function wrapSegmentTokens(tokens: LayoutToken[], limit: number, kinsoku: boolean): LayoutToken[][] {
+  const columns: LayoutToken[][] = [];
+  let rest = tokens.slice();
+  while (rest.length > 0) {
+    const column = rest.slice(0, limit);
+    rest = rest.slice(column.length);
+    if (kinsoku) {
+      while (rest.length > 0 && KINSOKU_HEAD_FORBIDDEN.has(firstGlyphChar(rest[0]))) {
+        column.push(rest[0]);
+        rest = rest.slice(1);
+      }
+      while (rest.length > 0 && column.length > 1 && KINSOKU_TAIL_FORBIDDEN.has(lastGlyphChar(column[column.length - 1]))) {
+        rest = [column.pop() as LayoutToken, ...rest];
+      }
+    }
+    fixGroupBoundary(column, rest);
+    columns.push(column);
+  }
+  return columns;
+}
+
+/**
+ * Token-level column layout (Phase BP): the split the BP
+ * placements consume. Every token occupies exactly one cell —
+ * a run counts as one glyph, each ruby parent glyph counts as
+ * itself. Newlines break columns exactly as in the glyph
+ * layout; an empty segment yields an empty column.
+ */
+function layoutTextColumnsTokenized(text: string, columnLength: number, adjustments?: TextColumnAdjustments): LayoutToken[][] {
+  const limit = normalizeColumnLength(columnLength);
+  const tatechuyoko = adjustments?.tatechuyoko === true;
+  const ruby = adjustments?.ruby === true;
+  const kinsoku = adjustments?.kinsoku === true;
+  const segments = (text || '').split(/\n/);
+  const columns: LayoutToken[][] = [];
+  for (const segment of segments) {
+    const parsed = ruby
+      ? parseRubyMarkup(segment)
+      : { glyphs: splitTextGlyphs(segment), annotations: [] as RubyAnnotation[] };
+    const tokens = tokenizeSegment(parsed.glyphs, parsed.annotations, tatechuyoko);
+    if (limit <= 0 || tokens.length === 0) {
+      columns.push(tokens);
+      continue;
+    }
+    columns.push(...wrapSegmentTokens(tokens, limit, kinsoku));
+  }
+  return columns;
+}
+
 /**
  * Split text into columns. Column 0 is the head of the text (the
  * rightmost column when drawn). Newlines always break columns;
@@ -155,8 +435,22 @@ function normalizeRatio(value: number): number {
  * never adjusted (the writer chose those breaks explicitly).
  * With kinsoku off (the default) the split is exactly the Phase
  * BG one — the adjustment pass is not entered at all.
+ *
+ * With tate-chu-yoko or ruby on (Phase BP, via `adjustments`),
+ * the split runs on tokens instead: runs fold into single
+ * glyphs' worth of text and ruby markup is removed (the parent
+ * glyphs remain), so each column string is the plain text that
+ * will be drawn.
  */
-export function layoutTextColumns(text: string, columnLength: number, kinsoku = false): string[] {
+export function layoutTextColumns(text: string, columnLength: number, kinsoku = false, adjustments?: TextColumnAdjustments): string[] {
+  if (adjustments?.tatechuyoko === true || adjustments?.ruby === true) {
+    const merged: TextColumnAdjustments = {
+      ...adjustments,
+      kinsoku: kinsoku || adjustments.kinsoku === true,
+    };
+    return layoutTextColumnsTokenized(text, columnLength, merged)
+      .map((column) => column.map((token) => token.text).join(''));
+  }
   const limit = normalizeColumnLength(columnLength);
   const segments = (text || '').split(/\n/);
   const columns: string[] = [];
@@ -246,6 +540,14 @@ export interface VerticalGlyphPlacement {
   y: number;
   column: number;
   index: number;
+  /** Phase BP: font scale for this placement (a tate-chu-yoko
+   *  run, or a ruby glyph at RUBY_SCALE); omitted means 1. The
+   *  drawing paths swap the font only when this is present and
+   *  not 1. */
+  scale?: number;
+  /** Phase BP: this placement is a ruby annotation glyph. Its
+   *  `index` is the parent group's first cell index. */
+  ruby?: boolean;
 }
 
 /**
@@ -269,6 +571,16 @@ export const YAKUMONO_OFFSET_EM = 0.3;
  * to the column split, yakumono shifts the correction-table
  * glyphs inside their cells. Omitted / both off, the placements
  * are exactly the Phase BG ones.
+ *
+ * With tate-chu-yoko or ruby on (Phase BP), the placements are
+ * built from the token layout instead: a run is one placement
+ * whose glyph is the whole run string, carrying its font scale;
+ * ruby glyphs are extra placements along the parent's right
+ * side, spread evenly over the parent span (the span uses
+ * verticalGlyphAdvance via the centre-Y function, and the ruby
+ * x is cell-based — a yakumono shift of the parent does not
+ * propagate to its ruby). With both BP adjustments off this
+ * token path is not entered at all.
  */
 export function verticalGlyphPlacements(
   text: string,
@@ -276,22 +588,69 @@ export function verticalGlyphPlacements(
   metrics: VerticalTextMetrics,
   adjustments?: TextColumnAdjustments,
 ): VerticalGlyphPlacement[] {
-  const columns = layoutTextColumns(text, columnLength, adjustments?.kinsoku === true);
   const yakumono = adjustments?.yakumono === true;
-  const placements: VerticalGlyphPlacement[] = [];
-  columns.forEach((column, columnIndex) => {
-    const glyphs = splitTextGlyphs(column);
-    const x = verticalColumnCenterX(columnIndex, columns.length, metrics);
-    glyphs.forEach((glyph, glyphIndex) => {
-      const offset = yakumono && YAKUMONO_OFFSET_GLYPHS.has(glyph) ? metrics.pxSize * YAKUMONO_OFFSET_EM : 0;
-      placements.push({
-        glyph,
-        x: x + offset,
-        y: verticalGlyphCenterY(glyphIndex, glyphs.length, metrics) - offset,
-        column: columnIndex,
-        index: glyphIndex,
+  if (adjustments?.tatechuyoko !== true && adjustments?.ruby !== true) {
+    const columns = layoutTextColumns(text, columnLength, adjustments?.kinsoku === true);
+    const placements: VerticalGlyphPlacement[] = [];
+    columns.forEach((column, columnIndex) => {
+      const glyphs = splitTextGlyphs(column);
+      const x = verticalColumnCenterX(columnIndex, columns.length, metrics);
+      glyphs.forEach((glyph, glyphIndex) => {
+        const offset = yakumono && YAKUMONO_OFFSET_GLYPHS.has(glyph) ? metrics.pxSize * YAKUMONO_OFFSET_EM : 0;
+        placements.push({
+          glyph,
+          x: x + offset,
+          y: verticalGlyphCenterY(glyphIndex, glyphs.length, metrics) - offset,
+          column: columnIndex,
+          index: glyphIndex,
+        });
       });
     });
+    return placements;
+  }
+  const tokenColumns = layoutTextColumnsTokenized(text, columnLength, adjustments);
+  const placements: VerticalGlyphPlacement[] = [];
+  tokenColumns.forEach((tokens, columnIndex) => {
+    const x = verticalColumnCenterX(columnIndex, tokenColumns.length, metrics);
+    tokens.forEach((token, tokenIndex) => {
+      const offset = yakumono && YAKUMONO_OFFSET_GLYPHS.has(token.text) ? metrics.pxSize * YAKUMONO_OFFSET_EM : 0;
+      const placement: VerticalGlyphPlacement = {
+        glyph: token.text,
+        x: x + offset,
+        y: verticalGlyphCenterY(tokenIndex, tokens.length, metrics) - offset,
+        column: columnIndex,
+        index: tokenIndex,
+      };
+      if (token.scale !== undefined) placement.scale = token.scale;
+      placements.push(placement);
+    });
+    // Ruby annotations of this column: one placement per ruby
+    // glyph, spread evenly over the parent span.
+    let scan = 0;
+    while (scan < tokens.length) {
+      const token = tokens[scan];
+      if (token.ruby === undefined || token.groupId === undefined) {
+        scan += 1;
+        continue;
+      }
+      let end = scan;
+      while (end + 1 < tokens.length && tokens[end + 1].groupId === token.groupId) end += 1;
+      const rubyGlyphs = splitTextGlyphs(token.ruby);
+      const spanTop = verticalGlyphCenterY(scan, tokens.length, metrics) - metrics.pxSize / 2;
+      const spanBottom = verticalGlyphCenterY(end, tokens.length, metrics) + metrics.pxSize / 2;
+      rubyGlyphs.forEach((glyph, j) => {
+        placements.push({
+          glyph,
+          x: x + metrics.pxSize * RUBY_OFFSET_EM,
+          y: spanTop + ((j + 0.5) / rubyGlyphs.length) * (spanBottom - spanTop),
+          column: columnIndex,
+          index: scan,
+          scale: RUBY_SCALE,
+          ruby: true,
+        });
+      });
+      scan = end + 1;
+    }
   });
   return placements;
 }

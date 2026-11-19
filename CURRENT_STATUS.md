@@ -1,20 +1,20 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.67.0**（2026-11-19、第9期 Phase BK＝縦書きの仕上げ: BG の縦書き配置へ禁則の最小集合（`layer2TextMapKinsoku`、折り返し境界のみ）と約物の位置補正（`layer2TextMapYakumono`、、。，． をセルの右上へ。置換・回転はしない）を追加した。新規 config キー +2（どちらも既定 OFF で BG の分割・配置とビット同一）・スターター +2。詳細は PHASE_BK_REPORT.md（統合側で作成）。前版 v1.66.0 は第9期 Phase BJ＝ノイズ場の汎用化）
+**現行バージョン: v1.69.0**（2026-11-19、第11期 Phase BP＝縦書きの仕上げ・その2: 縦中横（`layer2TextMapTateChuYoko`、半角英数字2〜4字の横組み）とルビ（`layer2TextMapRuby`、青空文庫式記法・親文字の右側へ半分の大きさで配置）。新規 config キー +2（どちらも既定 OFF で従来の分割・配置とビット同一）・スターター +2。詳細は PHASE_BP_REPORT.md。前版 v1.68.1 は Phase BR＝黒スターター3件の経路バグ修正）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_BC_REPORT.md、前: PHASE_BB_REPORT.md / PHASE_BA_REPORT.md / PHASE_AZ_REPORT.md / PHASE_AY_REPORT.md）
+  （最新: PHASE_BO_REPORT.md、前: PHASE_BC_REPORT.md / PHASE_BB_REPORT.md / PHASE_BA_REPORT.md / PHASE_AZ_REPORT.md / PHASE_AY_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
 - 変更履歴: `CHANGELOG.md`（[1.61.0] が最新項）
 
 ## 資産の実数（2026-11-19 実測）
 
-- config キー: **1,307件** ／ 内蔵スターター: **590件**
-- 生成カタログ: **1,541件**（catalog／presets／share が 1:1:1、fps 実測 100%）
+- config キー: **1,311件** ／ 内蔵スターター: **594件**
+- 生成カタログ: **1,647件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 
 ## 残件（2026-11-17 時点）

@@ -37,6 +37,10 @@ export interface ParticleConfigLayer2 {
   // and yakumono position correction. Both default OFF.
   layer2TextMapKinsoku: boolean;
   layer2TextMapYakumono: boolean;
+  // Vertical text finishing (Phase BP): tate-chu-yoko run
+  // folding and ruby annotations. Both default OFF.
+  layer2TextMapTateChuYoko: boolean;
+  layer2TextMapRuby: boolean;
 
   layer2MotionMix: boolean;
   layer2Motions: Layer2Type[];

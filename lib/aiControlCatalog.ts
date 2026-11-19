@@ -104,6 +104,8 @@ const NUMS: NumDef[] = [
   ['layer2TextMapLetterSpacing', 'TextMap縦書きの字送りの追加間隔（字形サイズ比）'],
   ['layer2TextMapKinsoku', 'TextMap縦書きの禁則処理（最小集合、折り返し境界のみ、Phase BK）'],
   ['layer2TextMapYakumono', 'TextMap縦書きの約物の位置補正（、。，．を右上へ、Phase BK）'],
+  ['layer2TextMapTateChuYoko', 'TextMap縦書きの縦中横（半角英数字の連続2〜4字を1セルに横組み、Phase BP）'],
+  ['layer2TextMapRuby', 'TextMap縦書きのルビ（青空文庫式の記法、親文字の右側に固定倍率、Phase BP）'],
   ['layer2ReactionFhnGain', 'レイヤー2のFHN波形の表示の明るさ（1が標準）'],
   ['layer2ReactionLeniaMu', 'レイヤー2のLenia成長中心μ'],
   ['layer2ReactionLeniaSigma', 'レイヤー2のLenia成長の幅σ'],

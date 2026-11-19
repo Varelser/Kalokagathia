@@ -397,12 +397,14 @@ export function cpuShapeSignature(config: ParticleConfig): string {
       config.layer2TextMapColumnGap,
       config.layer2TextMapLetterSpacing,
     ].join(',')}`;
-    // Vertical text finishing (Phase BK): the two adjustments
-    // change the bake, so they join the signature — but only
-    // while one is on, keeping the BG string (and thus rebuild
-    // behaviour) untouched for the both-off default.
-    if (config.layer2TextMapKinsoku || config.layer2TextMapYakumono) {
-      sig += `|vtextAdj:${config.layer2TextMapKinsoku ? 1 : 0},${config.layer2TextMapYakumono ? 1 : 0}`;
+    // Vertical text finishing (Phase BK, extended by Phase BP):
+    // the adjustments change the bake, so they join the
+    // signature — but only while one is on, keeping the BG
+    // string (and thus rebuild behaviour) untouched for the
+    // all-off default.
+    if (config.layer2TextMapKinsoku || config.layer2TextMapYakumono
+      || config.layer2TextMapTateChuYoko || config.layer2TextMapRuby) {
+      sig += `|vtextAdj:${config.layer2TextMapKinsoku ? 1 : 0},${config.layer2TextMapYakumono ? 1 : 0},${config.layer2TextMapTateChuYoko ? 1 : 0},${config.layer2TextMapRuby ? 1 : 0}`;
     }
   }
   return sig;

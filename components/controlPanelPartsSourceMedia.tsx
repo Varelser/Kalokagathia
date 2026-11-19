@@ -47,6 +47,12 @@ export type MediaSourceSettingsProps = {
   onTextKinsokuChange?: (value: boolean) => void;
   textYakumono?: boolean;
   onTextYakumonoChange?: (value: boolean) => void;
+  // Vertical text finishing (Phase BP): same optional-prop
+  // convention as the BK fields above.
+  textTateChuYoko?: boolean;
+  onTextTateChuYokoChange?: (value: boolean) => void;
+  textRuby?: boolean;
+  onTextRubyChange?: (value: boolean) => void;
 };
 
 export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
@@ -89,6 +95,10 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
   onTextKinsokuChange,
   textYakumono,
   onTextYakumonoChange,
+  textTateChuYoko,
+  onTextTateChuYokoChange,
+  textRuby,
+  onTextRubyChange,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -178,12 +188,14 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
         letterSpacing: textLetterSpacing || 0,
         kinsoku: textKinsoku || false,
         yakumono: textYakumono || false,
+        tatechuyoko: textTateChuYoko || false,
+        ruby: textRuby || false,
       },
     );
     onMapChange(map, sampleSize.width, sampleSize.height);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the status line reports the rasterization this effect just performed; it is an effect result, not derived render state.
     setStatus(`Text rasterized (${sampleSize.width}×${sampleSize.height})`);
-  }, [mode, textValue, textFontFamily, textWeight, textSize, textPadding, textInvert, textVertical, textColumnLength, textColumnGap, textLetterSpacing, textKinsoku, textYakumono, onMapChange, sampleSize]);
+  }, [mode, textValue, textFontFamily, textWeight, textSize, textPadding, textInvert, textVertical, textColumnLength, textColumnGap, textLetterSpacing, textKinsoku, textYakumono, textTateChuYoko, textRuby, onMapChange, sampleSize]);
 
   const handleLoadedImage = (file: File) => {
     const image = new window.Image();
@@ -351,7 +363,7 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
           {onTextVerticalChange && textVertical && (
             <>
               <div className="mb-3 rounded border border-white/10 bg-white/5 p-2 text-[10px] text-white/55">
-                縦書きは字形を正立のまま上から下へ、段は右から左へ配置します。縦中横・ルビはありません。禁則は最小集合、約物は位置補正のみです。
+                縦書きは字形を正立のまま上から下へ、段は右から左へ配置します。禁則は最小集合、約物は位置補正のみ。縦中横は半角英数字の2〜4字まで、ルビは青空文庫式の記法で親文字の右側に置きます（段間に重なることがあります）。
               </div>
               {onTextColumnLengthChange && (
                 <Slider label="Column Length (0 = Auto)" value={textColumnLength ?? 0} min={0} max={40} step={1} onChange={(value) => onTextColumnLengthChange(value)} />
@@ -367,6 +379,12 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
               )}
               {onTextYakumonoChange && (
                 <Toggle label="Yakumono Position (約物)" value={textYakumono ?? false} options={[{ label: 'Off', val: false }, { label: 'On', val: true }]} onChange={(value) => onTextYakumonoChange(value)} />
+              )}
+              {onTextTateChuYokoChange && (
+                <Toggle label="Tate-Chu-Yoko (縦中横)" value={textTateChuYoko ?? false} options={[{ label: 'Off', val: false }, { label: 'On', val: true }]} onChange={(value) => onTextTateChuYokoChange(value)} />
+              )}
+              {onTextRubyChange && (
+                <Toggle label="Ruby (ルビ)" value={textRuby ?? false} options={[{ label: 'Off', val: false }, { label: 'On', val: true }]} onChange={(value) => onTextRubyChange(value)} />
               )}
             </>
           )}

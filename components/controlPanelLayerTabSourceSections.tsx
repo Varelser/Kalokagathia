@@ -138,6 +138,12 @@ export const SharedLayerTabSourceSections: React.FC<SharedLayerSourceSectionsPro
               onTextKinsokuChange: (v: boolean) => write('TextMapKinsoku', v),
               textYakumono: read('TextMapYakumono') as boolean,
               onTextYakumonoChange: (v: boolean) => write('TextMapYakumono', v),
+              // Vertical text finishing (Phase BP): same layer-2
+              // only convention as the BK fields above.
+              textTateChuYoko: read('TextMapTateChuYoko') as boolean,
+              onTextTateChuYokoChange: (v: boolean) => write('TextMapTateChuYoko', v),
+              textRuby: read('TextMapRuby') as boolean,
+              onTextRubyChange: (v: boolean) => write('TextMapRuby', v),
             }
           : {})}
       />

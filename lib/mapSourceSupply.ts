@@ -191,6 +191,11 @@ export interface TextRasterSettings {
   // BG raster bit-identical.
   kinsoku: boolean;
   yakumono: boolean;
+  // Vertical text finishing (Phase BP): tate-chu-yoko runs and
+  // ruby annotations; both false keep the Phase BK raster
+  // bit-identical.
+  tatechuyoko: boolean;
+  ruby: boolean;
 }
 
 /** The layer-2 TextMap settings: the same source the 'text'
@@ -209,6 +214,8 @@ export function textRasterSettingsFromConfig(config: ParticleConfig): TextRaster
     letterSpacing: config.layer2TextMapLetterSpacing,
     kinsoku: config.layer2TextMapKinsoku,
     yakumono: config.layer2TextMapYakumono,
+    tatechuyoko: config.layer2TextMapTateChuYoko,
+    ruby: config.layer2TextMapRuby,
   };
 }
 
@@ -216,7 +223,7 @@ export function textRasterCacheKey(settings: TextRasterSettings): string {
   return [
     settings.text, settings.fontFamily, settings.fontWeight, settings.size, settings.padding, settings.invert,
     settings.vertical, settings.columnLength, settings.columnGap, settings.letterSpacing,
-    settings.kinsoku, settings.yakumono,
+    settings.kinsoku, settings.yakumono, settings.tatechuyoko, settings.ruby,
   ].join('|');
 }
 
@@ -258,9 +265,21 @@ export function rasterizeTextCanvas(settings: TextRasterSettings, size: number):
       pxSize,
       columnGap: settings.columnGap,
       letterSpacing: settings.letterSpacing,
-    }, { kinsoku: settings.kinsoku, yakumono: settings.yakumono });
+    }, { kinsoku: settings.kinsoku, yakumono: settings.yakumono, tatechuyoko: settings.tatechuyoko, ruby: settings.ruby });
+    // Phase BP: a placement with a font scale (a tate-chu-yoko
+    // run or a ruby glyph) swaps the font for its own draw and
+    // restores it; scale-free placements draw exactly as before.
+    const baseFont = ctx.font;
+    const fontWeight = Math.max(100, Math.min(900, settings.fontWeight || 700));
+    const fontFamily = settings.fontFamily || 'Arial';
     placements.forEach((placement) => {
-      ctx.fillText(placement.glyph, placement.x, placement.y);
+      if (placement.scale !== undefined && placement.scale !== 1) {
+        ctx.font = `${fontWeight} ${pxSize * placement.scale}px ${fontFamily}`;
+        ctx.fillText(placement.glyph, placement.x, placement.y);
+        ctx.font = baseFont;
+      } else {
+        ctx.fillText(placement.glyph, placement.x, placement.y);
+      }
     });
   } else {
     const usableHeight = height * (1 - clampedPadding * 2);

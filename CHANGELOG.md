@@ -4,6 +4,34 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.69.0] — 2026-11-19
+
+Eleventh-term Phase BP: the vertical text finishing, part 2 —
+tate-chu-yoko (horizontal-in-vertical runs) and ruby annotations
+for the Phase BG tategaki layout. Two new config keys, both
+defaulting OFF, at which the layout and bakes are bit-identical
+to v1.68.1; two new starters.
+
+### Added
+- **Tate-chu-yoko (縦中横)** (`layer2TextMapTateChuYoko`,
+  default false). Runs of 2–4 half-width alphanumeric characters
+  (plus `.` inside a run) fold into a single cell, drawn
+  horizontally at a font size scaled by 1/length, inside
+  `layoutTextColumns`. Runs of 5+ split into groups of 4 plus a
+  remainder (a 1-char remainder merges into the previous group
+  as a 5-run or pairs with the preceding char as 3+2). A run
+  never straddles a column break.
+- **Ruby (ルビ)** (`layer2TextMapRuby`, default false). Aozora
+  Bunko markup — `｜base《ruby》`, or the short form where the
+  base is the single preceding character — is parsed by
+  `parseRubyMarkup`; the ruby glyphs are placed at half size
+  along the right side of their base span (cell centre + 0.75em,
+  possibly overlapping the next column gap), distributed evenly
+  over multi-character bases. Malformed markup (unclosed,
+  empty, or crossing a newline) is treated as literal text.
+  Mono-ruby only; group-ruby distribution and per-ruby sizing
+  are not attempted.
+
 ## [1.67.0] — 2026-11-19
 
 Ninth-term Phase BK: the vertical text finishing — a minimal
