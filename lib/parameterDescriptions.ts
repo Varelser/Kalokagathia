@@ -620,6 +620,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuCsgOffsetBZ: 'CSGの被演算子BのZオフセット',
   gpgpuCsgExtrudeProfile: 'CSG押し出しの断面（四角形／円／多角形／カスタム。カスタムは自由形テキストの図形、多角形の辺数は円分割数で指定、既定は四角形）',
   gpgpuCsgExtrudeCustomText: 'CSG押し出しのカスタム断面（点リスト／SVGパス／SVG文書。座標はそのまま世界単位、サイズは適用されません）',
+  gpgpuCsgMeshObjText: 'CSGメッシュ被演算子のOBJテキスト（座標はそのまま世界単位、サイズは適用されずオフセットだけが効きます。閉じたメッシュだけが演算できます）',
   gpgpuCsgExtrudeHeight: 'CSG押し出しの高さ（断面の中心から上下対称に押し出す、既定1）',
   gpgpuCsgExtrudeTwist: 'CSG押し出しのねじり（度、高さ方向に回転。ねじると体積が変わり、変わり方は分割数に依存する、既定0）',
   gpgpuCsgExtrudeScaleTop: 'CSG押し出しの先端スケール（一様、0で錐になる、既定1）',

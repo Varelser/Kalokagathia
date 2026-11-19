@@ -4,6 +4,32 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.83.0] — 2026-11-20
+
+Eleventh-term CSG second release, Phase CJ (brief unit
+U5): OBJ-loaded meshes as CSG operands. The operand
+kind choice gains "mesh": the new text key
+gpgpuCsgMeshObjText holds an OBJ document (paste or
+file load), parsed by the existing OBJ parser — no
+second parser — welded at 1e-6 (the same quantisation
+the input gate judges with, so the judged form and
+the constructed form agree; welding only identifies
+coincident vertices, it repairs nothing), and built
+through the mesh construction path Phase CC already
+carried. Coordinates are raw world units as written:
+no normalisation, the size keys do not apply, and
+placement is the per-operand offset only (the M3
+convention, closed by commander ruling on the brief's
+raw-units direction). Gate (a) judges mesh operands
+before transfer, exactly as designed in CC; open or
+broken meshes are refused with the gate's reason, in
+the live status line before running and again at run
+time. Normals / UV / material ids stay out of the
+operands (position-only, as in CC). One new starter
+(CSG Mesh: the default torus mesh, genus 1, minus the
+size-2 sphere at x=1.1 = 2.251255 / 372 triangles,
+the sphere bite closing the hole to genus 0).
+
 ## [1.82.0] — 2026-11-20
 
 Eleventh-term CSG second release, Phase CI (brief unit

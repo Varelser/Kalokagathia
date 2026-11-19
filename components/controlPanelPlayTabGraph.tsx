@@ -20,6 +20,8 @@ import {
   type CsgResultData,
 } from '../lib/csgCore';
 import { parseFreeformText } from '../lib/csgFreeform';
+import { buildMeshOperandFromObj, parseCsgMeshText } from '../lib/csgMeshOperand';
+import { checkWatertightGate } from '../lib/csgGate';
 import { CsgFreeformEditor } from './csgFreeformEditor';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { DeterministicRenderControls } from './controlPanelPlayTabRender';
@@ -866,7 +868,7 @@ export const ExportSection: React.FC<{
   );
 };
 
-type CsgOperandKindUi = CsgPrimitiveKind | 'extrude';
+type CsgOperandKindUi = CsgPrimitiveKind | 'extrude' | 'mesh';
 
 const CSG_PRIMITIVE_OPTIONS: { value: CsgOperandKindUi; label: string }[] = [
   { value: 'cube', label: '立方体' },
@@ -875,6 +877,7 @@ const CSG_PRIMITIVE_OPTIONS: { value: CsgOperandKindUi; label: string }[] = [
   { value: 'cone', label: '円錐' },
   { value: 'torus', label: 'トーラス' },
   { value: 'extrude', label: '押し出し（断面→立体）' },
+  { value: 'mesh', label: 'メッシュ（OBJ読み込み）' },
 ];
 
 // Phase CC: CSG panel (final CSG brief, 第1弾). Primitives are
@@ -899,12 +902,33 @@ export const CsgSection: React.FC<{
     [config.gpgpuCsgExtrudeProfile, config.gpgpuCsgExtrudeCustomText],
   );
 
+  const usesMeshUi = config.gpgpuCsgPrimitiveA === 'mesh' || config.gpgpuCsgPrimitiveB === 'mesh';
+  const meshParseUi = React.useMemo(() => {
+    if (!usesMeshUi) return null;
+    const mesh = parseCsgMeshText(config.gpgpuCsgMeshObjText);
+    if (!mesh) return { ok: false, reason: 'OBJとして読み取れませんでした。' } as const;
+    const gate = checkWatertightGate(mesh.positions, mesh.indices);
+    return {
+      ok: gate.ok || gate.skipped,
+      gate,
+      vertexCount: mesh.vertexCount,
+      triangleCount: mesh.triangleCount,
+    } as const;
+  }, [usesMeshUi, config.gpgpuCsgMeshObjText]);
+
   const buildOperand = (
     kind: CsgOperandKindUi,
     size: number,
     offset: readonly [number, number, number],
     customPolygons?: readonly (readonly (readonly [number, number])[])[],
+    meshOperand?: CsgOperand | null,
   ): CsgOperand => {
+    if (kind === 'mesh') {
+      // Built by run() via buildMeshOperandFromObj (raw
+      // units + this operand's offset). The fallback is
+      // unreachable: run() aborts when the build fails.
+      return meshOperand ?? { type: 'mesh', positions: new Float32Array(0), indices: null };
+    }
     if (kind === 'extrude') {
       return {
         type: 'extrude',
@@ -946,12 +970,27 @@ export const CsgSection: React.FC<{
       setBusy(false);
       return;
     }
-    const a: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveA, config.gpgpuCsgSizeA, [0, 0, 0], customParse?.polygons);
-    const b: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveB, config.gpgpuCsgSizeB, [
+    const bOffset: readonly [number, number, number] = [
       config.gpgpuCsgOffsetBX,
       config.gpgpuCsgOffsetBY,
       config.gpgpuCsgOffsetBZ,
-    ], customParse?.polygons);
+    ];
+    const meshA = config.gpgpuCsgPrimitiveA === 'mesh'
+      ? buildMeshOperandFromObj(config.gpgpuCsgMeshObjText, [0, 0, 0])
+      : null;
+    const meshB = config.gpgpuCsgPrimitiveB === 'mesh'
+      ? buildMeshOperandFromObj(config.gpgpuCsgMeshObjText, bOffset)
+      : null;
+    const meshFail = (meshA && !meshA.ok ? meshA : null) ?? (meshB && !meshB.ok ? meshB : null);
+    if (meshFail) {
+      setStatus(`メッシュを読めません: ${meshFail.reason}`);
+      setBusy(false);
+      return;
+    }
+    const a: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveA, config.gpgpuCsgSizeA, [0, 0, 0], customParse?.polygons,
+      meshA && meshA.ok ? meshA.operand : null);
+    const b: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveB, config.gpgpuCsgSizeB, bOffset, customParse?.polygons,
+      meshB && meshB.ok ? meshB.operand : null);
     try {
       const out = await runCsgOperation(a, b, config.gpgpuCsgOperation, config.gpgpuCsgFinish, config.gpgpuCsgRefineDivisions);
       const cached = getLastCsgRun()?.fromCache ?? false;
@@ -995,7 +1034,7 @@ export const CsgSection: React.FC<{
     <section>
       <SectionTitle icon={<Box size={12} />}>CSG · メッシュ演算</SectionTitle>
       <p className="text-[11px] leading-relaxed text-white/45 mb-4">
-        プリミティブ同士、または断面の押し出しとの和・差・積を manifold-3d（Worker＋WASM）で計算し、結果をモーフ経路へ取り込めます。
+        プリミティブ同士、または断面の押し出しや読み込んだ OBJ メッシュとの和・差・積を manifold-3d（Worker＋WASM）で計算し、結果をモーフ経路へ取り込めます。
         仕上げにハル（凸包）を選ぶと、結果全体を1つの凸立体に置き換えます（離れた部品同士も橋渡しされます）。
         細分化は形を変えずに三角形を細かく割り、モーフ先としての密度を上げます。
         演算は1回実行型で、同じ被演算子・演算の再実行はキャッシュを返します。完全に一致する形同士の演算は通常より時間がかかる場合があります。
@@ -1132,6 +1171,49 @@ export const CsgSection: React.FC<{
                   />
                 </div>
               )}
+            </div>
+          )}
+          {usesMeshUi && (
+            <div className="mt-2">
+              <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">メッシュ（OBJ）</span>
+              <textarea
+                value={config.gpgpuCsgMeshObjText}
+                onChange={(event) => updateConfig('gpgpuCsgMeshObjText', event.target.value.slice(0, 200_000))}
+                spellCheck={false}
+                rows={5}
+                className="w-full rounded border border-white/15 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40"
+                placeholder={'OBJテキスト（v と f を含むもの）。閉じたメッシュだけが演算できます'}
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 cursor-pointer">
+                  OBJ／テキストを読み込む
+                  <input
+                    type="file"
+                    accept=".obj,.txt,text/plain"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void f.text().then((t) => updateConfig('gpgpuCsgMeshObjText', t.slice(0, 200_000)));
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                <span className="text-[10px] text-white/50">
+                  {meshParseUi
+                    ? 'reason' in meshParseUi
+                      ? `読めません: ${meshParseUi.reason}`
+                      : meshParseUi.gate.skipped
+                        ? `頂点 ${meshParseUi.vertexCount}・三角形 ${meshParseUi.triangleCount}（面が多すぎるため閉検査は省略され、Worker 側で判定されます）`
+                        : meshParseUi.ok
+                          ? `頂点 ${meshParseUi.vertexCount}・三角形 ${meshParseUi.triangleCount}（閉じたメッシュ・種数 ${meshParseUi.gate.genus}）`
+                          : `閉じたメッシュではありません: ${meshParseUi.gate.reason}`
+                    : ''}
+                </span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-white/45 mt-1">
+                メッシュは A・B 共通のテキストです。座標はそのまま世界単位で、サイズは適用されません（配置は B のオフセットだけが効きます）。
+                頂点は 1e-6 で重なりを同一視してから判定します。開いたメッシュや自己交差するメッシュは、理由を表示して弾きます（自動修復はしません）。
+              </p>
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2 mt-2">
