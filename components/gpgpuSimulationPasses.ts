@@ -20,6 +20,10 @@ import {
   terrainColliderGradientScale,
   TERRAIN_DERIVED_SIZE,
 } from '../lib/terrainDerivedMaps';
+import {
+  getMeshSdfCollider,
+  meshSdfWorldScale,
+} from '../lib/meshSdfCollider';
 
 // Particle Life matrix cache: the flat uniform array only changes when
 // preset / species / seed change, so avoid reallocating it every frame.
@@ -630,6 +634,23 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uTerrainTexSize) velSimMat.uniforms.uTerrainTexSize.value = TERRAIN_DERIVED_SIZE;
   if (velSimMat.uniforms.uTerrainBounce) velSimMat.uniforms.uTerrainBounce.value = Math.max(0, Math.min(1, config.gpgpuTerrainColliderBounce ?? 0.5));
   if (velSimMat.uniforms.uTerrainFriction) velSimMat.uniforms.uTerrainFriction.value = Math.max(0, Math.min(1, config.gpgpuTerrainColliderFriction ?? 0.25));
+  // Mesh SDF collider (Phase BY): resolved CPU-side like the
+  // terrain collider — the getter returns null unless the key is
+  // on AND the async bake has completed, so the disabled uniform
+  // keeps the exact legacy path while baking / refused / off.
+  const meshSdfVel = getMeshSdfCollider(config);
+  const meshSdfWorldVel = meshSdfWorldScale(config);
+  if (velSimMat.uniforms.uMeshSdfEnabled) velSimMat.uniforms.uMeshSdfEnabled.value = !!meshSdfVel;
+  if (velSimMat.uniforms.uMeshSdfTex) velSimMat.uniforms.uMeshSdfTex.value = meshSdfVel ? meshSdfVel.texture : null;
+  if (velSimMat.uniforms.uMeshSdfOrigin && meshSdfVel) {
+    const halfWorld = (meshSdfVel.grid.sideNorm * meshSdfWorldVel) / 2;
+    (velSimMat.uniforms.uMeshSdfOrigin.value as THREE.Vector3).set(-halfWorld, -halfWorld, -halfWorld);
+  }
+  if (velSimMat.uniforms.uMeshSdfDomainWorld) velSimMat.uniforms.uMeshSdfDomainWorld.value = meshSdfVel ? meshSdfVel.grid.sideNorm * meshSdfWorldVel : 1.0;
+  if (velSimMat.uniforms.uMeshSdfScale) velSimMat.uniforms.uMeshSdfScale.value = meshSdfVel ? meshSdfWorldVel : 0;
+  if (velSimMat.uniforms.uMeshSdfVoxelWorld) velSimMat.uniforms.uMeshSdfVoxelWorld.value = meshSdfVel ? meshSdfVel.grid.voxelNorm * meshSdfWorldVel : 0;
+  if (velSimMat.uniforms.uMeshSdfBounce) velSimMat.uniforms.uMeshSdfBounce.value = Math.max(0, Math.min(1, config.gpgpuMeshSdfBounce ?? 0.5));
+  if (velSimMat.uniforms.uMeshSdfFriction) velSimMat.uniforms.uMeshSdfFriction.value = Math.max(0, Math.min(1, config.gpgpuMeshSdfFriction ?? 0.25));
   // Named attributes (Phase AK): resolved CPU-side like the
   // terrain collider — the velocity consumers (force drive /
   // group gate) engage only when the attribute texture exists,
@@ -824,6 +845,20 @@ export function runSimulationPasses(args: {
   if (posSimMat.uniforms.uTerrainHeightWorld) posSimMat.uniforms.uTerrainHeightWorld.value = terrainColliderTex ? terrainColliderHeightWorld(config) : 0;
   if (posSimMat.uniforms.uTerrainGradScale) posSimMat.uniforms.uTerrainGradScale.value = terrainColliderTex ? terrainColliderGradientScale(config) : 0;
   if (posSimMat.uniforms.uTerrainTexSize) posSimMat.uniforms.uTerrainTexSize.value = TERRAIN_DERIVED_SIZE;
+  // Mesh SDF collider (Phase BY): same resolution as the
+  // velocity pass — null while disabled / baking / refused keeps
+  // the exact legacy path.
+  const meshSdfPos = getMeshSdfCollider(config);
+  const meshSdfWorldPos = meshSdfWorldScale(config);
+  if (posSimMat.uniforms.uMeshSdfEnabled) posSimMat.uniforms.uMeshSdfEnabled.value = !!meshSdfPos;
+  if (posSimMat.uniforms.uMeshSdfTex) posSimMat.uniforms.uMeshSdfTex.value = meshSdfPos ? meshSdfPos.texture : null;
+  if (posSimMat.uniforms.uMeshSdfOrigin && meshSdfPos) {
+    const halfWorld = (meshSdfPos.grid.sideNorm * meshSdfWorldPos) / 2;
+    (posSimMat.uniforms.uMeshSdfOrigin.value as THREE.Vector3).set(-halfWorld, -halfWorld, -halfWorld);
+  }
+  if (posSimMat.uniforms.uMeshSdfDomainWorld) posSimMat.uniforms.uMeshSdfDomainWorld.value = meshSdfPos ? meshSdfPos.grid.sideNorm * meshSdfWorldPos : 1.0;
+  if (posSimMat.uniforms.uMeshSdfScale) posSimMat.uniforms.uMeshSdfScale.value = meshSdfPos ? meshSdfWorldPos : 0;
+  if (posSimMat.uniforms.uMeshSdfVoxelWorld) posSimMat.uniforms.uMeshSdfVoxelWorld.value = meshSdfPos ? meshSdfPos.grid.voxelNorm * meshSdfWorldPos : 0;
   posSimMat.uniforms.uMouseEnabled.value = config.gpgpuMouseEnabled;
   posSimMat.uniforms.uMousePos.value.copy(mouseWorld);
   posSimMat.uniforms.uMouseRadius.value = config.gpgpuMouseRadius;

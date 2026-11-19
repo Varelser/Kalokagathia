@@ -150,6 +150,27 @@ export const VEL_FRAG_MAIN_TAIL = /* glsl */ `    // Morph Target Attraction (Ki
       }
     }
 
+    // Mesh SDF Collider (Phase BY) — velocity response on the
+    // baked mesh grid: the terrain collider's response shape
+    // (reflect the normal component with restitution, damp the
+    // tangential component with friction, which is what lets
+    // particles come to rest on the surface instead of jittering
+    // on the trilinear facets). Applied after the analytic SDF
+    // block, so both colliders may be live; the position pass
+    // owns the exact push-out.
+    if (uMeshSdfEnabled) {
+      float msd = meshSdfDistance(pos);
+      if (msd < 2.0) {
+        vec3 msn = meshSdfNormal(pos);
+        float vn = dot(vel, msn);
+        if (vn < 0.0) {
+          vec3 vN = msn * vn;
+          vec3 vT = vel - vN;
+          vel = vT * (1.0 - uMeshSdfFriction) - vN * uMeshSdfBounce;
+        }
+      }
+    }
+
     // Terrain Collider (Phase AI) — velocity response on the
     // height field: the floor bounce's response generalised to
     // the terrain normal (reflect the normal component with

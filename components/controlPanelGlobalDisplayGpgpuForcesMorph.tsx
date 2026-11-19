@@ -1,10 +1,46 @@
 import React from 'react';
 
+import type { ParticleConfig } from '../types';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
 
 import { Slider, Toggle } from './controlPanelParts';
 import { MorphObjImportBlock, MorphSvgImportBlock, ObjMeshBlock, TerrainTextureImageBlock } from './controlPanelGlobalDisplayGpgpuForcesImportBlocks';
 import { TerrainDerivedMapsBlock } from './controlPanelGlobalDisplayGpgpuForcesMapBlocks';
+import { getMeshSdfBakeStatus } from '../lib/meshSdfCollider';
+
+// Mesh SDF bake status (Phase BY): the bake runs async on the
+// CPU; this line polls while it is in flight so the user can see
+// when the collider becomes live (or why it was refused).
+const MeshSdfBakeStatusLine: React.FC<{ config: ParticleConfig }> = ({ config }) => {
+  const [, setTick] = React.useState(0);
+  const status = getMeshSdfBakeStatus(config);
+  React.useEffect(() => {
+    if (status.state !== 'baking') return undefined;
+    const id = setInterval(() => setTick((t) => t + 1), 500);
+    return () => clearInterval(id);
+  }, [status.state]);
+  let text: string;
+  if (status.state === 'ready') {
+    text = `ベイク完了（${status.resolution}³・${status.format === 'r16f' ? 'R16F' : 'Float32'}・${status.triangleCount} 三角形）。モーフ配置（中心・スケール）の位置で衝突します。`;
+    if (status.minFeatureVoxels < 1.5) {
+      text += ` ※ 最薄部が約 ${status.minFeatureVoxels.toFixed(1)} ボクセルしかなく、解像度不足の可能性があります。`;
+    }
+  } else if (status.state === 'baking') {
+    text = `ベイク中… ${Math.round(status.progress * 100)}%（完了するまでコライダは無効です）`;
+  } else if (status.state === 'refused') {
+    text = status.reason === 'not-closed'
+      ? '開いたメッシュのためベイクできません（符号付き距離には閉じたメッシュが必要です）。従来のコライダのまま動作します。'
+      : status.reason === 'degenerate'
+        ? '退化したメッシュ（体積ゼロ）のためベイクできません。従来のコライダのまま動作します。'
+        : 'OBJ を読み取れないためベイクできません。';
+  } else if (status.state === 'no-source') {
+    text = 'Morph の OBJ Source を取り込むと距離場を焼きます（閉じたメッシュのみ）。';
+  } else {
+    text = '';
+  }
+  if (!text) return null;
+  return <div className="mt-1 text-[9px] leading-relaxed text-white/40">{text}</div>;
+};
 
 export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
@@ -431,6 +467,33 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Slider label="Friction （摩擦）" value={config.gpgpuTerrainColliderFriction} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuTerrainColliderFriction', v)} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             粒子が高度場の表面で跳ね、摩擦で斜面に静止します（Phase AI）。地形メッシュが有効で平面モード（トンネルでない）のときだけ効きます。反発 0・摩擦 1 で表面に貼り付くように止まります。地形生成レシピの形そのものと衝突します。
+          </div>
+        </>
+      )}
+    </div>
+
+    {/* Mesh SDF Collider (Phase BY) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Mesh SDF Collider （メッシュSDFコライダ）" value={config.gpgpuMeshSdfEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMeshSdfEnabled', v)} />
+      {config.gpgpuMeshSdfEnabled && (
+        <>
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Bake Resolution （焼き解像度）</div>
+          <select
+            value={config.gpgpuMeshSdfResolution}
+            onChange={(e) => updateConfig('gpgpuMeshSdfResolution', Number(e.target.value))}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value={32}>32³ （最速・粗い）</option>
+            <option value={48}>48³</option>
+            <option value={64}>64³ （標準）</option>
+            <option value={96}>96³</option>
+            <option value={128}>128³ （精密・焼き時間長）</option>
+          </select>
+          <Slider label="Bounce （反発）" value={config.gpgpuMeshSdfBounce} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMeshSdfBounce', v)} />
+          <Slider label="Friction （摩擦）" value={config.gpgpuMeshSdfFriction} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMeshSdfFriction', v)} />
+          <MeshSdfBakeStatusLine config={config} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            取り込み済み OBJ を符号付き距離場に焼き、任意の閉メッシュを障害物にします（Phase BY）。配置はモーフ配置（原点・モーフスケール）に従い、ObjMesh 表示の位置オフセットには追随しません。解析 SDF と同時使用でき、解析側が先に効きます。
           </div>
         </>
       )}

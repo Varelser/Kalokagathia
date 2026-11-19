@@ -4,6 +4,47 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.72.0] — 2026-11-19
+
+Eleventh-term Phase BY: mesh SDF collider. The imported OBJ
+mesh is baked into a signed distance grid on the CPU and the
+simulation collides with the arbitrary closed mesh, in a
+separate slot next to the analytic SDF. Four new config keys,
+all defaulting to the collider being absent, so the output is
+bit-identical to v1.71.0 while unused; one new starter.
+
+### Added
+- **Mesh SDF bake** (`lib/meshSdfCollider.ts`): the OBJ source
+  (the same `gpgpuMorphObjSource` the morph target reads) is
+  welded, closed-checked and normalised exactly like the morph
+  placement, then baked into a signed distance grid — BVH +
+  Ericson point-triangle distance, sign by flood fill from the
+  domain boundary with surface-band propagation. Open meshes
+  are refused (no unsigned fallback) and the legacy colliders
+  keep working. The bake runs async in z-slabs with a
+  (source, resolution) cache; until it completes the collider
+  simply does not exist.
+- **GPU sampling**: the grid uploads as an R16F `Data3DTexture`
+  (normalised distances; Float32 fallback when R16F linear
+  filtering is unavailable) and both sim passes query it under
+  the analytic SDF's contract — negative = inside, world units,
+  degenerate normal = +Y, outside the domain = no collision.
+  Placement is the morph placement (origin, morph world scale
+  W = morphScale × bounceRadius × 0.48); the velocity pass
+  reflects with restitution + tangential friction (the terrain
+  collider's response shape) and the position pass pushes out,
+  after the analytic SDF in both passes, so the two colliders
+  can be live together. WebGPU declares the
+  `mesh-sdf-collider` capability (WGSL unimplemented → WebGL
+  route); the CPU fallback stays a no-op like the analytic SDF.
+- **Keys** (`gpgpuMeshSdfEnabled` OFF / `gpgpuMeshSdfResolution`
+  64 / `gpgpuMeshSdfBounce` 0.5 / `gpgpuMeshSdfFriction` 0.25)
+  with a control-panel block (toggle, resolution select
+  32–128, bounce / friction sliders, live bake status line).
+- **Starter** `starter-mesh-sdf-collider-sphere`: rain settling
+  on the baked sample-sphere collider, wireframe ObjMesh shown
+  at the matching placement.
+
 ## [1.71.0] — 2026-11-19
 
 Eleventh-term Phase BX: GLSL injection generalised. The one

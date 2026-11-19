@@ -2303,6 +2303,38 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuTerrainColliderFriction: 0.2,
         gpgpuTrailEnabled: false,
       }),
+  // Phase BY: the sample sphere OBJ baked into a signed distance
+  // grid — rain falls onto the invisible mesh collider and
+  // settles on its surface; the wireframe ObjMesh display at the
+  // default position / scale shows the collider's shape (the
+  // collider follows the morph placement, not the display
+  // offset). Morph attraction stays off so the rain is free.
+  createStarterPreset('starter-mesh-sdf-collider-sphere', 'Mesh SDF Collider Sphere (Rain Settles)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 24576,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 0.6,
+        gpgpuGravity: 0.55,
+        gpgpuTurbulence: 0.05,
+        gpgpuMorphObjSource: SAMPLE_OBJ_SPHERE,
+        gpgpuObjMeshEnabled: true,
+        gpgpuObjMeshDisplay: 'wireframe',
+        gpgpuObjMeshScale: 1.0,
+        gpgpuObjMeshOpacity: 0.9,
+        gpgpuMeshSdfEnabled: true,
+        gpgpuMeshSdfResolution: 64,
+        gpgpuMeshSdfBounce: 0.35,
+        gpgpuMeshSdfFriction: 0.45,
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AI: ridge scatter — the ridge recipe's particles are
   // scattered by the height-band / slope grammar, so the cloud
   // gathers on the mid-altitude slopes, aligned to the surface,

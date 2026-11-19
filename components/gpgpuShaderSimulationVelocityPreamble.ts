@@ -250,6 +250,21 @@ export const VEL_FRAG_PREAMBLE = /* glsl */ `
   uniform float uSdfZ;
   uniform float uSdfSize;
   uniform float uSdfBounce;
+  // Mesh SDF collider (Phase BY): the baked signed-distance grid
+  // of the imported OBJ mesh (lib/meshSdfCollider.ts), R16F 3D
+  // texture holding NORMALISED distances. Resolved CPU-side
+  // (enabled key AND bake complete), so a false uniform is the
+  // exact legacy path. uMeshSdfOrigin / uMeshSdfDomainWorld map
+  // world → texture space; uMeshSdfScale is the morph world
+  // scale W (normalised distance × W = world distance).
+  uniform bool  uMeshSdfEnabled;
+  uniform sampler3D uMeshSdfTex;
+  uniform vec3  uMeshSdfOrigin;
+  uniform float uMeshSdfDomainWorld;
+  uniform float uMeshSdfScale;
+  uniform float uMeshSdfVoxelWorld;
+  uniform float uMeshSdfBounce;
+  uniform float uMeshSdfFriction;
   uniform bool  uFloorEnabled;
   uniform float uFloorY;
   uniform float uFloorBounce;

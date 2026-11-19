@@ -46,6 +46,17 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform float uSdfZ;
   uniform float uSdfSize;
   uniform float uSdfBounce;
+  // Mesh SDF collider (Phase BY): the baked signed-distance grid
+  // of the imported OBJ mesh (lib/meshSdfCollider.ts), R16F 3D
+  // texture holding NORMALISED distances. Resolved CPU-side
+  // (enabled key AND bake complete), so a false uniform is the
+  // exact legacy path.
+  uniform bool  uMeshSdfEnabled;
+  uniform sampler3D uMeshSdfTex;
+  uniform vec3  uMeshSdfOrigin;
+  uniform float uMeshSdfDomainWorld;
+  uniform float uMeshSdfScale;
+  uniform float uMeshSdfVoxelWorld;
   uniform bool  uFloorEnabled;
   uniform float uFloorY;
   // Terrain collider (Phase AI): the derived collider bake
@@ -219,6 +230,25 @@ export const SIM_POS_FRAG = /* glsl */ `
     return normalize(g + vec3(0.0001));
   }
 
+  // Mesh SDF (Phase BY): identical copy of the velocity pass's
+  // baked-grid query (same contract: negative = inside, world
+  // units, degenerate normal = +Y; outside the domain cube the
+  // query is +1e6, no collision).
+  float meshSdfDistance(vec3 p) {
+    vec3 q = (p - uMeshSdfOrigin) / uMeshSdfDomainWorld;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) return 1.0e6;
+    return texture2D(uMeshSdfTex, q).r * uMeshSdfScale;
+  }
+  vec3 meshSdfNormal(vec3 p) {
+    float e = uMeshSdfVoxelWorld * 0.5;
+    vec3 g = vec3(
+      meshSdfDistance(p + vec3(e, 0.0, 0.0)) - meshSdfDistance(p - vec3(e, 0.0, 0.0)),
+      meshSdfDistance(p + vec3(0.0, e, 0.0)) - meshSdfDistance(p - vec3(0.0, e, 0.0)),
+      meshSdfDistance(p + vec3(0.0, 0.0, e)) - meshSdfDistance(p - vec3(0.0, 0.0, e)));
+    float gl = length(g);
+    return gl > 0.0001 ? g / gl : vec3(0.0, 1.0, 0.0);
+  }
+
   // Terrain collider sampling (Phase AI): identical copy of the
   // velocity pass's decoder (manual bilinear over the packed
   // 16-bit height; see that copy for the rationale). This pass
@@ -334,6 +364,15 @@ export const SIM_POS_FRAG = /* glsl */ `
         sn = normalize(dp + vec3(0.0001));
       }
       if (sd < 0.0) pos -= sn * sd;
+    }
+
+    // Mesh SDF Collider (Phase BY) — position push-out on the
+    // baked mesh grid, after the analytic SDF push-out (both may
+    // be live). Outside the domain the query is +1e6, so this is
+    // a no-op there.
+    if (uMeshSdfEnabled) {
+      float msd = meshSdfDistance(pos);
+      if (msd < 0.0) pos -= meshSdfNormal(pos) * msd;
     }
 
     // Floor clamp (B3): Kinetix resolves penetration as

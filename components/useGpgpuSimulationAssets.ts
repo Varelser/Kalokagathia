@@ -219,6 +219,16 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSdfZ:            { value: 0.0 },
       uSdfSize:         { value: 80.0 },
       uSdfBounce:       { value: 0.5 },
+      // Mesh SDF collider (Phase BY): disabled + no texture is
+      // the exact legacy path.
+      uMeshSdfEnabled:    { value: false },
+      uMeshSdfTex:        { value: null },
+      uMeshSdfOrigin:     { value: new THREE.Vector3(0, 0, 0) },
+      uMeshSdfDomainWorld: { value: 1.0 },
+      uMeshSdfScale:      { value: 0.0 },
+      uMeshSdfVoxelWorld: { value: 0.0 },
+      uMeshSdfBounce:     { value: 0.5 },
+      uMeshSdfFriction:   { value: 0.25 },
       uFloorEnabled:    { value: false },
       uFloorY:          { value: -110.0 },
       uFloorBounce:     { value: 0.62 },
@@ -277,6 +287,14 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uSdfZ:          { value: 0.0 },
       uSdfSize:       { value: 80.0 },
       uSdfBounce:     { value: 0.5 },
+      // Mesh SDF collider (Phase BY): disabled + no texture is
+      // the exact legacy path.
+      uMeshSdfEnabled:    { value: false },
+      uMeshSdfTex:        { value: null },
+      uMeshSdfOrigin:     { value: new THREE.Vector3(0, 0, 0) },
+      uMeshSdfDomainWorld: { value: 1.0 },
+      uMeshSdfScale:      { value: 0.0 },
+      uMeshSdfVoxelWorld: { value: 0.0 },
       // Floor bounce + pointer paint (B3)
       uTime:          { value: 0 },
       uFloorEnabled:  { value: false },

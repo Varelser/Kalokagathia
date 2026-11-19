@@ -234,6 +234,27 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  vec3 hash3(vec3 p) {
     return gl > 0.0001 ? g / gl : vec3(0.0, 1.0, 0.0);
   }
 
+  // Mesh SDF (Phase BY): the baked grid's query, under the same
+  // contract as abSdfDistance / abSdfNormal (negative = inside,
+  // world units, degenerate normal = +Y). The texture holds
+  // normalised distances; outside the domain cube the query is
+  // +1e6 (no collision), never a clamped underestimate. An
+  // identical copy lives in the position pass.
+  float meshSdfDistance(vec3 p) {
+    vec3 q = (p - uMeshSdfOrigin) / uMeshSdfDomainWorld;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) return 1.0e6;
+    return texture2D(uMeshSdfTex, q).r * uMeshSdfScale;
+  }
+  vec3 meshSdfNormal(vec3 p) {
+    float e = uMeshSdfVoxelWorld * 0.5;
+    vec3 g = vec3(
+      meshSdfDistance(p + vec3(e, 0.0, 0.0)) - meshSdfDistance(p - vec3(e, 0.0, 0.0)),
+      meshSdfDistance(p + vec3(0.0, e, 0.0)) - meshSdfDistance(p - vec3(0.0, e, 0.0)),
+      meshSdfDistance(p + vec3(0.0, 0.0, e)) - meshSdfDistance(p - vec3(0.0, 0.0, e)));
+    float gl = length(g);
+    return gl > 0.0001 ? g / gl : vec3(0.0, 1.0, 0.0);
+  }
+
   // Particle Life species: fixed per particle, derived from the texel
   // index with the same hash the points readout uses, so sim and draw
   // always agree on which species a particle belongs to.

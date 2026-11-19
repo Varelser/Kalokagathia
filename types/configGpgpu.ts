@@ -737,6 +737,21 @@ export interface ParticleConfigGpgpu {
   gpgpuSdfZ: number;
   gpgpuSdfSize: number;
   gpgpuSdfBounce: number;
+  // Mesh SDF Collider (Phase BY): the imported OBJ mesh (the SAME
+  // gpgpuMorphObjSource the morph target reads) baked into a
+  // signed distance grid on the CPU and sampled as a 3D texture
+  // by the sim passes — an arbitrary closed mesh as a collider,
+  // in a separate slot next to the analytic SDF above (both may
+  // be live; the analytic push-out applies first). The bake is
+  // async and the collider exists only while it has completed,
+  // so disabled / baking / open-mesh all resolve to the legacy
+  // path. Placement is the morph placement (origin, morph world
+  // scale) — see lib/meshSdfCollider.ts. Disabled by default.
+  gpgpuMeshSdfEnabled: boolean;
+  /** Bake resolution (one of 32 / 48 / 64 / 96 / 128). */
+  gpgpuMeshSdfResolution: number;
+  gpgpuMeshSdfBounce: number;
+  gpgpuMeshSdfFriction: number;
   // Floor plane bounce (Kinetix integration B3, Kinetix floorBounce /
   // floorY / floorRestitution): a horizontal floor at gpgpuFloorY that
   // reflects velocity in the velocity pass and clamps position in the

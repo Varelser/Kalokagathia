@@ -389,6 +389,12 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSdfZ: 0.0,
   gpgpuSdfSize: 80.0,
   gpgpuSdfBounce: 0.5,
+  // Mesh SDF Collider (Phase BY): off by default (no bake, no
+  // texture, legacy path).
+  gpgpuMeshSdfEnabled: false,
+  gpgpuMeshSdfResolution: 64,
+  gpgpuMeshSdfBounce: 0.5,
+  gpgpuMeshSdfFriction: 0.25,
   // Floor bounce (B3): off by default.
   gpgpuFloorEnabled: false,
   gpgpuFloorY: -110.0,
