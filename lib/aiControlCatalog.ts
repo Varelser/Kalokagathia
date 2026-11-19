@@ -462,6 +462,7 @@ const NUMS: NumDef[] = [
   ['gpgpuAttrSizeAmount', '属性→サイズ駆動の量（0..1）'],
   ['gpgpuAttrBrightSlot', '属性→明るさ駆動のスロット（-1でOFF、0..3）'],
   ['gpgpuAttrBrightAmount', '属性→明るさ駆動の量（0..1）'],
+  ['gpgpuAttrColorEnabled', '属性→色駆動のON/OFF（colorR/G/B 列の raw 値で点色を tint。3名全てがスロットに割り当てられている場合のみ有効）'],
   ['gpgpuAttrForceSlot', '属性→フォース駆動のスロット（-1でOFF、0..3。組み込みフォースの効きを属性で拡縮）'],
   ['gpgpuAttrForceAmount', '属性→フォース駆動の量（0..1）'],
   ['gpgpuGroupEnabled', '属性グループのON/OFF（属性条件でフォースの効きを粒子ごとに切替。OFFで従来同一）'],

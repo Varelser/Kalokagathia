@@ -65,6 +65,7 @@ import {
   normalizeAttrExprs,
   normalizeAttrNames,
   normalizeAttrSources,
+  resolveAttrColorSlots,
   resolveAttrConsumers,
 } from '../lib/gpgpuAttributes';
 
@@ -1773,6 +1774,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       attrNamesKey,
       attrSourcesKey,
       attrExprsKey,
+      // Colour drive (Phase CL): the bake writes the colour
+      // slots RAW while the drive is active, so the drive's
+      // resolution is itself a bake input.
+      attrConsumers.colorActive ? 'attrColor' : '',
       attrCloud?.version ?? 0,
       // The initial cloud depends on the light position only for
       // the 'light' emit shape (the main effect's masking rule).
@@ -1803,6 +1808,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       names: normalizeAttrNames(config.gpgpuAttrNames),
       sources: normalizeAttrSources(config.gpgpuAttrSources),
       exprs: config.gpgpuAttrExprs,
+      colorRawSlots: attrConsumers.colorActive
+        ? resolveAttrColorSlots(normalizeAttrNames(config.gpgpuAttrNames))
+        : null,
     });
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;

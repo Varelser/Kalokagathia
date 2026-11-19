@@ -4,6 +4,38 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.85.0] — 2026-11-20
+
+Eleventh-term point cache, Phase CL: the second
+point-cache phase — per-frame scalar attributes
+(brief part A) and colour columns (part B) shipped
+together. Point-cache frames can now carry up to
+four named attribute columns declared in the
+manifest (the format itself is unchanged). The
+perFrame distinction is kept: a static attribute
+is verified identical across frames and held once,
+a per-frame attribute is interpolated with the
+same i0/i1/frac blending as positions and
+range-normalised for the existing attribute
+consumers. Columns named colorR / colorG / colorB
+(case-insensitive) are special: they are held raw
+— never normalised and never run through the
+bake-time expression stage, which would clamp
+them — and with the new key gpgpuAttrColorEnabled
+on, they drive the point colour in the GPGPU draw.
+The tint is a multiply in the fragment chain
+(vAttrColor, immediately after the brightness
+multiply so no colour path can overwrite it) and
+is exactly vec3(1.0) while off, so existing
+renders are bit-identical — verified on the iMac
+real GPU (12 frames, diff 0, including a
+names-assigned-but-off configuration). The bundled
+sample now declares heat plus the three colour
+columns with deterministic values. One new config
+key (keys 1,359) and one new starter,
+starter-point-cache-color (starters 606); the
+catalogue is unchanged at 1,660.
+
 ## [1.84.0] — 2026-11-20
 
 Eleventh-term CSG, Phase CK: the export side of the

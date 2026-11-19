@@ -218,6 +218,15 @@ export const DRAW_VERT = /* glsl */ `
   uniform float     uAttrSizeAmount;
   uniform int       uAttrBrightSlot;
   uniform float     uAttrBrightAmount;
+  // Colour drive (Phase CL): the three colour slots hold the
+  // RAW colorR / colorG / colorB values (resolved CPU-side from
+  // the slot names); disabled leaves vAttrColor at exactly
+  // vec3(1.0), so the fragment's multiply is a bit-exact
+  // identity on the legacy path.
+  uniform bool      uAttrColorEnabled;
+  uniform int       uAttrColorSlotR;
+  uniform int       uAttrColorSlotG;
+  uniform int       uAttrColorSlotB;
   attribute vec2 aTexCoord;
   varying float vSpeed;
   varying float vNormAge;
@@ -227,6 +236,7 @@ export const DRAW_VERT = /* glsl */ `
   varying float vPhaseMix;
   varying float vPlBright;
   varying float vAttrBright;
+  varying vec3 vAttrColor;
   varying float vSeed;
   varying vec3 vWorldPos;
   varying float vLightMul;
@@ -346,6 +356,7 @@ export const DRAW_VERT = /* glsl */ `
     // amount): amount 0 or slot -1 is resolved off CPU-side, and
     // vAttrBright is exactly 1.0 while the drive is off.
     vAttrBright = 1.0;
+    vAttrColor = vec3(1.0);
     if (uAttrEnabled) {
       vec4 attrData = texture2D(uAttrTex, particleUv);
       if (uAttrSizeSlot >= 0) {
@@ -353,6 +364,12 @@ export const DRAW_VERT = /* glsl */ `
       }
       if (uAttrBrightSlot >= 0) {
         vAttrBright = mix(1.0, kaloAttrChannel(attrData, uAttrBrightSlot), uAttrBrightAmount);
+      }
+      if (uAttrColorEnabled) {
+        vAttrColor = vec3(
+          kaloAttrChannel(attrData, uAttrColorSlotR),
+          kaloAttrChannel(attrData, uAttrColorSlotG),
+          kaloAttrChannel(attrData, uAttrColorSlotB));
       }
     }
     // Layer Map (Phase U): size modulated by the gradient image's
@@ -478,6 +495,7 @@ export const DRAW_FRAG = /* glsl */ `
   varying float vPhaseMix;
   varying float vPlBright;
   varying float vAttrBright;
+  varying vec3 vAttrColor;
   varying float vSeed;
   varying vec3 vWorldPos;
   varying float vLightMul;
@@ -607,6 +625,13 @@ export const DRAW_FRAG = /* glsl */ `
     // exactly 1.0 while the drive is off, so this multiply is a
     // bit-exact identity on the legacy path.
     col *= vAttrBright;
+    // Colour drive (Phase CL): the per-point colour tint —
+    // exactly vec3(1.0) while the drive is off, so this multiply
+    // is a bit-exact identity on the legacy path. It sits in the
+    // multiplier chain (with brightness / light / shadow) rather
+    // than at the colour's assignment, so it tints whichever
+    // colour source won instead of being overwritten by it.
+    col *= vAttrColor;
 
     float ageFade = 1.0;
     if (uAgeEnabled) {

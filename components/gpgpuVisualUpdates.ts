@@ -13,7 +13,7 @@ import { normalizeSpriteFrameFps, normalizeSpriteSheetDimension, spriteFrameMode
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { normalizeLightDir } from '../lib/gpgpuLight';
 import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
-import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
+import { normalizeAttrNames, normalizeAttrSlot, resolveAttrColorSlots, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { resolveIblEnvironment } from '../lib/iblEnvironment';
 import { horizonEquirectYawRadians } from '../lib/horizonBackground';
 import { clampNoiseMapAmount, clampNoiseMapEvolve, clampNoiseMapOctaves, clampNoiseMapScale, noiseMapKindIndex, normalizeNoiseMapKind } from '../lib/noiseFieldMap';
@@ -213,11 +213,22 @@ export function syncVisualUniforms(args: {
     const attrConsumers = resolveAttrConsumers(config);
     const attrTexture = args.attrTexture ?? null;
     if (drawMat.uniforms.uAttrTex) drawMat.uniforms.uAttrTex.value = attrTexture;
-    if (drawMat.uniforms.uAttrEnabled) drawMat.uniforms.uAttrEnabled.value = !!attrTexture && (attrConsumers.sizeActive || attrConsumers.brightActive);
+    if (drawMat.uniforms.uAttrEnabled) drawMat.uniforms.uAttrEnabled.value = !!attrTexture && (attrConsumers.sizeActive || attrConsumers.brightActive || attrConsumers.colorActive);
     if (drawMat.uniforms.uAttrSizeSlot) drawMat.uniforms.uAttrSizeSlot.value = normalizeAttrSlot(config.gpgpuAttrSizeSlot);
     if (drawMat.uniforms.uAttrSizeAmount) drawMat.uniforms.uAttrSizeAmount.value = Math.max(0, Math.min(1, config.gpgpuAttrSizeAmount ?? 1));
     if (drawMat.uniforms.uAttrBrightSlot) drawMat.uniforms.uAttrBrightSlot.value = normalizeAttrSlot(config.gpgpuAttrBrightSlot);
     if (drawMat.uniforms.uAttrBrightAmount) drawMat.uniforms.uAttrBrightAmount.value = Math.max(0, Math.min(1, config.gpgpuAttrBrightAmount ?? 1));
+    // Colour drive (Phase CL): slots resolved from the names —
+    // the single source of truth — and only while the drive
+    // resolved active; otherwise the uniforms stay off / -1 and
+    // vAttrColor remains exactly vec3(1.0).
+    const colorSlots = attrConsumers.colorActive
+      ? resolveAttrColorSlots(normalizeAttrNames(config.gpgpuAttrNames))
+      : null;
+    if (drawMat.uniforms.uAttrColorEnabled) drawMat.uniforms.uAttrColorEnabled.value = !!attrTexture && !!colorSlots;
+    if (drawMat.uniforms.uAttrColorSlotR) drawMat.uniforms.uAttrColorSlotR.value = colorSlots ? colorSlots[0] : -1;
+    if (drawMat.uniforms.uAttrColorSlotG) drawMat.uniforms.uAttrColorSlotG.value = colorSlots ? colorSlots[1] : -1;
+    if (drawMat.uniforms.uAttrColorSlotB) drawMat.uniforms.uAttrColorSlotB.value = colorSlots ? colorSlots[2] : -1;
   }
   drawMat.uniforms.uColor.value.setStyle(config.gpgpuColor);
   drawMat.uniforms.uSize.value = config.gpgpuSize;

@@ -1,5 +1,5 @@
 import type { ParticleConfig } from '../types';
-import { sampleAttrColumn, type AttrPointCloud } from './attrPointCloud';
+import { sampleAttrColumn, sampleAttrColumnRaw, type AttrPointCloud } from './attrPointCloud';
 import {
   compileExpression,
   evaluateCompiledExpressionWithVars,
@@ -46,6 +46,31 @@ import {
  */
 
 export const ATTR_SLOT_COUNT = 4;
+
+/**
+ * Colour drive (Phase CL): when all three colour names are
+ * assigned to slots (config gpgpuAttrNames) and the drive is
+ * enabled (config gpgpuAttrColorEnabled), the draw pass tints
+ * each point by the RAW values of those columns — the bake
+ * writes them unnormalised (see buildAttributeData's
+ * colorRawSlots). The slot assignment is the single source of
+ * truth: if any of the three names is missing from the slots,
+ * the drive resolves off entirely.
+ */
+export const ATTR_COLOR_SLOT_NAMES: readonly string[] = ['colorR', 'colorG', 'colorB'];
+
+/** Slot indices of [colorR, colorG, colorB], or null when any
+ *  of the three names is not assigned to a slot. */
+export function resolveAttrColorSlots(names: readonly string[]): [number, number, number] | null {
+  const normalized = normalizeAttrNames([...names]);
+  const slots: number[] = [];
+  for (const colorName of ATTR_COLOR_SLOT_NAMES) {
+    const slot = normalized.findIndex((n) => n.trim().toLowerCase() === colorName.toLowerCase());
+    if (slot < 0) return null;
+    slots.push(slot);
+  }
+  return [slots[0], slots[1], slots[2]];
+}
 
 export type AttrSource =
   | 'hash'
@@ -214,6 +239,15 @@ export interface BuildAttributeDataArgs {
    * entered), which is the structural identity guarantee.
    */
   exprs?: readonly string[];
+  /**
+   * Colour drive slots (Phase CL): slots whose 'data' values
+   * are baked RAW (sampleAttrColumnRaw) instead of normalised,
+   * and which skip the bake-time expression stage (expressions
+   * clamp to [0, 1] and would falsify the colour; the slots'
+   * raw values still serve as variables for the OTHER slots'
+   * expressions). Null / absent = the legacy bake verbatim.
+   */
+  colorRawSlots?: readonly number[] | null;
 }
 
 /**
@@ -233,6 +267,7 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
   const morphData = args.morphData ?? null;
   const morphScale = Math.max(args.morphWorldScale ?? 0, 0.001);
   const cloud = args.cloud ?? null;
+  const colorRaw = new Set(args.colorRawSlots ?? []);
   // Bake-time arithmetic (Phase BI): compile each non-empty
   // slot expression ONCE per bake, with the slot names
   // (lowercased — the tokenizer lowercases identifiers) as the
@@ -282,7 +317,9 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
           break;
         }
         case 'data':
-          value = sampleAttrColumn(cloud, names[slot], i);
+          value = colorRaw.has(slot)
+            ? sampleAttrColumnRaw(cloud, names[slot], i)
+            : sampleAttrColumn(cloud, names[slot], i);
           break;
       }
       values[slot] = value;
@@ -300,7 +337,7 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
       // inject NaN); finite results are clamped to [0, 1].
       for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
         const compiled = compiledExprs[slot];
-        if (!compiled || !compiled.ok) continue;
+        if (!compiled || !compiled.ok || colorRaw.has(slot)) continue;
         const sourceValue = values[slot];
         const vars: Record<string, number> = { x: sourceValue, t: 0 };
         for (let s = 0; s < ATTR_SLOT_COUNT; s++) {
@@ -327,6 +364,9 @@ export interface AttrConsumers {
   forceActive: boolean;
   /** Velocity pass: group gate enabled (attribute texture needed). */
   groupActive: boolean;
+  /** Points readout: colour drive enabled AND all three colour
+   *  names assigned to slots (Phase CL). */
+  colorActive: boolean;
   /** Any consumer at all — the attribute texture is built only then. */
   anyActive: boolean;
 }
@@ -346,17 +386,22 @@ export function resolveAttrConsumers(
     | 'gpgpuAttrForceSlot'
     | 'gpgpuAttrForceAmount'
     | 'gpgpuGroupEnabled'
+    | 'gpgpuAttrColorEnabled'
+    | 'gpgpuAttrNames'
   >,
 ): AttrConsumers {
   const sizeActive = normalizeAttrSlot(config.gpgpuAttrSizeSlot) >= 0 && (config.gpgpuAttrSizeAmount || 0) !== 0;
   const brightActive = normalizeAttrSlot(config.gpgpuAttrBrightSlot) >= 0 && (config.gpgpuAttrBrightAmount || 0) !== 0;
   const forceActive = normalizeAttrSlot(config.gpgpuAttrForceSlot) >= 0 && (config.gpgpuAttrForceAmount || 0) !== 0;
   const groupActive = !!config.gpgpuGroupEnabled;
+  const colorActive = !!config.gpgpuAttrColorEnabled
+    && resolveAttrColorSlots(normalizeAttrNames(config.gpgpuAttrNames)) !== null;
   return {
     sizeActive,
     brightActive,
     forceActive,
     groupActive,
-    anyActive: sizeActive || brightActive || forceActive || groupActive,
+    colorActive,
+    anyActive: sizeActive || brightActive || forceActive || groupActive || colorActive,
   };
 }

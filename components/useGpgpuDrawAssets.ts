@@ -125,6 +125,12 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uAttrSizeAmount:    { value: 1 },
       uAttrBrightSlot:    { value: -1 },
       uAttrBrightAmount:  { value: 1 },
+      // Colour drive (Phase CL): disabled / slots -1 leaves
+      // vAttrColor at exactly vec3(1.0).
+      uAttrColorEnabled:  { value: false },
+      uAttrColorSlotR:    { value: -1 },
+      uAttrColorSlotG:    { value: -1 },
+      uAttrColorSlotB:    { value: -1 },
     },
     vertexShader: DRAW_VERT, fragmentShader: DRAW_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,

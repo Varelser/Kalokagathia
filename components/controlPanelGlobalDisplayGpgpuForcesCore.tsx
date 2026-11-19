@@ -185,6 +185,10 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
       {config.gpgpuAttrBrightSlot >= 0 && (
         <Slider label="Brightness Amount（明るさ駆動の量）" value={config.gpgpuAttrBrightAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuAttrBrightAmount', v)} />
       )}
+      <Toggle label="Attr → Color（色駆動 — Phase CL）" value={config.gpgpuAttrColorEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuAttrColorEnabled', v)} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        色駆動（Phase CL）: スロット名が colorR／colorG／colorB の3列（Data 源）を、正規化しない raw 値のまま点の色として掛けます。3名のうち1つでもスロットに割り当てられていない場合は無効扱いになります。色で3スロットを使うため、サイズ・明るさ・フォース・グループに使えるのは残り1スロットです。ポイントキャッシュの色列はフレームごとに保持されるので、再生に合わせて色も動きます。
+      </div>
       <AttrSelect label="Attr → Force（フォース駆動）" value={String(config.gpgpuAttrForceSlot)} options={slotOptions} onChange={(v) => updateConfig('gpgpuAttrForceSlot', Number(v))} />
       {config.gpgpuAttrForceSlot >= 0 && (
         <Slider label="Force Amount（フォース駆動の量）" value={config.gpgpuAttrForceAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuAttrForceAmount', v)} />

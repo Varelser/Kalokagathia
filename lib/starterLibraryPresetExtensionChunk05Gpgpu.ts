@@ -2365,6 +2365,39 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         pointCacheBundledSample: true,
         gpgpuTrailEnabled: false,
       }),
+  // Phase CL: the bundled sample's colour attributes drive the
+  // point colour directly — each blob point takes its own colour
+  // (its offset direction as RGB, held RAW per frame), the ring
+  // its constant steel grey; the scalar `heat` column rides in
+  // slot 3 for the other drives. The colour drive occupies
+  // three of the four attribute slots by design.
+  createStarterPreset('starter-point-cache-color', 'Point Cache Color (Attribute Colour)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#ffffff',
+        gpgpuSize: 1.4,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.5,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.03,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'data',
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuAttrNames: ['colorR', 'colorG', 'colorB', 'heat'],
+        gpgpuAttrSources: ['data', 'data', 'data', 'data'],
+        gpgpuAttrColorEnabled: true,
+        pointCacheEnabled: true,
+        pointCacheLoop: true,
+        pointCacheBundledSample: true,
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AI: ridge scatter — the ridge recipe's particles are
   // scattered by the height-band / slope grammar, so the cloud
   // gathers on the mid-altitude slopes, aligned to the surface,

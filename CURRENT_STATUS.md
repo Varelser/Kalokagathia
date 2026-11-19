@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.84.0**（2026-11-20、第11期 Phase CK＝CSG の書き出し側（G0 残り）: CSG 結果を GLB（EXT_mesh_manifold つき、m・Y-up）／3MF（mm・Z-up へ D8 変換を明示適用）／STL（互換用）の3形式でダウンロード可能に。書き出し前に閉検査を行い、開いたメッシュは理由つきで拒否（無言で落とさない）。往復誤差は GLB 0%、3MF でも 0.000002% 級で D14 の受け入れ桁を維持。10万三角形級でも往復は1秒未満。新規 config キー・スターターなし（キー 1,358・スターター 605 のまま）。全72スイート＋iMac 実GPUゲート合格（identity 差分 0、fps 約60）。詳細は PHASE_CK_REPORT.md。前版 v1.83.0 は Phase CJ＝U5 OBJ 読み込み）
+**現行バージョン: v1.85.0**（2026-11-20、第11期 Phase CL＝ポイントキャッシュ第2弾（A 属性保持＋B 色保持）: ポイントキャッシュのフレームが名前つき属性列を最大4列まで保持できるように（perFrame の区別を維持し、静的属性は全フレーム同一を検証して1フレーム分だけ保持）。スカラー属性は位置と同じ補間で範囲正規化して従来の属性消費へ渡し、色名列（colorR／colorG／colorB）は raw のまま保持して、新キー gpgpuAttrColorEnabled（既定 OFF）で点の色を駆動する（無効時はちょうど 1.0 倍で従来同一、実GPUで差分 0 を確認）。同梱サンプルは heat＋色3列を宣言。新規 config キー 1 件（キー 1,359）・スターター 1 件（スターター 606）、カタログ 1,660 件は不変。全73スイート＋iMac 実GPUゲート合格（identity 差分 0、fps 約60）。詳細は PHASE_CL_REPORT.md。前版 v1.84.0 は Phase CK＝CSG の書き出し側（G0 残り））
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること

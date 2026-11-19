@@ -172,6 +172,38 @@ export function sampleAttrColumn(cloud: AttrPointCloud | null, name: string, poi
   return cloud.normalized[i * cloud.table.columns.length + j];
 }
 
+/**
+ * The colour-column convention (Phase CL): three float columns
+ * named colorR / colorG / colorB carry a per-point colour.
+ * Colour columns are exempt from range normalisation — the
+ * values ARE the colour, so stretching them would falsify it.
+ */
+export const ATTR_COLOR_COLUMN_NAMES: readonly string[] = ['colorr', 'colorg', 'colorb'];
+
+export function isAttrColorColumnName(name: string): boolean {
+  return ATTR_COLOR_COLUMN_NAMES.includes(name.trim().toLowerCase());
+}
+
+/**
+ * RAW attribute value of the column named `name` for point
+ * `pointIndex` — the same wrapping / absence rules as
+ * sampleAttrColumn, but reads the table's raw values instead of
+ * the normalised ones. This is the colour drive's path: the
+ * normalised value would stretch a colour column's range to
+ * [0, 1] (a constant 0.8 column would read back as 0.5).
+ */
+export function sampleAttrColumnRaw(cloud: AttrPointCloud | null, name: string, pointIndex: number): number {
+  if (!cloud) return 0;
+  const wanted = name.trim().toLowerCase();
+  const j = cloud.table.columns.findIndex((c) => c.trim().toLowerCase() === wanted);
+  if (j < 0) return 0;
+  const rows = cloud.table.rows.length;
+  if (rows === 0) return 0;
+  const i = ((Math.floor(pointIndex) % rows) + rows) % rows;
+  const value = cloud.table.rows[i]?.[j];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
 /* ---------------- shared store (editor <-> engine) ---------------- */
 
 const STORAGE_KEY = 'kalokagathia.attrCloud.v1';

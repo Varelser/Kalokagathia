@@ -91,6 +91,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuAttrSizeAmount: 1,
   gpgpuAttrBrightSlot: -1,
   gpgpuAttrBrightAmount: 1,
+  // Colour drive (Phase CL): disabled — while disabled (or
+  // while any of colorR/G/B is unassigned) the draw runs the
+  // legacy path bit-identically.
+  gpgpuAttrColorEnabled: false,
   gpgpuAttrForceSlot: -1,
   gpgpuAttrForceAmount: 1,
   gpgpuGroupEnabled: false,

@@ -1,5 +1,5 @@
 import React from 'react';
-import type { AttrPointCloud } from './attrPointCloud';
+import { isAttrColorColumnName, type AttrPointCloud } from './attrPointCloud';
 import type { DataTable } from './dataTable';
 
 /**
@@ -14,10 +14,13 @@ import type { DataTable } from './dataTable';
  * - Caps: at most 8,192 points x 240 frames, held fully in memory
  *   (retention plan A). Anything larger is REFUSED at load with a
  *   stated reason — never silently decimated or padded.
- * - Positions only in this first round. The manifest's
- *   `attributes` declaration is part of the format (and validated
- *   against every PLY header), but attribute values are not held
- *   per frame yet.
+ * - Phase 1 held positions only. Phase 2 (CL) also holds the
+ *   declared attribute values per frame: scalar attributes are
+ *   range-normalised into the cloud like any column, while the
+ *   colour columns (colorR / colorG / colorB) are held RAW —
+ *   colour fidelity is the point of carrying them. At most
+ *   POINT_CACHE_MAX_ATTRIBUTE_COLUMNS attributes are accepted;
+ *   more are refused at load with the cap named.
  * - Validation never fills gaps: a point-count mismatch, a missing
  *   frame file, a declaration mismatch or a cap overflow rejects
  *   the whole cache and names the offending file / field.
@@ -38,6 +41,7 @@ import type { DataTable } from './dataTable';
 export const POINT_CACHE_FORMAT = 'pointcache-manifest-v2';
 export const POINT_CACHE_MAX_POINTS = 8192;
 export const POINT_CACHE_MAX_FRAMES = 240;
+export const POINT_CACHE_MAX_ATTRIBUTE_COLUMNS = 4;
 
 export interface PointCacheAttributeDecl {
   name: string;
@@ -63,6 +67,15 @@ export interface PointCacheData {
   manifest: PointCacheManifest;
   /** Raw positions per frame, each count x 3. */
   frames: Float32Array[];
+  /** Attribute values (Phase CL): one entry per declared
+   *  attribute, each an array of per-frame value arrays (count
+   *  each). A perFrame:false attribute holds exactly one frame —
+   *  its values were verified identical across all frames. */
+  attrFrames: Float32Array[][];
+  /** Per-attribute min / max over all frames (the scalar
+   *  columns' normalisation ranges). */
+  attrMins: number[];
+  attrMaxs: number[];
   /** Frame-0 unit-sphere convention (attrPointCloud): centre is
    *  frame 0's range midpoint, scale puts frame 0's farthest point
    *  at radius 1 (0 when frame 0 is a single point). */
@@ -173,6 +186,11 @@ export function parsePointCacheManifest(text: string): { manifest: PointCacheMan
       attributes.push({ name, type: 'float', perFrame });
     }
   }
+  if (attributes.length > POINT_CACHE_MAX_ATTRIBUTE_COLUMNS) {
+    return {
+      error: `上限超過のため読み込めません: 属性が ${attributes.length} 列あり、上限 ${POINT_CACHE_MAX_ATTRIBUTE_COLUMNS} 列を超えています。`,
+    };
+  }
   return {
     manifest: {
       format: POINT_CACHE_FORMAT,
@@ -205,7 +223,7 @@ export function parseBinaryPlyFrame(
   buffer: ArrayBuffer,
   manifest: PointCacheManifest,
   fileName: string,
-): { positions: Float32Array } | { error: string } {
+): { positions: Float32Array; attrs: Float32Array[] } | { error: string } {
   const bytes = new Uint8Array(buffer);
   // The header is ASCII and ends with an "end_header" line.
   let headerEnd = -1;
@@ -278,6 +296,8 @@ export function parseBinaryPlyFrame(
   const aligned = new ArrayBuffer(bodyBytes);
   new Uint8Array(aligned).set(bytes.subarray(headerEnd, headerEnd + bodyBytes));
   const positions = new Float32Array(manifest.count * 3);
+  const attrCount = manifest.attributes.length;
+  const attrs: Float32Array[] = manifest.attributes.map(() => new Float32Array(manifest.count));
   if (PLATFORM_LITTLE_ENDIAN && strideFloats === 3) {
     positions.set(new Float32Array(aligned));
   } else {
@@ -287,6 +307,9 @@ export function parseBinaryPlyFrame(
       positions[i * 3] = view.getFloat32(base, true);
       positions[i * 3 + 1] = view.getFloat32(base + 4, true);
       positions[i * 3 + 2] = view.getFloat32(base + 8, true);
+      for (let j = 0; j < attrCount; j++) {
+        attrs[j][i] = view.getFloat32(base + 12 + j * 4, true);
+      }
     }
   }
   for (let i = 0; i < positions.length; i++) {
@@ -294,12 +317,19 @@ export function parseBinaryPlyFrame(
       return { error: `${fileName}: 位置に有限でない値が含まれています。` };
     }
   }
-  return { positions };
+  for (let j = 0; j < attrCount; j++) {
+    for (let i = 0; i < attrs[j].length; i++) {
+      if (!Number.isFinite(attrs[j][i])) {
+        return { error: `${fileName}: 属性 "${manifest.attributes[j].name}" に有限でない値が含まれています。` };
+      }
+    }
+  }
+  return { positions, attrs };
 }
 
 /* ---------------- assembly ---------------- */
 
-export function buildPointCache(manifest: PointCacheManifest, frames: Float32Array[], bundled = false): PointCacheData {
+export function buildPointCache(manifest: PointCacheManifest, frames: Float32Array[], bundled = false, attrFrames: Float32Array[][] = []): PointCacheData {
   const first = frames[0];
   let minX = Infinity; let maxX = -Infinity;
   let minY = Infinity; let maxY = -Infinity;
@@ -331,7 +361,22 @@ export function buildPointCache(manifest: PointCacheManifest, frames: Float32Arr
       }
     }
   }
-  return { manifest, frames, center, scale, mins, maxs, bundled };
+  const attrMins: number[] = [];
+  const attrMaxs: number[] = [];
+  for (const perAttr of attrFrames) {
+    let mn = Infinity;
+    let mx = -Infinity;
+    for (const frameValues of perAttr) {
+      for (let i = 0; i < frameValues.length; i++) {
+        const v = frameValues[i];
+        if (v < mn) mn = v;
+        if (v > mx) mx = v;
+      }
+    }
+    attrMins.push(Number.isFinite(mn) ? mn : 0);
+    attrMaxs.push(Number.isFinite(mx) ? mx : 0);
+  }
+  return { manifest, frames, attrFrames, attrMins, attrMaxs, center, scale, mins, maxs, bundled };
 }
 
 /**
@@ -360,6 +405,7 @@ export function loadPointCacheFromFiles(
     if (!byBaseName.has(base)) byBaseName.set(base, data);
   }
   const frames: Float32Array[] = [];
+  const perFrameAttrs: Float32Array[][] = manifest.attributes.map(() => []);
   for (const entry of manifest.files) {
     const base = entry.split(/[\\/]/).pop() ?? entry;
     const data = byBaseName.get(base);
@@ -369,8 +415,31 @@ export function loadPointCacheFromFiles(
     const frame = parseBinaryPlyFrame(data, manifest, entry);
     if ('error' in frame) return fail(frame.error);
     frames.push(frame.positions);
+    frame.attrs.forEach((values, j) => perFrameAttrs[j].push(values));
   }
-  return { ok: true, cache: buildPointCache(manifest, frames) };
+  // A perFrame:false attribute declares that its value does not
+  // move; if the frames disagree, the declaration and the data
+  // conflict and the whole cache is refused (never silently
+  // resolved). A verified static attribute is held as one frame.
+  const attrFrames: Float32Array[][] = [];
+  for (let j = 0; j < manifest.attributes.length; j++) {
+    const decl = manifest.attributes[j];
+    if (decl.perFrame) {
+      attrFrames.push(perFrameAttrs[j]);
+      continue;
+    }
+    const first = perFrameAttrs[j][0];
+    for (let f = 1; f < perFrameAttrs[j].length; f++) {
+      const values = perFrameAttrs[j][f];
+      for (let i = 0; i < values.length; i++) {
+        if (values[i] !== first[i]) {
+          return fail(`${manifest.files[f]}: 属性 "${decl.name}" は perFrame: false で宣言されていますが、フレーム間で値が異なります。`);
+        }
+      }
+    }
+    attrFrames.push([first]);
+  }
+  return { ok: true, cache: buildPointCache(manifest, frames, false, attrFrames) };
 }
 
 /* ---------------- pure time -> frame mapping ---------------- */
@@ -397,8 +466,10 @@ export function pointCacheFrameFloat(cache: PointCacheData, timeSeconds: number,
  * are interpolated between the bracketing frames (or snapped for
  * 'nearest'); unit positions use the frame-0 convention; the
  * normalised columns use the all-frames ranges. The synthetic
- * table carries exactly the x / y / z columns — phase 1 holds
- * positions only.
+ * table carries the x / y / z columns plus one column per
+ * declared attribute (Phase CL): attribute values interpolate
+ * with the same rule as the positions, scalar columns are
+ * range-normalised, and colour columns are held RAW.
  */
 export function buildPointCacheCloud(cache: PointCacheData, timeSeconds: number, loop: boolean): AttrPointCloud {
   const { count, frameCount, interpolation } = cache.manifest;
@@ -430,24 +501,65 @@ export function buildPointCacheCloud(cache: PointCacheData, timeSeconds: number,
     unitPositions[i + 1] = (positions[i + 1] - cy) * scale;
     unitPositions[i + 2] = (positions[i + 2] - cz) * scale;
   }
-  const normalized = new Float32Array(count * 3);
+  const attrCount = cache.manifest.attributes.length;
+  const colCount = 3 + attrCount;
+  // Attribute values at this clock time: per-frame attributes
+  // interpolate with the same rule as the positions (frac / i0 /
+  // i1 are already resolved, 'nearest' included); a perFrame:
+  // false attribute holds its single verified frame.
+  const attrValues: Float32Array[] = [];
+  for (let j = 0; j < attrCount; j++) {
+    const perAttr = cache.attrFrames[j] ?? [];
+    const values = new Float32Array(count);
+    if (perAttr.length === 1) {
+      values.set(perAttr[0]);
+    } else if (perAttr.length > 1) {
+      if (frac === 0 || i0 === i1) {
+        values.set(perAttr[i0]);
+      } else {
+        const va = perAttr[i0];
+        const vb = perAttr[i1];
+        for (let i = 0; i < count; i++) values[i] = va[i] + (vb[i] - va[i]) * frac;
+      }
+    }
+    attrValues.push(values);
+  }
+  const normalized = new Float32Array(count * colCount);
   for (let axis = 0; axis < 3; axis++) {
     const min = cache.mins[axis];
     const span = cache.maxs[axis] - min;
     for (let i = 0; i < count; i++) {
       const v = positions[i * 3 + axis];
-      normalized[i * 3 + axis] = span > 0 ? Math.min(1, Math.max(0, (v - min) / span)) : 0.5;
+      normalized[i * colCount + axis] = span > 0 ? Math.min(1, Math.max(0, (v - min) / span)) : 0.5;
+    }
+  }
+  for (let j = 0; j < attrCount; j++) {
+    const col = 3 + j;
+    const raw = attrValues[j];
+    if (isAttrColorColumnName(cache.manifest.attributes[j].name)) {
+      // Colour columns are held RAW: stretching a colour column
+      // to its range would falsify the colour (a constant 0.8
+      // column would come back as 0.5).
+      for (let i = 0; i < count; i++) normalized[i * colCount + col] = raw[i];
+    } else {
+      const min = cache.attrMins[j] ?? 0;
+      const span = (cache.attrMaxs[j] ?? 0) - min;
+      for (let i = 0; i < count; i++) {
+        normalized[i * colCount + col] = span > 0 ? Math.min(1, Math.max(0, (raw[i] - min) / span)) : 0.5;
+      }
     }
   }
   const rows: (number | null)[][] = new Array(count);
   for (let i = 0; i < count; i++) {
-    rows[i] = [positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]];
+    const row: (number | null)[] = [positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]];
+    for (let j = 0; j < attrCount; j++) row.push(attrValues[j][i]);
+    rows[i] = row;
   }
   const table: DataTable = {
-    columns: ['x', 'y', 'z'],
+    columns: ['x', 'y', 'z', ...cache.manifest.attributes.map((a) => a.name)],
     rows,
-    mins: [...cache.mins],
-    maxs: [...cache.maxs],
+    mins: [...cache.mins, ...cache.attrMins],
+    maxs: [...cache.maxs, ...cache.attrMaxs],
   };
   return {
     table,
@@ -511,6 +623,33 @@ export function buildBundledSamplePointCache(): PointCacheData {
     }
     frames.push(positions);
   }
+  // Phase CL: the sample also carries attributes — a scalar
+  // `heat` (1 at the blob's core, 0 on the ring) and per-point
+  // colours (a blob point's colour is its offset direction mapped
+  // to [0, 1]; the ring is a constant steel grey). The values are
+  // per-point constants, so every frame holds the same arrays.
+  const heat = new Float32Array(count);
+  const colorR = new Float32Array(count);
+  const colorG = new Float32Array(count);
+  const colorB = new Float32Array(count);
+  for (let i = 0; i < blobCount; i++) {
+    const nx = blobOffset[i * 3] / 0.2;
+    const ny = blobOffset[i * 3 + 1] / 0.2;
+    const nz = blobOffset[i * 3 + 2] / 0.2;
+    const r = Math.min(1, Math.sqrt(nx * nx + ny * ny + nz * nz));
+    heat[i] = 1 - r;
+    colorR[i] = 0.5 + 0.5 * nx;
+    colorG[i] = 0.5 + 0.5 * ny;
+    colorB[i] = 0.5 + 0.5 * nz;
+  }
+  for (let i = blobCount; i < count; i++) {
+    heat[i] = 0;
+    colorR[i] = 0.55;
+    colorG[i] = 0.6;
+    colorB[i] = 0.65;
+  }
+  const sampleAttrFrames = [heat, colorR, colorG, colorB].map((values) =>
+    Array.from({ length: frameCount }, () => values));
   const manifest: PointCacheManifest = {
     format: POINT_CACHE_FORMAT,
     version: 2,
@@ -521,10 +660,15 @@ export function buildBundledSamplePointCache(): PointCacheData {
     loop: true,
     interpolation: 'linear',
     coordinates: { up: 'y', unit: 'm' },
-    attributes: [],
+    attributes: [
+      { name: 'heat', type: 'float', perFrame: true },
+      { name: 'colorR', type: 'float', perFrame: true },
+      { name: 'colorG', type: 'float', perFrame: true },
+      { name: 'colorB', type: 'float', perFrame: true },
+    ],
     files: [],
   };
-  return buildPointCache(manifest, frames, true);
+  return buildPointCache(manifest, frames, true, sampleAttrFrames);
 }
 
 /* ---------------- shared store (loaded cache + status) ---------------- */

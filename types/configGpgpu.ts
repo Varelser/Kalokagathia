@@ -158,6 +158,10 @@ export interface ParticleConfigGpgpu {
   gpgpuAttrSizeAmount: number;
   gpgpuAttrBrightSlot: number;
   gpgpuAttrBrightAmount: number;
+  // Colour drive (Phase CL): tints each point by the RAW values
+  // of the colorR / colorG / colorB attribute columns. Resolves
+  // off unless all three names are assigned to slots.
+  gpgpuAttrColorEnabled: boolean;
   gpgpuAttrForceSlot: number;
   gpgpuAttrForceAmount: number;
   // Attribute groups (Phase AK): a membership test on one slot's

@@ -432,6 +432,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuAttrSizeAmount: '属性→サイズ駆動の量（属性値でサイズを係数 mix する割合）',
   gpgpuAttrBrightSlot: '属性→明るさ駆動のスロット（-1でOFF）',
   gpgpuAttrBrightAmount: '属性→明るさ駆動の量',
+  gpgpuAttrColorEnabled: '属性→色駆動（Phase CL）: スロット名 colorR／colorG／colorB の列の raw 値（正規化なし）で点色を tint する。3名全てがスロットに割り当てられていない場合は無効扱い。色に3スロットを使うため、他の駆動に使えるのは残り1スロット',
   gpgpuAttrForceSlot: '属性→フォース駆動のスロット（-1でOFF。組み込みフォースの効きを属性で拡縮）',
   gpgpuAttrForceAmount: '属性→フォース駆動の量',
   gpgpuGroupEnabled: '属性グループ（属性条件でフォースの効きを粒子ごとに切り替える。OFFで従来同一）',
