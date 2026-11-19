@@ -253,6 +253,21 @@ export function setAttrPointCloud(cloud: AttrPointCloud | null): void {
   listeners.forEach((listener) => listener());
 }
 
+/**
+ * Transient swap (Phase BZ): the same version bump + notify as
+ * setAttrPointCloud, but WITHOUT the localStorage persistence.
+ * The point-cache playback driver swaps the cloud once per frame
+ * while a cache plays; persisting every swap would hammer storage
+ * with the first 2,048 rows of every frame. A transient cloud
+ * lives only in memory — a reload restores the persisted cloud.
+ */
+export function setAttrPointCloudTransient(cloud: AttrPointCloud | null): void {
+  cloudLoaded = true;
+  cloudVersion += 1;
+  currentCloud = cloud ? { ...cloud, version: cloudVersion } : null;
+  listeners.forEach((listener) => listener());
+}
+
 export function subscribeAttrPointCloud(listener: () => void): () => void {
   listeners.add(listener);
   return () => {

@@ -4,6 +4,47 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.73.0] — 2026-11-19
+
+Eleventh-term Phase BZ: point cache import. An animated point
+cloud baked by an external tool — a numbered sequence of binary
+PLY frames plus a v2 JSON manifest — is imported and played back
+on the shared sequence clock, driving the attribute point cloud
+frame by frame. Three new config keys, all defaulting to the
+feature being absent, so the output is bit-identical to v1.72.0
+while unused; one new starter.
+
+### Added
+- **Point cache loader** (`lib/pointCache.ts`): manifest v2
+  (fps / count / startFrame / frameCount / loop / interpolation /
+  coordinates / attributes / files) with strict validation — a
+  point-count mismatch, a missing frame file, a declaration
+  mismatch or a cap overflow (8,192 points x 240 frames, held
+  fully in memory) rejects the whole cache with a stated reason;
+  nothing is silently decimated or padded. Binary PLY bodies are
+  copied into an aligned buffer before float views are taken
+  (the header length is not a multiple of 4). Positions only in
+  this round; the `attributes` declaration is validated but
+  per-frame attribute values are not held yet.
+- **Playback driver** (`lib/usePointCachePlayback.ts`): the
+  shared sequence clock is the single time source; frame time is
+  extrapolated from clock anchors (the published reading is
+  coarser than a cache frame). Frame swaps go through a new
+  transient setter on the attribute cloud store (version bump +
+  notify, no localStorage persistence), so the morph 'data'
+  target and the attribute 'data' source consume the moving
+  cloud unchanged. The time -> frame -> positions mapping is a
+  pure function (deterministic). An external cloud replacement
+  suspends the driver instead of fighting the user.
+- **Play tab import port**: the Point Cache section takes the
+  manifest + PLY files together, shows load results / refusal
+  reasons, the live frame readout, and the three switches
+  (playback / loop / bundled sample).
+- **Bundled sample + starter**: a deterministic 512-point /
+  48-frame orbiting sample cache ships in code;
+  `starter-point-cache-orbit` plays it through the morph 'data'
+  target.
+
 ## [1.72.0] — 2026-11-19
 
 Eleventh-term Phase BY: mesh SDF collider. The imported OBJ

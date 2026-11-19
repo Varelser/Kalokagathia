@@ -1,10 +1,21 @@
 import React from 'react';
-import { Database, Gamepad2, Grid3x3, History, Search } from 'lucide-react';
+import { Database, Film, Gamepad2, Grid3x3, History, Search } from 'lucide-react';
 import type { ParticleConfig } from '../types';
 import { PARAMETER_CATALOG, searchParameters, type ParameterCatalogEntry } from '../lib/parameterCatalog';
 import { buildDataLumaMap, buildSampleDataPoints, getDataSourceUpdates, parseDataPoints, type ParsedData } from '../lib/dataSource';
 import { parseDataTable, setDataTable, useDataTable } from '../lib/dataTable';
 import { parseAttrPointCloud, setAttrPointCloud, useAttrPointCloud } from '../lib/attrPointCloud';
+import {
+  loadPointCacheFromFiles,
+  setPointCache,
+  setPointCacheError,
+  usePointCache,
+  usePointCachePlaybackState,
+  usePointCacheStatus,
+  POINT_CACHE_MAX_FRAMES,
+  POINT_CACHE_MAX_POINTS,
+} from '../lib/pointCache';
+import { Toggle } from './controlPanelParts';
 import { TEXTURE_DEFINITIONS, TEXTURE_MAP_SIZE, generateTextureMap, getTextureDefinition, type NoiseTextureKind } from '../lib/texturePack';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { SectionTitle, TAB_SHORT_LABELS } from './controlPanelPlayTabShared';
@@ -393,6 +404,120 @@ export const DataSourceSection: React.FC<{
         現在の Layer {layer} 発生源：{layer === 2 ? config.layer2Source : config.layer3Source}
         {(layer === 2 ? config.layer2MediaLumaMap : config.layer3MediaLumaMap).length > 0 ? '（データ／画像マップあり）' : ''}
       </p>
+    </section>
+  );
+};
+
+// Point cache (Phase BZ): a numbered binary-PLY sequence plus a
+// v2 manifest, imported as an animated attribute point cloud.
+// Playback follows the shared sequence clock (design A) — the
+// transport is the sequence's own Play / Stop; this section is
+// the import port plus the three config switches.
+export const PointCacheSection: React.FC<{
+  config: ParticleConfig;
+  updateConfig: ControlPanelContentProps['updateConfig'];
+  isPublicLibrary: boolean;
+}> = ({ config, updateConfig, isPublicLibrary }) => {
+  const write = updateConfig as (key: keyof ParticleConfig, value: ParticleConfig[keyof ParticleConfig]) => void;
+  const cache = usePointCache();
+  const status = usePointCacheStatus();
+  const playback = usePointCachePlaybackState();
+  const fileRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleFiles = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const files = new Map<string, ArrayBuffer>();
+    for (const file of Array.from(fileList)) {
+      files.set(file.name, await file.arrayBuffer());
+    }
+    const result = loadPointCacheFromFiles(files);
+    if (result.ok) {
+      const manifestFile = [...files.keys()].find((n) => n.toLowerCase().endsWith('.json')) ?? 'manifest.json';
+      setPointCache(result.cache, manifestFile);
+    } else {
+      setPointCacheError(result.error);
+    }
+  };
+
+  const frameTotal = cache?.manifest.frameCount ?? (config.pointCacheBundledSample ? 48 : 0);
+
+  return (
+    <section>
+      <SectionTitle icon={<Film size={12} />}>Point Cache · ポイントキャッシュ</SectionTitle>
+      <p className="text-[11px] leading-relaxed text-white/45 mb-4">
+        連番の binary PLY とマニフェスト（JSON）を一緒に選ぶと、外部で焼いた点群アニメーションを取り込めます。再生はシーケンスの時計に連動し（再生・停止は Sequence のトランスポート）、属性点群として Morph の Data ターゲットや属性の Data 源へ流れます。上限は {POINT_CACHE_MAX_POINTS.toLocaleString()} 点 × {POINT_CACHE_MAX_FRAMES} フレームで、超えるもの・点数が合わないもの・欠けたファイルがあるものは、理由を表示して読み込みません。対応は位置のみです（色や属性のフレーム保持は今後の拡張）。
+      </p>
+      <Toggle
+        label="Point Cache Playback （ポイントキャッシュ再生）"
+        value={config.pointCacheEnabled}
+        options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+        onChange={(v) => write('pointCacheEnabled', v)}
+      />
+      <Toggle
+        label="Loop （キャッシュのループ）"
+        value={config.pointCacheLoop}
+        options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+        onChange={(v) => write('pointCacheLoop', v)}
+      />
+      <Toggle
+        label="Bundled Sample （同梱サンプル）"
+        value={config.pointCacheBundledSample}
+        options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+        onChange={(v) => write('pointCacheBundledSample', v)}
+      />
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={isPublicLibrary}
+          className="px-3 py-2 rounded-full border border-white/20 text-[10px] uppercase tracking-widest text-white/70 hover:bg-white/10 disabled:opacity-30"
+        >
+          ファイルを選ぶ（マニフェスト＋PLY）
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,.ply"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            void handleFiles(event.target.files);
+            event.target.value = '';
+          }}
+        />
+        {cache && (
+          <button
+            onClick={() => setPointCache(null)}
+            disabled={isPublicLibrary}
+            className="px-3 py-2 rounded-full text-[10px] uppercase tracking-widest text-white/35 hover:text-white/80 disabled:opacity-30"
+          >
+            キャッシュを解除
+          </button>
+        )}
+      </div>
+      {status.kind === 'error' && (
+        <p className="text-[11px] text-red-300/90">読み込めませんでした: {status.message}</p>
+      )}
+      {status.kind === 'ready' && (
+        <p className="text-[11px] text-white/55">
+          {status.bundled ? '同梱サンプル' : status.sourceName}: {status.count.toLocaleString()} 点 × {status.frameCount} フレーム / {status.fps} fps
+        </p>
+      )}
+      {status.kind === 'empty' && config.pointCacheBundledSample && (
+        <p className="text-[11px] text-white/55">再生元: 同梱サンプル（512 点 × 48 フレーム / 24 fps）</p>
+      )}
+      {status.kind === 'empty' && !config.pointCacheBundledSample && (
+        <p className="text-[11px] text-white/35">キャッシュは読み込まれていません。</p>
+      )}
+      {config.pointCacheEnabled && (cache || config.pointCacheBundledSample) && (
+        <p className="text-[11px] text-white/55 mt-1">
+          {playback.suspended
+            ? '属性点群が差し替えられたため、キャッシュ再生は保留中です（再生を切り替えるか、キャッシュを読み直すと再開します）。'
+            : playback.running
+              ? `再生中: フレーム ${playback.frameFloat.toFixed(1)} / ${frameTotal}`
+              : `停止中: フレーム ${playback.frameFloat.toFixed(1)} / ${frameTotal}（Sequence の再生で進みます）`}
+        </p>
+      )}
+      {isPublicLibrary && <p className="text-[11px] text-white/35 mt-1">公開ビルドでは適用できません。</p>}
     </section>
   );
 };

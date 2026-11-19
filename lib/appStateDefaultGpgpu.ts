@@ -395,6 +395,11 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuMeshSdfResolution: 64,
   gpgpuMeshSdfBounce: 0.5,
   gpgpuMeshSdfFriction: 0.25,
+  // Point cache playback (Phase BZ): off by default (the driver
+  // never runs, the attribute cloud is never touched).
+  pointCacheEnabled: false,
+  pointCacheLoop: true,
+  pointCacheBundledSample: false,
   // Floor bounce (B3): off by default.
   gpgpuFloorEnabled: false,
   gpgpuFloorY: -110.0,

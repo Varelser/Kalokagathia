@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.72.0**（2026-11-19、第11期 Phase BY＝メッシュ SDF コライダ: 取り込み済み OBJ を CPU で符号付き距離場へ焼き（BVH＋フラッドフィル符号、開メッシュは拒否）、R16F 3D テクスチャとして解析 SDF と別スロットで共存衝突。新規 config キー +4（`gpgpuMeshSdfEnabled`／`gpgpuMeshSdfResolution`／`gpgpuMeshSdfBounce`／`gpgpuMeshSdfFriction`、全て既定でコライダ自体が存在しない＝従来出力とビット同一）・スターター +1。詳細は PHASE_BY_REPORT.md。前版 v1.71.0 は Phase BX＝GLSL 差し込みの一般化）
+**現行バージョン: v1.73.0**（2026-11-19、第11期 Phase BZ＝ポイントキャッシュ取り込み: 連番 binary PLY＋マニフェスト v2 の点群アニメーションを取り込み（上限 8,192点×240フレーム・全保持、不一致は理由つき拒否）、共有シーケンスクロックで再生して属性点群へ非永続差し替えで流す。新規 config キー +3（`pointCacheEnabled`／`pointCacheLoop`／`pointCacheBundledSample`、全て既定で機能自体が存在しない＝従来出力とビット同一）・スターター +1。詳細は PHASE_BZ_REPORT.md。前版 v1.72.0 は Phase BY＝メッシュ SDF コライダ）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -13,7 +13,7 @@
 
 ## 資産の実数（2026-11-19 実測）
 
-- config キー: **1,319件** ／ 内蔵スターター: **597件**
+- config キー: **1,322件** ／ 内蔵スターター: **598件**
 - 生成カタログ: **1,654件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 

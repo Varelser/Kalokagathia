@@ -37,6 +37,7 @@ import { usePresetLibrary } from './lib/usePresetLibrary';
 import { usePresetTransition } from './lib/usePresetTransition';
 import { useProjectTransfer } from './lib/useProjectTransfer';
 import { useSequenceController } from './lib/useSequenceController';
+import { usePointCachePlayback } from './lib/usePointCachePlayback';
 import { decodeConfigPayload, enterSharedView, fetchCatalogPreset, parseShareHash } from './lib/shareLink';
 import { maybeWarnHeavyPreset } from './lib/gpuTierWarnings';
 import { initGpuTier } from './lib/gpuTier';
@@ -290,6 +291,16 @@ const AppBody: React.FC = () => {
     },
     config,
     suspended: isSequencePlaying,
+  });
+
+  // Point cache playback (Phase BZ): follows the shared sequence
+  // clock and drives the attribute point cloud frame by frame.
+  // A no-op unless pointCacheEnabled is on and a cache source
+  // (a loaded file cache, or the bundled sample) exists.
+  usePointCachePlayback({
+    enabled: config.pointCacheEnabled,
+    loop: config.pointCacheLoop,
+    bundledSample: config.pointCacheBundledSample,
   });
 
   // Kiosk attract loop (ultimate Wave 5): a no-op unless ?kiosk=1.

@@ -2335,6 +2335,35 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuMeshSdfFriction: 0.45,
         gpgpuTrailEnabled: false,
       }),
+  // Phase BZ: the bundled sample point cache (512 points on
+  // nested orbits, 48 frames at 24 fps) plays back on the shared
+  // sequence clock and drives the attribute cloud; the morph
+  // 'data' target pulls the particles onto the moving points, so
+  // pressing Play on the sequence sets the whole cloud in motion.
+  createStarterPreset('starter-point-cache-orbit', 'Point Cache Orbit (Bundled Sample)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.4,
+        gpgpuOpacity: 0.9,
+        gpgpuSpeed: 0.5,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.03,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'data',
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        pointCacheEnabled: true,
+        pointCacheLoop: true,
+        pointCacheBundledSample: true,
+        gpgpuTrailEnabled: false,
+      }),
   // Phase AI: ridge scatter — the ridge recipe's particles are
   // scattered by the height-band / slope grammar, so the cloud
   // gathers on the mid-altitude slopes, aligned to the surface,

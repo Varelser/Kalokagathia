@@ -752,6 +752,19 @@ export interface ParticleConfigGpgpu {
   gpgpuMeshSdfResolution: number;
   gpgpuMeshSdfBounce: number;
   gpgpuMeshSdfFriction: number;
+  // Point cache playback (Phase BZ): an imported numbered-PLY
+  // point cache (lib/pointCache.ts) follows the shared sequence
+  // clock and drives the attribute point cloud frame by frame
+  // through the transient setter, so the morph 'data' target and
+  // the attribute 'data' source animate. Disabled by default —
+  // the driver never runs and the cloud is never touched.
+  pointCacheEnabled: boolean;
+  /** Wrap at the cache's own duration (ANDed with the manifest's
+   *  loop declaration); off clamps on the last frame. */
+  pointCacheLoop: boolean;
+  /** Use the bundled sample cache when no file cache is loaded
+   *  (the BZ starter's source). A loaded file cache wins. */
+  pointCacheBundledSample: boolean;
   // Floor plane bounce (Kinetix integration B3, Kinetix floorBounce /
   // floorY / floorRestitution): a horizontal floor at gpgpuFloorY that
   // reflects velocity in the velocity pass and clamps position in the
