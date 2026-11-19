@@ -4,6 +4,32 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.80.0] — 2026-11-20
+
+Eleventh-term CSG second release, Phase CG (brief unit
+U3): a hull finish for CSG results. The CSG panel gains a
+finish choice — as-is (default) or hull — applied inside
+the worker after the boolean and before the output
+re-check, so the gate verdict and the reported numbers
+describe the finished solid. The hull replaces the result
+with its convex hull over all components at once:
+disjoint parts are bridged into one genus-0 solid (the
+brief's acceptance case, two unit spheres at ±1.5, goes
+from 8.190440 in 2 components to 13.459556 / 576
+triangles in 1 component), a dented result is filled back
+toward its hull, and a convex input is unchanged. Hull is
+a finish, not an operand (brief decision D12); the cache
+key gains the finish only when it is not 'none', so
+existing keys stay byte-identical. One new config key
+(gpgpuCsgFinish, default 'none' = fully inert) and one
+new starter (CSG Hull Bridge, with the precomputed hull
+embedded as its morph target). Verified by the Phase CG
+suite (43 checks: brief numbers through the production
+code path, hull-never-shrinks, determinism, wiring) and
+the iMac real-GPU gate (identity 12 frames diff 0, the
+hull recipe driven through the real panel and the
+production worker asset, fps ~60).
+
 ## [1.79.0] — 2026-11-19
 
 Eleventh-term CSG second release, Phase CF (brief unit U1

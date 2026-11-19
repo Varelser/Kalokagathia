@@ -13,6 +13,18 @@ import type { CsgGateReport } from './csgGate';
 export type CsgPrimitiveKind = 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus';
 export type CsgOperationKind = 'union' | 'difference' | 'intersection';
 
+/** Post-processing applied to a boolean result inside the
+ *  worker (Phase CG, brief unit U3). Hull is a FINISH, not
+ *  an operand (brief decision D12): it replaces the result
+ *  with its convex hull, bridging disjoint components into
+ *  one genus-0 solid. 'none' keeps the boolean result as
+ *  is and keeps the pre-CG cache key byte-identical. */
+export type CsgFinishKind = 'none' | 'hull';
+export const CSG_FINISH_KINDS: readonly CsgFinishKind[] = ['none', 'hull'];
+export function isCsgFinishKind(v: unknown): v is CsgFinishKind {
+  return v === 'none' || v === 'hull';
+}
+
 /** Phase CF (CSG second release, U1): extrusion profiles. The
  *  profile is generated deterministically from the spec, so a
  *  spec fully identifies the operand (cache keys, panel state).
@@ -179,6 +191,7 @@ export function csgOperandKey(operand: CsgOperand): string {
     (operand.indices ? hashTypedArray(operand.indices) : 'flat');
 }
 
-export function csgCacheKey(a: CsgOperand, b: CsgOperand, op: CsgOperationKind): string {
-  return `${csgOperandKey(a)}|${op}|${csgOperandKey(b)}`;
+export function csgCacheKey(a: CsgOperand, b: CsgOperand, op: CsgOperationKind, finish: CsgFinishKind = 'none'): string {
+  const base = `${csgOperandKey(a)}|${op}|${csgOperandKey(b)}`;
+  return finish === 'none' ? base : `${base}|f:${finish}`;
 }

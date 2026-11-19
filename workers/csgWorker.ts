@@ -23,12 +23,14 @@ import Module from 'manifold-3d';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import type { ManifoldToplevel } from 'manifold-3d';
 import {
+  applyCsgFinish,
   buildCsgOperand,
   manifoldToResultData,
   runCsgBoolean,
 } from '../lib/csgPrimitive';
 import type {
   CsgErrorCode,
+  CsgFinishKind,
   CsgOperand,
   CsgOperationKind,
 } from '../lib/csgCore';
@@ -39,6 +41,7 @@ interface OpRequest {
   a: CsgOperand;
   b: CsgOperand;
   op: CsgOperationKind;
+  finish?: CsgFinishKind;
 }
 interface PingRequest {
   id: number;
@@ -91,7 +94,21 @@ async function runOp(req: OpRequest): Promise<void> {
     ctx.postMessage({ id: req.id, ok: false, code: 'EMPTY_RESULT', message: '演算結果は空です（体積 0）。' });
     return;
   }
-  const data = manifoldToResultData(result);
+  // Finish (Phase CG): hull replaces the result with its
+  // convex hull before the output re-check, so the gate (c)
+  // verdict and the reported numbers describe the finished
+  // solid the user actually receives.
+  const finished = applyCsgFinish(result, req.finish ?? 'none');
+  if (req.finish === 'hull') {
+    const st = finished.status();
+    if (st !== 'NoError') {
+      throw Object.assign(
+        new Error(`ハル（凸包）化に失敗しました（status: ${st}）。`),
+        { csgCode: 'NOT_MANIFOLD' as CsgErrorCode },
+      );
+    }
+  }
+  const data = manifoldToResultData(finished);
   if (!data.gate.ok && !data.gate.skipped) {
     throw Object.assign(
       new Error('演算結果が出力再検査を通りませんでした: ' + data.gate.reason),

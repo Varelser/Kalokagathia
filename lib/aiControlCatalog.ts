@@ -766,6 +766,7 @@ const BOOLS: BoolDef[] = [
   ['gpgpuCsgExtrudeProfile', 'CSG押し出しの断面（square=四角形／circle=円／polygon=多角形、既定square）'],
   ['gpgpuCsgExtrudeHeight', 'CSG押し出しの高さ（既定1）'],
   ['gpgpuCsgExtrudeTwist', 'CSG押し出しのねじり（度、既定0。体積は分割数に依存して変わる）'],
+  ['gpgpuCsgFinish', 'CSGの仕上げ（none=そのまま／hull=凸包、既定none）'],
   ['gpgpuTerrainMeshTunnel', '地形メッシュのトンネルモード（円筒内面）'],
   ['gpgpuObjMeshEnabled', 'OBJメッシュ描画（取り込み済みOBJをポリゴンで描く、モーフとデータ源を共有）'],
   ['gpgpuFluidEnabled', 'GPGPU流体アドベクション'],

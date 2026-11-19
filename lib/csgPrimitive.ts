@@ -18,6 +18,7 @@ import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import { checkWatertightGate } from './csgGate';
 import { buildCsgExtrude } from './csgExtrude';
 import type {
+  CsgFinishKind,
   CsgOperand,
   CsgOperationKind,
   CsgPrimitiveSpec,
@@ -81,6 +82,16 @@ export function buildCsgOperand(wasm: ManifoldToplevel, operand: CsgOperand): Ma
 
 export function runCsgBoolean(a: Manifold, b: Manifold, op: CsgOperationKind): Manifold {
   return op === 'union' ? a.add(b) : op === 'difference' ? a.subtract(b) : a.intersect(b);
+}
+
+/** Apply a finish (Phase CG, brief unit U3). 'hull'
+ *  replaces the result with its convex hull — Manifold's
+ *  own hull() over every component at once, so disjoint
+ *  parts are bridged into one genus-0 solid. A hull can
+ *  never be smaller than its input; callers assert that
+ *  property in tests rather than re-checking it here. */
+export function applyCsgFinish(result: Manifold, finish: CsgFinishKind): Manifold {
+  return finish === 'hull' ? result.hull() : result;
 }
 
 export function manifoldToResultData(m: Manifold): CsgResultData {

@@ -623,6 +623,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuCsgExtrudeTwist: 'CSG押し出しのねじり（度、高さ方向に回転。ねじると体積が変わり、変わり方は分割数に依存する、既定0）',
   gpgpuCsgExtrudeScaleTop: 'CSG押し出しの先端スケール（一様、0で錐になる、既定1）',
   gpgpuCsgExtrudeDivisions: 'CSG押し出しのねじり分割数（ねじりの補間段数、既定0）',
+  gpgpuCsgFinish: 'CSGの仕上げ（none=そのまま／hull=結果を凸包に置き換える。離れた部品同士を1つの凸立体で橋渡しする、既定はそのまま）',
   gpgpuMetaballStrength: 'メタボールの膨らみの強さ',
   gpgpuMetaballSubtract: 'メタボールの減衰（削れ方）',
   gpgpuMetaballIsoLevel: 'メタボール面が現れる境目の値',

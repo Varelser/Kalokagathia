@@ -932,13 +932,14 @@ export const CsgSection: React.FC<{
       config.gpgpuCsgOffsetBZ,
     ]);
     try {
-      const out = await runCsgOperation(a, b, config.gpgpuCsgOperation);
+      const out = await runCsgOperation(a, b, config.gpgpuCsgOperation, config.gpgpuCsgFinish);
       const cached = getLastCsgRun()?.fromCache ?? false;
       setResult(out);
       setFromCache(cached);
       setStatus(
         `完了: 体積 ${out.volume.toFixed(4)} / ${out.triangles.toLocaleString()} 三角形` +
           `（出力再検査: 閉・オイラー標数 ${out.gate.euler}・成分 ${out.gate.components}・種数 ${out.gate.genus}）` +
+          (config.gpgpuCsgFinish === 'hull' ? ' ※仕上げ: ハル（凸包）' : '') +
           (cached ? ' ※同じ被演算子・演算のキャッシュ結果です' : ''),
       );
     } catch (e) {
@@ -973,6 +974,7 @@ export const CsgSection: React.FC<{
       <SectionTitle icon={<Box size={12} />}>CSG · メッシュ演算</SectionTitle>
       <p className="text-[11px] leading-relaxed text-white/45 mb-4">
         プリミティブ同士、または断面の押し出しとの和・差・積を manifold-3d（Worker＋WASM）で計算し、結果をモーフ経路へ取り込めます。
+        仕上げにハル（凸包）を選ぶと、結果全体を1つの凸立体に置き換えます（離れた部品同士も橋渡しされます）。
         演算は1回実行型で、同じ被演算子・演算の再実行はキャッシュを返します。完全に一致する形同士の演算は通常より時間がかかる場合があります。
         無効の間は Worker も WASM も読み込まれません。
       </p>
@@ -1024,6 +1026,15 @@ export const CsgSection: React.FC<{
               { label: '積 A∩B', val: 'intersection' as const },
             ]}
             onChange={(v) => updateConfig('gpgpuCsgOperation', v)}
+          />
+          <Toggle
+            label="仕上げ"
+            value={config.gpgpuCsgFinish}
+            options={[
+              { label: 'そのまま', val: 'none' as const },
+              { label: 'ハル（凸包）', val: 'hull' as const },
+            ]}
+            onChange={(v) => updateConfig('gpgpuCsgFinish', v)}
           />
           <Slider label="A のサイズ" value={config.gpgpuCsgSizeA} min={0.2} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCsgSizeA', v)} />
           <Slider label="B のサイズ" value={config.gpgpuCsgSizeB} min={0.2} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCsgSizeB', v)} />

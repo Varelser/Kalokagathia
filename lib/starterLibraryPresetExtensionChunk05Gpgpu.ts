@@ -3,7 +3,7 @@ import { combineLumaMaps } from './shapeBoolean';
 import { createStarterPreset } from './starterLibraryCore';
 import { SAMPLE_SVG_STAR } from './svgMorph';
 import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT } from './objMorph';
-import { SAMPLE_OBJ_CSG_CUBE_MINUS_SPHERE, SAMPLE_OBJ_CSG_EXTRUDE_TWIST_MINUS_SPHERE } from './csgSampleObj';
+import { SAMPLE_OBJ_CSG_CUBE_MINUS_SPHERE, SAMPLE_OBJ_CSG_EXTRUDE_TWIST_MINUS_SPHERE, SAMPLE_OBJ_CSG_HULL_BRIDGE } from './csgSampleObj';
 
 
 // Phase U samples: tiny embedded images for the sprite / Layer Map
@@ -4109,6 +4109,44 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuCsgExtrudeTwist: 45,
         gpgpuCsgExtrudeScaleTop: 1,
         gpgpuCsgExtrudeDivisions: 8,
+        gpgpuTrailEnabled: true,
+        gpgpuTrailLength: 8,
+        gpgpuTrailFade: 0.74,
+      }),
+  createStarterPreset('starter-csg-hull-bridge', 'CSG Hull Bridge (Boolean Union + Hull)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.12,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'obj',
+        gpgpuMorphObjSource: SAMPLE_OBJ_CSG_HULL_BRIDGE,
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.05,
+        gpgpuMorphOrbitSpeed: 0.15,
+        gpgpuObjMeshEnabled: true,
+        gpgpuCsgEnabled: true,
+        gpgpuCsgPrimitiveA: 'sphere',
+        gpgpuCsgPrimitiveB: 'sphere',
+        gpgpuCsgOperation: 'union',
+        gpgpuCsgSizeA: 2,
+        gpgpuCsgSizeB: 2,
+        gpgpuCsgSegments: 32,
+        gpgpuCsgOffsetBX: 3,
+        gpgpuCsgOffsetBY: 0,
+        gpgpuCsgOffsetBZ: 0,
+        gpgpuCsgFinish: 'hull',
         gpgpuTrailEnabled: true,
         gpgpuTrailLength: 8,
         gpgpuTrailFade: 0.74,
