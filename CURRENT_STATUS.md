@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.75.0**（2026-11-19、第11期 Phase CB＝Pyro グリッド化の後半（下位フェーズ5〜8）: グリッド場を描画と粒子へ供給した。フォグ供給（密度→alpha／温度→色、レイヤー別キー）、粒子結合（PIC/FLIP G2P、blend 0 でブロック自体が不発）、渦度閉じ込め（ε 既定 0 でパス自体が無い）、燃焼（燃料はスカラー b チャネル、着火窓は実測温度域に較正、温度上限つき）。新規 config キー +8（結合 blend／transfer、渦度 ε、燃料率、フォグ量×4）、スターター +1（Pyro Grid Plume）。全キー既定で従来出力とビット同一。詳細は PHASE_CB_REPORT.md。前版 v1.74.0 は Phase CA＝Pyro グリッド化の前半）
+**現行バージョン: v1.76.0**（2026-11-19、第11期 Phase CC＝CSG 第1弾: manifold-3d（WASM）を専用 Worker で動かす立体演算基盤。プリミティブ5種（立方体・球・円柱・円錐・トーラス）の和・差・積、watertight ゲート（入力の辺センサス＋Euler 検査／出力の再検査）、結果メッシュのモーフ経路への取り込み（インデックス化 OBJ）。既定 OFF で OFF 時は Worker も WASM も読み込まれない。新規 config キー +10、スターター +1（CSG Cube Minus Sphere）。全キー既定で従来出力とビット同一。詳細は PHASE_CC_REPORT.md。前版 v1.75.0 は Phase CB＝Pyro グリッド化の後半。これで第11期の判断分岐基盤5件（GLSL／SDF／ポイントキャッシュ／Pyro／CSG）は全て出荷済み）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
@@ -13,8 +13,8 @@
 
 ## 資産の実数（2026-11-19 実測）
 
-- config キー: **1,333件** ／ 内蔵スターター: **599件**
-- 生成カタログ: **1,654件**（catalog／presets／share が 1:1:1、fps 実測 100%）
+- config キー: **1,343件** ／ 内蔵スターター: **600件**
+- 生成カタログ: **1,659件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 
 ## 残件（2026-11-17 時点）

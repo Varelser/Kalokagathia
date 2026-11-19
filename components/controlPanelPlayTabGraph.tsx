@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileDown, Keyboard, Network, Sparkles } from 'lucide-react';
+import { Box, FileDown, Keyboard, Network, Sparkles } from 'lucide-react';
 import type { Layer2Type, MotionDagNode, MotionGraphStep, ParticleConfig, PresetRecord } from '../types';
 import { MOTION_GROUPS } from '../lib/motionGrouping';
 import { isDedicatedSystemMotionType, isPlacementMotionType } from '../lib/motionChain';
@@ -10,7 +10,15 @@ import { buildPlyPointCloud, countExportablePoints, type PointCloudCaptureState 
 import { buildObjFromGrid, buildStlFromGrid, countMeshExport, extractGridPositions } from '../lib/meshExport';
 import { buildSvgPointCloud, type SvgPlane } from '../lib/svgExport';
 import { PlayDagSection } from './controlPanelDagEditor';
-import { Slider } from './controlPanelParts';
+import { Slider, Toggle } from './controlPanelParts';
+import { getLastCsgRun, runCsgOperation } from '../lib/csg';
+import {
+  buildIndexedObjText,
+  CsgError,
+  type CsgOperand,
+  type CsgPrimitiveKind,
+  type CsgResultData,
+} from '../lib/csgCore';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { DeterministicRenderControls } from './controlPanelPlayTabRender';
 import { SectionTitle } from './controlPanelPlayTabShared';
@@ -852,6 +860,175 @@ export const ExportSection: React.FC<{
       </div>
       {status && <p className="text-[11px] text-white/55 mt-3">{status}</p>}
       <DeterministicRenderControls config={config} updateConfig={updateConfig} />
+    </section>
+  );
+};
+
+const CSG_PRIMITIVE_OPTIONS: { value: CsgPrimitiveKind; label: string }[] = [
+  { value: 'cube', label: '立方体' },
+  { value: 'sphere', label: '球' },
+  { value: 'cylinder', label: '円柱' },
+  { value: 'cone', label: '円錐' },
+  { value: 'torus', label: 'トーラス' },
+];
+
+// Phase CC: CSG panel (final CSG brief, 第1弾). Primitives are
+// combined in the manifold-3d worker (lib/csg.ts); the result
+// can be pushed into the morph path as indexed OBJ text, which
+// also makes it the OBJ-mesh / mesh-SDF source (the three share
+// gpgpuMorphObjSource). Nothing runs — and no worker or WASM is
+// loaded — until the user presses 実行 with CSG enabled.
+export const CsgSection: React.FC<{
+  config: ParticleConfig;
+  updateConfig: ControlPanelContentProps['updateConfig'];
+}> = ({ config, updateConfig }) => {
+  const [busy, setBusy] = React.useState(false);
+  const [status, setStatus] = React.useState('');
+  const [result, setResult] = React.useState<CsgResultData | null>(() => getLastCsgRun()?.result ?? null);
+  const [fromCache, setFromCache] = React.useState(false);
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    setStatus('CSG を計算しています…（初回は WASM の読み込みを含みます）');
+    const a: CsgOperand = {
+      type: 'primitive',
+      spec: {
+        kind: config.gpgpuCsgPrimitiveA,
+        size: config.gpgpuCsgSizeA,
+        segments: config.gpgpuCsgSegments,
+        offset: [0, 0, 0],
+      },
+    };
+    const b: CsgOperand = {
+      type: 'primitive',
+      spec: {
+        kind: config.gpgpuCsgPrimitiveB,
+        size: config.gpgpuCsgSizeB,
+        segments: config.gpgpuCsgSegments,
+        offset: [config.gpgpuCsgOffsetBX, config.gpgpuCsgOffsetBY, config.gpgpuCsgOffsetBZ],
+      },
+    };
+    try {
+      const out = await runCsgOperation(a, b, config.gpgpuCsgOperation);
+      const cached = getLastCsgRun()?.fromCache ?? false;
+      setResult(out);
+      setFromCache(cached);
+      setStatus(
+        `完了: 体積 ${out.volume.toFixed(4)} / ${out.triangles.toLocaleString()} 三角形` +
+          `（出力再検査: 閉・オイラー標数 ${out.gate.euler}・成分 ${out.gate.components}）` +
+          (cached ? ' ※同じ被演算子・演算のキャッシュ結果です' : ''),
+      );
+    } catch (e) {
+      setResult(null);
+      if (e instanceof CsgError && e.code === 'EMPTY_RESULT') {
+        setStatus('演算結果は空でした（体積 0）。被演算子の重なり方を変えてください。');
+      } else {
+        setStatus(e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const takeIntoMorph = () => {
+    if (!result) return;
+    const text = buildIndexedObjText(result.positions, result.indices, 'csg-result');
+    updateConfig('gpgpuMorphObjSource', text);
+    updateConfig('gpgpuObjMeshEnabled', true);
+    setStatus(
+      'CSG 結果をモーフ経路へ取り込みました（OBJ メッシュ描画も ON）。' +
+        '注意: 中空の結果はメッシュ SDF では中身詰まりとして扱われます。薄い結果は SDF の解像度を 96³ に上げてください。',
+    );
+  };
+
+  const selectClass =
+    'bg-white/5 border border-white/10 rounded px-2 py-2 text-xs outline-none focus:border-white/40 w-full';
+  const selectStyle = { backgroundColor: undefined } as const;
+
+  return (
+    <section>
+      <SectionTitle icon={<Box size={12} />}>CSG · メッシュ演算</SectionTitle>
+      <p className="text-[11px] leading-relaxed text-white/45 mb-4">
+        プリミティブ同士の和・差・積を manifold-3d（Worker＋WASM）で計算し、結果をモーフ経路へ取り込めます。
+        演算は1回実行型で、同じ被演算子・演算の再実行はキャッシュを返します。完全に一致する形同士の演算は通常より時間がかかる場合があります。
+        無効の間は Worker も WASM も読み込まれません。
+      </p>
+      <Toggle
+        label="CSG 有効"
+        value={config.gpgpuCsgEnabled}
+        options={[
+          { label: 'OFF', val: false },
+          { label: 'ON', val: true },
+        ]}
+        onChange={(v) => updateConfig('gpgpuCsgEnabled', v)}
+      />
+      {config.gpgpuCsgEnabled && (
+        <div>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <label className="block">
+              <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">被演算子 A</span>
+              <select
+                value={config.gpgpuCsgPrimitiveA}
+                onChange={(e) => updateConfig('gpgpuCsgPrimitiveA', e.target.value as CsgPrimitiveKind)}
+                className={selectClass}
+                style={selectStyle}
+              >
+                {CSG_PRIMITIVE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value} className="bg-neutral-900">{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">被演算子 B</span>
+              <select
+                value={config.gpgpuCsgPrimitiveB}
+                onChange={(e) => updateConfig('gpgpuCsgPrimitiveB', e.target.value as CsgPrimitiveKind)}
+                className={selectClass}
+                style={selectStyle}
+              >
+                {CSG_PRIMITIVE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value} className="bg-neutral-900">{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <Toggle
+            label="演算"
+            value={config.gpgpuCsgOperation}
+            options={[
+              { label: '和 A∪B', val: 'union' as const },
+              { label: '差 A−B', val: 'difference' as const },
+              { label: '積 A∩B', val: 'intersection' as const },
+            ]}
+            onChange={(v) => updateConfig('gpgpuCsgOperation', v)}
+          />
+          <Slider label="A のサイズ" value={config.gpgpuCsgSizeA} min={0.2} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCsgSizeA', v)} />
+          <Slider label="B のサイズ" value={config.gpgpuCsgSizeB} min={0.2} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCsgSizeB', v)} />
+          <Slider label="円分割数" value={config.gpgpuCsgSegments} min={4} max={128} step={4} onChange={(v) => updateConfig('gpgpuCsgSegments', v)} />
+          <Slider label="B オフセット X" value={config.gpgpuCsgOffsetBX} min={-3} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuCsgOffsetBX', v)} />
+          <Slider label="B オフセット Y" value={config.gpgpuCsgOffsetBY} min={-3} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuCsgOffsetBY', v)} />
+          <Slider label="B オフセット Z" value={config.gpgpuCsgOffsetBZ} min={-3} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuCsgOffsetBZ', v)} />
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <button
+              onClick={run}
+              disabled={busy}
+              className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest hover:bg-gray-200 transition-colors disabled:opacity-40"
+            >
+              {busy ? '計算中…' : 'CSG を実行'}
+            </button>
+            <button
+              onClick={takeIntoMorph}
+              disabled={!result || busy}
+              className="px-4 py-2 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+            >
+              結果をモーフへ取り込む
+            </button>
+            {fromCache && result && <span className="text-[10px] text-white/40">キャッシュ済み結果を表示中</span>}
+          </div>
+        </div>
+      )}
+      {status && <p className="text-[11px] text-white/55 mt-3">{status}</p>}
     </section>
   );
 };

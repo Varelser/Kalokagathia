@@ -320,6 +320,23 @@ export interface ParticleConfigGpgpu {
   gpgpuPyroGridTransfer: number;
   gpgpuPyroVorticityEpsilon: number;
   gpgpuPyroFuelRate: number;
+  // Phase CC: CSG (manifold-3d in a lazily-created worker).
+  // The enabled flag only arms the Graph-tab CSG panel; the
+  // worker and WASM load on the first explicit execution, and
+  // nothing in the render path reads these keys, so with the
+  // defaults the output is bit-identical. Operands are the two
+  // primitives below (size = cube edge / sphere diameter /
+  // cylinder+cone height / torus scale; B carries the offset).
+  gpgpuCsgEnabled: boolean;
+  gpgpuCsgPrimitiveA: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus';
+  gpgpuCsgPrimitiveB: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus';
+  gpgpuCsgOperation: 'union' | 'difference' | 'intersection';
+  gpgpuCsgSizeA: number;
+  gpgpuCsgSizeB: number;
+  gpgpuCsgSegments: number;
+  gpgpuCsgOffsetBX: number;
+  gpgpuCsgOffsetBY: number;
+  gpgpuCsgOffsetBZ: number;
   // Vector Field
   gpgpuVFieldEnabled: boolean;
   gpgpuVFieldType: 'dipole' | 'saddle' | 'spiral' | 'source' | 'abc' | 'gyre' | 'worley';

@@ -194,6 +194,18 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuPyroGridTransfer: 1.0,
   gpgpuPyroVorticityEpsilon: 0,
   gpgpuPyroFuelRate: 0,
+  // Phase CC: CSG panel state (see types/configGpgpu.ts).
+  // Disabled = no worker, no WASM, bit-identical output.
+  gpgpuCsgEnabled: false,
+  gpgpuCsgPrimitiveA: 'cube' as const,
+  gpgpuCsgPrimitiveB: 'sphere' as const,
+  gpgpuCsgOperation: 'difference' as const,
+  gpgpuCsgSizeA: 2,
+  gpgpuCsgSizeB: 2,
+  gpgpuCsgSegments: 32,
+  gpgpuCsgOffsetBX: 1,
+  gpgpuCsgOffsetBY: 0,
+  gpgpuCsgOffsetBZ: 0,
   // Vector Field
   gpgpuVFieldEnabled: false,
   gpgpuVFieldType: 'spiral' as const,

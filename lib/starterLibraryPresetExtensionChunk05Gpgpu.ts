@@ -3,6 +3,7 @@ import { combineLumaMaps } from './shapeBoolean';
 import { createStarterPreset } from './starterLibraryCore';
 import { SAMPLE_SVG_STAR } from './svgMorph';
 import { SAMPLE_OBJ_SPHERE, SAMPLE_OBJ_TORUS_KNOT } from './objMorph';
+import { SAMPLE_OBJ_CSG_CUBE_MINUS_SPHERE } from './csgSampleObj';
 
 
 // Phase U samples: tiny embedded images for the sprite / Layer Map
@@ -4020,5 +4021,48 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         layer2TextMapLetterSpacing: 0.1,
         layer2TextMapRuby: true,
         gpgpuTrailEnabled: false,
+      }),
+  // Phase CC: CSG first release — the panel recipe (cube −
+  // sphere, offset +1 on X) with its precomputed result riding
+  // as the morph OBJ source, so the boolean's bite is visible
+  // both as the morph cloud and as the OBJ polygon mesh.
+  // Running the same recipe in the Graph-tab CSG panel
+  // reproduces this shape through the worker.
+  createStarterPreset('starter-csg-cube-minus-sphere', 'CSG Cube Minus Sphere (Boolean Difference)', {
+        renderQuality: 'balanced',
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        ambientEnabled: false,
+        gpgpuEnabled: true,
+        gpgpuCount: 16384,
+        gpgpuEmitShape: 'sphere',
+        gpgpuColor: '#d7dde3',
+        gpgpuSize: 1.3,
+        gpgpuOpacity: 0.85,
+        gpgpuSpeed: 1.0,
+        gpgpuGravity: 0.0,
+        gpgpuTurbulence: 0.12,
+        gpgpuMorphEnabled: true,
+        gpgpuMorphTarget: 'obj',
+        gpgpuMorphObjSource: SAMPLE_OBJ_CSG_CUBE_MINUS_SPHERE,
+        gpgpuMorphStrength: 3.0,
+        gpgpuMorphScale: 1.0,
+        gpgpuMorphJitter: 0.05,
+        gpgpuMorphOrbitSpeed: 0.15,
+        gpgpuObjMeshEnabled: true,
+        gpgpuCsgEnabled: true,
+        gpgpuCsgPrimitiveA: 'cube',
+        gpgpuCsgPrimitiveB: 'sphere',
+        gpgpuCsgOperation: 'difference',
+        gpgpuCsgSizeA: 2,
+        gpgpuCsgSizeB: 2,
+        gpgpuCsgSegments: 32,
+        gpgpuCsgOffsetBX: 1,
+        gpgpuCsgOffsetBY: 0,
+        gpgpuCsgOffsetBZ: 0,
+        gpgpuTrailEnabled: true,
+        gpgpuTrailLength: 8,
+        gpgpuTrailFade: 0.74,
       }),
 ];

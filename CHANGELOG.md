@@ -4,6 +4,40 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.76.0] — 2026-11-19
+
+Eleventh-term Phase CC: CSG first release — the last of the
+five foundation candidates. manifold-3d 3.5.4 (WASM) runs in a
+lazily-created worker; the Graph-tab CSG panel combines two
+primitives (cube / sphere / cylinder / cone / torus) with
+union, difference or intersection and pushes the result into
+the morph path as indexed OBJ text (the same source then feeds
+the OBJ mesh renderer and the mesh-SDF bake). A three-layer
+watertight gate guards the operation: a structural pre-check
+(welded edge census + Euler = 2 × components + finite check),
+a broad construction catch with typed error codes, and an
+output re-check. Ten new config keys, every one inert at its
+default — the worker and WASM are not even fetched until the
+first explicit execution, so output is bit-identical to
+v1.75.0 while unused. One new starter (CSG Cube Minus Sphere)
+carries the default recipe with its precomputed result.
+
+### Added
+- **CSG worker + client** (`workers/csgWorker.ts`,
+  `lib/csg.ts`): lazy worker creation, serial id-matched
+  requests, 5 s timeout, result cache; a ManifoldError maps to
+  NOT_MANIFOLD and keeps the worker, any other throw is
+  UNKNOWN and recreates it.
+- **Watertight gate** (`lib/csgGate.ts`): pure structural
+  check shared by the main thread, the worker and the tests.
+- **CSG panel** in the Graph tab (below Export): operand /
+  operation / size / segments / offset controls, run-once
+  execution with volume + gate readout, and a one-click
+  intake of the result into the morph OBJ source.
+- **Starter** `starter-csg-cube-minus-sphere` with the
+  cube − sphere result (volume 5.952390) embedded as its
+  morph source.
+
 ## [1.75.0] — 2026-11-19
 
 Eleventh-term Phase CB: Pyro grid second half (sub-phases 5–8

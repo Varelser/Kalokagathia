@@ -8,6 +8,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^1.72.0",
     "maath": "^0.10.8",
+    "manifold-3d": "3.5.4",
     "mp4-muxer": "^5.2.2",
     "postprocessing": "^6.39.0",
     "react": "^19.3.1",
@@ -96,5 +97,5 @@
     "generate:sitemap": "node scripts/build-sitemap.mjs"
   },
   "type": "module",
-  "version": "1.75.0"
+  "version": "1.76.0"
 }

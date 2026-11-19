@@ -2,7 +2,7 @@ import React from 'react';
 import { PartialApplySection } from './controlPanelPartialApply';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { BreedingSection, ExpressionMap } from './controlPanelPlayTabGeneration';
-import { ExportSection, GraphSection, KeyboardShortcutsSection, PromptDraftSection } from './controlPanelPlayTabGraph';
+import { CsgSection, ExportSection, GraphSection, KeyboardShortcutsSection, PromptDraftSection } from './controlPanelPlayTabGraph';
 import { MidiSection, OscSection } from './controlPanelPlayTabIo';
 import { PerformanceSection, SimilaritySection, SourceEditorSection } from './controlPanelPlayTabRender';
 import { CleanOutputSection, GpuDiagnosticsSection, ModulationSection, StageSection } from './controlPanelPlayTabStage';
@@ -85,6 +85,7 @@ export const PlayTabContent: React.FC<ControlPanelContentProps> = (props) => (
     <ModulationSection isPublicLibrary={props.isPublicLibrary} />
     <PerformanceSection config={props.config} onApplyConfig={props.onApplyConfig} />
     <ExportSection captureRef={props.pointCloudCaptureRef} config={props.config} updateConfig={props.updateConfig} />
+    <CsgSection config={props.config} updateConfig={props.updateConfig} />
     <HistorySection
       entries={props.configHistoryEntries}
       config={props.config}
