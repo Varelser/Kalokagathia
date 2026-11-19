@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.76.0**（2026-11-19、第11期 Phase CC＝CSG 第1弾: manifold-3d（WASM）を専用 Worker で動かす立体演算基盤。プリミティブ5種（立方体・球・円柱・円錐・トーラス）の和・差・積、watertight ゲート（入力の辺センサス＋Euler 検査／出力の再検査）、結果メッシュのモーフ経路への取り込み（インデックス化 OBJ）。既定 OFF で OFF 時は Worker も WASM も読み込まれない。新規 config キー +10、スターター +1（CSG Cube Minus Sphere）。全キー既定で従来出力とビット同一。詳細は PHASE_CC_REPORT.md。前版 v1.75.0 は Phase CB＝Pyro グリッド化の後半。これで第11期の判断分岐基盤5件（GLSL／SDF／ポイントキャッシュ／Pyro／CSG）は全て出荷済み）
+**現行バージョン: v1.77.0**（2026-11-19、第11期 Phase CD＝GLSL 拡張の第1フェーズ: 共通基盤（Phase BX）のレジストリへ粒子頂点経路 `particle-points-vertex` を追加。粒子ポイント頂点シェーダの pos 確定直前に利用者 GLSL を差し込み、読み値は pos／lifeProgress／aVariant／uTime、書き戻しは disp（vec3）のみ。同じ disp を prevPos にも加え、トレイルの差分が変位で汚れない形にした。検証・実GLコンパイル確認・失敗時の前の動作版維持は共通基盤の作法どおり。新規 config キー +2、既定で従来出力とビット同一。詳細は PHASE_CD_REPORT.md。前版 v1.76.0 は Phase CC＝CSG 第1弾）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること

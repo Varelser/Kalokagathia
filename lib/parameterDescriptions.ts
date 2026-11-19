@@ -113,6 +113,8 @@ const DESCRIPTIONS: Record<string, string> = {
   postCustomGlslEnabled: 'カスタム GLSL ポスト段（output-grade の直前）の有効化。既定OFFで段自体が無効（従来出力と同一）',
   postCustomGlslCode: 'カスタム GLSL ポストの断片。color（vec3）を読み書きし、vUv / uTime / uResolution を読む。コンパイル確認を通ったコードだけが差し替わり、失敗時は前の動作版を維持する',
   postCustomGlslLumaLock: 'カスタム GLSL ポストの結果を輝度へ射影し直す単色ロック。既定OFF',
+  particlePointsVertexGlslEnabled: '粒子ポイント頂点 GLSL（pos 確定直前への差し込み）の有効化。既定OFFで従来描画と同一',
+  particlePointsVertexGlslCode: '粒子ポイント頂点 GLSL の断片。pos / lifeProgress / aVariant / uTime を読み、変位を disp（vec3）へ書く。コンパイル確認を通ったコードだけが差し替わり、失敗時は前の動作版を維持する',
   postLightX: 'LightFX の光源位置 X（画面UV 0..1）。Shine の放射中心と Lux の光源で共有',
   postLightY: 'LightFX の光源位置 Y（画面UV 0..1）。Shine の放射中心と Lux の光源で共有',
   postShineEnabled: 'Shine（光源から放射する光条）の有効化。既定OFFで従来出力と同一',

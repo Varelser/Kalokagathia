@@ -9,12 +9,18 @@ export const createParticleGhostMaterials = ({
   isAux,
   uniforms,
   maxGhost,
+  vertexShader = PARTICLE_VERTEX_SHADER,
 }: {
   config: ParticleConfig;
   layerIndex: 1 | 2 | 3 | 4;
   isAux: boolean;
   uniforms: Record<string, { value: unknown }>;
   maxGhost: number;
+  // The effective vertex shader (Phase CD): the stock shader
+  // unless a validated snippet was built into it, so ghosts —
+  // the same particles a few instants earlier — displace
+  // together with the primary material.
+  vertexShader?: string;
 }) => {
   if ((layerIndex !== 2 && layerIndex !== 3) || isAux) return [] as THREE.ShaderMaterial[];
 
@@ -31,7 +37,7 @@ export const createParticleGhostMaterials = ({
     }
 
     return new THREE.ShaderMaterial({
-      vertexShader: PARTICLE_VERTEX_SHADER,
+      vertexShader,
       fragmentShader: FRAGMENT_SHADER,
       uniforms: cloned,
       transparent: true,

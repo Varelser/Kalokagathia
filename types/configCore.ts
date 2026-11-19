@@ -272,6 +272,15 @@ export interface ParticleConfigCore {
   postCustomGlslEnabled: boolean;
   postCustomGlslCode: string;
   postCustomGlslLumaLock: boolean;
+  // Particle points vertex GLSL (Phase CD): the third injection
+  // point on the shared foundation (lib/glslInjection.ts),
+  // spliced into the particle points vertex shader where `pos`
+  // is final, just before the model-view transform. The snippet
+  // writes its displacement into `disp`. The defaults (disabled
+  // / empty) keep the stock vertex shader in use as-is, so the
+  // rendering stays bit-identical.
+  particlePointsVertexGlslEnabled: boolean;
+  particlePointsVertexGlslCode: string;
   // LightFX (Phase D): Trapcode Shine / Starglow / Lux equivalents as
   // a single post stage. One shared light-source position (UV) feeds
   // the Shine ray centre and the Lux source. Every sub-effect defaults

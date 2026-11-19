@@ -5,6 +5,7 @@ import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDispla
 import { Slider, Toggle } from './controlPanelParts';
 import { AgeCurveBlock, MapSourceBlock, MaskSourceBlock } from './controlPanelGlobalDisplayGpgpuForcesMapBlocks';
 import { CustomForceBlock, SimpleLfoBlock } from './controlPanelGlobalDisplayGpgpuForcesCustom';
+import { ParticleVertexGlslBlock } from './controlPanelGlobalDisplayParticleVertexCustom';
 
 export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
@@ -228,6 +229,9 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
 
     {/* Custom GLSL Force */}
     <CustomForceBlock config={config} updateConfig={updateConfig} />
+
+    {/* Particle Points Vertex GLSL (Phase CD) */}
+    <ParticleVertexGlslBlock config={config} updateConfig={updateConfig} />
 
     {/* Simple LFO (B3, Kinetix-style single-target view of the modulation engine) */}
     <SimpleLfoBlock />

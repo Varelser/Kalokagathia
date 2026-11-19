@@ -4,6 +4,46 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.77.0] — 2026-11-19
+
+Eleventh-term GLSL extension Phase 1 (Phase CD): a third
+injection point on the shared GLSL foundation (Phase BX) —
+`particle-points-vertex`, spliced into the particle points
+vertex shader where `pos` is fully determined, immediately
+before the model-view transform, so the displacement reaches
+both the billboard path and the instanced 3D branch. The
+snippet reads `pos` / `lifeProgress` / `aVariant` / `uTime`
+and writes its displacement into `disp`; the same disp is
+added to `prevPos` so trails keep measuring the particle's
+own motion. The registry gained the `particle-vertex` stage
+and a development warning on duplicate registration (last
+registration still wins). Validation, the real-GL compile
+check (a vertex harness built from the real shader's own
+attribute declarations) and the keep-the-previous-working-
+shader fallback are the shared foundation's, unchanged. Two
+new config keys, both inert at their defaults — while
+disabled or empty the stock vertex shader string is used
+as-is, so output is bit-identical to v1.76.0.
+
+### Added
+- **Particle points vertex GLSL** (`lib/particlePointsVertexGlsl.ts`):
+  the contract, forbidden-token validation, the shipped
+  example (per-particle phase-shifted sway), the status store
+  and the vertex harness builder, registered as
+  `particle-points-vertex` (stage `particle-vertex`, WebGL
+  only — WebGPU / CPU declared unsupported).
+- **Vertex seam + builder**
+  (`components/sceneShaderParticlePointVertex.ts`): the
+  `__CUSTOM_PARTICLE_VERTEX__` marker at the seam and
+  `buildParticleVertexShader`, which returns the stock shader
+  unchanged for an empty snippet.
+- **Swap wiring** (`components/sceneParticleSystem.tsx`):
+  validate → compile-check against the live GL context →
+  swap into the primary and ghost materials only on success.
+- **Panel block** (`components/controlPanelGlobalDisplayParticleVertexCustom.tsx`):
+  the Particle Vertex GLSL block next to Custom Force —
+  draft textarea, Apply, load-example and status reporting.
+
 ## [1.76.0] — 2026-11-19
 
 Eleventh-term Phase CC: CSG first release — the last of the

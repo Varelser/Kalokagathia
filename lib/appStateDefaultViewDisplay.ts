@@ -32,6 +32,10 @@ export const APP_STATE_DEFAULT_VIEW_DISPLAY: Partial<ParticleConfig> = {
   particleSoftness: 0.5,
   particleGlow: 0.2,
   particleColor: 'white',
+  // Particle points vertex GLSL (Phase CD): disabled / empty —
+  // the stock vertex shader is used unchanged.
+  particlePointsVertexGlslEnabled: false,
+  particlePointsVertexGlslCode: '',
   backgroundColor: 'black',
   backgroundHex: '',
   // Horizon background (Phase I): 'solid' is the legacy background

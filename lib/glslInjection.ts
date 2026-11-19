@@ -169,7 +169,7 @@ export function createGlslInjectionStatusStore(): GlslInjectionStatusStore {
 // ---------------------------------------------------------------------------
 // The contract type and the registry
 
-export type GlslInjectionStage = 'simulation-fragment' | 'post-fragment';
+export type GlslInjectionStage = 'simulation-fragment' | 'post-fragment' | 'particle-vertex';
 
 export type GlslInjectionBackend = 'webgl' | 'webgpu' | 'cpu';
 
@@ -193,15 +193,26 @@ export interface GlslInjectionContract {
   backends: Record<GlslInjectionBackend, GlslInjectionBackendSupport>;
   /** Snippet length cap (characters). */
   maxLength: number;
-  /** Builds the harness fragment shader used for the compile
-   *  check: the snippet in the same block scope it will occupy,
-   *  with the documented interface as locals/uniforms. */
+  /** Builds the harness shader used for the compile check: the
+   *  snippet in the same block scope it will occupy, with the
+   *  documented interface as locals/uniforms. The harness is a
+   *  shader of the point's own stage (fragment points build a
+   *  fragment harness, the vertex point a vertex harness); the
+   *  compile check pairs it with a minimal counterpart. */
   buildHarness: (code: string) => string;
 }
 
 const REGISTRY = new Map<string, GlslInjectionContract>();
 
 export function registerGlslInjection(contract: GlslInjectionContract): void {
+  // Re-registering an id keeps the historical last-wins behaviour
+  // (the registry is a plain Map), but it is almost certainly a
+  // wiring mistake — two modules claiming one point — so it now
+  // warns in development instead of passing silently (Phase CD,
+  // from the GLSL extension plan's phase-1 decisions).
+  if (REGISTRY.has(contract.id) && typeof console !== 'undefined') {
+    console.warn(`[glslInjection] duplicate registration for '${contract.id}' — the later contract wins`);
+  }
   REGISTRY.set(contract.id, contract);
 }
 

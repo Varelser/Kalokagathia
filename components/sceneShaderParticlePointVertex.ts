@@ -240,6 +240,7 @@ export const PARTICLE_VERTEX_SHADER = `
       pos += driftDir * amp * uTrailDrift * (0.25 + lifeProgress * 0.75) * 0.06;
     }
     pos += normalize((pos - animatedOffset) + vec3(0.0001)) * amp * uAudioPulse * mix(0.018, 0.072, aVariant);
+    // __CUSTOM_PARTICLE_VERTEX__
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     vec4 prevMvPosition = modelViewMatrix * vec4(prevPos, 1.0);
@@ -321,3 +322,26 @@ export const PARTICLE_VERTEX_SHADER = `
     vAlpha = uOpacity * lifeAlpha * (1.0 - smoothstep(2000.0, 5000.0, length(pos))) * (1.0 + clamp(uTrail, 0.0, 0.99) * 0.35) * audioAlphaBoost * mediaAlphaScale;
   }
 `;
+
+// Builds the effective particle points vertex shader with a
+// user's GLSL snippet injected at the placeholder above — after
+// `pos` (and `prevPos`) have been fully determined, immediately
+// before the model-view transform, so the displacement reaches
+// both the billboard path (via mvPosition) and the instanced 3D
+// branch (which consumes `pos` directly). The snippet runs in a
+// block scope, reads `pos` / `lifeProgress` / `aVariant` /
+// `uTime` and writes its displacement into `disp` (see
+// lib/particlePointsVertexGlsl.ts for the validation and
+// compile-check contract). The same disp is added to prevPos:
+// prevPos is the same particle one instant earlier, and adding
+// the offset to both keeps the trail/streak delta measuring the
+// particle's own motion (Phase CD decision). An empty snippet
+// yields the stock shader unchanged.
+export function buildParticleVertexShader(customCode: string): string {
+  const snippet = customCode.trim();
+  if (!snippet) return PARTICLE_VERTEX_SHADER;
+  return PARTICLE_VERTEX_SHADER.replace(
+    '    // __CUSTOM_PARTICLE_VERTEX__',
+    `    { // particle points vertex (user GLSL)\n    vec3 disp = vec3(0.0);\n${snippet}\n    pos += disp;\n    prevPos += disp;\n    }`,
+  );
+}

@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { getInterLayerCollidersForLayer, MAX_INTER_LAYER_COLLIDERS } from '../lib/appState';
@@ -12,6 +12,14 @@ import { renderParticleSystemContent } from './sceneParticleSystemRender';
 import { createParticleGhostMaterials } from './sceneParticleSystemGhostMats';
 import { updateParticleSystemFrame, type ParticleSystemCollider, type ParticleSystemAudioRef } from './sceneParticleSystemRuntime';
 import { runLayerPositionFeedback, type LayerFeedbackState } from '../lib/positionFeedback';
+import { buildParticleVertexShader, PARTICLE_VERTEX_SHADER } from './sceneShaderParticlePointVertex';
+import { compileCheckShader } from '../lib/glslInjection';
+import {
+  buildParticlePointsVertexHarness,
+  PARTICLE_POINTS_VERTEX_CHECK_FRAGMENT,
+  setParticlePointsVertexGlslStatus,
+  validateParticlePointsVertexGlslCode,
+} from '../lib/particlePointsVertexGlsl';
 
 export const ParticleSystem: React.FC<{
   config: ParticleConfig;
@@ -66,10 +74,50 @@ export const ParticleSystem: React.FC<{
     [config.contrast, config.opacity, config.particleGlow, config.particleSoftness, config.particleColor, isAux],
   );
 
+  // Particle points vertex GLSL (Phase CD): validate +
+  // compile-check the snippet against the live GL context, and
+  // only then swap the built vertex shader into this system's
+  // materials. On any failure the previously working shader
+  // stays active and the panel shows the error via the point's
+  // status store — the shared injection fallback rule. While
+  // disabled / empty the stock shader string is used as-is.
+  const gl = useThree((state) => state.gl);
+  const [vertexShader, setVertexShader] = useState(PARTICLE_VERTEX_SHADER);
+  const appliedVertexCodeRef = useRef<string | null>(null);
+  useEffect(() => {
+    const code = config.particlePointsVertexGlslEnabled ? config.particlePointsVertexGlslCode : '';
+    if (!code.trim()) {
+      if (appliedVertexCodeRef.current !== null) {
+        setVertexShader(PARTICLE_VERTEX_SHADER);
+        appliedVertexCodeRef.current = null;
+      }
+      setParticlePointsVertexGlslStatus({ state: 'inactive' });
+      return;
+    }
+    if (appliedVertexCodeRef.current === code) return;
+    const validation = validateParticlePointsVertexGlslCode(code);
+    if (!validation.ok) {
+      setParticlePointsVertexGlslStatus({ state: 'error', message: validation.error ?? 'invalid code' });
+      return;
+    }
+    const check = compileCheckShader(
+      gl.getContext() as WebGL2RenderingContext,
+      buildParticlePointsVertexHarness(code),
+      PARTICLE_POINTS_VERTEX_CHECK_FRAGMENT,
+    );
+    if (!check.ok) {
+      setParticlePointsVertexGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
+      return;
+    }
+    setVertexShader(buildParticleVertexShader(code));
+    appliedVertexCodeRef.current = code;
+    setParticlePointsVertexGlslStatus({ state: 'active' });
+  }, [config.particlePointsVertexGlslEnabled, config.particlePointsVertexGlslCode, gl]);
+
   const maxGhost = 8;
   const ghostMats = useMemo(
-    () => createParticleGhostMaterials({ config, layerIndex, isAux, uniforms, maxGhost }),
-    [config, layerIndex, isAux, uniforms],
+    () => createParticleGhostMaterials({ config, layerIndex, isAux, uniforms, maxGhost, vertexShader }),
+    [config, layerIndex, isAux, uniforms, vertexShader],
   );
 
   useFrame((state, delta) => {
@@ -127,6 +175,7 @@ export const ParticleSystem: React.FC<{
     ghostMats,
     contactAmount,
     isPlaying,
+    vertexShader,
   });
 });
 ParticleSystem.displayName = 'ParticleSystem';

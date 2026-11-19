@@ -5,7 +5,7 @@ import type { AuxMode, ParticleData } from './particleData';
 import { getLayerRuntimeLineSnapshot } from '../lib/sceneRenderRouting';
 import { LineSystem } from './sceneLineSystem';
 import { getParticleBlendMode } from './sceneShared';
-import { FRAGMENT_SHADER, PARTICLE_VERTEX_SHADER } from './sceneShaders';
+import { FRAGMENT_SHADER } from './sceneShaders';
 
 type ParticleSystemRenderProps = {
   config: ParticleConfig;
@@ -20,7 +20,21 @@ type ParticleSystemRenderProps = {
   ghostMats: THREE.ShaderMaterial[];
   contactAmount: number;
   isPlaying: boolean;
+  // The effective vertex shader: the stock PARTICLE_VERTEX_SHADER
+  // unless a Phase CD snippet passed validation + compile check
+  // and was built into it by the owning component.
+  vertexShader: string;
 };
+
+// Cheap content key so the material is recreated (and the
+// program recompiled) exactly when the effective vertex shader
+// string changes — a ShaderMaterial does not recompile on a
+// bare vertexShader property assignment.
+function vertexShaderKeyPart(shader: string): string {
+  let h = 5381;
+  for (let i = 0; i < shader.length; i++) h = ((h << 5) + h + shader.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
 
 function ParticleGeometry({ geomMode3D, data }: { geomMode3D: string; data: ParticleData }) {
   const attrs = (
@@ -54,7 +68,9 @@ export function renderParticleSystemContent({
   ghostMats,
   contactAmount,
   isPlaying,
+  vertexShader,
 }: ParticleSystemRenderProps) {
+  const shaderKey = vertexShaderKeyPart(vertexShader);
   const lineRuntime = !isAux && (layerIndex === 2 || layerIndex === 3)
     ? getLayerRuntimeLineSnapshot(config, layerIndex)
     : null;
@@ -68,8 +84,8 @@ export function renderParticleSystemContent({
       <instancedMesh key={geometryKey} ref={meshRef} args={[undefined, undefined, data.count]}>
         <ParticleGeometry geomMode3D={geomMode3D} data={data} />
         <shaderMaterial
-          key={`mat-${config.backgroundColor}`}
-          vertexShader={PARTICLE_VERTEX_SHADER}
+          key={`mat-${config.backgroundColor}-${shaderKey}`}
+          vertexShader={vertexShader}
           fragmentShader={FRAGMENT_SHADER}
           uniforms={uniforms}
           transparent={true}
@@ -92,7 +108,7 @@ export function renderParticleSystemContent({
         />
       )}
       {ghostMats.map((gmat, i) => (
-        <instancedMesh key={`ghost-${i}-${geometryKey}`} args={[undefined, undefined, data.count]}>
+        <instancedMesh key={`ghost-${i}-${geometryKey}-${shaderKey}`} args={[undefined, undefined, data.count]}>
           <planeGeometry args={[1, 1]}>
             <instancedBufferAttribute attach="attributes-aPosition" args={[data.pos, 3]} />
             <instancedBufferAttribute attach="attributes-aOffset" args={[data.off, 3]} />
