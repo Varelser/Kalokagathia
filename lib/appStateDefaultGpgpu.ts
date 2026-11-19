@@ -184,6 +184,11 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuPyroCooling: 1.0,
   gpgpuPyroDisturbance: 1.0,
   gpgpuPyroDisturbanceHeat: 1.0,
+  // Phase CA: Pyro grid solver (see types/configGpgpu.ts).
+  // Disabled = no allocation, no passes, bit-identical output.
+  gpgpuPyroGridEnabled: false,
+  gpgpuPyroGridResolution: 0,
+  gpgpuPyroGridJacobiIterations: 16,
   // Vector Field
   gpgpuVFieldEnabled: false,
   gpgpuVFieldType: 'spiral' as const,

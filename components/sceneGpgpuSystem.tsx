@@ -38,6 +38,7 @@ import {
   updateMouseWorldPosition,
 } from './gpgpuSimulationPasses';
 import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
+import { runPyroGridPasses } from './gpgpuPyroGridPasses';
 import { GpgpuAttrDynPass } from './gpgpuAttrDynPass';
 import { buildAttrDynFragment } from '../lib/expressionGlsl';
 import { GpgpuAttrFeedbackPass } from './gpgpuAttrFeedbackPass';
@@ -225,6 +226,14 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     flipJacobiMat,
     flipSubtractMat,
     flipClearMat,
+    pyroAdvectVelMat,
+    pyroAdvectScalarMat,
+    pyroForcesVelMat,
+    pyroScalarUpdateMat,
+    pyroDivergenceMat,
+    pyroJacobiMat,
+    pyroSubtractMat,
+    pyroClearMat,
     drawGeo,
     streakGeo,
     auxDrawGeo,
@@ -310,6 +319,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     rigidBodyTexRef,
     rigidBodyDataRef,
     rigidSolverRef,
+    pyroGridRef,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,
@@ -657,6 +667,34 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           || ((config.gpgpuVellumGlue || 0) > 0 && (config.gpgpuVellumGlueBreak || 0) > 0))) {
         vellumStatePingIsA.current = !vellumStatePingIsA.current;
       }
+    }
+
+    // Pyro grid (Phase CA, WebGL path only — the WebGPU compute
+    // backend has no grid solver; round-2 spec: while WebGPU is
+    // active the grid is ineffective). The grid is uncoupled from
+    // the particle pool this round (coupling is a later phase),
+    // so its position in the frame order is free; it steps here,
+    // after routing is resolved, with the frame's dt.
+    if (!routing.useWebGPU && config.gpgpuPyroGridEnabled && pyroGridRef.current && simMeshRef.current) {
+      runPyroGridPasses({
+        config,
+        targets: pyroGridRef.current,
+        materials: {
+          pyroAdvectVelMat,
+          pyroAdvectScalarMat,
+          pyroForcesVelMat,
+          pyroScalarUpdateMat,
+          pyroDivergenceMat,
+          pyroJacobiMat,
+          pyroSubtractMat,
+          pyroClearMat,
+        },
+        simMesh: simMeshRef.current,
+        gl: glCtx,
+        simScene,
+        simCamera,
+        dt,
+      });
     }
 
     // Whitewater (Phase BC, WebGL path only — the WebGPU compute

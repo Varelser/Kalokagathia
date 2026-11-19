@@ -4,6 +4,15 @@ import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP
 import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG, SIM_VELLUM_VEL_FRAG } from "./gpgpuShaderSimulationVellum";
 import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG } from "./gpgpuShaderAux";
 import { WW_POS_FRAG, WW_VEL_FRAG } from "./gpgpuShaderWhitewater";
+import {
+  PYRO_GRID_ADVECT_SCALAR_FRAG,
+  PYRO_GRID_ADVECT_VEL_FRAG,
+  PYRO_GRID_DIVERGENCE_FRAG,
+  PYRO_GRID_FORCES_VEL_FRAG,
+  PYRO_GRID_JACOBI_FRAG,
+  PYRO_GRID_SCALAR_UPDATE_FRAG,
+  PYRO_GRID_SUBTRACT_FRAG,
+} from "./gpgpuShaderPyroGrid";
 import { useThree } from "@react-three/fiber";
 import { buildCustomForceHarness, compileCheckShader, setCustomForceStatus, validateCustomForceCode } from "../lib/gpgpuCustomForce";
 import type { UseGpgpuAssetsArgs } from "./gpgpuAssetShared";
@@ -625,6 +634,92 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     vertexShader: SIM_VERT, fragmentShader: FLIP_CLEAR_FRAG,
   }), []);
 
+  // Pyro grid materials (Phase CA): the atlas solver's seven
+  // passes plus a clear (the FLIP clear shader reused — pressure
+  // targets restart from zero every step, the FLIP rule). The
+  // shared atlas uniforms are declared in PYRO_GRID_COMMON; the
+  // pass runner (gpgpuPyroGridPasses) fills every uniform per
+  // step, so the defaults here are placeholders only.
+  const pyroCommonUniforms = () => ({
+    uGridN: { value: 1 },
+    uAtlasSize: { value: new THREE.Vector2(1, 1) },
+    uAtlasTiles: { value: new THREE.Vector2(1, 1) },
+    uManualTrilinear: { value: false },
+  });
+  const pyroAdvectVelMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uVelIn: { value: null },
+      uDelta: { value: 0.016 },
+      uMaxSpeed: { value: 128 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_ADVECT_VEL_FRAG,
+  }), []);
+  const pyroAdvectScalarMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uScalarIn: { value: null },
+      uVelIn: { value: null },
+      uDelta: { value: 0.016 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_ADVECT_SCALAR_FRAG,
+  }), []);
+  const pyroForcesVelMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uVelIn: { value: null },
+      uScalarIn: { value: null },
+      uDelta: { value: 0.016 },
+      uBuoyancy: { value: 1.2 },
+      uBuoyAccel: { value: 250 },
+      uDensityWeight: { value: 0 },
+      uMaxSpeed: { value: 128 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_FORCES_VEL_FRAG,
+  }), []);
+  const pyroScalarUpdateMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uScalarIn: { value: null },
+      uDelta: { value: 0.016 },
+      uDiffuse: { value: 0.05 },
+      uCooling: { value: 1 },
+      uTempCoolRate: { value: 0.22 },
+      uDensityDecayRate: { value: 0.03 },
+      uEmitTemp: { value: 1 },
+      uEmitDensity: { value: 80 },
+      uEmitTempRate: { value: 8 },
+      uSourceCenter: { value: new THREE.Vector3(15.5, 2, 15.5) },
+      uSourceRadius: { value: 2.67 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_SCALAR_UPDATE_FRAG,
+  }), []);
+  const pyroDivergenceMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uVelIn: { value: null },
+    },
+    vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_DIVERGENCE_FRAG,
+  }), []);
+  const pyroJacobiMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uPresIn: { value: null },
+      uDivTex: { value: null },
+    },
+    vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_JACOBI_FRAG,
+  }), []);
+  const pyroSubtractMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uVelIn: { value: null },
+      uPresTex: { value: null },
+      uMaxSpeed: { value: 128 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: PYRO_GRID_SUBTRACT_FRAG,
+  }), []);
+  const pyroClearMat = flipClearMat;
+
   // Whitewater materials (Phase BC): the foam pool's two passes.
   // The shared field uniforms are declared in
   // gpgpuShaderWhitewater's WW_SPAWN_GLSL chunk; the passes in
@@ -732,5 +827,13 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     flipJacobiMat,
     flipSubtractMat,
     flipClearMat,
+    pyroAdvectVelMat,
+    pyroAdvectScalarMat,
+    pyroForcesVelMat,
+    pyroScalarUpdateMat,
+    pyroDivergenceMat,
+    pyroJacobiMat,
+    pyroSubtractMat,
+    pyroClearMat,
   };
 }

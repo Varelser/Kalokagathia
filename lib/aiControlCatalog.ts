@@ -752,6 +752,7 @@ const BOOLS: BoolDef[] = [
   ['gpgpuTerrainColliderEnabled', '地形コライダ（粒子が地形で跳ねる・止まる、地形メッシュ有効・平面モード時のみ、既定OFFで従来同一）'],
   ['gpgpuMeshSdfEnabled', 'メッシュSDFコライダ（取り込み済みOBJを距離場に焼いて障害物化、閉じたメッシュのみ、モーフ配置に従う、既定OFFで従来同一）'],
   ['pointCacheEnabled', 'ポイントキャッシュ再生（連番PLY＋マニフェストの点群アニメーションをシーケンス時計で再生し属性点群へ流す、既定OFFで従来同一）'],
+  ['gpgpuPyroGridEnabled', 'Pyroグリッドソルバー（2Dアトラス化3Dグリッドの移流・浮力・圧力射影、解像度は別キーで0=ティア自動32/48/64・96は手動、Jacobi反復0〜32、既定OFFで従来同一）'],
   ['gpgpuTerrainMeshTunnel', '地形メッシュのトンネルモード（円筒内面）'],
   ['gpgpuObjMeshEnabled', 'OBJメッシュ描画（取り込み済みOBJをポリゴンで描く、モーフとデータ源を共有）'],
   ['gpgpuFluidEnabled', 'GPGPU流体アドベクション'],

@@ -1,6 +1,6 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.73.0**（2026-11-19、第11期 Phase BZ＝ポイントキャッシュ取り込み: 連番 binary PLY＋マニフェスト v2 の点群アニメーションを取り込み（上限 8,192点×240フレーム・全保持、不一致は理由つき拒否）、共有シーケンスクロックで再生して属性点群へ非永続差し替えで流す。新規 config キー +3（`pointCacheEnabled`／`pointCacheLoop`／`pointCacheBundledSample`、全て既定で機能自体が存在しない＝従来出力とビット同一）・スターター +1。詳細は PHASE_BZ_REPORT.md。前版 v1.72.0 は Phase BY＝メッシュ SDF コライダ）
+**現行バージョン: v1.74.0**（2026-11-19、第11期 Phase CA＝Pyro グリッド化の前半（下位フェーズ1〜4）: 2D アトラス化 3D グリッドの stable-fluids ソルバー基盤（移流・浮力・明示拡散・圧力射影のフルソルバー、6＋Jacobi パス）を粒子側 Pyro と並立させた。解像度は性能ティア連動（entry 32³／standard 48³／high・flagship 64³、96³ は flagship 手動のみ）。新規 config キー +3（`gpgpuPyroGridEnabled`／`gpgpuPyroGridResolution`／`gpgpuPyroGridJacobiIterations`、既定 OFF で確保もパスも無く従来出力とビット同一）。スターター追加なし（描画経路は後半フェーズのため）。iMac 実GPUゲートで identity 差分 0・全ティア fps が上限維持（48³ 既定を確定）・本番 GLSL の数値検証（密度蓄積／重心上昇／発散低減）を確認。詳細は PHASE_CA_REPORT.md。前版 v1.73.0 は Phase BZ＝ポイントキャッシュ取り込み）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること

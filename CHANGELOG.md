@@ -4,6 +4,51 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.74.0] — 2026-11-19
+
+Eleventh-term Phase CA: Pyro grid solver foundation (sub-phases
+1–4 of the grid plan). A second, grid-based solver now stands
+alongside the particle-side Pyro solver: a 3D stable-fluids grid
+packed into a 2D texture atlas, stepped with semi-Lagrangian
+advection, buoyancy, explicit scalar diffusion and a pressure
+projection. Three new config keys, all defaulting to the feature
+being absent, so the output is bit-identical to v1.73.0 while
+unused. No new starter (the grid has no rendering path until the
+plan's later sub-phases, so an ON starter would be
+indistinguishable this round). Rendering supply, particle
+coupling, vorticity confinement and combustion follow in the
+plan's second half.
+
+### Added
+- **Grid foundation** (`lib/pyroGrid.ts`): atlas layouts
+  (32³ = 8×4 tiles / 256×128, 48³ = 8×6 / 384×288, 64³ = 8×8 /
+  512×512, 96³ = 10×10 / 960×960), performance-tier resolution
+  (entry 32³ / standard 48³ / high+flagship 64³; manual override
+  honoured only inside the tier's texture cap, 96³ flagship
+  only), pass accounting (6 + Jacobi per step) and the solver
+  constants, calibrated in cell units against the design round's
+  CPU spike statistics.
+- **Solver shaders** (`components/gpgpuShaderPyroGrid.ts`):
+  advection (velocity + scalar), buoyancy + closed-box walls,
+  scalar update (diffusion / cooling / bottom-centre source
+  emission), divergence, Jacobi pressure solve and gradient
+  subtraction. The discretisation is the FLIP precedent's
+  MAC-consistent pair (backward-difference divergence,
+  forward-difference gradient), cell-centre sampling clamped to
+  the edge cell; trilinear interpolation is hardware bilinear in
+  x/y plus a manual z mix, with a manual 8-tap fallback when
+  float linear filtering is unavailable.
+- **Pass orchestration** (`components/gpgpuPyroGridPasses.ts`):
+  22 passes per step at the default Jacobi 16, 26 at Jacobi 20;
+  pressure restarts from zero every step (the FLIP rule).
+- **Diagnostics-gated allocation**: the seven atlas targets
+  (velocity/scalar RGBA32F pairs, pressure R32F pair, divergence
+  R32F) exist only while the key is on AND the shared GPU
+  diagnostics confirm float render targets
+  (`lib/pyroGridSupport.ts`); while diagnostics are unknown or
+  unsupported, nothing is allocated and no pass runs. WebGPU
+  sessions leave the grid ineffective, per the design round.
+
 ## [1.73.0] — 2026-11-19
 
 Eleventh-term Phase BZ: point cache import. An animated point

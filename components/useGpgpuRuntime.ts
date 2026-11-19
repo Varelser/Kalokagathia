@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
@@ -44,6 +44,22 @@ import {
 } from '../lib/replicaIndependent';
 import { createPosSimMaterial, createVelSimMaterial } from './useGpgpuSimulationAssets';
 import { getAttrPointCloud, useAttrPointCloud } from '../lib/attrPointCloud';
+import {
+  PYRO_GRID_LAYOUTS,
+  pyroGridAtlasSize,
+  resolvePyroGridResolution,
+} from '../lib/pyroGrid';
+import {
+  ensurePyroGridSupport,
+  getPyroGridSupport,
+  subscribePyroGridSupport,
+  type PyroGridSupport,
+} from '../lib/pyroGridSupport';
+import { resolveEffectiveTierSync } from '../lib/gpuTier';
+import {
+  disposePyroGridTargets,
+  type PyroGridTargets,
+} from './gpgpuPyroGridPasses';
 import {
   buildAttributeData,
   normalizeAttrExprs,
@@ -101,6 +117,85 @@ function makeFluidRT(size: number): THREE.WebGLRenderTarget {
   rt.texture.wrapS = THREE.RepeatWrapping;
   rt.texture.wrapT = THREE.RepeatWrapping;
   return rt;
+}
+
+// Pyro grid (Phase CA): atlas targets are rectangular (the 3D
+// grid packed into tiles) and clamp to the edge — Repeat would
+// bleed neighbouring z slices across tile borders. Field targets
+// (velocity / scalar) filter linearly when the device can filter
+// float textures; pressure / divergence are single-channel R32F
+// and always nearest (exact texel fetches only).
+function makePyroFieldRT(width: number, height: number, linear: boolean): THREE.WebGLRenderTarget {
+  const filter = linear ? THREE.LinearFilter : THREE.NearestFilter;
+  return new THREE.WebGLRenderTarget(width, height, {
+    minFilter: filter,
+    magFilter: filter,
+    format: THREE.RGBAFormat,
+    type: THREE.FloatType,
+    depthBuffer: false,
+    stencilBuffer: false,
+  });
+}
+
+function makePyroScalarRT(width: number, height: number): THREE.WebGLRenderTarget {
+  return new THREE.WebGLRenderTarget(width, height, {
+    minFilter: THREE.NearestFilter,
+    magFilter: THREE.NearestFilter,
+    format: THREE.RedFormat,
+    type: THREE.FloatType,
+    depthBuffer: false,
+    stencilBuffer: false,
+  });
+}
+
+// Allocates and zero-initialises one Pyro grid target set (the
+// aux-pool DataTexture copy path). Zero state matters: the first
+// Jacobi solve starts from the cleared pressure targets and the
+// fields must read as empty, not as uninitialised GPU memory.
+function createPyroGridTargets(
+  gl: THREE.WebGLRenderer,
+  resolution: number,
+  floatLinear: boolean,
+): PyroGridTargets | null {
+  const layout = PYRO_GRID_LAYOUTS[resolution];
+  const size = pyroGridAtlasSize(resolution);
+  if (!layout || !size) return null;
+  const targets: PyroGridTargets = {
+    velA: makePyroFieldRT(size.width, size.height, floatLinear),
+    velB: makePyroFieldRT(size.width, size.height, floatLinear),
+    scalarA: makePyroFieldRT(size.width, size.height, floatLinear),
+    scalarB: makePyroFieldRT(size.width, size.height, floatLinear),
+    presA: makePyroScalarRT(size.width, size.height),
+    presB: makePyroScalarRT(size.width, size.height),
+    div: makePyroScalarRT(size.width, size.height),
+    resolution,
+    atlasWidth: size.width,
+    atlasHeight: size.height,
+    tilesX: layout.cols,
+    tilesY: layout.rows,
+    floatLinear,
+    velPingIsA: true,
+    framesStepped: 0,
+  };
+  const zeroData = new Float32Array(size.width * size.height * 4);
+  const zeroTex = new THREE.DataTexture(zeroData, size.width, size.height, THREE.RGBAFormat, THREE.FloatType);
+  zeroTex.needsUpdate = true;
+  const copyScene = new THREE.Scene();
+  const copyCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const copyGeo = new THREE.PlaneGeometry(2, 2);
+  const copyMat = new THREE.MeshBasicMaterial({ map: zeroTex });
+  copyMat.blending = THREE.NoBlending;
+  const copyMesh = new THREE.Mesh(copyGeo, copyMat);
+  copyScene.add(copyMesh);
+  for (const rt of [targets.velA, targets.velB, targets.scalarA, targets.scalarB, targets.presA, targets.presB, targets.div]) {
+    gl.setRenderTarget(rt);
+    gl.render(copyScene, copyCam);
+  }
+  gl.setRenderTarget(null);
+  zeroTex.dispose();
+  copyMat.dispose();
+  copyGeo.dispose();
+  return targets;
 }
 
 export type AuxPoolTargets = {
@@ -338,6 +433,11 @@ export type GpgpuRuntimeRefs = {
   rigidBodyTexRef: MutableRefObject<THREE.DataTexture | null>;
   rigidBodyDataRef: MutableRefObject<Float32Array | null>;
   rigidSolverRef: MutableRefObject<RigidSolverState | null>;
+  // Pyro grid (Phase CA): the atlas target set for the grid
+  // solver, allocated only while the grid key is on AND the
+  // diagnostics gate confirmed float render targets; null at all
+  // other times (the passes no-op on null).
+  pyroGridRef: MutableRefObject<PyroGridTargets | null>;
   webgpuStateRef: MutableRefObject<WebGPUComputeState | null>;
   webgpuPosTexRef: MutableRefObject<THREE.DataTexture | null>;
   webgpuPingIsARef: MutableRefObject<boolean>;
@@ -679,6 +779,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const wwPingIsA = useRef(true);
   const aux2RtRef = useRef<AuxPoolTargets | null>(null);
   const aux2PingIsA = useRef(true);
+  const pyroGridRef = useRef<PyroGridTargets | null>(null);
   const aux3RtRef = useRef<AuxPoolTargets | null>(null);
   const aux3PingIsA = useRef(true);
   const replicaStacksRef = useRef<ReplicaStack[] | null>(null);
@@ -1043,6 +1144,36 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       aux3RtRef.current = null;
     };
   }, [gl, auxDepth]);
+
+  // Pyro grid (Phase CA): the target set exists only while the
+  // grid key is on AND the diagnostics gate has confirmed float
+  // render targets — a dedicated effect in the aux-pool pattern,
+  // so toggling the key never reseeds the main pool, and while
+  // diagnostics are still unknown (or float targets unsupported)
+  // nothing is allocated and the solver passes no-op. Resolution
+  // follows the GPU tier unless the manual override applies.
+  const [pyroSupport, setPyroSupport] = useState<PyroGridSupport>(() => getPyroGridSupport());
+  useEffect(() => {
+    if (!config.gpgpuPyroGridEnabled) return;
+    ensurePyroGridSupport();
+    setPyroSupport(getPyroGridSupport());
+    return subscribePyroGridSupport(() => setPyroSupport(getPyroGridSupport()));
+  }, [config.gpgpuPyroGridEnabled]);
+  const pyroResolution = config.gpgpuPyroGridEnabled
+    && pyroSupport.status === 'ready'
+    && pyroSupport.colorBufferFloat
+    ? resolvePyroGridResolution(resolveEffectiveTierSync(), config.gpgpuPyroGridResolution)
+    : 0;
+  useEffect(() => {
+    disposePyroGridTargets(pyroGridRef.current);
+    pyroGridRef.current = null;
+    if (!pyroResolution) return;
+    pyroGridRef.current = createPyroGridTargets(gl, pyroResolution, pyroSupport.floatLinearFiltering);
+    return () => {
+      disposePyroGridTargets(pyroGridRef.current);
+      pyroGridRef.current = null;
+    };
+  }, [gl, pyroResolution, pyroSupport.floatLinearFiltering]);
 
   // Vellum tear state pool (Phase AR): a texSize ping-pong pair
   // holding link survival (.r = right link, .g = up link) and,
@@ -1713,6 +1844,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     rigidBodyTexRef,
     rigidBodyDataRef,
     rigidSolverRef,
+    pyroGridRef,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,

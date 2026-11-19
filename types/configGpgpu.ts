@@ -300,6 +300,16 @@ export interface ParticleConfigGpgpu {
   gpgpuPyroCooling: number;
   gpgpuPyroDisturbance: number;
   gpgpuPyroDisturbanceHeat: number;
+  // Phase CA: Pyro grid solver (atlas-packed 3D stable-fluids
+  // grid alongside the particle solver). Enabled allocates the
+  // grid targets and steps the full solver (advection, buoyancy,
+  // pressure projection); disabled allocates nothing and runs no
+  // pass, so output is bit-identical. Resolution 0 = auto by GPU
+  // tier (entry 32 / standard 48 / high+flagship 64; 96 manual,
+  // flagship only). Jacobi iterations clamp to [0, 32].
+  gpgpuPyroGridEnabled: boolean;
+  gpgpuPyroGridResolution: number;
+  gpgpuPyroGridJacobiIterations: number;
   // Vector Field
   gpgpuVFieldEnabled: boolean;
   gpgpuVFieldType: 'dipole' | 'saddle' | 'spiral' | 'source' | 'abc' | 'gyre' | 'worley';
