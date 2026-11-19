@@ -4,6 +4,39 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.81.0] — 2026-11-20
+
+Eleventh-term CSG second release, Phase CH (brief unit
+U4, revised): a refine (subdivision) finish for CSG
+results. The finish choice gains a third option —
+refine — which subdivides the result inside the worker
+after the boolean and before the output re-check: every
+edge is split into N pieces (N = the new
+gpgpuCsgRefineDivisions key, 2–3, default 2), so the
+triangle count grows by N² while the volume, genus and
+gate verdict are preserved exactly (the regression
+recipe stays at volume 5.952390 while going from 302
+to 1,208 triangles). The cache key gains the finish
+and divisions only when the finish is not 'none', so
+existing keys stay byte-identical. One new starter
+(CSG Refine, with the subdivided result embedded as
+its morph target).
+Why refine and not smooth: the brief's U4 assumed
+Manifold.smooth as the finish, but measurement on the
+pinned manifold-3d 3.5.4 showed it is not shippable —
+smooth + refine(2) inflates a cube from 8.0 to 16.68,
+smoothOut + refine collapses the new vertices onto the
+corners, and a crease-sharpened smooth + refine output
+fails the watertight re-check with hundreds of
+unshared edges (welding does not repair it). The
+defect is pinned by two tests in the Phase CH suite so
+a future library upgrade re-opens the question;
+smoothing is deferred to the 3.5.5 decision (brief
+D15). Verified by the Phase CH suite (60 checks) and
+the iMac real-GPU gate (identity 12 frames diff 0,
+the refine recipe driven through the real panel and
+the production worker asset, fps ~60).
+
 ## [1.80.0] — 2026-11-20
 
 Eleventh-term CSG second release, Phase CG (brief unit

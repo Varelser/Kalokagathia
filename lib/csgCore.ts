@@ -19,10 +19,26 @@ export type CsgOperationKind = 'union' | 'difference' | 'intersection';
  *  with its convex hull, bridging disjoint components into
  *  one genus-0 solid. 'none' keeps the boolean result as
  *  is and keeps the pre-CG cache key byte-identical. */
-export type CsgFinishKind = 'none' | 'hull';
-export const CSG_FINISH_KINDS: readonly CsgFinishKind[] = ['none', 'hull'];
+export type CsgFinishKind = 'none' | 'hull' | 'refine';
+export const CSG_FINISH_KINDS: readonly CsgFinishKind[] = ['none', 'hull', 'refine'];
 export function isCsgFinishKind(v: unknown): v is CsgFinishKind {
-  return v === 'none' || v === 'hull';
+  return v === 'none' || v === 'hull' || v === 'refine';
+}
+
+/** Phase CH (U4 revised): plain subdivision count for the refine
+ *  finish. refine() splits every edge into n pieces (n^2 triangles
+ *  per face) with NO surface movement, so volume and topology are
+ *  preserved exactly. Tangent-based smoothing (Manifold.smooth /
+ *  smoothOut + refine) is NOT shipped: measured on manifold-3d
+ *  3.5.4, smooth+refine(2) inflates a cube 8.0 -> 16.68 and the
+ *  crease-sharpened variant's output fails the watertight
+ *  re-check with hundreds of unshared edges (see PHASE_CH_REPORT).
+ *  Revisit smoothing together with the 3.5.5 decision (D15). */
+export const CSG_REFINE_DIVISIONS_MIN = 2;
+export const CSG_REFINE_DIVISIONS_MAX = 3;
+export function clampCsgRefineDivisions(v: unknown): number {
+  const n = typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 2;
+  return Math.min(CSG_REFINE_DIVISIONS_MAX, Math.max(CSG_REFINE_DIVISIONS_MIN, n));
 }
 
 /** Phase CF (CSG second release, U1): extrusion profiles. The
@@ -191,7 +207,15 @@ export function csgOperandKey(operand: CsgOperand): string {
     (operand.indices ? hashTypedArray(operand.indices) : 'flat');
 }
 
-export function csgCacheKey(a: CsgOperand, b: CsgOperand, op: CsgOperationKind, finish: CsgFinishKind = 'none'): string {
+export function csgCacheKey(
+  a: CsgOperand,
+  b: CsgOperand,
+  op: CsgOperationKind,
+  finish: CsgFinishKind = 'none',
+  refineDivisions: number = 2,
+): string {
   const base = `${csgOperandKey(a)}|${op}|${csgOperandKey(b)}`;
-  return finish === 'none' ? base : `${base}|f:${finish}`;
+  if (finish === 'none') return base;
+  if (finish === 'refine') return `${base}|f:refine:${clampCsgRefineDivisions(refineDivisions)}`;
+  return `${base}|f:${finish}`;
 }

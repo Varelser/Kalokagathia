@@ -212,6 +212,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuCsgExtrudeScaleTop: 1,
   gpgpuCsgExtrudeDivisions: 0,
   gpgpuCsgFinish: 'none' as const,
+  gpgpuCsgRefineDivisions: 2,
   // Vector Field
   gpgpuVFieldEnabled: false,
   gpgpuVFieldType: 'spiral' as const,

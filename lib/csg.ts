@@ -55,6 +55,7 @@ export interface CsgRunRecord {
   b: CsgOperand;
   op: CsgOperationKind;
   finish: CsgFinishKind;
+  refineDivisions: number;
   result: CsgResultData;
   fromCache: boolean;
 }
@@ -96,7 +97,7 @@ function destroyWorker() {
   }
 }
 
-function postRequest(message: { kind: 'op' | 'ping'; a?: CsgOperand; b?: CsgOperand; op?: CsgOperationKind; finish?: CsgFinishKind }): Promise<WorkerReply> {
+function postRequest(message: { kind: 'op' | 'ping'; a?: CsgOperand; b?: CsgOperand; op?: CsgOperationKind; finish?: CsgFinishKind; refineDivisions?: number }): Promise<WorkerReply> {
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<WorkerReply>((resolve) => {
@@ -125,12 +126,13 @@ export function runCsgOperation(
   b: CsgOperand,
   op: CsgOperationKind,
   finish: CsgFinishKind = 'none',
+  refineDivisions: number = 2,
 ): Promise<CsgResultData> {
-  const key = csgCacheKey(a, b, op, finish);
+  const key = csgCacheKey(a, b, op, finish, refineDivisions);
   const run = async (): Promise<CsgResultData> => {
     const hit = cache.get(key);
     if (hit) {
-      lastRun = { a, b, op, finish, result: hit, fromCache: true };
+      lastRun = { a, b, op, finish, refineDivisions, result: hit, fromCache: true };
       return hit;
     }
     // Gate (a) on mesh operands, before transfer; the same
@@ -150,13 +152,13 @@ export function runCsgOperation(
         }
       }
     }
-    const reply = await postRequest({ kind: 'op', a, b, op, finish });
+    const reply = await postRequest({ kind: 'op', a, b, op, finish, refineDivisions });
     if (!reply.ok) {
       throw new CsgError(reply.code ?? 'UNKNOWN', reply.message ?? 'CSG 演算に失敗しました。');
     }
     const result = reply.result as CsgResultData;
     cache.set(key, result);
-    lastRun = { a, b, op, finish, result, fromCache: false };
+    lastRun = { a, b, op, finish, refineDivisions, result, fromCache: false };
     return result;
   };
   // Serialise: chain onto the previous run whatever its outcome.

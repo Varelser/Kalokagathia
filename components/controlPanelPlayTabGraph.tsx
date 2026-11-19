@@ -932,7 +932,7 @@ export const CsgSection: React.FC<{
       config.gpgpuCsgOffsetBZ,
     ]);
     try {
-      const out = await runCsgOperation(a, b, config.gpgpuCsgOperation, config.gpgpuCsgFinish);
+      const out = await runCsgOperation(a, b, config.gpgpuCsgOperation, config.gpgpuCsgFinish, config.gpgpuCsgRefineDivisions);
       const cached = getLastCsgRun()?.fromCache ?? false;
       setResult(out);
       setFromCache(cached);
@@ -940,6 +940,7 @@ export const CsgSection: React.FC<{
         `完了: 体積 ${out.volume.toFixed(4)} / ${out.triangles.toLocaleString()} 三角形` +
           `（出力再検査: 閉・オイラー標数 ${out.gate.euler}・成分 ${out.gate.components}・種数 ${out.gate.genus}）` +
           (config.gpgpuCsgFinish === 'hull' ? ' ※仕上げ: ハル（凸包）' : '') +
+          (config.gpgpuCsgFinish === 'refine' ? ` ※仕上げ: 細分化（分割数 ${config.gpgpuCsgRefineDivisions}）` : '') +
           (cached ? ' ※同じ被演算子・演算のキャッシュ結果です' : ''),
       );
     } catch (e) {
@@ -975,6 +976,7 @@ export const CsgSection: React.FC<{
       <p className="text-[11px] leading-relaxed text-white/45 mb-4">
         プリミティブ同士、または断面の押し出しとの和・差・積を manifold-3d（Worker＋WASM）で計算し、結果をモーフ経路へ取り込めます。
         仕上げにハル（凸包）を選ぶと、結果全体を1つの凸立体に置き換えます（離れた部品同士も橋渡しされます）。
+        細分化は形を変えずに三角形を細かく割り、モーフ先としての密度を上げます。
         演算は1回実行型で、同じ被演算子・演算の再実行はキャッシュを返します。完全に一致する形同士の演算は通常より時間がかかる場合があります。
         無効の間は Worker も WASM も読み込まれません。
       </p>
@@ -1033,9 +1035,13 @@ export const CsgSection: React.FC<{
             options={[
               { label: 'そのまま', val: 'none' as const },
               { label: 'ハル（凸包）', val: 'hull' as const },
+              { label: '細分化', val: 'refine' as const },
             ]}
             onChange={(v) => updateConfig('gpgpuCsgFinish', v)}
           />
+          {config.gpgpuCsgFinish === 'refine' && (
+            <Slider label="細分化の分割数" value={config.gpgpuCsgRefineDivisions} min={2} max={3} step={1} onChange={(v) => updateConfig('gpgpuCsgRefineDivisions', v)} />
+          )}
           <Slider label="A のサイズ" value={config.gpgpuCsgSizeA} min={0.2} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCsgSizeA', v)} />
           <Slider label="B のサイズ" value={config.gpgpuCsgSizeB} min={0.2} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCsgSizeB', v)} />
           <Slider label="円分割数" value={config.gpgpuCsgSegments} min={4} max={128} step={4} onChange={(v) => updateConfig('gpgpuCsgSegments', v)} />

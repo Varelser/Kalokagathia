@@ -342,7 +342,8 @@ export interface ParticleConfigGpgpu {
   gpgpuCsgExtrudeTwist: number;
   gpgpuCsgExtrudeScaleTop: number;
   gpgpuCsgExtrudeDivisions: number;
-  gpgpuCsgFinish: 'none' | 'hull';
+  gpgpuCsgFinish: 'none' | 'hull' | 'refine';
+  gpgpuCsgRefineDivisions: number;
   // Vector Field
   gpgpuVFieldEnabled: boolean;
   gpgpuVFieldType: 'dipole' | 'saddle' | 'spiral' | 'source' | 'abc' | 'gyre' | 'worley';

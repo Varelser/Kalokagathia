@@ -42,6 +42,7 @@ interface OpRequest {
   b: CsgOperand;
   op: CsgOperationKind;
   finish?: CsgFinishKind;
+  refineDivisions?: number;
 }
 interface PingRequest {
   id: number;
@@ -94,16 +95,20 @@ async function runOp(req: OpRequest): Promise<void> {
     ctx.postMessage({ id: req.id, ok: false, code: 'EMPTY_RESULT', message: '演算結果は空です（体積 0）。' });
     return;
   }
-  // Finish (Phase CG): hull replaces the result with its
-  // convex hull before the output re-check, so the gate (c)
-  // verdict and the reported numbers describe the finished
-  // solid the user actually receives.
-  const finished = applyCsgFinish(result, req.finish ?? 'none');
-  if (req.finish === 'hull') {
+  // Finish (Phase CG hull / Phase CH refine): the finish
+  // replaces the result before the output re-check, so the
+  // gate (c) verdict and the reported numbers describe the
+  // finished solid the user actually receives.
+  const finished = applyCsgFinish(result, req.finish ?? 'none', req.refineDivisions);
+  if (req.finish === 'hull' || req.finish === 'refine') {
     const st = finished.status();
     if (st !== 'NoError') {
       throw Object.assign(
-        new Error(`ハル（凸包）化に失敗しました（status: ${st}）。`),
+        new Error(
+          req.finish === 'refine'
+            ? `細分化に失敗しました（status: ${st}）。`
+            : `ハル（凸包）化に失敗しました（status: ${st}）。`,
+        ),
         { csgCode: 'NOT_MANIFOLD' as CsgErrorCode },
       );
     }

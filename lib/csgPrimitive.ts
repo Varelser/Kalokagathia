@@ -24,6 +24,7 @@ import type {
   CsgPrimitiveSpec,
   CsgResultData,
 } from './csgCore';
+import { clampCsgRefineDivisions } from './csgCore';
 
 export function buildCsgPrimitive(wasm: ManifoldToplevel, spec: CsgPrimitiveSpec): Manifold {
   const { Manifold } = wasm;
@@ -90,8 +91,10 @@ export function runCsgBoolean(a: Manifold, b: Manifold, op: CsgOperationKind): M
  *  parts are bridged into one genus-0 solid. A hull can
  *  never be smaller than its input; callers assert that
  *  property in tests rather than re-checking it here. */
-export function applyCsgFinish(result: Manifold, finish: CsgFinishKind): Manifold {
-  return finish === 'hull' ? result.hull() : result;
+export function applyCsgFinish(result: Manifold, finish: CsgFinishKind, refineDivisions: number = 2): Manifold {
+  if (finish === 'hull') return result.hull();
+  if (finish === 'refine') return result.refine(clampCsgRefineDivisions(refineDivisions));
+  return result;
 }
 
 export function manifoldToResultData(m: Manifold): CsgResultData {
