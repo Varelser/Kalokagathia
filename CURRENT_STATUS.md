@@ -6,14 +6,14 @@
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_BO_REPORT.md、前: PHASE_BC_REPORT.md / PHASE_BB_REPORT.md / PHASE_BA_REPORT.md / PHASE_AZ_REPORT.md / PHASE_AY_REPORT.md）
+  （最新: PHASE_CL_REPORT.md、前: PHASE_CK_REPORT.md / PHASE_CJ_REPORT.md / PHASE_CI_REPORT.md / PHASE_CH_REPORT.md / PHASE_CG_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.61.0] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.85.0] が最新項）
 
 ## 資産の実数（2026-11-20 実測）
 
-- config キー: **1,358件** ／ 内蔵スターター: **605件**
+- config キー: **1,359件** ／ 内蔵スターター: **606件**
 - 生成カタログ: **1,660件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 
