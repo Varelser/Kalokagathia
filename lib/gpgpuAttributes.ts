@@ -386,6 +386,7 @@ export function resolveAttrConsumers(
     | 'gpgpuAttrForceSlot'
     | 'gpgpuAttrForceAmount'
     | 'gpgpuGroupEnabled'
+    | 'gpgpuGroupRef'
     | 'gpgpuAttrColorEnabled'
     | 'gpgpuAttrNames'
   >,
@@ -393,7 +394,12 @@ export function resolveAttrConsumers(
   const sizeActive = normalizeAttrSlot(config.gpgpuAttrSizeSlot) >= 0 && (config.gpgpuAttrSizeAmount || 0) !== 0;
   const brightActive = normalizeAttrSlot(config.gpgpuAttrBrightSlot) >= 0 && (config.gpgpuAttrBrightAmount || 0) !== 0;
   const forceActive = normalizeAttrSlot(config.gpgpuAttrForceSlot) >= 0 && (config.gpgpuAttrForceAmount || 0) !== 0;
-  const groupActive = !!config.gpgpuGroupEnabled;
+  // Phase CV: a named-group reference also activates the group
+  // consumer (its membership is baked into a texture the gate
+  // samples instead of the legacy predicate). An empty ref keeps
+  // exactly the Phase AK behaviour.
+  const groupActive = !!config.gpgpuGroupEnabled
+    || (typeof config.gpgpuGroupRef === 'string' && config.gpgpuGroupRef.length > 0);
   const colorActive = !!config.gpgpuAttrColorEnabled
     && resolveAttrColorSlots(normalizeAttrNames(config.gpgpuAttrNames)) !== null;
   return {
