@@ -474,6 +474,8 @@ const NUMS: NumDef[] = [
   ['gpgpuGroupInvert', 'グループ条件の反転'],
   ['gpgpuGroupsData', '名前付きグループの定義一覧（JSON文字列）'],
   ['gpgpuGroupRef', 'フォースゲートが使う名前付きグループのID'],
+  ['gpgpuGroupKillEnabled', 'グループキル（非メンバーを消滅→リスポーン）'],
+  ['gpgpuGroupColorEnabled', 'グループ色駆動（属性色をメンバーだけに適用）'],
   ['gpgpuKillBoundary', 'GPGPU境界キル（境界外で跳ねず消滅→リスポーン）'],
   ['gpgpuKillMask', 'GPGPUマスクキル（ラスタマスクの拒否域で消滅→リスポーン）'],
   ['gpgpuDrag', 'GPGPU全体ドラッグ（速度減衰率、1.1で従来同一）'],

@@ -372,6 +372,15 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uKillMaskTex:  { value: null },
       uKillMaskThreshold: { value: 0.5 },
       uKillMaskInvert: { value: false },
+      // Group kill (Phase DG): attribute bake + gate uniforms,
+      // resolved per frame in runSimulationPasses.
+      uGroupKillEnabled: { value: false },
+      uAttrTex:      { value: null },
+      uGroupSlot:    { value: 0 },
+      uGroupMode:    { value: 1 },
+      uGroupLow:     { value: 0.25 },
+      uGroupHigh:    { value: 0.75 },
+      uGroupInvert:  { value: false },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_POS_FRAG,
   });
@@ -536,7 +545,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uTime:         { value: 0 },
     },
     vertexShader: SIM_VERT, fragmentShader: AUX_CHAIN_VEL_FRAG,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }), []);
 
   const auxChainPosMat = useMemo(() => new THREE.ShaderMaterial({
@@ -560,7 +569,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uTime:         { value: 0 },
     },
     vertexShader: SIM_VERT, fragmentShader: AUX_CHAIN_POS_FRAG,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }), []);
 
   const blitMat = useMemo(() => new THREE.ShaderMaterial({
@@ -619,7 +628,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     depthTest: false,
     depthWrite: false,
     transparent: false,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }), []);
 
   const flipCompositeMat = useMemo(() => new THREE.ShaderMaterial({
@@ -783,7 +792,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uTime:           { value: 0 },
     },
     vertexShader: SIM_VERT, fragmentShader: WW_VEL_FRAG,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }), []);
 
   const wwPosMat = useMemo(() => new THREE.ShaderMaterial({
@@ -801,7 +810,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uTime:           { value: 0 },
     },
     vertexShader: SIM_VERT, fragmentShader: WW_POS_FRAG,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }), []);
 
   const simMeshRef = useRef<THREE.Mesh | null>(null);

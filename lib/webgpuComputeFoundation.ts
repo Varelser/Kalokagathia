@@ -143,7 +143,15 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // entry: they live in the draw shader, which is WebGL on
   // every path already.
   if (config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) features.push('attr-force');
-  if (config.gpgpuGroupEnabled) features.push('attr-group');
+  // Phase DF: a named-group reference (Phase CV) activates the
+  // group consumer exactly like the legacy toggle — the bake in
+  // lib/gpgpuAttributes.ts has counted the ref since CV, so the
+  // capability declaration must count it too, otherwise a
+  // ref-only config would stay on the WebGPU route and silently
+  // lose the gate.
+  const groupConsumerActive = !!config.gpgpuGroupEnabled
+    || (typeof config.gpgpuGroupRef === 'string' && config.gpgpuGroupRef.length > 0);
+  if (groupConsumerActive) features.push('attr-group');
   // Attribute feedback (Phase BV): the feedback pass's output
   // reaches the draw-side drives on every path (the draw shader
   // is WebGL throughout, exactly as with Phase BO's dynamic
@@ -155,7 +163,7 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // so the gap is named in the capability report instead of
   // being dropped silently.
   if (config.gpgpuAttrFeedbackEnabled
-    && ((config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) || config.gpgpuGroupEnabled)) {
+    && ((config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) || groupConsumerActive)) {
     features.push('attr-feedback');
   }
   // Wind volume (Phase AL): the placed wind localisation lives in

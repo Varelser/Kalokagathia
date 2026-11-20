@@ -14,6 +14,7 @@ import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { normalizeLightDir } from '../lib/gpgpuLight';
 import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
 import { normalizeAttrNames, normalizeAttrSlot, resolveAttrColorSlots, resolveAttrConsumers } from '../lib/gpgpuAttributes';
+import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { resolveIblEnvironment } from '../lib/iblEnvironment';
 import { horizonEquirectYawRadians } from '../lib/horizonBackground';
 import { clampNoiseMapAmount, clampNoiseMapEvolve, clampNoiseMapOctaves, clampNoiseMapScale, noiseMapKindIndex, normalizeNoiseMapKind } from '../lib/noiseFieldMap';
@@ -229,6 +230,25 @@ export function syncVisualUniforms(args: {
     if (drawMat.uniforms.uAttrColorSlotR) drawMat.uniforms.uAttrColorSlotR.value = colorSlots ? colorSlots[0] : -1;
     if (drawMat.uniforms.uAttrColorSlotG) drawMat.uniforms.uAttrColorSlotG.value = colorSlots ? colorSlots[1] : -1;
     if (drawMat.uniforms.uAttrColorSlotB) drawMat.uniforms.uAttrColorSlotB.value = colorSlots ? colorSlots[2] : -1;
+    // Group colour gating (Phase DG): the gate predicate is
+    // derived exactly as for the velocity force gate (predicate
+    // group supplies its predicate, baked group reads slot 3
+    // above 0.5); a dangling reference resolves to no predicate
+    // and the gating stays off.
+    const groupGate = resolveGroupGate(parseGpgpuGroups(config.gpgpuGroupsData ?? ''), config.gpgpuGroupRef ?? '');
+    const gatePredicate = groupGate.kind === 'predicate'
+      ? groupGate.predicate
+      : groupGate.kind === 'baked'
+        ? { slot: groupGate.slot, mode: 'above' as const, low: 0.5, high: 1, invert: false }
+        : null;
+    if (drawMat.uniforms.uGroupColorEnabled) drawMat.uniforms.uGroupColorEnabled.value = !!attrTexture && attrConsumers.groupColorActive && gatePredicate !== null;
+    if (gatePredicate) {
+      if (drawMat.uniforms.uGroupSlot) drawMat.uniforms.uGroupSlot.value = gatePredicate.slot;
+      if (drawMat.uniforms.uGroupMode) drawMat.uniforms.uGroupMode.value = { below: 0, above: 1, band: 2 }[gatePredicate.mode] ?? 1;
+      if (drawMat.uniforms.uGroupLow) drawMat.uniforms.uGroupLow.value = gatePredicate.low;
+      if (drawMat.uniforms.uGroupHigh) drawMat.uniforms.uGroupHigh.value = gatePredicate.high;
+      if (drawMat.uniforms.uGroupInvert) drawMat.uniforms.uGroupInvert.value = gatePredicate.invert;
+    }
   }
   drawMat.uniforms.uColor.value.setStyle(config.gpgpuColor);
   drawMat.uniforms.uSize.value = config.gpgpuSize;

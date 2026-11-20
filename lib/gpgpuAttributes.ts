@@ -367,6 +367,13 @@ export interface AttrConsumers {
   /** Points readout: colour drive enabled AND all three colour
    *  names assigned to slots (Phase CL). */
   colorActive: boolean;
+  /** Position pass: named-group kill enabled AND a group
+   *  referenced (Phase DG). Non-members respawn. */
+  groupKillActive: boolean;
+  /** Points readout: named-group colour gating enabled AND a
+   *  group referenced AND the colour drive itself active
+   *  (Phase DG). The attribute colour applies to members only. */
+  groupColorActive: boolean;
   /** Any consumer at all — the attribute texture is built only then. */
   anyActive: boolean;
 }
@@ -387,6 +394,8 @@ export function resolveAttrConsumers(
     | 'gpgpuAttrForceAmount'
     | 'gpgpuGroupEnabled'
     | 'gpgpuGroupRef'
+    | 'gpgpuGroupKillEnabled'
+    | 'gpgpuGroupColorEnabled'
     | 'gpgpuAttrColorEnabled'
     | 'gpgpuAttrNames'
   >,
@@ -402,12 +411,20 @@ export function resolveAttrConsumers(
     || (typeof config.gpgpuGroupRef === 'string' && config.gpgpuGroupRef.length > 0);
   const colorActive = !!config.gpgpuAttrColorEnabled
     && resolveAttrColorSlots(normalizeAttrNames(config.gpgpuAttrNames)) !== null;
+  // Phase DG: the group kill / group colour consumers ride the
+  // shared reference. Without a reference there is no group, so
+  // both stay inactive and the passes keep their legacy paths.
+  const hasGroupRef = typeof config.gpgpuGroupRef === 'string' && config.gpgpuGroupRef.length > 0;
+  const groupKillActive = !!config.gpgpuGroupKillEnabled && hasGroupRef;
+  const groupColorActive = !!config.gpgpuGroupColorEnabled && hasGroupRef && colorActive;
   return {
     sizeActive,
     brightActive,
     forceActive,
     groupActive,
     colorActive,
+    groupKillActive,
+    groupColorActive,
     anyActive: sizeActive || brightActive || forceActive || groupActive || colorActive,
   };
 }

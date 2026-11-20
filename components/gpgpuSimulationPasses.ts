@@ -327,6 +327,11 @@ export function runSimulationPasses(args: {
   // the kill is on and the mask image is ready).
   spawnTime?: number;
   killMaskTex?: THREE.Texture | null;
+  // Group kill (Phase DG): the replica-stack runner sets this —
+  // in a stack pass vUv is stack-local while the attribute bake
+  // is in the global layout, so the group kill must stay off
+  // there (the same suppression style as vellum / rigid).
+  suppressGroupKill?: boolean;
   // Spawn order (Phase AX): the baked distance-order texture for
   // the pool's initial positions (built by the runtime alongside
   // the initial data). Null unless the order mode is a distance
@@ -981,6 +986,34 @@ export function runSimulationPasses(args: {
   if (posSimMat.uniforms.uKillMaskTex) posSimMat.uniforms.uKillMaskTex.value = args.killMaskTex ?? null;
   if (posSimMat.uniforms.uKillMaskThreshold) posSimMat.uniforms.uKillMaskThreshold.value = Math.max(0, Math.min(1, config.gpgpuMaskThreshold ?? 0.5));
   if (posSimMat.uniforms.uKillMaskInvert) posSimMat.uniforms.uKillMaskInvert.value = !!config.gpgpuMaskInvert;
+  // Group kill (Phase DG): the named group referenced by the
+  // Gate Group kills its non-members in the position pass. The
+  // gate predicate is derived exactly as for the velocity force
+  // gate (a predicate group supplies its predicate, a baked
+  // group reads slot 3 above 0.5); a dangling reference resolves
+  // to no predicate and the kill stays off. Suppressed under
+  // vellum / rigid like the other kills, and in replica stacks
+  // (vUv is stack-local there, the bake is global).
+  {
+    const attrConsumers = resolveAttrConsumers(config);
+    const groupGate = resolveGroupGate(parseGpgpuGroups(config.gpgpuGroupsData ?? ''), config.gpgpuGroupRef ?? '');
+    const gatePredicate = groupGate.kind === 'predicate'
+      ? groupGate.predicate
+      : groupGate.kind === 'baked'
+        ? { slot: groupGate.slot, mode: 'above' as const, low: 0.5, high: 1, invert: false }
+        : null;
+    const groupKillOn = !!args.attrTex && attrConsumers.groupKillActive && gatePredicate !== null
+      && !vellum.active && !rigidActive && !args.suppressGroupKill;
+    if (posSimMat.uniforms.uGroupKillEnabled) posSimMat.uniforms.uGroupKillEnabled.value = groupKillOn;
+    if (posSimMat.uniforms.uAttrTex) posSimMat.uniforms.uAttrTex.value = args.attrTex ?? null;
+    if (gatePredicate) {
+      if (posSimMat.uniforms.uGroupSlot) posSimMat.uniforms.uGroupSlot.value = gatePredicate.slot;
+      if (posSimMat.uniforms.uGroupMode) posSimMat.uniforms.uGroupMode.value = { below: 0, above: 1, band: 2 }[gatePredicate.mode] ?? 1;
+      if (posSimMat.uniforms.uGroupLow) posSimMat.uniforms.uGroupLow.value = gatePredicate.low;
+      if (posSimMat.uniforms.uGroupHigh) posSimMat.uniforms.uGroupHigh.value = gatePredicate.high;
+      if (posSimMat.uniforms.uGroupInvert) posSimMat.uniforms.uGroupInvert.value = gatePredicate.invert;
+    }
+  }
   simMesh.material = posSimMat;
   gl.setRenderTarget(posOut);
   gl.render(simScene, simCamera);
@@ -1510,6 +1543,7 @@ export function runReplicaStackPasses(args: {
       posSimMat: stack.posMat,
       initPosTex,
       attrTex: args.attrTex ?? null,
+      suppressGroupKill: true,
       morphTex,
       morphNormalTex,
       morphKickStart,

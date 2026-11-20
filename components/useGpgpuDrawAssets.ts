@@ -131,6 +131,14 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uAttrColorSlotR:    { value: -1 },
       uAttrColorSlotG:    { value: -1 },
       uAttrColorSlotB:    { value: -1 },
+      // Group colour gating (Phase DG): off leaves the colour
+      // drive exactly as Phase CL resolved it.
+      uGroupColorEnabled: { value: false },
+      uGroupSlot:    { value: 0 },
+      uGroupMode:    { value: 1 },
+      uGroupLow:     { value: 0.25 },
+      uGroupHigh:    { value: 0.75 },
+      uGroupInvert:  { value: false },
     },
     vertexShader: DRAW_VERT, fragmentShader: DRAW_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,

@@ -287,19 +287,6 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
           />
           <Slider label="Group Low（下限）" value={config.gpgpuGroupLow} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGroupLow', v)} />
           <Slider label="Group High（上限）" value={config.gpgpuGroupHigh} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGroupHigh', v)} />
-          <AttrSelect
-            label="Group Target（ゲートするフォース）"
-            value={config.gpgpuGroupTarget}
-            options={[
-              { label: 'All Forces（全フォース）', val: 'all' },
-              { label: 'Gravity（重力）', val: 'gravity' },
-              { label: 'Turbulence（乱流）', val: 'turbulence' },
-              { label: 'Curl（カール）', val: 'curl' },
-              { label: 'Wind（風）', val: 'wind' },
-              { label: 'Morph（モーフ）', val: 'morph' },
-            ]}
-            onChange={(v) => updateConfig('gpgpuGroupTarget', v as typeof config.gpgpuGroupTarget)}
-          />
           <Toggle label="Group Invert（条件の反転）" value={config.gpgpuGroupInvert} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGroupInvert', v)} />
         </>
       )}
@@ -313,6 +300,28 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
         ]}
         onChange={(v) => updateConfig('gpgpuGroupRef', v)}
       />
+      {/* Phase DG: the Target select lives here (not inside the
+          legacy toggle block) so a named-group config can retarget
+          the gate without enabling the legacy predicate. */}
+      <AttrSelect
+        label="Group Target（ゲートするフォース）"
+        value={config.gpgpuGroupTarget}
+        options={[
+          { label: 'All Forces（全フォース）', val: 'all' },
+          { label: 'Gravity（重力）', val: 'gravity' },
+          { label: 'Turbulence（乱流）', val: 'turbulence' },
+          { label: 'Curl（カール）', val: 'curl' },
+          { label: 'Wind（風）', val: 'wind' },
+          { label: 'Morph（モーフ）', val: 'morph' },
+        ]}
+        onChange={(v) => updateConfig('gpgpuGroupTarget', v as typeof config.gpgpuGroupTarget)}
+      />
+      {config.gpgpuGroupRef && (
+        <>
+          <Toggle label="Group Kill（非メンバーを消滅→リスポーン — Phase DG）" value={config.gpgpuGroupKillEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGroupKillEnabled', v)} />
+          <Toggle label="Group Color（属性色をメンバーだけに — Phase DG）" value={config.gpgpuGroupColorEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGroupColorEnabled', v)} />
+        </>
+      )}
       {groupDefs.map((def) => (
         <div key={def.id} className="mt-1 flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-[11px] text-white/90">{def.name}<span className="text-white/50"> — {groupKindLabel(def)}</span></span>

@@ -124,6 +124,19 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform sampler2D uKillMaskTex;
   uniform float uKillMaskThreshold;
   uniform bool  uKillMaskInvert;
+  // Group kill (Phase DG): the named group referenced by the
+  // Gate Group also drives a kill — a particle outside the group
+  // respawns now. Membership is read from the attribute bake
+  // with the same uniforms the velocity force gate uses (a
+  // predicate group supplies its predicate, a baked group reads
+  // its membership channel as "above 0.5").
+  uniform bool  uGroupKillEnabled;
+  uniform sampler2D uAttrTex;
+  uniform int   uGroupSlot;
+  uniform int   uGroupMode;
+  uniform float uGroupLow;
+  uniform float uGroupHigh;
+  uniform bool  uGroupInvert;
   varying vec2 vUv;
 
   float hash1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -285,6 +298,28 @@ export const SIM_POS_FRAG = /* glsl */ `
   vec3 kaloQuatRotate(vec4 q, vec3 v) {
     vec3 u = q.xyz;
     return v + 2.0 * cross(u, cross(u, v) + q.w * v);
+  }
+
+  // Attribute channel picker (Phase AK): identical copy of the
+  // velocity pass helper (the slot layout of buildAttributeData
+  // in lib/gpgpuAttributes.ts, R/G/B/A = slots 0/1/2/3).
+  float kaloAttrChannel(vec4 a, int slot) {
+    if (slot == 0) return a.r;
+    if (slot == 1) return a.g;
+    if (slot == 2) return a.b;
+    return a.a;
+  }
+
+  // Group membership (Phase AK): identical copy of the velocity
+  // pass helper — inclusive boundaries composed from step(), so
+  // it matches groupMembership in lib/gpgpuAttributes.ts exactly.
+  // Modes: 0 below (av <= high), 1 above (av >= low), 2 band.
+  float kaloGroupMembership(float av, int mode, float low, float high, bool invert) {
+    float m;
+    if (mode == 0) m = step(av, high);
+    else if (mode == 1) m = step(low, av);
+    else m = step(low, av) * step(av, high);
+    return invert ? 1.0 - m : m;
   }
 
   void main() {
@@ -472,6 +507,14 @@ export const SIM_POS_FRAG = /* glsl */ `
       float mLuma = dot(texture2D(uKillMaskTex, maskUv).rgb, vec3(0.2126, 0.7152, 0.0722));
       if (uKillMaskInvert) mLuma = 1.0 - mLuma;
       if (mLuma < uKillMaskThreshold) doRespawn = true;
+    }
+    // Group kill (Phase DG): outside the named group, respawn
+    // now. The bake shares the position pass's texel layout, so
+    // vUv reads this particle's own membership.
+    if (uGroupKillEnabled) {
+      vec4 attrData = texture2D(uAttrTex, vUv);
+      float grp = kaloGroupMembership(kaloAttrChannel(attrData, uGroupSlot), uGroupMode, uGroupLow, uGroupHigh, uGroupInvert);
+      if (grp < 0.5) doRespawn = true;
     }
     if (doRespawn) {
         float r   = uBounceRadius * (0.05 + hash1(vUv + vec2(age)) * 0.9);

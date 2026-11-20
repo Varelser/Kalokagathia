@@ -227,6 +227,16 @@ export const DRAW_VERT = /* glsl */ `
   uniform int       uAttrColorSlotR;
   uniform int       uAttrColorSlotG;
   uniform int       uAttrColorSlotB;
+  // Group colour gating (Phase DG): the named group referenced
+  // by the Gate Group gates the colour drive — members keep the
+  // attribute colour, non-members stay at exactly vec3(1.0).
+  // Same uniforms the velocity force gate uses.
+  uniform bool      uGroupColorEnabled;
+  uniform int       uGroupSlot;
+  uniform int       uGroupMode;
+  uniform float     uGroupLow;
+  uniform float     uGroupHigh;
+  uniform bool      uGroupInvert;
   attribute vec2 aTexCoord;
   varying float vSpeed;
   varying float vNormAge;
@@ -254,6 +264,18 @@ export const DRAW_VERT = /* glsl */ `
     if (slot == 1) return a.g;
     if (slot == 2) return a.b;
     return a.a;
+  }
+
+  // Group membership (Phase AK): identical copy of the velocity
+  // pass helper — inclusive boundaries composed from step(), so
+  // it matches groupMembership in lib/gpgpuAttributes.ts exactly.
+  // Modes: 0 below (av <= high), 1 above (av >= low), 2 band.
+  float kaloGroupMembership(float av, int mode, float low, float high, bool invert) {
+    float m;
+    if (mode == 0) m = step(av, high);
+    else if (mode == 1) m = step(low, av);
+    else m = step(low, av) * step(av, high);
+    return invert ? 1.0 - m : m;
   }
 
   ${LIGHT_GLSL}
@@ -370,6 +392,13 @@ export const DRAW_VERT = /* glsl */ `
           kaloAttrChannel(attrData, uAttrColorSlotR),
           kaloAttrChannel(attrData, uAttrColorSlotG),
           kaloAttrChannel(attrData, uAttrColorSlotB));
+        // Group colour gating (Phase DG): non-members fall back
+        // to the exact legacy identity, so only members are
+        // tinted by the attribute colour.
+        if (uGroupColorEnabled) {
+          float grp = kaloGroupMembership(kaloAttrChannel(attrData, uGroupSlot), uGroupMode, uGroupLow, uGroupHigh, uGroupInvert);
+          if (grp < 0.5) vAttrColor = vec3(1.0);
+        }
       }
     }
     // Layer Map (Phase U): size modulated by the gradient image's

@@ -444,6 +444,8 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuGroupInvert: 'グループ条件の反転（メンバーと非メンバーを入れ替える）',
   gpgpuGroupsData: '名前付きグループの定義一覧（JSON文字列。述語／凍結スナップショット／合成。空＝グループなし）',
   gpgpuGroupRef: 'フォースゲートが使う名前付きグループのID（空＝従来の単一グループ条件を使う）',
+  gpgpuGroupKillEnabled: 'グループキル（Gate Group の非メンバーを消滅→リスポーンさせる。OFFで従来同一）',
+  gpgpuGroupColorEnabled: 'グループ色駆動（属性→色駆動を Gate Group のメンバーだけに適用する。OFFで従来同一）',
   gpgpuKillBoundary: '境界キル（境界の外へ出た粒子が跳ね返らず消滅し、リスポーン周期へ入る）',
   gpgpuKillMask: 'マスクキル（ラスタマスクの拒否域にいる粒子が消滅し、リスポーン周期へ入る）',
   gpgpuDrag: '全体ドラッグ（速度の減衰率。1.1で従来同一）',

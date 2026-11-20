@@ -106,6 +106,8 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGroupInvert: false,
   gpgpuGroupsData: '',
   gpgpuGroupRef: '',
+  gpgpuGroupKillEnabled: false,
+  gpgpuGroupColorEnabled: false,
   gpgpuKillBoundary: false,
   gpgpuKillMask: false,
   gpgpuDrag: 1.1,
