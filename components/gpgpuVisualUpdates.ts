@@ -201,6 +201,7 @@ export function syncVisualUniforms(args: {
     tubeMats,
     streakMat,
     geomMat,
+    instGeo,
     volumetricGeo,
     volumetricMat,
   } = assets;
@@ -495,6 +496,14 @@ export function syncVisualUniforms(args: {
   }
 
   if (config.gpgpuGeomMode !== 'point') {
+    // Phase DH: cap the instanced solids at the active particle
+    // count, like the points drawRange and the volumetric path
+    // already do. Without this, texSize rounding (37,781 →
+    // 256² = 65,536) silently renders more additive instances
+    // than gpgpuCount asks for — the coverage-050 white-out's
+    // mechanism-side cause. The simulation still runs on all
+    // texels; only the draw is capped.
+    if (instGeo) instGeo.instanceCount = activeCount;
     geomMat.uniforms.uPosTex.value = posTexture;
     geomMat.uniforms.uVelTex.value = velTexture;
     geomMat.uniforms.uColor.value.setStyle(config.gpgpuColor);

@@ -14,8 +14,14 @@ import { GpgpuMorphFibers } from './sceneGpgpuMorphFibers';
 import {
   createGpgpuFrameDiagnosticSnapshot,
   readbackParticlePositions,
+  readbackParticleVelocities,
   type GpgpuFrameDiagnosticSnapshot,
 } from './gpgpuDiagnostics';
+import {
+  DiagnosticAovRenderer,
+  captureDiagnosticState,
+  type DiagnosticFrameContext,
+} from './gpgpuDiagnosticAov';
 import {
   resolveGpgpuAudioBlast,
   resolveGpgpuFrameRouting,
@@ -81,6 +87,90 @@ type GpgpuSystemProps = {
 
 export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config, isPlaying, posReadbackRef, pointCloudCaptureRef, pyroFeedRef }) => {
   const { gl, camera } = useThree();
+  // Phase DH (DA3 path B): the latest frame's simulation targets,
+  // published for the ?diag=1 diagnostic hook below. Inert unless
+  // the hook is registered (URL parameter), and the ref itself is
+  // three assignments per frame.
+  const diagFrameRef = useRef<DiagnosticFrameContext | null>(null);
+  const diagPosBufRef = useRef<Float32Array | null>(null);
+  const diagVelBufRef = useRef<Float32Array | null>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('diag') !== '1') return;
+    let aov: DiagnosticAovRenderer | null = null;
+    let aovTexSize = 0;
+    const hook = {
+      captureState: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        const count = ctx.texSize * ctx.texSize;
+        if (!diagPosBufRef.current || diagPosBufRef.current.length !== count * 4) {
+          diagPosBufRef.current = new Float32Array(count * 4);
+        }
+        if (!diagVelBufRef.current || diagVelBufRef.current.length !== count * 4) {
+          diagVelBufRef.current = new Float32Array(count * 4);
+        }
+        gl.readRenderTargetPixels(ctx.posOut, 0, 0, ctx.texSize, ctx.texSize, diagPosBufRef.current);
+        readbackParticleVelocities({
+          gl,
+          velOut: ctx.velOut,
+          texSize: ctx.texSize,
+          velReadbackRef: diagVelBufRef,
+        });
+        const pos = diagPosBufRef.current;
+        const vel = diagVelBufRef.current;
+        if (!pos || !vel) return { error: 'readback-failed' };
+        const state = captureDiagnosticState(pos, vel, ctx.texSize, ctx.ageMax);
+        const stats: Record<string, unknown> = {};
+        for (const [id, r] of Object.entries(state.passes)) stats[id] = r.stats;
+        return { texSize: state.texSize, stateHash: state.stateHash, stats };
+      },
+      captureAov: (passId: string, width = 480, height = 300, speedMax = 0, pointSize = 2) => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!aov || aovTexSize !== ctx.texSize) {
+          aov?.dispose();
+          aov = new DiagnosticAovRenderer(ctx.texSize);
+          aovTexSize = ctx.texSize;
+        }
+        let sm = speedMax;
+        if (!(sm > 0)) {
+          const s = hook.captureState();
+          if ('error' in s) return s;
+          sm = Math.max(0.0001, (s.stats.speed as { max: number }).max);
+        }
+        const img = aov.capture(gl, camera, ctx, passId, { width, height, speedMax: sm, pointSize });
+        let sr = 0;
+        let sg = 0;
+        let sb = 0;
+        let lit = 0;
+        const n = width * height;
+        for (let i = 0; i < n; i++) {
+          const r = img.pixels[i * 4];
+          const g = img.pixels[i * 4 + 1];
+          const b = img.pixels[i * 4 + 2];
+          sr += r;
+          sg += g;
+          sb += b;
+          if (r + g + b > 0) lit++;
+        }
+        return {
+          passId,
+          width,
+          height,
+          speedMaxUsed: sm,
+          meanRgb: [sr / n, sg / n, sb / n].map((v) => Math.round(v * 100) / 100),
+          litFraction: Math.round((lit / n) * 10000) / 10000,
+        };
+      },
+    };
+    (window as unknown as { __kaloDiag?: typeof hook }).__kaloDiag = hook;
+    return () => {
+      delete (window as unknown as { __kaloDiag?: typeof hook }).__kaloDiag;
+      aov?.dispose();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const mouseNDC = useRef(new THREE.Vector2(0, 0));
   // Multi-pointer tracking (Phase AO): insertion-ordered set of
   // live pointers. The FIRST entry drives mouseNDC / mouseWorld
@@ -942,6 +1032,17 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       }
       capture.requested = false;
     }
+
+    // Phase DH (DA3 path B): publish this frame's targets for the
+    // ?diag=1 diagnostic hook. Plain assignments; the hook reads
+    // them only when explicitly invoked.
+    diagFrameRef.current = {
+      posOut,
+      velOut,
+      texSize,
+      ageMax: config.gpgpuAgeMax,
+      extent: config.gpgpuBounceRadius,
+    };
 
     pingIsA.current = !isA;
 
