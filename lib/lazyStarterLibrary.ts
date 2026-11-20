@@ -5,7 +5,7 @@ import type { PresetLibraryData, PresetRecord, PresetSequenceItem } from '../typ
  * Lazy access to the starter preset library (lib/starterLibrary).
  *
  * The starter/operator preset data is by far the largest data module in the
- * app (~370KB chunk). It used to be statically imported by the app-state
+ * app (~427KB chunk). It used to be statically imported by the app-state
  * layer, which forced every visitor — including public-mode visitors who
  * never see it — to download and parse it before first paint. It is now
  * loaded through a dynamic import on first private-mode mount instead.

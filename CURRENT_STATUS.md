@@ -1,20 +1,20 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.85.0**（2026-11-20、第11期 Phase CL＝ポイントキャッシュ第2弾（A 属性保持＋B 色保持）: ポイントキャッシュのフレームが名前つき属性列を最大4列まで保持できるように（perFrame の区別を維持し、静的属性は全フレーム同一を検証して1フレーム分だけ保持）。スカラー属性は位置と同じ補間で範囲正規化して従来の属性消費へ渡し、色名列（colorR／colorG／colorB）は raw のまま保持して、新キー gpgpuAttrColorEnabled（既定 OFF）で点の色を駆動する（無効時はちょうど 1.0 倍で従来同一、実GPUで差分 0 を確認）。同梱サンプルは heat＋色3列を宣言。新規 config キー 1 件（キー 1,359）・スターター 1 件（スターター 606）、カタログ 1,660 件は不変。全73スイート＋iMac 実GPUゲート合格（identity 差分 0、fps 約60）。詳細は PHASE_CL_REPORT.md。前版 v1.84.0 は Phase CK＝CSG の書き出し側（G0 残り））
+**現行バージョン: v1.86.0**（2026-11-20、第12期 Phase CW＝CSG U6（STL／glTF 読み込み）: CSG のメッシュ被演算子に STL／glTF ファイルを直接読み込めるように（読み込み時に OBJ テキストへ変換し、U5 の検証済み経路へそのまま流す。glTF はノード変換を焼き付け、複数メッシュは最初の1つだけ採用。外部バッファ参照の .gltf は .glb 化を案内して拒否）。新規 config キー・スターターなし（キー 1,359／スターター 606 のまま）、カタログ 1,666 件は不変。全75スイート＋iMac 実GPUゲート合格（identity 差分 0、読み込み→演算で体積 12.0000 を実測）。詳細は PHASE_CW_REPORT.md。前版 v1.85.0 は Phase CL＝ポイントキャッシュ第2弾）
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
 - 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_CL_REPORT.md、前: PHASE_CK_REPORT.md / PHASE_CJ_REPORT.md / PHASE_CI_REPORT.md / PHASE_CH_REPORT.md / PHASE_CG_REPORT.md）
+  （最新: PHASE_CW_REPORT.md、前: PHASE_CL_REPORT.md / PHASE_CK_REPORT.md / PHASE_CJ_REPORT.md / PHASE_CI_REPORT.md / PHASE_CH_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.85.0] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.86.0] が最新項）
 
 ## 資産の実数（2026-11-20 実測）
 
 - config キー: **1,359件** ／ 内蔵スターター: **606件**
-- 生成カタログ: **1,660件**（catalog／presets／share が 1:1:1、fps 実測 100%）
+- 生成カタログ: **1,666件**（catalog／presets／share が 1:1:1、fps 実測 100%）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 
 ## 残件（2026-11-17 時点）

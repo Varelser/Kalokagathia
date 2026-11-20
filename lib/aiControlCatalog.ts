@@ -766,7 +766,7 @@ const BOOLS: BoolDef[] = [
   ['gpgpuCsgSegments', 'CSGプリミティブの円分割数（既定32）'],
   ['gpgpuCsgExtrudeProfile', 'CSG押し出しの断面（square=四角形／circle=円／polygon=多角形／custom=自由形テキスト、既定square）'],
   ['gpgpuCsgExtrudeCustomText', 'CSG押し出しのカスタム断面テキスト（点リスト／SVGパス／SVG文書）'],
-  ['gpgpuCsgMeshObjText', 'CSGメッシュ被演算子のOBJテキスト（生の世界単位）'],
+  ['gpgpuCsgMeshObjText', 'CSGメッシュ被演算子のOBJテキスト（生の世界単位。STL／glTFは読み込み時に変換）'],
   ['gpgpuCsgExtrudeHeight', 'CSG押し出しの高さ（既定1）'],
   ['gpgpuCsgExtrudeTwist', 'CSG押し出しのねじり（度、既定0。体積は分割数に依存して変わる）'],
   ['gpgpuCsgFinish', 'CSGの仕上げ（none=そのまま／hull=凸包／refine=細分化、既定none）'],

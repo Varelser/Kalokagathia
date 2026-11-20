@@ -4,6 +4,57 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [1.87.0] — 2026-11-20
+
+Twelfth-term Phase CX: measured dynamic resolution
+for the live view (lib/dynres.ts), adapted from the
+Abyssal Garden transfer experiment. The canvas DPR
+was previously a static cap from the config's
+performance score; the main scene now also runs a
+frame-time feedback loop inside that range — two
+consecutive slow periods lower the DPR, recovery is
+cautious and waits longer after every downgrade.
+Settled DPRs are remembered per performance
+signature (render quality + bucketed score + GPGPU
+toggle) in localStorage, so a heavy preset starts at
+its last settled resolution instead of re-running
+the adaptation transient. No new config keys;
+deterministic renders are untouched (the loop is
+suppressed while a render job holds the camera
+determinism lock), and embed / compare scenes keep
+the static range. Pending the iMac real-GPU gate.
+
+## [1.86.0] — 2026-11-20
+
+Twelfth-term CSG, Phase CW (U6): STL and glTF
+import for the CSG mesh operand. The mesh section
+of the CSG panel now takes .stl / .glb / .gltf
+files next to the existing OBJ text and OBJ file
+routes. Files are converted to OBJ text at import
+time (lib/csgMeshImport.ts, three-stdlib loaders)
+and stored in the existing gpgpuCsgMeshObjText
+key, so the whole proven U5 pipe — parse display,
+the watertight gate (a), the worker build — is
+unchanged. STL vertices are welded at 1e-6; glTF
+node transforms are baked into the vertices and,
+when a scene holds several meshes, only the first
+is taken. A .gltf whose buffers live in external
+files is refused with guidance to a
+self-contained .glb; the mesh text field's cap
+rises from 200,000 to 4,000,000 characters so
+imported meshes fit. Import caps: 32 MB per file,
+60,000 welded triangles. No new config keys
+(keys 1,359) and no new starters (starters 606);
+the catalogue is unchanged at 1,666. Verified by
+a new suite (phasecw, 15 checks: STL binary and
+ASCII, GLB transform baking and first-mesh
+selection, embedded vs external .gltf, the gate
+refusing an open mesh, and boolean volumes
+12 / 4 / 4 through the real pipe) and on the iMac
+real GPU (identity 12 frames diff 0; a live STL
+import drives a union whose reported volume is
+12.0000).
+
 ## [1.85.0] — 2026-11-20
 
 Eleventh-term point cache, Phase CL: the second

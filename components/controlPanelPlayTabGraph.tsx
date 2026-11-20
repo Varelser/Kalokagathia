@@ -21,6 +21,7 @@ import {
 } from '../lib/csgCore';
 import { parseFreeformText } from '../lib/csgFreeform';
 import { buildMeshOperandFromObj, parseCsgMeshText } from '../lib/csgMeshOperand';
+import { importMeshFileToObjText, MESH_OBJ_TEXT_MAX_CHARS } from '../lib/csgMeshImport';
 import { checkWatertightGate } from '../lib/csgGate';
 import { CsgFreeformEditor } from './csgFreeformEditor';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
@@ -894,6 +895,7 @@ export const CsgSection: React.FC<{
   const [status, setStatus] = React.useState('');
   const [result, setResult] = React.useState<CsgResultData | null>(() => getLastCsgRun()?.result ?? null);
   const [fromCache, setFromCache] = React.useState(false);
+  const [meshImportNote, setMeshImportNote] = React.useState<string | null>(null);
 
   const customParseUi = React.useMemo(
     () => (config.gpgpuCsgExtrudeProfile === 'custom'
@@ -1203,10 +1205,10 @@ export const CsgSection: React.FC<{
           )}
           {usesMeshUi && (
             <div className="mt-2">
-              <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">メッシュ（OBJ）</span>
+              <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">メッシュ（OBJ／STL／glTF）</span>
               <textarea
                 value={config.gpgpuCsgMeshObjText}
-                onChange={(event) => updateConfig('gpgpuCsgMeshObjText', event.target.value.slice(0, 200_000))}
+                onChange={(event) => updateConfig('gpgpuCsgMeshObjText', event.target.value.slice(0, MESH_OBJ_TEXT_MAX_CHARS))}
                 spellCheck={false}
                 rows={5}
                 className="w-full rounded border border-white/15 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40"
@@ -1221,8 +1223,34 @@ export const CsgSection: React.FC<{
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      if (f) void f.text().then((t) => updateConfig('gpgpuCsgMeshObjText', t.slice(0, 200_000)));
+                      if (f) void f.text().then((t) => updateConfig('gpgpuCsgMeshObjText', t.slice(0, MESH_OBJ_TEXT_MAX_CHARS)));
                       e.target.value = '';
+                    }}
+                  />
+                </label>
+                <label className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 cursor-pointer">
+                  STL／glTF を読み込む
+                  <input
+                    type="file"
+                    accept=".stl,.glb,.gltf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = '';
+                      if (!f) return;
+                      void (async () => {
+                        const res = await importMeshFileToObjText(f.name, await f.arrayBuffer());
+                        if (res.ok) {
+                          updateConfig('gpgpuCsgMeshObjText', res.objText);
+                          setMeshImportNote(
+                            (res.format === 'stl' ? 'STL' : 'glTF') + '「' + f.name + '」を取り込みました（頂点 ' +
+                            res.vertexCount.toLocaleString() + '・三角形 ' + res.triangleCount.toLocaleString() +
+                            '）。OBJテキストに変換して上の欄に入っています。',
+                          );
+                        } else {
+                          setMeshImportNote('取り込めません: ' + res.reason);
+                        }
+                      })();
                     }}
                   />
                 </label>
@@ -1238,9 +1266,13 @@ export const CsgSection: React.FC<{
                     : ''}
                 </span>
               </div>
+              {meshImportNote && (
+                <p className="text-[11px] leading-relaxed text-white/60 mt-1">{meshImportNote}</p>
+              )}
               <p className="text-[11px] leading-relaxed text-white/45 mt-1">
                 メッシュは A・B 共通のテキストです。座標はそのまま世界単位で、サイズは適用されません（配置は B のオフセットだけが効きます）。
                 頂点は 1e-6 で重なりを同一視してから判定します。開いたメッシュや自己交差するメッシュは、理由を表示して弾きます（自動修復はしません）。
+                STL／glTF は読み込み時に OBJ テキストへ変換されます（glTF はノードの変形を座標に焼き付け、最初のメッシュだけを使います。外部ファイルを参照する .gltf は .glb で読み込んでください）。
               </p>
             </div>
           )}
