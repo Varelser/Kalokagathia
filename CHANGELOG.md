@@ -22,7 +22,59 @@ the adaptation transient. No new config keys;
 deterministic renders are untouched (the loop is
 suppressed while a render job holds the camera
 determinism lock), and embed / compare scenes keep
-the static range. Pending the iMac real-GPU gate.
+the static range. The iMac real-GPU gate found one
+defect in the settled restore: R3F re-applies the
+dpr prop on config-driven re-renders and stomped a
+restored settled DPR back to the range maximum,
+which the core could not notice (it already
+believed it was at its floor). The controller now
+re-asserts its DPR on divergence once it is
+authoritative, and adopts an external DPR as its
+starting point before that (lib/dynres.ts
+syncApplied). After the fix the gate passes in
+full: a heavy scene steps 2 → 1 under load and a
+reload starts at the settled 1.
+
+Also in this release — Phase CY (starter re-tune
+under the Phase CQ ruling, which kept the
+'edge-output' mask supply semantics unchanged):
+the Edge Output Mask starter's mask mode changes
+from clip to shape. In clip mode the mask kept
+only the particles left on the previous frame's
+contour, so a sparse contour weakened the supply
+field itself and the shape decayed to black
+(measured lit 0.08% at 9.5 s, 0% at 13.5 s); shape
+mode samples the field as a probability and holds
+a stable particle figure (lit ≈ 9%, steady at
+20 s). One starter key changed; no config keys.
+
+Also in this release — Phase CV: named groups
+(generic group retention). Groups can be defined
+once and reused by the force gate: predicate
+groups (a named copy of the group condition),
+frozen snapshot groups (membership captured from
+the current bake; later attribute changes do not
+move membership), and composite groups (union /
+intersection). Two new config keys
+(gpgpuGroupsData, gpgpuGroupRef; 1,361 total).
+Share links carry predicate definitions only —
+frozen snapshots and composites that depend on
+them are filtered out when a link is generated
+and stay in local saves and presets. The velocity
+shader already links every texture image unit the
+platform guarantees (16/16), so named groups
+compile down to the existing gate instead of a
+new membership texture: a predicate definition
+feeds the gate uniforms, and a frozen / composite
+group's membership is baked into the attribute
+texture's fourth slot as exact 0/1 and read as
+"above 0.5". While a frozen / composite group
+gates, drives reading slot 4 see membership and
+the dynamic attribute re-evaluation / feedback
+passes stand down (predicate groups have neither
+restriction). Verified on the real GPU: legacy
+predicate, named predicate and frozen snapshot
+renders are bit-identical.
 
 ## [1.86.0] — 2026-11-20
 

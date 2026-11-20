@@ -151,6 +151,7 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
         />
       ) : (
         <AppScene
+          dynResEnabled
           audioRef={audioRef}
           config={displayConfig}
           interLayerContactAmount={getInterLayerContactAmount(displayConfig)}

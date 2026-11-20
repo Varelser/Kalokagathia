@@ -19,6 +19,7 @@ import { ControlPanelProps } from './controlPanelTypes';
 import { useControlPanelState } from './useControlPanelState';
 import { toggleFullscreen } from '../lib/platformFeatures';
 import { encodeConfigPayload } from '../lib/shareLink';
+import { filterGpgpuGroupsForLink, parseGpgpuGroups, serializeGpgpuGroups } from '../lib/gpgpuGroups';
 import { buildEmbedSnippet } from '../lib/embedMode';
 import { buildStreamUrl } from '../lib/streamMode';
 import { normalizeConfig } from '../lib/appStateConfig';
@@ -342,7 +343,23 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
     if (activePresetId && catalogClean === null && !isPresetDirty) {
       return { hash: `#p=${activePresetId}`, catalogClean: false };
     }
-    const payload = await encodeConfigPayload('Monosphere scene', config);
+    // Phase CV ruling: share links carry predicate group
+    // definitions only — frozen snapshots (and composites that
+    // depend on them) stay in local saves and presets. When the
+    // gate's group is dropped, the link falls back to the legacy
+    // single-condition gate.
+    let shareConfig: unknown = config;
+    if (config.gpgpuGroupsData) {
+      const { defs: keptDefs, droppedIds } = filterGpgpuGroupsForLink(parseGpgpuGroups(config.gpgpuGroupsData));
+      if (droppedIds.length > 0) {
+        shareConfig = {
+          ...config,
+          gpgpuGroupsData: serializeGpgpuGroups(keptDefs) ?? '',
+          ...(droppedIds.includes(config.gpgpuGroupRef) ? { gpgpuGroupRef: '' } : {}),
+        };
+      }
+    }
+    const payload = await encodeConfigPayload('Monosphere scene', shareConfig);
     if (payload) return { hash: `#c=${payload}`, catalogClean: false };
     return null;
   };

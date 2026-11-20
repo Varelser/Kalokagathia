@@ -50,6 +50,7 @@ import {
   normalizeAttrNames,
   resolveAttrDynInterval,
 } from '../lib/gpgpuAttributes';
+import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
 import { resolveRigid, stepRigidBodies, writeRigidBodyTexture } from '../lib/rigidBodies';
@@ -256,7 +257,17 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   // same discipline as BO below). When the feedback fragment
   // exists it takes over the stage-2 re-evaluation and the BO
   // fragment is suppressed, so the two passes never both run.
-  const attrFeedbackFragment = config.gpgpuAttrFeedbackEnabled
+  // Phase CV: while a baked group (snapshot/composite) gates the
+  // forces, its membership lives in the static bake's spare slot
+  // channel — the BO/BV re-evaluation passes would overwrite that
+  // channel with expression results, so they stand down and every
+  // consumer keeps the bake verbatim (predicate groups are
+  // unaffected: the shader evaluates them from the live texture).
+  const groupGateBaked = resolveGroupGate(
+    parseGpgpuGroups(config.gpgpuGroupsData ?? ''),
+    config.gpgpuGroupRef ?? '',
+  ).kind === 'baked';
+  const attrFeedbackFragment = !groupGateBaked && config.gpgpuAttrFeedbackEnabled
     ? buildAttrFeedbackFragment(config.gpgpuAttrExprs, config.gpgpuAttrNames)
     : null;
   const attrFeedbackSignature = attrFeedbackFragment
@@ -274,7 +285,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   // texture verbatim (the structural identity guarantee). The
   // signature covers everything the pass depends on, so the
   // useFrame below rebuilds it only when one of them changes.
-  const attrDynFragment = !attrFeedbackFragment && config.gpgpuAttrDynEnabled
+  const attrDynFragment = !groupGateBaked && !attrFeedbackFragment && config.gpgpuAttrDynEnabled
     ? buildAttrDynFragment(config.gpgpuAttrExprs, config.gpgpuAttrNames)
     : null;
   const attrDynInterval = resolveAttrDynInterval(config.gpgpuAttrDynInterval);

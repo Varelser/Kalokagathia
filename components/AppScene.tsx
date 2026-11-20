@@ -14,6 +14,7 @@ import { isHorizonActive, isHorizonSuppressed } from '../lib/horizonBackground';
 import { AppSceneLayerContent } from './AppSceneLayerContent';
 import { EMPTY_PYRO_GRID_FOG_FEED, type PyroGridFogFeed } from '../lib/pyroGrid';
 import { AppScenePostFx } from './AppScenePostFx';
+import { DynResController } from './DynResController';
 import { useAppSceneTemporalConfig } from './useAppSceneTemporalConfig';
 import type { AppSceneProps } from './AppSceneTypes';
 
@@ -61,6 +62,7 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
   pointCloudCaptureRef,
   transparentBackground = false,
   backgroundOverrideColor,
+  dynResEnabled = false,
 }) => {
   const controlsRef = React.useRef<OrbitControlsImpl | null>(null);
   const isInteractingRef = React.useRef(false);
@@ -158,6 +160,7 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
       />
       <ScreenshotManager config={effectiveConfig} saveTrigger={saveTrigger} />
       <DeterministicRenderManager />
+      {dynResEnabled && <DynResController config={effectiveConfig} isPlaying={isPlaying} />}
       <StartupFrameSignals onFxReady={handleFxReady} />
       <OrbitControls
         key={`controls-${effectiveConfig.cameraDistance}`}

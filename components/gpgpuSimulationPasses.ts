@@ -10,6 +10,7 @@ import { resolveVellum } from '../lib/gpgpuVellum';
 import { effectiveGrainsFriction } from '../lib/gpgpuGrains';
 import { resolveRigid } from '../lib/rigidBodies';
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
+import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { isFreeCurveIdentity, normalizeFreeCurvePoints, FREE_CURVE_MAX_POINTS } from '../lib/freeCurve';
 import {
@@ -710,13 +711,25 @@ export function runSimulationPasses(args: {
     if (velSimMat.uniforms.uAttrForceEnabled) velSimMat.uniforms.uAttrForceEnabled.value = !!attrTex && attrConsumers.forceActive;
     if (velSimMat.uniforms.uAttrForceSlot) velSimMat.uniforms.uAttrForceSlot.value = normalizeAttrSlot(config.gpgpuAttrForceSlot);
     if (velSimMat.uniforms.uAttrForceAmount) velSimMat.uniforms.uAttrForceAmount.value = Math.max(0, Math.min(1, config.gpgpuAttrForceAmount ?? 1));
-    if (velSimMat.uniforms.uGroupEnabled) velSimMat.uniforms.uGroupEnabled.value = !!attrTex && attrConsumers.groupActive;
-    if (velSimMat.uniforms.uGroupSlot) velSimMat.uniforms.uGroupSlot.value = Math.max(0, Math.min(3, Math.round(config.gpgpuGroupSlot ?? 0)));
-    if (velSimMat.uniforms.uGroupMode) velSimMat.uniforms.uGroupMode.value = { below: 0, above: 1, band: 2 }[config.gpgpuGroupMode] ?? 1;
-    if (velSimMat.uniforms.uGroupLow) velSimMat.uniforms.uGroupLow.value = Math.max(0, Math.min(1, config.gpgpuGroupLow ?? 0.25));
-    if (velSimMat.uniforms.uGroupHigh) velSimMat.uniforms.uGroupHigh.value = Math.max(0, Math.min(1, config.gpgpuGroupHigh ?? 0.75));
+    // Phase CV: a named group compiles down to this same gate —
+    // a predicate group supplies the predicate values, a baked
+    // group (snapshot/composite) reads its membership channel
+    // (the runtime wrote exact 0/1 into the baked slot of the
+    // attribute texture) as "above 0.5". No new shader code and
+    // no new texture unit (the shader already links 16/16).
+    const groupGate = resolveGroupGate(parseGpgpuGroups(config.gpgpuGroupsData ?? ''), config.gpgpuGroupRef ?? '');
+    const gatePredicate = groupGate.kind === 'predicate'
+      ? groupGate.predicate
+      : groupGate.kind === 'baked'
+        ? { slot: groupGate.slot, mode: 'above' as const, low: 0.5, high: 1, invert: false }
+        : null;
+    if (velSimMat.uniforms.uGroupEnabled) velSimMat.uniforms.uGroupEnabled.value = !!attrTex && (gatePredicate !== null || attrConsumers.groupActive);
+    if (velSimMat.uniforms.uGroupSlot) velSimMat.uniforms.uGroupSlot.value = gatePredicate ? gatePredicate.slot : Math.max(0, Math.min(3, Math.round(config.gpgpuGroupSlot ?? 0)));
+    if (velSimMat.uniforms.uGroupMode) velSimMat.uniforms.uGroupMode.value = { below: 0, above: 1, band: 2 }[gatePredicate ? gatePredicate.mode : config.gpgpuGroupMode] ?? 1;
+    if (velSimMat.uniforms.uGroupLow) velSimMat.uniforms.uGroupLow.value = gatePredicate ? gatePredicate.low : Math.max(0, Math.min(1, config.gpgpuGroupLow ?? 0.25));
+    if (velSimMat.uniforms.uGroupHigh) velSimMat.uniforms.uGroupHigh.value = gatePredicate ? gatePredicate.high : Math.max(0, Math.min(1, config.gpgpuGroupHigh ?? 0.75));
     if (velSimMat.uniforms.uGroupTarget) velSimMat.uniforms.uGroupTarget.value = { all: 0, gravity: 1, turbulence: 2, curl: 3, wind: 4, morph: 5 }[config.gpgpuGroupTarget] ?? 0;
-    if (velSimMat.uniforms.uGroupInvert) velSimMat.uniforms.uGroupInvert.value = !!config.gpgpuGroupInvert;
+    if (velSimMat.uniforms.uGroupInvert) velSimMat.uniforms.uGroupInvert.value = gatePredicate ? gatePredicate.invert : !!config.gpgpuGroupInvert;
   }
   velSimMat.uniforms.uWellEnabled.value = config.gpgpuWellEnabled;
   velSimMat.uniforms.uWellStrength.value = config.gpgpuWellStrength;

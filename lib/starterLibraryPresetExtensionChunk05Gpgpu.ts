@@ -2073,7 +2073,12 @@ export const STARTER_PRESET_EXTENSION_CHUNK_05_GPGPU: PresetRecord[] = [
         gpgpuMorphOrbitSpeed: 0.0,
         layer2TextMapText: 'VARELSER',
         gpgpuMaskSource: 'edge-output',
-        gpgpuMaskMode: 'clip',
+        // Phase CX (CQ ruling): 'clip' self-seals — the clipped
+        // particles stop feeding the edge capture and the frame
+        // decays to black (lit 0.08% -> 0.00%). 'shape' samples
+        // positions by the field instead, which sustains the
+        // contour supply (lit ~9%, stable at 20s, real GPU).
+        gpgpuMaskMode: 'shape',
         gpgpuMaskThreshold: 0.5,
         gpgpuMaskInvert: false,
         postEdgeEnabled: false,

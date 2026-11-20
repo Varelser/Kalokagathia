@@ -68,6 +68,8 @@ import {
   resolveAttrColorSlots,
   resolveAttrConsumers,
 } from '../lib/gpgpuAttributes';
+import { evaluateGpgpuGroup, parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
+import { setLastAttrBake } from '../lib/gpgpuGroupBridge';
 
 // The GPGPU tex-size caps (MAX_GPGPU_TEX_SIZE / GPGPU_TEX_SIZE_CAPS /
 // getMaxGpgpuTexSize) live in lib/gpuTier.ts since the 2026-11-14 perf
@@ -802,6 +804,14 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const webgpuPosTexRef = useRef<THREE.DataTexture | null>(null);
   const webgpuPingIsARef = useRef(true);
 
+  // Light position deps for the reseed effects below (Phase T):
+  // masked to 0 unless the 'light' emitter is in use, so dragging
+  // the light never reseeds other shapes' clouds. Extracted here
+  // so the dependency arrays hold plain values.
+  const lightPosDepX = config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0;
+  const lightPosDepY = config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0;
+  const lightPosDepZ = config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0;
+
   useEffect(() => {
     if (rtRef.current) {
       rtRef.current.posA.dispose();
@@ -1116,16 +1126,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       webgpuPosTexRef.current?.dispose();
       webgpuPosTexRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- フィールド単位の依存が意図的: 本体は config 全体をベイク関数へ渡すが、再シード条件は列挙したベイク入力だけに限る（config 全体を依存に入れると全ての設定変更でプールが再シードされる）
   }, [texSize, gl, config.gpgpuEmitShape, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax, config.gpgpuMorphEnabled, config.gpgpuMorphReplicaCount, config.gpgpuMorphReplicaAgeStep,
     // Vellum (Phase AR): toggling the solver or its shape reseeds
     // the pool from the grid bake (the "reset = re-bake" rule).
     config.gpgpuVellumEnabled, config.gpgpuVellumMode,
-    // Light position only re-seeds while the 'light' emitter is in
-    // use (Phase T); for other shapes it is masked to 0 so dragging
-    // the light never resets their cloud.
-    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0,
-    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0,
-    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0]);
+    lightPosDepX, lightPosDepY, lightPosDepZ]);
 
   // Aux chain pools (Phase W1): allocated only while the configured
   // chain depth reaches them — depth 1 (the default) allocates
@@ -1159,6 +1165,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   useEffect(() => {
     if (!config.gpgpuPyroGridEnabled) return;
     ensurePyroGridSupport();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 外部診断ストアとの同期: 購読開始前に現在値を取り込む必要がある（初期値も同じストアから読んでいる）
     setPyroSupport(getPyroGridSupport());
     return subscribePyroGridSupport(() => setPyroSupport(getPyroGridSupport()));
   }, [config.gpgpuPyroGridEnabled]);
@@ -1269,9 +1276,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     config.gpgpuSeed,
     config.gpgpuAgeMax,
     config.gpgpuMorphReplicaAgeStep,
-    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0,
-    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0,
-    config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0,
+    lightPosDepX,
+    lightPosDepY,
+    lightPosDepZ,
   ]);
 
   // Morph target texture (Kinetix integration B1a): the per-particle
@@ -1391,6 +1398,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphMaskHeight = config.gpgpuMaskMapHeight;
   const morphMaskThreshold = config.gpgpuMaskThreshold;
   const morphMaskInvert = config.gpgpuMaskInvert;
+  const attrCloudVersion = attrCloud?.version ?? 0;
   useEffect(() => {
     morphTexRef.current?.dispose();
     morphTexRef.current = null;
@@ -1640,6 +1648,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         rigidSolverRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- フィールド単位の依存が意図的: 本体は config 全体を各ビルダーへ渡すが、再ベイク条件は上方で抽出したフィールドだけに限る（config 全体を依存に入れると全ての設定変更で再ベイクされる）
   }, [
     texSize,
     morphEnabled,
@@ -1741,7 +1750,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphFractureCells,
     morphFractureSeed,
     morphFractureGap,
-    attrCloud?.version ?? 0,
+    attrCloudVersion,
   ]);
 
   // Named point attributes (Phase AK): the attribute texture is
@@ -1787,6 +1796,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       // 'target' source inputs: the morph bake's own signature
       // (the shared builder is a pure function of the config).
       attrSourcesKey.includes('target') ? JSON.stringify(config) : '',
+      // Named groups (Phase CV): a baked group's membership is
+      // written into this bake, so the referenced definition is
+      // a bake input — but only while a ref is set, so legacy
+      // signatures (and bakes) stay untouched otherwise.
+      config.gpgpuGroupRef ? JSON.stringify([config.gpgpuGroupRef, config.gpgpuGroupsData]) : '',
     ].join('|')
     : '';
   useEffect(() => {
@@ -1812,7 +1826,35 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         ? resolveAttrColorSlots(normalizeAttrNames(config.gpgpuAttrNames))
         : null,
     });
-    const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    // Phase CV: publish the pristine bake for the panel's freeze
+    // action, then — when the gate resolves to a baked group
+    // (snapshot/composite) — write its exact 0/1 membership into
+    // the baked slot channel of a COPY used for the texture. The
+    // velocity shader links every texture unit the platform
+    // guarantees, so the membership rides the attribute texture
+    // itself; the gate reads it as "above 0.5" (see
+    // resolveGroupGate in lib/gpgpuGroups.ts).
+    setLastAttrBake(data, texSize);
+    let texData = data;
+    const groupGate = resolveGroupGate(
+      parseGpgpuGroups(config.gpgpuGroupsData ?? ''),
+      config.gpgpuGroupRef ?? '',
+    );
+    if (groupGate.kind === 'baked') {
+      const membership = evaluateGpgpuGroup(
+        parseGpgpuGroups(config.gpgpuGroupsData ?? ''),
+        config.gpgpuGroupRef,
+        data,
+        texSize * texSize,
+      );
+      if (membership) {
+        texData = new Float32Array(data);
+        for (let i = 0; i < membership.length; i += 1) {
+          texData[i * 4 + groupGate.slot] = membership[i];
+        }
+      }
+    }
+    const tex = new THREE.DataTexture(texData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
     attrTexRef.current = tex;
     return () => {

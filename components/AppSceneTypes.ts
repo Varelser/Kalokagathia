@@ -42,4 +42,9 @@ export type AppSceneProps = {
    *  config). PostFx stays mounted over the solid colour. Ignored when
    *  transparentBackground is set. */
   backgroundOverrideColor?: string;
+  /** Phase CX: measured dynamic resolution for the live view
+   *  (lib/dynres). Default false — only the main scene (AppRootLayout)
+   *  enables it; embed / compare scenes keep the static DPR range
+   *  from getAdaptiveDprRange() exactly as before. */
+  dynResEnabled?: boolean;
 };

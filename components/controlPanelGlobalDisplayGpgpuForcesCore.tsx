@@ -18,6 +18,14 @@ import {
   normalizeAttrNames,
   normalizeAttrSources,
 } from '../lib/gpgpuAttributes';
+import {
+  freezeGpgpuGroup,
+  makeGpgpuGroupId,
+  parseGpgpuGroups,
+  serializeGpgpuGroups,
+  type GpgpuGroupDef,
+} from '../lib/gpgpuGroups';
+import { getLastAttrBake } from '../lib/gpgpuGroupBridge';
 
 /** Free curve editor (Phase AJ): per-point t / value sliders with
  *  add / remove, plus shape presets. Controlled entirely by the
@@ -115,6 +123,76 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
     { label: `Slot 4（${names[3]}）`, val: '3' },
   ];
   const groupSlotOptions = slotOptions.slice(1);
+  // Named groups (Phase CV): the definition library lives in the
+  // serialised gpgpuGroupsData key; every edit round-trips through
+  // the lib's parser/serializer so the stored form stays valid.
+  const groupDefs = parseGpgpuGroups(config.gpgpuGroupsData ?? '');
+  const [groupName, setGroupName] = React.useState('');
+  const [groupPickA, setGroupPickA] = React.useState('');
+  const [groupPickB, setGroupPickB] = React.useState('');
+  const [groupOp, setGroupOp] = React.useState<'union' | 'intersection'>('union');
+  const [groupNote, setGroupNote] = React.useState('');
+  const saveGroupDefs = (next: GpgpuGroupDef[]) => {
+    const text = serializeGpgpuGroups(next);
+    if (text === null) {
+      setGroupNote('グループの保存容量上限を超えるため保存できませんでした。');
+      return;
+    }
+    updateConfig('gpgpuGroupsData', text);
+    if (config.gpgpuGroupRef && !next.some((d) => d.id === config.gpgpuGroupRef)) {
+      updateConfig('gpgpuGroupRef', '');
+    }
+    setGroupNote('');
+  };
+  const createGroupFromLegacy = () => {
+    const def: GpgpuGroupDef = {
+      id: makeGpgpuGroupId(groupDefs),
+      name: groupName.trim() || `Group ${groupDefs.length + 1}`,
+      source: {
+        kind: 'predicate',
+        predicate: {
+          slot: config.gpgpuGroupSlot,
+          mode: config.gpgpuGroupMode,
+          low: config.gpgpuGroupLow,
+          high: config.gpgpuGroupHigh,
+          invert: config.gpgpuGroupInvert,
+        },
+      },
+    };
+    saveGroupDefs([...groupDefs, def]);
+    setGroupName('');
+  };
+  const freezeGroup = (id: string) => {
+    const bake = getLastAttrBake();
+    if (!bake) {
+      setGroupNote('属性ベイクがまだ無いため凍結できません（属性を使う設定で一度再生してください）。');
+      return;
+    }
+    const next = freezeGpgpuGroup(groupDefs, id, bake.data, bake.data.length / 4);
+    if (!next) {
+      setGroupNote('このグループは凍結できませんでした。');
+      return;
+    }
+    saveGroupDefs(next);
+  };
+  const createCompositeGroup = () => {
+    if (!groupPickA || !groupPickB || groupPickA === groupPickB) {
+      setGroupNote('合成には異なる2つのグループを選んでください。');
+      return;
+    }
+    const def: GpgpuGroupDef = {
+      id: makeGpgpuGroupId(groupDefs),
+      name: groupName.trim() || `Group ${groupDefs.length + 1}`,
+      source: { kind: 'composite', a: groupPickA, b: groupPickB, op: groupOp },
+    };
+    saveGroupDefs([...groupDefs, def]);
+    setGroupName('');
+  };
+  const groupKindLabel = (def: GpgpuGroupDef): string => {
+    if (def.source.kind === 'predicate') return '述語（ライブ）';
+    if (def.source.kind === 'snapshot') return '凍結（スナップショット）';
+    return def.source.op === 'union' ? '合成（和集合）' : '合成（積集合）';
+  };
   const setName = (slot: number, value: string) => {
     const next = [...names];
     next[slot] = value;
@@ -225,6 +303,56 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
           <Toggle label="Group Invert（条件の反転）" value={config.gpgpuGroupInvert} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGroupInvert', v)} />
         </>
       )}
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Named Groups — 名前付きグループ（Phase CV）</div>
+      <AttrSelect
+        label="Gate Group（ゲートに使うグループ）"
+        value={config.gpgpuGroupRef || ''}
+        options={[
+          { label: '従来の単一条件（上の Group 設定）', val: '' },
+          ...groupDefs.map((d) => ({ label: `${d.name}（${groupKindLabel(d)}）`, val: d.id })),
+        ]}
+        onChange={(v) => updateConfig('gpgpuGroupRef', v)}
+      />
+      {groupDefs.map((def) => (
+        <div key={def.id} className="mt-1 flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-[11px] text-white/90">{def.name}<span className="text-white/50"> — {groupKindLabel(def)}</span></span>
+          {def.source.kind !== 'snapshot' && (
+            <button type="button" onClick={() => freezeGroup(def.id)} className="shrink-0 rounded border border-white/15 bg-white/5 px-2 py-1 text-[10px] text-white/80 hover:border-white/40">凍結</button>
+          )}
+          <button type="button" onClick={() => saveGroupDefs(groupDefs.filter((d) => d.id !== def.id))} className="shrink-0 rounded border border-white/15 bg-white/5 px-2 py-1 text-[10px] text-white/80 hover:border-white/40">削除</button>
+        </div>
+      ))}
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          type="text"
+          value={groupName}
+          onChange={(e) => setGroupName(e.target.value)}
+          placeholder="新しいグループ名"
+          className="min-w-0 flex-1 rounded border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/90 outline-none focus:border-white/40"
+          aria-label="New group name"
+        />
+        <button type="button" onClick={createGroupFromLegacy} className="shrink-0 rounded border border-white/15 bg-white/5 px-2 py-1 text-[10px] text-white/80 hover:border-white/40">現在の条件で作成</button>
+      </div>
+      {groupDefs.length >= 2 && (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="min-w-0 flex-1 [&_select]:mb-0">
+            <AttrSelect value={groupPickA} options={[{ label: 'グループA', val: '' }, ...groupDefs.map((d) => ({ label: d.name, val: d.id }))]} onChange={setGroupPickA} />
+          </div>
+          <div className="w-24 shrink-0 [&_select]:mb-0">
+            <AttrSelect value={groupOp} options={[{ label: '和集合', val: 'union' }, { label: '積集合', val: 'intersection' }]} onChange={(v) => setGroupOp(v as 'union' | 'intersection')} />
+          </div>
+          <div className="min-w-0 flex-1 [&_select]:mb-0">
+            <AttrSelect value={groupPickB} options={[{ label: 'グループB', val: '' }, ...groupDefs.map((d) => ({ label: d.name, val: d.id }))]} onChange={setGroupPickB} />
+          </div>
+          <button type="button" onClick={createCompositeGroup} className="shrink-0 rounded border border-white/15 bg-white/5 px-2 py-1 text-[10px] text-white/80 hover:border-white/40">合成を作成</button>
+        </div>
+      )}
+      {groupNote && (
+        <div className="mt-1 text-[9px] leading-relaxed text-amber-200/80">{groupNote}</div>
+      )}
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        名前付きグループ（Phase CV）: 「現在の条件で作成」は上の単一条件を述語グループとして登録します。「凍結」は現在の所属をスナップショットとして保持し、属性値が後で動いても所属は変わりません。ゲートに使うグループを選ぶと、Target のフォースはそのグループの所属で効きます（未選択なら従来の単一条件）。凍結グループは共有リンクには含まれず、この端末の保存とプリセットにだけ残ります。なお凍結／合成グループがゲートの間は、所属の受け渡しにスロット4のベイクを使うため、スロット4を読む駆動は所属（0/1）を読み、属性の動的再評価とフィードバックは休止します（述語グループではこの制限はありません）。
+      </div>
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         駆動は「属性値で係数を mix する」形で、Amount 0 は無効です。グループは条件を満たす粒子だけ（Invert でその逆だけ）に Target のフォースを効かせます。全て OFF が従来同一です。
       </div>

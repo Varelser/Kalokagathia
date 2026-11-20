@@ -1,20 +1,20 @@
 # Current Status — Kalokagathia (Monosphere)
 
-**現行バージョン: v1.86.0**（2026-11-20、第12期 Phase CW＝CSG U6（STL／glTF 読み込み）: CSG のメッシュ被演算子に STL／glTF ファイルを直接読み込めるように（読み込み時に OBJ テキストへ変換し、U5 の検証済み経路へそのまま流す。glTF はノード変換を焼き付け、複数メッシュは最初の1つだけ採用。外部バッファ参照の .gltf は .glb 化を案内して拒否）。新規 config キー・スターターなし（キー 1,359／スターター 606 のまま）、カタログ 1,666 件は不変。全75スイート＋iMac 実GPUゲート合格（identity 差分 0、読み込み→演算で体積 12.0000 を実測）。詳細は PHASE_CW_REPORT.md。前版 v1.85.0 は Phase CL＝ポイントキャッシュ第2弾）
+**現行バージョン: v1.87.0**（2026-11-20、第12期の仕上げ便: Phase CX＝ライブ動的解像度（性能シグネチャごとに落ち着いた DPR を記憶し、重い場面はその解像度から始まる）／ Phase CV＝名前付きグループ（述語・凍結スナップショット・合成をフォースゲートで再利用。速度シェーダのテクスチャユニット上限 16/16 のため、新規テクスチャでなく既存ゲートへのコンパイルダウンで実現）／ Phase CY＝Edge Output Mask スターターの再調整（maskMode clip→shape、減衰消滅を回復）。新規 config キー 2件（キー 1,361）、スターター 606 のまま。実GPUゲートで CX の settled 復元の実欠陥（R3F の dpr 再適用に踏み潰される）を検出・修正してから出荷（詳細は PHASE_CX_GATE_REPORT.md）。CY スターターはライブ撮影でカタログ収録済み（1,667件）。全76スイート＋iMac 実GPUゲート全合格。前版 v1.86.0 は Phase CW＝CSG U6（STL／glTF 読み込み））
 本番: https://monosphere.pages.dev/ ／ GitHub: Varelser/Kalokagathia（HEAD は出荷レポート参照）
 
 ## 現在の正本はここを見ること
 
-- 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポート
-  （最新: PHASE_CW_REPORT.md、前: PHASE_CL_REPORT.md / PHASE_CK_REPORT.md / PHASE_CJ_REPORT.md / PHASE_CI_REPORT.md / PHASE_CH_REPORT.md）
+- 版ごとの実装・検証・出荷の記録: `~/workspace/kalokagathia-pro/` の各レポートと project 内の PHASE_CV_REPORT.md／PHASE_CX_REPORT.md／PHASE_CX_GATE_REPORT.md
+  （最新: PHASE_CX_GATE_REPORT.md、前: PHASE_CV_REPORT.md / PHASE_CW_REPORT.md / PHASE_CL_REPORT.md）
 - 表現網羅の最終監査: `~/workspace/kalokagathia-pro/MAXON_COVERAGE_AUDIT.md`
   — **最終値 ◎43／△14／×0、加重 88% で確定**（2026-11-17）
-- 変更履歴: `CHANGELOG.md`（[1.86.0] が最新項）
+- 変更履歴: `CHANGELOG.md`（[1.87.0] が最新項）
 
 ## 資産の実数（2026-11-20 実測）
 
-- config キー: **1,359件** ／ 内蔵スターター: **606件**
-- 生成カタログ: **1,666件**（catalog／presets／share が 1:1:1、fps 実測 100%）
+- config キー: **1,361件** ／ 内蔵スターター: **606件**
+- 生成カタログ: **1,667件**（catalog／presets／share が 1:1:1、fps 実測 100%。未収録は Star Section Tube のみ＝標準撮影で黒くなる既知件）
 - 実行経路: WebGL（正）／ WebGPU ／ CPU フォールバック。能力差は能力レジストリで明示申告される
 
 ## 残件（2026-11-17 時点）

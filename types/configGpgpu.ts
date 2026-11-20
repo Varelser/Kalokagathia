@@ -173,6 +173,13 @@ export interface ParticleConfigGpgpu {
   gpgpuGroupHigh: number;
   gpgpuGroupTarget: 'all' | 'gravity' | 'turbulence' | 'curl' | 'wind' | 'morph';
   gpgpuGroupInvert: boolean;
+  // Named groups (Phase CV): the definition library as one
+  // serialised JSON string (lib/gpgpuGroups.ts; '' = no groups)
+  // and the id of the group the force gate uses ('' = the legacy
+  // predicate above). Snapshot payloads ride local saves and
+  // presets, never share links.
+  gpgpuGroupsData: string;
+  gpgpuGroupRef: string;
   gpgpuKillBoundary: boolean;
   gpgpuKillMask: boolean;
   gpgpuDrag: number;
