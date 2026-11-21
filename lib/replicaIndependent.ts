@@ -103,15 +103,24 @@ export function resolveReplicaIndependentActive(config: {
 // per-replica seed offsets on the CPU (they reach the shader as
 // uniforms, so this mirror only needs to be deterministic and
 // well-spread — not bit-equal to the GPU's float32 evaluation).
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+
 function hash3Mirror(x: number, y: number, z: number): [number, number, number] {
-  const fract = (v: number) => v - Math.floor(v);
   const dot1 = x * 127.1 + y * 311.7 + z * 74.7;
   const dot2 = x * 269.5 + y * 183.3 + z * 246.1;
   const dot3 = x * 113.5 + y * 271.9 + z * 124.6;
   return [
-    -1 + 2 * fract(Math.sin(dot1) * 43758.5453123),
-    -1 + 2 * fract(Math.sin(dot2) * 43758.5453123),
-    -1 + 2 * fract(Math.sin(dot3) * 43758.5453123),
+    -1 + 2 * dmHash11(dot1),
+    -1 + 2 * dmHash11(dot2),
+    -1 + 2 * dmHash11(dot3),
   ];
 }
 

@@ -1164,6 +1164,13 @@ export interface ParticleConfigGpgpu {
   gpgpuFlipBlend: number;
   gpgpuFlipPressureIterations: number;
   gpgpuFlipTransfer: number;
+  // Vorticity confinement (Phase DL, DD5a): two extra passes
+  // on the composite field before the pressure projection
+  // (curl, then the Fedkiw confinement force). Inert unless
+  // the FLIP layer is on AND this toggle is on AND epsilon
+  // > 0; the defaults keep the projected field byte-identical.
+  gpgpuFlipVorticityEnabled: boolean;
+  gpgpuFlipVorticityEpsilon: number;
   // Whitewater (Phase BC): foam points derived from the FLIP
   // field — a one-way dependent pool that spawns where the
   // field's vorticity + convergence pass the threshold. All

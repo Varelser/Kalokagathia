@@ -139,12 +139,19 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform bool  uGroupInvert;
   varying vec2 vUv;
 
-  float hash1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float dmHash11(float n) {
+    vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yxz + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+  float hash1(vec2 p) {
+    return dmHash11(p.x * 127.1 + p.y * 311.7);
+  }
 
   // Spawn gate hash (Phase AB): identical to the velocity pass and
   // to spawnHashForUv in lib/gpgpuLifecycle.ts.
   float spawnHash(vec2 uv) {
-    return fract(sin(dot(uv + vec2(7.77, 3.13), vec2(127.1, 311.7))) * 43758.5453);
+    return hash1(uv + vec2(7.77, 3.13));
   }
 
   // Pulse time (Phase AH): identical to the velocity pass and to
@@ -163,7 +170,7 @@ export const SIM_POS_FRAG = /* glsl */ `
   // lib/gpgpuLifecycle.ts (same 64-cycle exactness bound, same
   // delegation at cycles 0 / probability 1).
   float spawnPulseCycleFires(float k) {
-    return fract(sin(dot(vec2(k + 1.0, 3.13), vec2(127.1, 311.7))) * 43758.5453) < uSpawnPulseProbability ? 1.0 : 0.0;
+    return dmHash11((k + 1.0) * 127.1 + 3.13 * 311.7) < uSpawnPulseProbability ? 1.0 : 0.0;
   }
   float spawnPulseTimeEx(float t) {
     float tt = max(t, 0.0);
@@ -202,7 +209,7 @@ export const SIM_POS_FRAG = /* glsl */ `
   // velocity pass and to spawnEventHashForUv in
   // lib/gpgpuLifecycle.ts.
   float spawnEventHash(vec2 uv) {
-    return fract(sin(dot(uv + vec2(5.39, 8.17), vec2(127.1, 311.7))) * 43758.5453);
+    return hash1(uv + vec2(5.39, 8.17));
   }
 
   // Free curve evaluation (Phase AJ): piecewise-linear over the
@@ -225,7 +232,7 @@ export const SIM_POS_FRAG = /* glsl */ `
   // a per-tick (30 Hz) deterministic hash, so a deterministic
   // render reproduces the gate bit-for-bit.
   float emissionHash(vec2 uv, float tick) {
-    return fract(sin(dot(uv * 913.7 + vec2(tick * 17.31, tick * 7.77), vec2(12.9898, 78.233))) * 43758.5453);
+    return hash1(uv * 913.7 + vec2(tick * 17.31, tick * 7.77));
   }
 
   // Gyroid SDF (B3) — identical formulation to the velocity shader.
@@ -290,7 +297,7 @@ export const SIM_POS_FRAG = /* glsl */ `
   // Pointer paint gate (B3): bit-identical with the velocity shader's
   // copy, so both passes agree on which particles are painted.
   float paintHash(vec2 uv, float tick) {
-    return fract(sin(dot(uv * 913.7 + vec2(tick * 17.31, tick * 7.77), vec2(12.9898, 78.233))) * 43758.5453);
+    return hash1(uv * 913.7 + vec2(tick * 17.31, tick * 7.77));
   }
 
   // Quaternion rotation (Phase AU): GLSL twin of quatRotate in

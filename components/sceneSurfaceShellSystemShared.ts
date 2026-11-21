@@ -157,7 +157,9 @@ export const SHELL_FRAGMENT_SHADER = `
   varying vec3 vWorldPos;
 
   float hash(vec3 p) {
-    return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
+    vec3 p3 = fract(vec3(p.x * 127.1 + p.y * 311.7 + p.z * 74.7) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yxz + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
   }
 
   void main() {

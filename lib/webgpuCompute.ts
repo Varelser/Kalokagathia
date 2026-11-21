@@ -132,11 +132,17 @@ struct Uniforms {
 @group(0) @binding(6) var<storage, read>       initPosIn : array<vec4f>;
 @group(0) @binding(7) var<storage, read>       particleLifeIn : array<f32, 36>;
 
+fn dmHash11(n: f32) -> f32 {
+  var p3 = fract(vec3f(n) * vec3f(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yxz + vec3f(33.33));
+  return fract((p3.x + p3.y) * p3.z);
+}
+
 fn hash3(p: vec3f) -> vec3f {
   var q = vec3f(dot(p, vec3f(127.1, 311.7, 74.7)),
                 dot(p, vec3f(269.5, 183.3, 246.1)),
                 dot(p, vec3f(113.5, 271.9, 124.6)));
-  return fract(sin(q) * 43758.5453) * 2.0 - 1.0;
+  return vec3f(dmHash11(q.x), dmHash11(q.y), dmHash11(q.z)) * 2.0 - 1.0;
 }
 fn vnoise(p: vec3f) -> f32 {
   let i = floor(p); let f = fract(p);
@@ -231,12 +237,12 @@ fn gyroidNormal(p: vec3f, sc: vec3f, size: f32) -> vec3f {
 // copy below and to the WebGL shaders, so both passes agree on
 // which particles are painted in a frame.
 fn paintHash(uv: vec2f, tick: f32) -> f32 {
-  return fract(sin(dot(uv * 913.7 + vec2f(tick * 17.31, tick * 7.77), vec2f(12.9898, 78.233))) * 43758.5453);
+  return dmHash11(dot(uv * 913.7 + vec2f(tick * 17.31, tick * 7.77), vec2f(127.1, 311.7)));
 }
 
 // Particle Life species: fixed per particle from the texel index.
 fn plHash(n: f32) -> f32 {
-  return fract(sin(n * 127.1 + 311.7) * 43758.5453123);
+  return dmHash11(n * 3.71 + 17.17);
 }
 fn plSpecies(idx: u32, speciesCount: i32) -> i32 {
   let h = plHash(f32(idx) + 17.17);
@@ -748,7 +754,12 @@ struct Uniforms {
 @group(0) @binding(3) var<storage, read_write> posOut : array<vec4f>;
 @group(0) @binding(4) var<storage, read>       prevPosIn : array<vec4f>;
 
-fn hash1(p: vec2f) -> f32 { return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453); }
+
+fn hash1(p: vec2f) -> f32 {
+  var p3 = fract(vec3f(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + vec3f(33.33));
+  return fract((p3.x + p3.y) * p3.z);
+}
 
 fn gyroidField(p: vec3f, sc: vec3f, size: f32) -> f32 {
   let q = (p - sc) * (3.14159265 / max(size, 1.0));
@@ -765,7 +776,7 @@ fn gyroidNormal(p: vec3f, sc: vec3f, size: f32) -> vec3f {
 }
 
 fn paintHash(uv: vec2f, tick: f32) -> f32 {
-  return fract(sin(dot(uv * 913.7 + vec2f(tick * 17.31, tick * 7.77), vec2f(12.9898, 78.233))) * 43758.5453);
+  return dmHash11(dot(uv * 913.7 + vec2f(tick * 17.31, tick * 7.77), vec2f(127.1, 311.7)));
 }
 
 @compute @workgroup_size(64)

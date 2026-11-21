@@ -23,13 +23,21 @@ export function clampGeomSpinRandom(v: number): number {
 
 /**
  * Second texel hash in [0, 1): the GEOM_VERT phase hash family
- * (fract(sin(dot(p, (127.1, 311.7))) * 43758.5453123)) evaluated at
- * p = uv + (19.19, 7.77) with the rotated direction (269.5, 183.3).
- * Keep the constants in sync with `spinHash2` in the shader.
+ * (the Phase DM vector hash12) evaluated at p = uv + (19.19, 7.77).
+ * Keep the offset in sync with `spinHash2` in the shader.
  */
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+
 export function spinRandomHashForUv(u: number, v: number): number {
-  const s = Math.sin((u + 19.19) * 269.5 + (v + 7.77) * 183.3) * 43758.5453123;
-  return s - Math.floor(s);
+  return dmHash11((u + 19.19) * 269.5 + (v + 7.77) * 183.3);
 }
 
 /** Per-particle spin speed multiplier in [1 - r, 1 + r]. */

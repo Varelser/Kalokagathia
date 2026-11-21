@@ -1,13 +1,19 @@
 import * as THREE from 'three';
 import type { ReactionMode, ReactionProfile, ReactionSource } from './sceneReactionDiffusionProfiles';
 
-function fract(v: number) {
-  return v - Math.floor(v);
-}
-
 function smoothstep(edge0: number, edge1: number, x: number) {
   const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
+}
+
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
 }
 
 export function buildSeedTexture(size: number, mode: ReactionMode, source: ReactionSource, profile: ReactionProfile, model: 'gray-scott' | 'fhn' | 'lenia' = 'gray-scott') {
@@ -32,7 +38,7 @@ export function buildSeedTexture(size: number, mode: ReactionMode, source: React
       const ny = y / size - 0.5;
       const r = Math.sqrt(nx * nx + ny * ny);
       const angle = Math.atan2(ny, nx);
-      const grain = fract(Math.sin((x + 1) * 12.9898 + (y + 1) * 78.233) * 43758.5453123);
+      const grain = dmHash11((x + 1) * 12.9898 + (y + 1) * 78.233);
       let spot = Math.exp(-r * 18.0) + 0.55 * Math.exp(-Math.pow(r - 0.18, 2) * 480.0) * (0.6 + 0.4 * Math.sin(angle * 6.0));
       if (biofilm) {
         const blobs = 0.58 + 0.42 * Math.sin((nx * 5.2 + ny * 3.6) * 9.0) * Math.cos((ny * 5.8 - nx * 3.2) * 7.0);

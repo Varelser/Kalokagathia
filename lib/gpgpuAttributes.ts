@@ -174,15 +174,25 @@ function clamp01(value: number): number {
 
 /**
  * The Particle Life hash (GLSL plHash in the velocity and points
- * shaders): fract(sin(idx * 127.1 + 311.7) * 43758.5453123). JS
+ * shaders): the Phase DM vector hash11 of (index * 3.71 + 17.17),
+ * the plHash seed composition. JS
  * doubles vs GLSL floats differ in the last bits, so this twin is
  * used for the 'hash' / 'species' attribute VALUES (where a 1-ulp
  * difference is invisible), never for cross-pass agreement — the
  * sim and the draw derive species inside GLSL on both sides.
  */
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+
 export function attrHash(index: number): number {
-  const s = Math.sin(index * 127.1 + 311.7) * 43758.5453123;
-  return s - Math.floor(s);
+  return dmHash11(index * 3.71 + 17.17);
 }
 
 /** Species of a texel index, normalised to [0, 1] (plSpecies twin). */

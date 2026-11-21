@@ -9,8 +9,8 @@ export const PHYSICS_NOISE_LOGIC = `
     return rot * p;
   }
 
-  float hash1(float n) { return fract(sin(n) * 43758.5453123); }
-  vec3 hash3(float n) { return fract(sin(vec3(n, n + 1.0, n + 2.0)) * 43758.5453123); }
+  float hash1(float n) { vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  vec3 hash3(float n) { return vec3(hash1(n), hash1(n + 1.0), hash1(n + 2.0)); }
 
   float valueNoise(vec3 x) {
     vec3 i = floor(x);

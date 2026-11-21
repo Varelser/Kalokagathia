@@ -20,7 +20,8 @@ const scaleVec = new THREE.Vector3();
 const color = new THREE.Color();
 
 function fract(value: number) { return value - Math.floor(value); }
-function hash(value: number) { return fract(Math.sin(value * 127.13 + 19.37) * 43758.5453123); }
+function dmHash11(n: number) { let x = fract(n * 0.1031); let y = fract(n * 0.1030); let z = fract(n * 0.0973); const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33); x += d; y += d; z += d; return fract((x + y) * z); }
+function hash(value: number) { return dmHash11(value * 127.13 + 19.37); }
 function signedHash(value: number) { return hash(value) * 2 - 1; }
 
 type UpdateCrystalAggregateFrameArgs = {

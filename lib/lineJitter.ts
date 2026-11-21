@@ -20,9 +20,14 @@ export function clampLineJitter(v: number): number {
   return Math.max(0, Math.min(10, v));
 }
 
-function hash1(x: number): number {
-  const s = Math.sin(x) * 43758.5453;
-  return s - Math.floor(s);
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
 }
 
 /**
@@ -42,8 +47,8 @@ export function lineJitterOffset(
   if (a <= 0) return { x: 0, y: 0, z: 0 };
   const scale = a * Math.max(1, radius) * 0.02;
   return {
-    x: (hash1(phase * 12.9898 + random * 78.233) - 0.5) * 2 * scale,
-    y: (hash1(phase * 26.651 + random * 41.317 + 19.19) - 0.5) * 2 * scale,
-    z: (hash1(phase * 7.233 + random * 12.9898 + 43.71) - 0.5) * 2 * scale,
+    x: (dmHash11(phase * 12.9898 + random * 78.233) - 0.5) * 2 * scale,
+    y: (dmHash11(phase * 26.651 + random * 41.317 + 19.19) - 0.5) * 2 * scale,
+    z: (dmHash11(phase * 7.233 + random * 12.9898 + 43.71) - 0.5) * 2 * scale,
   };
 }

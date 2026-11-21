@@ -182,6 +182,70 @@ export const FLIP_SUBTRACT_FRAG = /* glsl */ `
   }
 `;
 
+// Vorticity confinement (Phase DL, DD5a): pass 1 of 2 — the
+// scalar vorticity ω = dv/dx − du/dy of the composite field,
+// central differences in per-cell units (the whitewater
+// wwVorticity stencil), stored as r = ω, g = |ω| so the force
+// pass reads its gradient source from the same target. Taps
+// clamp to the edge texel centres like the Jacobi / subtract
+// pair (the field's Neumann convention), not the periodic
+// wrap of the CPU spike.
+export const FLIP_VORTICITY_CURL_FRAG = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uVelTex;
+  varying vec2 vUv;
+  vec2 tapC(vec2 uv) {
+    float ts = 1.0 / 64.0;
+    return clamp(uv, vec2(0.5 * ts), vec2(1.0 - 0.5 * ts));
+  }
+  void main() {
+    float ts = 1.0 / 64.0;
+    float vR = texture2D(uVelTex, tapC(vUv + vec2( ts, 0.0))).y;
+    float vL = texture2D(uVelTex, tapC(vUv + vec2(-ts, 0.0))).y;
+    float uT = texture2D(uVelTex, tapC(vUv + vec2(0.0,  ts))).x;
+    float uB = texture2D(uVelTex, tapC(vUv + vec2(0.0, -ts))).x;
+    float w = (vR - vL - (uT - uB)) * 0.5;
+    gl_FragColor = vec4(w, abs(w), 0.0, 1.0);
+  }
+`;
+
+// Vorticity confinement (Phase DL, DD5a): pass 2 of 2 — the
+// Fedkiw et al. 2001 confinement force F = ε · (N × ω) with
+// N = ∇|ω| / |∇|ω||, integrated as vel += F · dt. In 2D,
+// N × (0, 0, ω) = (N.y · ω, −N.x · ω). Where |ω| is flat the
+// direction is undefined and the force is exactly zero (the
+// Pyro grid force pass's guard). The forced field is then
+// pressure-projected by the Jacobi / subtract pair, which
+// removes the non-solenoidal part the force mixes in.
+export const FLIP_VORTICITY_FORCE_FRAG = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uVelTex;
+  uniform sampler2D uCurlTex;
+  uniform float uDelta;
+  uniform float uEpsilon;
+  varying vec2 vUv;
+  vec2 tapC(vec2 uv) {
+    float ts = 1.0 / 64.0;
+    return clamp(uv, vec2(0.5 * ts), vec2(1.0 - 0.5 * ts));
+  }
+  void main() {
+    float ts = 1.0 / 64.0;
+    vec2 vel = texture2D(uVelTex, vUv).xy;
+    float aR = texture2D(uCurlTex, tapC(vUv + vec2( ts, 0.0))).g;
+    float aL = texture2D(uCurlTex, tapC(vUv + vec2(-ts, 0.0))).g;
+    float aT = texture2D(uCurlTex, tapC(vUv + vec2(0.0,  ts))).g;
+    float aB = texture2D(uCurlTex, tapC(vUv + vec2(0.0, -ts))).g;
+    vec2 eta = vec2(aR - aL, aT - aB) * 0.5;
+    float etaLen = length(eta);
+    if (etaLen > 1e-6) {
+      float w = texture2D(uCurlTex, vUv).r;
+      vec2 n = eta / etaLen;
+      vel += uEpsilon * vec2(n.y * w, -n.x * w) * uDelta;
+    }
+    gl_FragColor = vec4(vel, 0.0, 1.0);
+  }
+`;
+
 // Clear pass for the transfer / pressure targets (a drawn
 // zero, so no renderer clear-colour state is touched).
 export const FLIP_CLEAR_FRAG = /* glsl */ `

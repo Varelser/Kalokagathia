@@ -4,9 +4,14 @@
 // of the original SIM_VEL_FRAG template literal. The shell
 // module concatenates all five chunks in order; the assembled
 // string is pinned byte-for-byte by phaseav_test.mjs.
-export const VEL_FRAG_HELPERS = /* glsl */ `  vec3 hash3(vec3 p) {
+export const VEL_FRAG_HELPERS = /* glsl */ `  float dmHash11(float n) {
+    vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yxz + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+  vec3 hash3(vec3 p) {
     p = vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));
-    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+    return -1.0 + 2.0 * vec3(dmHash11(p.x), dmHash11(p.y), dmHash11(p.z));
   }
   float vnoise(vec3 p) {
     vec3 i = floor(p); vec3 f = fract(p); vec3 u = f*f*(3.0-2.0*f);
@@ -113,7 +118,7 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  vec3 hash3(vec3 p) {
   // (texel, 30Hz tick) so a gated particle is teleported by the
   // position pass in the same frame the velocity pass re-seeds it.
   float paintHash(vec2 uv, float tick) {
-    return fract(sin(dot(uv * 913.7 + vec2(tick * 17.31, tick * 7.77), vec2(12.9898, 78.233))) * 43758.5453);
+    return dmHash11(dot(uv * 913.7 + vec2(tick * 17.31, tick * 7.77), vec2(127.1, 311.7)));
   }
 
   // Spawn gate hash (Phase AB): the position shader's hash1 family
@@ -121,7 +126,7 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  vec3 hash3(vec3 p) {
   // position pass and in lib/gpgpuLifecycle.ts (spawnHashForUv), so
   // all three agree on which particles are released.
   float spawnHash(vec2 uv) {
-    return fract(sin(dot(uv + vec2(7.77, 3.13), vec2(127.1, 311.7))) * 43758.5453);
+    return dmHash11(dot(uv + vec2(7.77, 3.13), vec2(127.1, 311.7)));
   }
 
   // Pulse time (Phase AH): live seconds inside t wall seconds —
@@ -138,14 +143,15 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  vec3 hash3(vec3 p) {
   }
 
   // Pulse cycles + probability (Phase AX): cycle k fires when
-  // hash1((k + 1, 3.13)) falls below uSpawnPulseProbability. The
+  // the cycle hash (Phase DM: dmHash11 of (k + 1) * 127.1 +
+  // 3.13 * 311.7) falls below uSpawnPulseProbability. The
   // extended pulse time sums live time over fired cycles only —
   // the first 64 cycles exactly, the expectation beyond (the TS
   // twin spawnPulseTimeExtended in lib/gpgpuLifecycle.ts uses the
   // identical bound). Cycles 0 + probability 1 delegates to the
   // legacy spawnPulseTime above, verbatim.
   float spawnPulseCycleFires(float k) {
-    return fract(sin(dot(vec2(k + 1.0, 3.13), vec2(127.1, 311.7))) * 43758.5453) < uSpawnPulseProbability ? 1.0 : 0.0;
+    return dmHash11((k + 1.0) * 127.1 + 3.13 * 311.7) < uSpawnPulseProbability ? 1.0 : 0.0;
   }
   float spawnPulseTimeEx(float t) {
     float tt = max(t, 0.0);
@@ -190,12 +196,12 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  vec3 hash3(vec3 p) {
   // identical, so the position pass (cohort → respawn) and this
   // pass (cohort → velocity) always pick the same particles.
   float spawnEventHash(vec2 uv) {
-    return fract(sin(dot(uv + vec2(5.39, 8.17), vec2(127.1, 311.7))) * 43758.5453);
+    return dmHash11(dot(uv + vec2(5.39, 8.17), vec2(127.1, 311.7)));
   }
   vec3 spawnEventVelocity(vec3 pos, vec2 uv) {
-    float th = fract(sin(dot(uv + vec2(2.71, 6.13), vec2(127.1, 311.7))) * 43758.5453) * 6.28318530718;
-    float phi = acos(2.0 * fract(sin(dot(uv + vec2(9.43, 4.29), vec2(127.1, 311.7))) * 43758.5453) - 1.0);
-    float magHash = fract(sin(dot(uv + vec2(7.77, 1.93), vec2(127.1, 311.7))) * 43758.5453);
+    float th = dmHash11(dot(uv + vec2(2.71, 6.13), vec2(127.1, 311.7))) * 6.28318530718;
+    float phi = acos(2.0 * dmHash11(dot(uv + vec2(9.43, 4.29), vec2(127.1, 311.7))) - 1.0);
+    float magHash = dmHash11(dot(uv + vec2(7.77, 1.93), vec2(127.1, 311.7)));
     vec3 randDir = vec3(sin(phi) * cos(th), sin(phi) * sin(th), cos(phi));
     vec3 radial = length(pos) > 0.0001 ? normalize(pos) : vec3(0.0, 1.0, 0.0);
     vec3 dir = normalize(mix(radial, randDir, uSpawnEventSpread));
@@ -259,7 +265,7 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  vec3 hash3(vec3 p) {
   // index with the same hash the points readout uses, so sim and draw
   // always agree on which species a particle belongs to.
   float plHash(float n) {
-    return fract(sin(n * 127.1 + 311.7) * 43758.5453123);
+    return dmHash11(n * 3.71 + 17.17);
   }
   int plSpecies(vec2 uv) {
     float idx = floor(uv.y * uTexSizeF) * uTexSizeF + floor(uv.x * uTexSizeF);

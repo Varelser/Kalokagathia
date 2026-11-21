@@ -75,6 +75,15 @@ export interface DiagnosticFrameContext {
   texSize: number;
   ageMax: number;
   extent: number;
+  /**
+   * Phase DL: the render target holding the latest frame's
+   * resolved final fluid field (64×64), or null while the
+   * fluid is off. With FLIP vorticity confinement on this is
+   * NOT the ping target — never resolve it from ping state.
+   */
+  fluidFinal: THREE.WebGLRenderTarget | null;
+  /** Which member of the fluid ping pair `fluidFinal` is. */
+  fluidFinalName: 'fluidRTA' | 'fluidRTB' | null;
 }
 
 export interface DiagnosticStateCapture {

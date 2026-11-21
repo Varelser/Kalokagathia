@@ -112,6 +112,19 @@ export function runFluidAdvectionPass(args: {
   flipPoints?: THREE.Points | null;
   flipPosTex?: THREE.Texture | null;
   flipVelTex?: THREE.Texture | null;
+  // Vorticity confinement (Phase DL): the two extra materials.
+  // Absent (or the keys off) keeps the FLIP pipeline below
+  // byte-identical.
+  flipVorticityCurlMat?: THREE.ShaderMaterial;
+  flipVorticityForceMat?: THREE.ShaderMaterial;
+  // Phase DL (sampling wiring): receives the render target
+  // holding this frame's resolved final fluid field — the
+  // projected field after every stage — or null while the
+  // fluid is off. Consumers (whitewater, the ?diag=1 field
+  // capture) must not guess it from the ping state: with
+  // vorticity confinement on, the final field lands in the
+  // composite target instead of the ping target.
+  fluidFinalTargetRef?: { current: THREE.WebGLRenderTarget | null };
 }): void {
   const {
     config,
@@ -136,6 +149,9 @@ export function runFluidAdvectionPass(args: {
     flipPoints,
     flipPosTex,
     flipVelTex,
+    flipVorticityCurlMat,
+    flipVorticityForceMat,
+    fluidFinalTargetRef,
   } = args;
 
   const flipActive = Boolean(
@@ -165,6 +181,7 @@ export function runFluidAdvectionPass(args: {
     velSimMat.uniforms.uFluidScale.value = config.gpgpuFluidScale;
     if (!flipActive) {
       if (velSimMat.uniforms.uFlipEnabled) velSimMat.uniforms.uFlipEnabled.value = false;
+      if (fluidFinalTargetRef) fluidFinalTargetRef.current = currentFluid;
       return;
     }
 
@@ -214,16 +231,50 @@ export function runFluidAdvectionPass(args: {
     gl.setRenderTarget(baseRT);
     gl.render(simScene, simCamera);
 
+    // Vorticity confinement (Phase DL, DD5a): while active,
+    // two passes run on the composite field before the
+    // projection — curl (composite → transferRT) and the
+    // Fedkiw confinement force (→ finalRT, whose advected
+    // contents the composite already consumed). The projection
+    // then reads the FORCED field and lands back in baseRT, so
+    // the target roles swap: the final field is baseRT and the
+    // FLIP base texture (the pre-projection field the G2P
+    // increment is formed against) is the forced field in
+    // finalRT. Inactive, every assignment below reduces to the
+    // legacy one and no extra pass runs.
+    const vorticityActive = Boolean(
+      config.gpgpuFlipVorticityEnabled && config.gpgpuFlipVorticityEpsilon > 0 &&
+      flipVorticityCurlMat && flipVorticityForceMat,
+    );
+    let projectSourceRT: THREE.WebGLRenderTarget = baseRT;
+    let projectedRT: THREE.WebGLRenderTarget = finalRT;
+    if (vorticityActive) {
+      flipVorticityCurlMat!.uniforms.uVelTex.value = baseRT.texture;
+      simMesh.material = flipVorticityCurlMat!;
+      gl.setRenderTarget(transferRT);
+      gl.render(simScene, simCamera);
+      flipVorticityForceMat!.uniforms.uVelTex.value = baseRT.texture;
+      flipVorticityForceMat!.uniforms.uCurlTex.value = transferRT.texture;
+      flipVorticityForceMat!.uniforms.uDelta.value = dt;
+      flipVorticityForceMat!.uniforms.uEpsilon.value = config.gpgpuFlipVorticityEpsilon;
+      simMesh.material = flipVorticityForceMat!;
+      gl.setRenderTarget(finalRT);
+      gl.render(simScene, simCamera);
+      projectSourceRT = finalRT;
+      projectedRT = baseRT;
+    }
+
     // Pressure projection: Jacobi ping-pong between the (now
     // consumed) transfer target and the pressure target, both
     // cleared to zero pressure first. The divergence source is
-    // the fixed composite field in baseRT.
+    // the fixed pre-projection field (the composite, or the
+    // forced field while vorticity confinement is active).
     clearInto(transferRT);
     clearInto(pressureRT);
     const iterations = Math.max(0, Math.min(32, Math.round(config.gpgpuFlipPressureIterations)));
     let presIn: THREE.WebGLRenderTarget = transferRT;
     let presOut: THREE.WebGLRenderTarget = pressureRT;
-    flipJacobiMat!.uniforms.uVelTex.value = baseRT.texture;
+    flipJacobiMat!.uniforms.uVelTex.value = projectSourceRT.texture;
     for (let i = 0; i < iterations; i++) {
       flipJacobiMat!.uniforms.uPresIn.value = presIn.texture;
       simMesh.material = flipJacobiMat!;
@@ -232,22 +283,26 @@ export function runFluidAdvectionPass(args: {
       const swap = presIn; presIn = presOut; presOut = swap;
     }
 
-    // Gradient subtraction: projected field → finalRT.
-    flipSubtractMat!.uniforms.uVelTex.value = baseRT.texture;
+    // Gradient subtraction: projected field → projectedRT
+    // (finalRT legacy, baseRT with vorticity confinement).
+    flipSubtractMat!.uniforms.uVelTex.value = projectSourceRT.texture;
     flipSubtractMat!.uniforms.uPresTex.value = presIn.texture;
     simMesh.material = flipSubtractMat!;
-    gl.setRenderTarget(finalRT);
+    gl.setRenderTarget(projectedRT);
     gl.render(simScene, simCamera);
 
+    velSimMat.uniforms.uFluidTex.value = projectedRT.texture;
     velSimMat.uniforms.uFlipEnabled.value = true;
-    velSimMat.uniforms.uFlipBaseTex.value = baseRT.texture;
+    velSimMat.uniforms.uFlipBaseTex.value = projectSourceRT.texture;
     velSimMat.uniforms.uFlipBlend.value = config.gpgpuFlipBlend;
     velSimMat.uniforms.uFlipTransfer.value = config.gpgpuFlipTransfer;
+    if (fluidFinalTargetRef) fluidFinalTargetRef.current = projectedRT;
     return;
   }
 
   velSimMat.uniforms.uFluidEnabled.value = false;
   if (velSimMat.uniforms.uFlipEnabled) velSimMat.uniforms.uFlipEnabled.value = false;
+  if (fluidFinalTargetRef) fluidFinalTargetRef.current = null;
 }
 
 // Pyro grid coupling (Phase CB): fills the velocity material's

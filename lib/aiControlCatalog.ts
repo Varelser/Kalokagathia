@@ -407,6 +407,8 @@ const NUMS: NumDef[] = [
   ['gpgpuFlipBlend', 'FLIPのG2Pブレンド（0=PIC、1=FLIP）'],
   ['gpgpuFlipPressureIterations', 'FLIP圧力投影のJacobi反復回数（0〜32）'],
   ['gpgpuFlipTransfer', 'FLIPのG2P転送の適用の強さ'],
+  ['gpgpuFlipVorticityEnabled', 'FLIP渦度閉じ込めのON/OFF（FLIP層ONが前提、OFFで従来同一）'],
+  ['gpgpuFlipVorticityEpsilon', 'FLIP渦度閉じ込めε（0でパス無し・従来同一、上げ過ぎは発散）'],
   ['gpgpuWhitewaterEnabled', 'Whitewater（FLIP場から泡の二次粒子を放出する従属系、一方向）のON/OFF（流体フィールド＋FLIP層が前提、OFFで従来同一）'],
   ['gpgpuWhitewaterAmount', 'Whitewaterの発生量（スポーン確率の倍率）'],
   ['gpgpuWhitewaterThreshold', 'Whitewaterの発生閾値（場の渦度＋収束に対する）'],

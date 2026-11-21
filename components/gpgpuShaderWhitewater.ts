@@ -38,7 +38,7 @@ const WW_SPAWN_GLSL = /* glsl */ `
   uniform float uWwThreshold;
   uniform float uWwAmount;
 
-  float wwHash(float n) { return fract(sin(n) * 43758.5453123); }
+  float wwHash(float n) { vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.x + p3.y) * p3.z); }
   vec3 wwHash3(float n) {
     return vec3(wwHash(n + 0.13), wwHash(n + 17.71), wwHash(n + 41.37)) - 0.5;
   }
@@ -117,7 +117,7 @@ export const WW_VEL_FRAG = /* glsl */ `
   varying vec2 vUv;
   ${WW_SPAWN_GLSL}
 
-  float wwHashLocal(float n) { return fract(sin(n) * 43758.5453123); }
+  float wwHashLocal(float n) { vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.x + p3.y) * p3.z); }
 
   void main() {
     vec4 wwPos = texture2D(uWwPosTex, vUv);
@@ -212,7 +212,7 @@ export const WW_DRAW_VERT = /* glsl */ `
   attribute vec2 aTexCoord;
   varying float vAlpha;
 
-  float wwDrawHash(float n) { return fract(sin(n) * 43758.5453123); }
+  float wwDrawHash(float n) { vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.x + p3.y) * p3.z); }
 
   void main() {
     vec4 posData = texture2D(uWwPosTex, aTexCoord);

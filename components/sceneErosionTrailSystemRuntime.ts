@@ -27,8 +27,18 @@ function fract(value: number) {
   return value - Math.floor(value);
 }
 
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+
 function hash(value: number) {
-  return fract(Math.sin(value * 127.13 + 19.19) * 43758.5453123);
+  return dmHash11(value * 127.13 + 19.19);
 }
 
 function signedHash(value: number) {

@@ -2,6 +2,12 @@ export const PHYSICS_MOTION_BRANCH_C = `
 // Split from applyMotion (ANGLE Metal expression-complexity fix,
 // 2026-11-13): conditions and bodies below are byte-for-byte the
 // original chain text; applyMotion dispatches here by range.
+float dmHash11(float n) {
+  vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yxz + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
 vec3 applyMotionBranchC(vec3 result, vec3 p, float motionType, float time, float amp, float freq, float phase, float rnd, vec3 wind, float fluidForce, float viscosity, vec3 noiseField, vec3 curlField, float attractorScale, vec3 fieldPos, float octaves, float lacunarity) {
     if (motionType < 81.5) {
       float pinwheelAngle = atan(p.z, p.x) + time * 1.1;
@@ -64,7 +70,7 @@ vec3 applyMotionBranchC(vec3 result, vec3 p, float motionType, float time, float
       result += normalize(p + vec3(0.0001)) * sin(time * 2.6 + phase) * amp * 0.08;
       result.y += cos(time * 1.1 + length(p) * 0.03) * amp * 0.12;
     } else if (motionType < 106.5) {
-      float fracture = step(0.58, fract(sin(dot(floor(p * 0.08), vec3(12.9898, 78.233, 37.719))) * 43758.5453));
+      float fracture = step(0.58, dmHash11(dot(floor(p * 0.08), vec3(127.1, 311.7, 74.7))));
       vec3 shardDir = normalize(vec3(sign(p.x + 0.0001), noiseField.y * 0.35, sign(p.z + 0.0001)) + vec3(0.0001));
       result = mix(p * 0.82, p + shardDir * amp * 0.34, fracture);
       result += noiseField * amp * 0.06;
@@ -96,7 +102,7 @@ vec3 applyMotionBranchC(vec3 result, vec3 p, float motionType, float time, float
       result.y += abs(sin(time * 1.1 + phase)) * amp * 0.14;
     } else if (motionType < 112.5) {
       vec3 seepDir = normalize(vec3(noiseField.x, -abs(noiseField.y) - 0.2, noiseField.z) + vec3(0.0001));
-      float crack = step(0.62, fract(sin(dot(floor(p.xz * 0.1), vec2(12.9898,78.233))) * 43758.5453));
+      float crack = step(0.62, dmHash11(dot(floor(p.xz * 0.1), vec2(127.1, 311.7))));
       result += seepDir * amp * mix(0.08, 0.28, crack);
       result.x += sign(p.x + 0.0001) * crack * amp * 0.12;
       result.z += sign(p.z + 0.0001) * crack * amp * 0.12;
@@ -116,7 +122,7 @@ vec3 applyMotionBranchC(vec3 result, vec3 p, float motionType, float time, float
       result.y += abs(sin(time * 1.8 + length(p.xz) * 0.04)) * amp * 0.1;
     } else if (motionType < 116.5) {
       float orbitAngle = atan(p.z, p.x) + time * 1.25;
-      float fractureRadius = length(p.xz) + step(0.55, fract(sin(dot(floor(p.xz * 0.12), vec2(31.2, 14.7))) * 43758.5453)) * amp * 0.2;
+      float fractureRadius = length(p.xz) + step(0.55, dmHash11(dot(floor(p.xz * 0.12), vec2(127.1, 311.7)))) * amp * 0.2;
       result.x = cos(orbitAngle) * fractureRadius;
       result.z = sin(orbitAngle) * fractureRadius;
       result.y += sign(sin(orbitAngle * 6.0 + time)) * amp * 0.12;
@@ -143,7 +149,7 @@ vec3 applyMotionBranchC(vec3 result, vec3 p, float motionType, float time, float
       result.y += sin(time + angle + phase) * amp * 0.12;
     } else if (motionType < 121.5) {
       vec3 bloom = normalize(p + noiseField * 0.4 + vec3(0.0001));
-      float fracture = step(0.58, fract(sin(dot(floor(p.xz * 0.14), vec2(18.4, 91.7))) * 43758.5453));
+      float fracture = step(0.58, dmHash11(dot(floor(p.xz * 0.14), vec2(127.1, 311.7))));
       result += bloom * amp * mix(0.08, 0.3, fracture);
       result += vec3(sign(p.x + 0.0001), 0.0, sign(p.z + 0.0001)) * fracture * amp * 0.1;
     } else if (motionType < 122.5) {

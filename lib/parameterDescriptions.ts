@@ -459,6 +459,8 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuFlipBlend: 'G2P転送のブレンド（0でPIC＝場の速度へ寄せる、1でFLIP＝場の変化分だけを足す）',
   gpgpuFlipPressureIterations: '圧力投影のJacobi反復回数（多いほど発散が減る。0で投影なし）',
   gpgpuFlipTransfer: 'G2P転送の適用の強さ（粒子がグリッドの結果へ寄る割合）',
+  gpgpuFlipVorticityEnabled: 'FLIP渦度閉じ込め（合成場の渦度を算出し、圧力投影の前に閉じ込め力を加えて渦の減衰を補う。FLIP層ONが前提。Off で従来同一）',
+  gpgpuFlipVorticityEpsilon: 'FLIP渦度閉じ込めの強さε（0で渦度パス自体が無く従来同一。上げ過ぎると渦が増幅して発散するため範囲は安全側に狭く切ってある）',
   gpgpuWhitewaterEnabled: 'Whitewater（FLIP場の渦度と収束が閾値を超えたセルから泡の二次粒子を放出する従属系。場へ影響を返さない一方向で、流体フィールドとFLIP層が前提。2D平面層の表現のため発生は場の平面近傍の薄い層に限られ、泡と飛沫の分離はない。Offで従来同一）',
   gpgpuWhitewaterAmount: '白波の発生量（スポーン確率の倍率。0で発生しない）',
   gpgpuWhitewaterThreshold: '白波の発生閾値（場の量＝渦度の大きさ＋収束。低いほど広い範囲で発生する）',

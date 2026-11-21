@@ -22,6 +22,7 @@ import {
   captureDiagnosticState,
   type DiagnosticFrameContext,
 } from './gpgpuDiagnosticAov';
+import { HashGridSampler } from './gpgpuHashGridDiagnostic';
 import {
   resolveGpgpuAudioBlast,
   resolveGpgpuFrameRouting,
@@ -94,11 +95,18 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const diagFrameRef = useRef<DiagnosticFrameContext | null>(null);
   const diagPosBufRef = useRef<Float32Array | null>(null);
   const diagVelBufRef = useRef<Float32Array | null>(null);
+  const diagFluidBufRef = useRef<Float32Array | null>(null);
+  // Phase DL: the fluid pass's resolved final-field target for
+  // this frame (see runFluidAdvectionPass). Whitewater and the
+  // diagnostic hook read the field through this ref, never from
+  // the ping state.
+  const fluidFinalTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (new URLSearchParams(window.location.search).get('diag') !== '1') return;
     let aov: DiagnosticAovRenderer | null = null;
     let aovTexSize = 0;
+    let hashGrid: HashGridSampler | null = null;
     const hook = {
       captureState: () => {
         const ctx = diagFrameRef.current;
@@ -163,11 +171,35 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           litFraction: Math.round((lit / n) * 10000) / 10000,
         };
       },
+      captureHashGrid: (gridSize: number) => {
+        if (!hashGrid) hashGrid = new HashGridSampler();
+        return hashGrid.sample(gl, gridSize);
+      },
+      captureHashGridBytes: (gridSize: number) => {
+        if (!hashGrid) hashGrid = new HashGridSampler();
+        return hashGrid.sampleBytes(gl, gridSize);
+      },
+      // Phase DL: one synchronous readback of the resolved
+      // final fluid field (64×64, RGBA = (vx, vy, 0, 1)). The
+      // buffer is reused between calls — callers must copy the
+      // field synchronously before doing anything else.
+      captureFluidField: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!ctx.fluidFinal) return { error: 'no-fluid-field' };
+        const size = 64;
+        if (!diagFluidBufRef.current || diagFluidBufRef.current.length !== size * size * 4) {
+          diagFluidBufRef.current = new Float32Array(size * size * 4);
+        }
+        gl.readRenderTargetPixels(ctx.fluidFinal, 0, 0, size, size, diagFluidBufRef.current);
+        return { size, field: diagFluidBufRef.current, target: ctx.fluidFinalName };
+      },
     };
     (window as unknown as { __kaloDiag?: typeof hook }).__kaloDiag = hook;
     return () => {
       delete (window as unknown as { __kaloDiag?: typeof hook }).__kaloDiag;
       aov?.dispose();
+      hashGrid?.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -322,6 +354,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     flipJacobiMat,
     flipSubtractMat,
     flipClearMat,
+    flipVorticityCurlMat,
+    flipVorticityForceMat,
     pyroAdvectVelMat,
     pyroAdvectScalarMat,
     pyroForcesVelMat,
@@ -532,6 +566,9 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       flipPoints,
       flipPosTex: posIn.texture,
       flipVelTex: velIn.texture,
+      flipVorticityCurlMat,
+      flipVorticityForceMat,
+      fluidFinalTargetRef,
     });
 
     // OBJ normal kick placement detection (Phase O): a new morph
@@ -843,7 +880,12 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // this frame (the projected FLIP field) and the foam pool's
     // own ping-pong pair; foam never writes back into the field.
     if (!routing.useWebGPU && config.gpgpuWhitewaterEnabled && config.gpgpuFluidEnabled && config.gpgpuFlipEnabled && wwRtRef.current && simMeshRef.current) {
-      const fluidTex = (fluidPingIsA.current ? fluidRTARef.current : fluidRTBRef.current)?.texture ?? null;
+      // Phase DL: read the field through the fluid pass's
+      // resolved final-field target — with vorticity
+      // confinement on, the projected field lands outside the
+      // ping target the legacy resolution below would pick.
+      const fluidTex = fluidFinalTargetRef.current?.texture
+        ?? (fluidPingIsA.current ? fluidRTARef.current : fluidRTBRef.current)?.texture ?? null;
       if (fluidTex) {
         const wwTargets = resolvePingPongTargets(wwRtRef.current, wwPingIsA.current);
         runWhitewaterSimulationPasses({
@@ -1042,6 +1084,13 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       texSize,
       ageMax: config.gpgpuAgeMax,
       extent: config.gpgpuBounceRadius,
+      fluidFinal: fluidFinalTargetRef.current,
+      fluidFinalName:
+        fluidFinalTargetRef.current === fluidRTARef.current
+          ? 'fluidRTA'
+          : fluidFinalTargetRef.current === fluidRTBRef.current
+            ? 'fluidRTB'
+            : null,
     };
 
     pingIsA.current = !isA;

@@ -23,9 +23,14 @@ export function clampLineDashGap(v: number): number {
   return Math.max(0, Math.min(50, v));
 }
 
-function hash1(x: number): number {
-  const s = Math.sin(x) * 43758.5453;
-  return s - Math.floor(s);
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
 }
 
 /**
@@ -37,7 +42,7 @@ function hash1(x: number): number {
  * it from the same midpoint.
  */
 export function lineDashPhase(midX: number, midY: number, midZ: number): number {
-  return hash1(midX * 12.9898 + midY * 78.233 + midZ * 37.719) * 61.7;
+  return dmHash11(midX * 12.9898 + midY * 78.233 + midZ * 37.719) * 61.7;
 }
 
 /** Is the fragment at dash coordinate `coord` inside a dash? */

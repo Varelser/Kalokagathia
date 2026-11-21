@@ -49,7 +49,7 @@ const AUX_EVENT_GLSL = /* glsl */ `
   uniform float uFloorY;
   uniform float uBounceRadius;
 
-  float auxHash(float n) { return fract(sin(n) * 43758.5453123); }
+  float auxHash(float n) { vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.x + p3.y) * p3.z); }
   vec3 auxHash3(float n) {
     return vec3(auxHash(n + 0.13), auxHash(n + 17.71), auxHash(n + 41.37)) - 0.5;
   }
@@ -154,7 +154,7 @@ export const AUX_VEL_FRAG = /* glsl */ `
   varying vec2 vUv;
   ${AUX_EVENT_GLSL}
 
-  float auxHashLocal(float n) { return fract(sin(n) * 43758.5453123); }
+  float auxHashLocal(float n) { vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.x + p3.y) * p3.z); }
 
   void main() {
     vec4 auxPos = texture2D(uAuxPosTex, vUv);
@@ -298,7 +298,7 @@ const AUX_CHAIN_EVENT_GLSL = /* glsl */ `
   uniform float uFloorY;
   uniform float uBounceRadius;
 
-  float auxChainHash(float n) { return fract(sin(n) * 43758.5453123); }
+  float auxChainHash(float n) { vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.x + p3.y) * p3.z); }
   vec3 auxChainHash3(float n) {
     return vec3(auxChainHash(n + 0.13), auxChainHash(n + 17.71), auxChainHash(n + 41.37)) - 0.5;
   }
@@ -403,7 +403,7 @@ export const AUX_CHAIN_VEL_FRAG = /* glsl */ `
   varying vec2 vUv;
   ${AUX_CHAIN_EVENT_GLSL}
 
-  float auxChainHashLocal(float n) { return fract(sin(n) * 43758.5453123); }
+  float auxChainHashLocal(float n) { vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.x + p3.y) * p3.z); }
 
   void main() {
     vec4 auxPos = texture2D(uAuxPosTex, vUv);

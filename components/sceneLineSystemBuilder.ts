@@ -4,9 +4,18 @@ import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import type { LineData, LineProfile } from './sceneLineSystemShared';
 import { getLineBudget, getLineNeighborLimit, getLineSampleLimit, getResolvedLineProfile } from './sceneLineSystemProfile';
 
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+
 function getPairHash(a: number, b: number, seed: number) {
-  const value = Math.sin(a * 12.9898 + b * 78.233 + seed * 37.719) * 43758.5453123;
-  return value - Math.floor(value);
+  return dmHash11(a * 12.9898 + b * 78.233 + seed * 37.719);
 }
 
 function getCandidateScore(profile: LineProfile, point: { x: number; y: number; z: number }, candidate: { x: number; y: number; z: number }, distSq: number, searchDistance: number, globalRadius: number) {

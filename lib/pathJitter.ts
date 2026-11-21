@@ -16,9 +16,14 @@
 // untouched in that case, so default configurations stay
 // bit-identical by construction.
 
-function hash1(n: number): number {
-  const x = Math.sin(n) * 43758.5453123;
-  return x - Math.floor(x);
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
 }
 
 const QUANTUM = 4096;
@@ -48,9 +53,9 @@ export function pathJitterOffset(
   if (!(amount > 0)) return { x: 0, y: 0, z: 0 };
   const k = amount * 0.02 * scale;
   return {
-    x: (hash1(positionSeed(x, y, z, 0)) - 0.5) * 2 * k,
-    y: (hash1(positionSeed(x, y, z, 1)) - 0.5) * 2 * k,
-    z: (hash1(positionSeed(x, y, z, 2)) - 0.5) * 2 * k,
+    x: (dmHash11(positionSeed(x, y, z, 0)) - 0.5) * 2 * k,
+    y: (dmHash11(positionSeed(x, y, z, 1)) - 0.5) * 2 * k,
+    z: (dmHash11(positionSeed(x, y, z, 2)) - 0.5) * 2 * k,
   };
 }
 

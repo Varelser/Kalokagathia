@@ -213,6 +213,10 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
               <Slider label="Pressure Iterations" value={config.gpgpuFlipPressureIterations} min={0} max={32} step={1} onChange={(v) => updateConfig('gpgpuFlipPressureIterations', v)} />
               <Slider label="Transfer" value={config.gpgpuFlipTransfer} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuFlipTransfer', v)} />
               <div className="mt-1 text-[9px] text-white/40">2D planar FLIP on the field grid: particles &lt;-&gt; grid transfer + pressure projection (incompressible xz flow). No free surface / y-pressure — gravity, SPH and colliders still own the vertical.</div>
+              <Toggle label="Vorticity Confinement" value={config.gpgpuFlipVorticityEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuFlipVorticityEnabled', v)} />
+              {config.gpgpuFlipVorticityEnabled && (
+                <Slider label="Vorticity ε" value={config.gpgpuFlipVorticityEpsilon} min={0} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuFlipVorticityEpsilon', v)} />
+              )}
               <Toggle label="Whitewater (Foam)" value={config.gpgpuWhitewaterEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuWhitewaterEnabled', v)} />
               {config.gpgpuWhitewaterEnabled && (
                 <>

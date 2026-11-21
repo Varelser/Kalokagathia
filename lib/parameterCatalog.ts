@@ -120,6 +120,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuFlipBlend', label: "FLIP Blend", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuFlipPressureIterations', label: "FLIP Pressure Iterations", tab: 'global', min: 0, max: 32, step: 1 },
   { key: 'gpgpuFlipTransfer', label: "FLIP Transfer", tab: 'global', min: 0, max: 1, step: 0.01 },
+  { key: 'gpgpuFlipVorticityEpsilon', label: "FLIP Vorticity ε", tab: 'global', min: 0, max: 4, step: 0.05 },
   { key: 'gpgpuWhitewaterAmount', label: "Whitewater Amount", tab: 'global', min: 0, max: 2, step: 0.05 },
   { key: 'gpgpuWhitewaterThreshold', label: "Whitewater Threshold", tab: 'global', min: 0.02, max: 2, step: 0.01 },
   { key: 'gpgpuWhitewaterLife', label: "Whitewater Life", tab: 'global', min: 0.1, max: 2.5, step: 0.05 },

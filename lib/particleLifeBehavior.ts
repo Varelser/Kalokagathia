@@ -196,9 +196,18 @@ export function particleLifeBehaviorForce(
 }
 
 /** Per-particle wander phase in [0, 2pi): the shader's plHash family. */
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+
 export function meanderPhaseForIndex(index: number): number {
-  const h = Math.sin((index + 17.17) * 127.1 + 311.7) * 43758.5453123;
-  const frac = h - Math.floor(h);
+  const frac = dmHash11((index + 17.17) * 3.71 + 17.17);
   return frac * Math.PI * 2;
 }
 

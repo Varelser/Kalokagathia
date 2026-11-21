@@ -42,13 +42,21 @@
  *  instead of sliding along one). */
 export const NOISE_FIELD_EVOLVE_DIR: readonly [number, number, number] = [0.31, 0.47, 0.19];
 
-const fract = (v: number): number => v - Math.floor(v);
-
 /** Gradient hash at a lattice point — the velocity pass's
  *  hash3, component for component. Returns values in [-1, 1). */
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+
 export function noiseFieldHash3(x: number, y: number, z: number): [number, number, number] {
   const component = (dx: number, dy: number, dz: number): number =>
-    -1 + 2 * fract(Math.sin(x * dx + y * dy + z * dz) * 43758.5453123);
+    -1 + 2 * dmHash11(x * dx + y * dy + z * dz);
   return [
     component(127.1, 311.7, 74.7),
     component(269.5, 183.3, 246.1),

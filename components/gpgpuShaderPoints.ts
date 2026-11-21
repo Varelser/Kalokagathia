@@ -70,9 +70,14 @@ const AGE_CURVE_GLSL = /* glsl */ `
 // expression above exactly (one term, amplitude sum 1, identity
 // reading, the perlin 0.5 + 0.5 * v mapping).
 const NOISE_MAP_GLSL = /* glsl */ `
+  float dmHash11(float n) {
+    vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yxz + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
   vec3 kaloNoiseHash3(vec3 p) {
     p = vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));
-    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+    return -1.0 + 2.0 * vec3(dmHash11(p.x), dmHash11(p.y), dmHash11(p.z));
   }
   float kaloNoiseValue(vec3 p) {
     vec3 i = floor(p); vec3 f = fract(p); vec3 u = f*f*(3.0-2.0*f);
@@ -294,7 +299,7 @@ export const DRAW_VERT = /* glsl */ `
 
   // Particle Life species helpers — must match the velocity sim exactly.
   float plHash(float n) {
-    return fract(sin(n * 127.1 + 311.7) * 43758.5453123);
+    return dmHash11(n * 3.71 + 17.17);
   }
   int plSpecies(vec2 uv) {
     float idx = floor(uv.y * uTexSizeF) * uTexSizeF + floor(uv.x * uTexSizeF);
@@ -356,7 +361,7 @@ export const DRAW_VERT = /* glsl */ `
     vSpeed   = clamp(length(vel) / 80.0, 0.0, 1.0);
     vNormAge = uAgeEnabled ? clamp(posData.w / max(uAgeMax, 0.001), 0.0, 1.0) : 0.5;
     vAge = posData.w;
-    vSeed    = fract(sin(dot(aTexCoord, vec2(127.1, 311.7))) * 43758.5453123);
+    vSeed    = dmHash11(dot(aTexCoord, vec2(127.1, 311.7)));
     // Size over lifetime: curve 0 is the legacy linear start->end mix;
     // curve 1 is the Kinetix 'bell' (B1b): end -> start -> end following
     // sin(pi * t), so particles grow after birth and shrink before death.

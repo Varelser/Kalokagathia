@@ -81,13 +81,18 @@ export const LINE_VERTEX_SHADER = `
     return burstEnvelope;
   }
 
+  float dmHash11(float n) {
+    vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yxz + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
   vec3 lineJitterOffset(float phase, float random) {
     if (uLineJitter <= 0.0) return vec3(0.0);
     float scale = uLineJitter * max(uGlobalRadius, 1.0) * 0.02;
     vec3 h = vec3(
-      fract(sin(phase * 12.9898 + random * 78.233) * 43758.5453),
-      fract(sin(phase * 26.651 + random * 41.317 + 19.19) * 43758.5453),
-      fract(sin(phase * 7.233 + random * 12.9898 + 43.71) * 43758.5453));
+      dmHash11(phase * 12.9898 + random * 78.233),
+      dmHash11(phase * 26.651 + random * 41.317 + 19.19),
+      dmHash11(phase * 7.233 + random * 12.9898 + 43.71));
     return (h - 0.5) * 2.0 * scale;
   }
 
@@ -172,7 +177,7 @@ export const LINE_VERTEX_SHADER = `
     vDashCoord = aMix * dist;
     if (uLineDashLength > 0.0) {
       vec3 dashMid = (pA + pB) * 0.5;
-      float dashPhase = fract(sin(dashMid.x * 12.9898 + dashMid.y * 78.233 + dashMid.z * 37.719) * 43758.5453) * 61.7;
+      float dashPhase = dmHash11(dashMid.x * 12.9898 + dashMid.y * 78.233 + dashMid.z * 37.719) * 61.7;
       vDashCoord += dashPhase;
     }
     vec3 finalPos = mix(pA, pB, aMix);

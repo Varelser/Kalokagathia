@@ -33,16 +33,22 @@ export function extractCurlGlslChunk(source: string = SIM_VEL_FRAG): string {
 
 export type Vec3 = [number, number, number];
 
-function fract(x: number): number {
-  return x - Math.floor(x);
-}
-
 function glslMod(x: number, y: number): number {
   return x - y * Math.floor(x / y);
 }
 
 function dot3(a: Vec3, b: Vec3): number {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
 }
 
 export function hash3(p: Vec3): Vec3 {
@@ -52,9 +58,9 @@ export function hash3(p: Vec3): Vec3 {
     dot3(p, [113.5, 271.9, 124.6]),
   ];
   return [
-    -1 + 2 * fract(Math.sin(q[0]) * 43758.5453123),
-    -1 + 2 * fract(Math.sin(q[1]) * 43758.5453123),
-    -1 + 2 * fract(Math.sin(q[2]) * 43758.5453123),
+    -1 + 2 * dmHash11(q[0]),
+    -1 + 2 * dmHash11(q[1]),
+    -1 + 2 * dmHash11(q[2]),
   ];
 }
 

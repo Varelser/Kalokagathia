@@ -167,11 +167,21 @@ export function clampSpawnPulseProbability(v: number): number {
   return Math.max(0, Math.min(1, v));
 }
 
-/** Deterministic per-cycle hash in [0, 1): hash1((k + 1, 3.13)). */
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+
+/** Deterministic per-cycle hash in [0, 1): the DM vector
+ *  hash11 of the historical seed (k + 1) * 127.1 + 3.13 * 311.7. */
 export function spawnPulseCycleHash(cycle: number): number {
   const k = Math.max(0, Math.floor(cycle));
-  const s = Math.sin((k + 1) * 127.1 + 3.13 * 311.7) * 43758.5453;
-  return s - Math.floor(s);
+  return dmHash11((k + 1) * 127.1 + 3.13 * 311.7);
 }
 
 /** Whether cycle `cycle` fires at the given probability. */
@@ -352,8 +362,7 @@ export function clampSpawnEventSpread(v: number): number {
 /** Event hash in [0, 1): hash1(uv + (5.39, 8.17)). GLSL twin:
  *  `spawnEventHash` in both sim shaders. */
 export function spawnEventHashForUv(u: number, v: number): number {
-  const s = Math.sin((u + 5.39) * 127.1 + (v + 8.17) * 311.7) * 43758.5453;
-  return s - Math.floor(s);
+  return dmHash11((u + 5.39) * 127.1 + (v + 8.17) * 311.7);
 }
 
 export function spawnEventHashForIndex(index: number, texSize: number): number {
@@ -376,8 +385,7 @@ export function spawnEventSelects(hash: number, count: number): boolean {
 }
 
 function eventHashOffset(u: number, v: number, ou: number, ov: number): number {
-  const s = Math.sin((u + ou) * 127.1 + (v + ov) * 311.7) * 43758.5453;
-  return s - Math.floor(s);
+  return dmHash11((u + ou) * 127.1 + (v + ov) * 311.7);
 }
 
 /**
@@ -417,13 +425,12 @@ export function spawnEventVelocity(
 
 /**
  * Per-texel spawn hash in [0, 1): the position shader's hash1
- * (fract(sin(dot(p, (127.1, 311.7))) * 43758.5453)) evaluated at
+ * (Phase DM: dmHash11 of the historical dot grammar) evaluated at
  * p = uv + (7.77, 3.13). The GLSL twin is `spawnHash` in both sim
  * shaders; keep the constants in sync.
  */
 export function spawnHashForUv(u: number, v: number): number {
-  const s = Math.sin((u + 7.77) * 127.1 + (v + 3.13) * 311.7) * 43758.5453;
-  return s - Math.floor(s);
+  return dmHash11((u + 7.77) * 127.1 + (v + 3.13) * 311.7);
 }
 
 export function spawnHashForIndex(index: number, texSize: number): number {

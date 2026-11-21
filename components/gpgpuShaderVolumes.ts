@@ -162,7 +162,9 @@ export const GEOM_VERT = /* glsl */ `
     // around its local Y with a per-instance phase so the swarm does
     // not rotate in lockstep. spinSpeed == 0 yields angle 0 exactly,
     // i.e. the legacy un-rotated geometry.
-    float phase = fract(sin(dot(aTexCoord, vec2(127.1, 311.7))) * 43758.5453123);
+    vec3 phaseP3 = fract(vec3(aTexCoord.x * 127.1 + aTexCoord.y * 311.7) * vec3(0.1031, 0.1030, 0.0973));
+    phaseP3 += dot(phaseP3, phaseP3.yxz + 33.33);
+    float phase = fract((phaseP3.x + phaseP3.y) * phaseP3.z);
     // Spin random range (Phase AH): fold the per-instance
     // multiplier into the speed once, so the plain path and the
     // age-curve integral path below both consume the same
@@ -170,7 +172,9 @@ export const GEOM_VERT = /* glsl */ `
     // exactly (multiplier branch skipped).
     float effSpin = uSpinSpeed;
     if (uSpinRandom > 0.0) {
-      float spinHash2 = fract(sin(dot(aTexCoord + vec2(19.19, 7.77), vec2(269.5, 183.3))) * 43758.5453123);
+      vec3 spinP3 = fract(vec3((aTexCoord.x + 19.19) * 127.1 + (aTexCoord.y + 7.77) * 311.7) * vec3(0.1031, 0.1030, 0.0973));
+      spinP3 += dot(spinP3, spinP3.yxz + 33.33);
+      float spinHash2 = fract((spinP3.x + spinP3.y) * spinP3.z);
       effSpin = uSpinSpeed * mix(1.0 - uSpinRandom, 1.0 + uSpinRandom, spinHash2);
     }
     float spinAng = effSpin == 0.0 ? 0.0 : uTime * effSpin + phase * 6.2831853;

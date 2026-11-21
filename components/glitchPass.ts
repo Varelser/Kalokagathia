@@ -30,7 +30,9 @@ uniform float uHeight;
 varying vec2 vUv;
 
 float hash1(float x) {
-  return fract(sin(x) * 43758.5453);
+  vec3 p3 = fract(vec3(x) * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yxz + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
 void main() {

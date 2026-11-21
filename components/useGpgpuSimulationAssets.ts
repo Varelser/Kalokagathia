@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLUID_ADVECT_FRAG, SIM_POS_FRAG, SIM_VERT, SIM_VEL_FRAG, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildVelocityFragment } from "./gpgpuShaders";
+import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLIP_VORTICITY_CURL_FRAG, FLIP_VORTICITY_FORCE_FRAG, FLUID_ADVECT_FRAG, SIM_POS_FRAG, SIM_VERT, SIM_VEL_FRAG, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildVelocityFragment } from "./gpgpuShaders";
 import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG, SIM_VELLUM_VEL_FRAG } from "./gpgpuShaderSimulationVellum";
 import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG } from "./gpgpuShaderAux";
 import { WW_POS_FRAG, WW_VEL_FRAG } from "./gpgpuShaderWhitewater";
@@ -661,6 +661,27 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     vertexShader: SIM_VERT, fragmentShader: FLIP_CLEAR_FRAG,
   }), []);
 
+  // Vorticity confinement (Phase DL): curl of the composite
+  // field, then the Fedkiw confinement force. Only run while
+  // the DL keys are on (see runFluidAdvectionPass); constructed
+  // unconditionally with the other FLIP materials.
+  const flipVorticityCurlMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uVelTex: { value: null },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP_VORTICITY_CURL_FRAG,
+  }), []);
+
+  const flipVorticityForceMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uVelTex:  { value: null },
+      uCurlTex: { value: null },
+      uDelta:   { value: 0.016 },
+      uEpsilon: { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP_VORTICITY_FORCE_FRAG,
+  }), []);
+
   // Pyro grid materials (Phase CA): the atlas solver's seven
   // passes plus a clear (the FLIP clear shader reused — pressure
   // targets restart from zero every step, the FLIP rule). The
@@ -879,6 +900,8 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     flipJacobiMat,
     flipSubtractMat,
     flipClearMat,
+    flipVorticityCurlMat,
+    flipVorticityForceMat,
     pyroAdvectVelMat,
     pyroAdvectScalarMat,
     pyroForcesVelMat,

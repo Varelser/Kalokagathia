@@ -13,6 +13,8 @@ export {
   FLIP_COMPOSITE_FRAG,
   FLIP_JACOBI_FRAG,
   FLIP_SUBTRACT_FRAG,
+  FLIP_VORTICITY_CURL_FRAG,
+  FLIP_VORTICITY_FORCE_FRAG,
   FLIP_CLEAR_FRAG,
 } from "./gpgpuShaderSimulation";
 export { DRAW_VERT, DRAW_FRAG } from "./gpgpuShaderPoints";

@@ -969,6 +969,8 @@ f 8 1 105`,
   gpgpuFlipBlend: 0.95,
   gpgpuFlipPressureIterations: 16,
   gpgpuFlipTransfer: 1.0,
+  gpgpuFlipVorticityEnabled: false,
+  gpgpuFlipVorticityEpsilon: 0.5,
   // Whitewater (Phase BC): off by default — identity.
   gpgpuWhitewaterEnabled: false,
   gpgpuWhitewaterAmount: 1.0,

@@ -1,8 +1,8 @@
 {
   "version": 1,
   "algorithm": "sha256(sorted keys joined by newline)",
-  "fingerprint": "0e67f14316350d9f60e709dec46cc34a2051c053df667a8e4404b56384b5fc4d",
-  "keyCount": 1363,
+  "fingerprint": "2d16218ba05fb3b748f11c1dd3b2de30bda2cbe6762088106011f11cb5dfca72",
+  "keyCount": 1365,
   "keys": [
     "ambientBaseSize",
     "ambientColor",
@@ -186,6 +186,8 @@
     "gpgpuFlipEnabled",
     "gpgpuFlipPressureIterations",
     "gpgpuFlipTransfer",
+    "gpgpuFlipVorticityEnabled",
+    "gpgpuFlipVorticityEpsilon",
     "gpgpuFloorBounce",
     "gpgpuFloorEnabled",
     "gpgpuFloorY",
@@ -1368,5 +1370,5 @@
     "volumeFogGlslCode",
     "volumeFogGlslEnabled"
   ],
-  "recordedAt": "2026-11-20T10:16:33.563Z"
+  "recordedAt": "2026-11-21T16:14:48.801Z"
 }

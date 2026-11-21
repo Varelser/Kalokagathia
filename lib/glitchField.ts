@@ -24,16 +24,21 @@ export function clampGlitchRate(v: number): number {
   return Math.max(0.5, Math.min(30, v));
 }
 
-function hash1(x: number): number {
-  const s = Math.sin(x) * 43758.5453;
-  return s - Math.floor(s);
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
 }
 
 /** Two stable uniforms for (band, quantum) — the GLSL twin
  *  uses the same constants. */
 export function glitchBandHash(band: number, quantum: number): [number, number] {
-  const a = hash1(band * 12.9898 + quantum * 78.233);
-  const b = hash1(band * 39.425 + quantum * 11.135 + 7.77);
+  const a = dmHash11(band * 12.9898 + quantum * 78.233);
+  const b = dmHash11(band * 39.425 + quantum * 11.135 + 7.77);
   return [a, b];
 }
 
@@ -55,5 +60,5 @@ export function glitchBandShift(band: number, quantum: number, amount: number): 
 export function glitchRowShift(row: number, quantum: number, amount: number): number {
   const a = clampGlitchAmount(amount);
   if (a <= 0) return 0;
-  return (hash1(row * 3.717 + quantum * 51.31) * 2 - 1) * a * 0.12;
+  return (dmHash11(row * 3.717 + quantum * 51.31) * 2 - 1) * a * 0.12;
 }

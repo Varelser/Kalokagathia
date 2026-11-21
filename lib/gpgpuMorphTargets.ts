@@ -822,9 +822,18 @@ export const TERRAIN_SCATTER_ATTEMPTS = 5;
  *  scatter finishing (the shared hash1 family on (index, salt)).
  *  Index-based — never an RNG draw — so enabling the finishing
  *  cannot shift the bake's draw sequence. */
+function dmHash11(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+
 export function terrainScatterHash01(index: number, salt: number): number {
-  const s = Math.sin(index * 127.1 + salt * 311.7) * 43758.5453;
-  return s - Math.floor(s);
+  return dmHash11(index * 3.71 + salt * 17.17 + 3.13);
 }
 
 /** The per-particle scale factor of the finishing: [1−r, 1+r]. */

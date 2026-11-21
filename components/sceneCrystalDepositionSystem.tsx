@@ -56,7 +56,8 @@ const matrix = new THREE.Matrix4();
 const color = new THREE.Color();
 
 function fract(v:number){return v-Math.floor(v)}
-function hash(v:number){return fract(Math.sin(v*127.13+19.37)*43758.5453123)}
+function dmHash11(n: number) { let x = fract(n * 0.1031); let y = fract(n * 0.1030); let z = fract(n * 0.0973); const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33); x += d; y += d; z += d; return fract((x + y) * z); }
+function hash(v:number){return dmHash11(v * 127.13 + 19.37)}
 function shash(v:number){return hash(v)*2-1}
 
 function getSettings(config: ParticleConfig, layerIndex: 2 | 3): HybridSettings {
@@ -164,7 +165,7 @@ const VERT = `
   uniform float uPlumeShear;
   varying vec2 vUv;
   varying float vHeight;
-  float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }
+  float hash(vec2 p){ vec3 p3 = fract(vec3(p.x * 127.1 + p.y * 311.7) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.x + p3.y) * p3.z); }
   float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float a=hash(i), b=hash(i+vec2(1.,0.)), c=hash(i+vec2(0.,1.)), d=hash(i+vec2(1.,1.)); vec2 u=f*f*(3.-2.*f); return mix(a,b,u.x)+(c-a)*u.y*(1.-u.x)+(d-b)*u.x*u.y; }
   float fbm(vec2 p){ float v=0.; float a=.5; for(int i=0;i<4;i++){ v+=noise(p)*a; p=p*2.03+vec2(17.2,-11.8); a*=0.5; } return v; }
   void main(){
