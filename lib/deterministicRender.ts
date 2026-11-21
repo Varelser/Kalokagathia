@@ -60,7 +60,7 @@
 //
 // JSZip is loaded lazily inside renderDeterministicSequence: it is only
 // needed when the user actually exports, so it stays out of the initial bundle.
-import { encodeFramesToVideo, type VideoFormat } from './videoEncode';
+import type { VideoFormat } from './videoEncode';
 import { UNMULT_SMOOTHSTEP_HIGH, UNMULT_SMOOTHSTEP_LOW } from './unmult';
 
 /**
@@ -528,5 +528,8 @@ export async function renderDeterministicVideo(
   if (onLoopMeasured && result.loop) {
     onLoopMeasured(result.loop);
   }
+  // Phase DK step D: the encoder is only needed on the video path, so it
+  // is loaded on demand instead of riding along with this module.
+  const { encodeFramesToVideo } = await import('./videoEncode');
   return encodeFramesToVideo(result.frames, job.fps, format, onProgress);
 }
