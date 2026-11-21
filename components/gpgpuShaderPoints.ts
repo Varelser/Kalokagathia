@@ -242,6 +242,15 @@ export const DRAW_VERT = /* glsl */ `
   uniform float     uGroupLow;
   uniform float     uGroupHigh;
   uniform bool      uGroupInvert;
+  // Density compensation (Phase DN, DA6): alpha multiplier that
+  // keeps the apparent coverage at the target density rho when
+  // the count / point size / viewport change. Disabled yields
+  // exactly 1.0 (bit-identical legacy draw). TS twin:
+  // lib/densityComp.ts (densityCompMultiplier).
+  uniform bool      uDensityCompEnabled;
+  uniform float     uDensityTarget;
+  uniform float     uDensityCount;
+  uniform vec2      uViewportSizePx;
   attribute vec2 aTexCoord;
   varying float vSpeed;
   varying float vNormAge;
@@ -256,6 +265,7 @@ export const DRAW_VERT = /* glsl */ `
   varying vec3 vWorldPos;
   varying float vLightMul;
   varying float vShadowMul;
+  varying float vDensityMul;
 
   ${AGE_CURVE_GLSL}
 
@@ -440,6 +450,13 @@ export const DRAW_VERT = /* glsl */ `
     vec4 mvPos = modelViewMatrix * vec4(worldPos, 1.0);
     float dist = -mvPos.z;
     gl_PointSize = max(0.5, uSize * sizeMul * (dist > 0.5 ? min(4.0, 500.0 / dist) : 1.0));
+    // Density compensation (Phase DN): use the FINAL pixel size
+    // (distance attenuation and sizeMul included) so near-large
+    // and far-small points are compensated individually. The
+    // clamp caps at 1.0: compensation only lowers alpha.
+    vDensityMul = uDensityCompEnabled
+      ? clamp(uDensityTarget * (uViewportSizePx.x * uViewportSizePx.y) / (max(uDensityCount, 1.0) * gl_PointSize * gl_PointSize), 0.0, 1.0)
+      : 1.0;
     gl_Position  = projectionMatrix * mvPos;
   }
 `;
@@ -534,6 +551,7 @@ export const DRAW_FRAG = /* glsl */ `
   varying vec3 vWorldPos;
   varying float vLightMul;
   varying float vShadowMul;
+  varying float vDensityMul;
 
   ${PARTICLE_SHAPE_GLSL}
 
@@ -722,7 +740,7 @@ export const DRAW_FRAG = /* glsl */ `
       if (shapeAlpha < 0.01) discard;
     }
 
-    gl_FragColor = vec4(col, shapeAlpha * uOpacity * opacityMul * vPhaseMix);
+    gl_FragColor = vec4(col, shapeAlpha * uOpacity * opacityMul * vPhaseMix * vDensityMul);
   }
 `;
 

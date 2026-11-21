@@ -72,6 +72,12 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       uIblMap:       { value: null },
       uIblIntensity: { value: 0 },
       uIblYaw:       { value: 0 },
+      // Density compensation (Phase DN): same inert defaults as
+      // the points draw; the per-frame sync supplies real values.
+      uDensityCompEnabled: { value: false },
+      uDensityTarget:      { value: 0.5 },
+      uDensityCount:       { value: texSize * texSize },
+      uViewportSizePx:     { value: new THREE.Vector2(1, 1) },
     },
     vertexShader: GEOM_VERT, fragmentShader: GEOM_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,

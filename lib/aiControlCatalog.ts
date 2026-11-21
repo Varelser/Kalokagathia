@@ -409,6 +409,8 @@ const NUMS: NumDef[] = [
   ['gpgpuFlipTransfer', 'FLIPのG2P転送の適用の強さ'],
   ['gpgpuFlipVorticityEnabled', 'FLIP渦度閉じ込めのON/OFF（FLIP層ONが前提、OFFで従来同一）'],
   ['gpgpuFlipVorticityEpsilon', 'FLIP渦度閉じ込めε（0でパス無し・従来同一、上げ過ぎは発散）'],
+  ['gpgpuDensityCompEnabled', '密度補償OpacityのON/OFF（OFFで従来同一、対象はpointsとsolids）'],
+  ['gpgpuDensityCompTarget', '密度補償の目標密度ρ（下げる方向のみ・上限1.0）'],
   ['gpgpuWhitewaterEnabled', 'Whitewater（FLIP場から泡の二次粒子を放出する従属系、一方向）のON/OFF（流体フィールド＋FLIP層が前提、OFFで従来同一）'],
   ['gpgpuWhitewaterAmount', 'Whitewaterの発生量（スポーン確率の倍率）'],
   ['gpgpuWhitewaterThreshold', 'Whitewaterの発生閾値（場の渦度＋収束に対する）'],

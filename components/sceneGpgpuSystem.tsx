@@ -1114,6 +1114,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       attrTexture: attrDynTexture ?? attrTexRef.current,
       texSize,
       time: timeRef.current,
+      viewportSizePx: { x: gl.domElement.width, y: gl.domElement.height },
     });
 
   });

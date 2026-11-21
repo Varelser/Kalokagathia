@@ -1171,6 +1171,8 @@ export interface ParticleConfigGpgpu {
   // > 0; the defaults keep the projected field byte-identical.
   gpgpuFlipVorticityEnabled: boolean;
   gpgpuFlipVorticityEpsilon: number;
+  gpgpuDensityCompEnabled: boolean;
+  gpgpuDensityCompTarget: number;
   // Whitewater (Phase BC): foam points derived from the FLIP
   // field — a one-way dependent pool that spawns where the
   // field's vorticity + convergence pass the threshold. All

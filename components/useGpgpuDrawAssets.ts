@@ -139,6 +139,14 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uGroupLow:     { value: 0.25 },
       uGroupHigh:    { value: 0.75 },
       uGroupInvert:  { value: false },
+      // Density compensation (Phase DN): off / target 0.5 /
+      // count and viewport are inert placeholders until the
+      // per-frame sync supplies the real values; off keeps the
+      // legacy draw bit-identical.
+      uDensityCompEnabled: { value: false },
+      uDensityTarget:      { value: 0.5 },
+      uDensityCount:       { value: texSize * texSize },
+      uViewportSizePx:     { value: new THREE.Vector2(1, 1) },
     },
     vertexShader: DRAW_VERT, fragmentShader: DRAW_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,

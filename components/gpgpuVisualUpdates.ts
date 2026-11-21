@@ -190,6 +190,11 @@ export function syncVisualUniforms(args: {
   attrTexture?: THREE.Texture | null;
   texSize?: number;
   time?: number;
+  // Density compensation (Phase DN): drawing-buffer size in
+  // physical pixels (gl.domElement.width/height at the call
+  // site), read fresh every frame so resize / DPR changes and
+  // the deterministic renderer's export resize are followed.
+  viewportSizePx?: { x: number; y: number };
 }): void {
   const { config, activeCount, assets, posTexture, velTexture, finalSortTex, texSize, time } = args;
   const {
@@ -259,6 +264,17 @@ export function syncVisualUniforms(args: {
   if (drawMat.uniforms.uParticleLifeSpecies) drawMat.uniforms.uParticleLifeSpecies.value = Math.max(2, Math.min(6, Math.round(config.gpgpuParticleLifeSpecies)));
   if (texSize !== undefined && drawMat.uniforms.uTexSizeF) drawMat.uniforms.uTexSizeF.value = texSize;
   drawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
+  // Density compensation (Phase DN): points draw. Count is the
+  // LOD-applied activeCount; viewport falls back to (1,1) only
+  // while no call site supplied it (compensation stays off in
+  // practice because the config toggle is what enables it and
+  // the live call site always supplies the real size).
+  if (drawMat.uniforms.uDensityCompEnabled) drawMat.uniforms.uDensityCompEnabled.value = config.gpgpuDensityCompEnabled;
+  if (drawMat.uniforms.uDensityTarget) drawMat.uniforms.uDensityTarget.value = config.gpgpuDensityCompTarget;
+  if (drawMat.uniforms.uDensityCount) drawMat.uniforms.uDensityCount.value = activeCount;
+  if (drawMat.uniforms.uViewportSizePx && args.viewportSizePx) {
+    (drawMat.uniforms.uViewportSizePx.value as THREE.Vector2).set(args.viewportSizePx.x, args.viewportSizePx.y);
+  }
   drawMat.uniforms.uVelColorEnabled.value = config.gpgpuVelColorEnabled;
   drawMat.uniforms.uVelColorHueMin.value = config.gpgpuVelColorHueMin;
   drawMat.uniforms.uVelColorHueMax.value = config.gpgpuVelColorHueMax;
@@ -508,6 +524,14 @@ export function syncVisualUniforms(args: {
     geomMat.uniforms.uVelTex.value = velTexture;
     geomMat.uniforms.uColor.value.setStyle(config.gpgpuColor);
     geomMat.uniforms.uOpacity.value = config.gpgpuOpacity;
+    // Density compensation (Phase DN): solids draw, same
+    // uniforms and formula as the points draw.
+    if (geomMat.uniforms.uDensityCompEnabled) geomMat.uniforms.uDensityCompEnabled.value = config.gpgpuDensityCompEnabled;
+    if (geomMat.uniforms.uDensityTarget) geomMat.uniforms.uDensityTarget.value = config.gpgpuDensityCompTarget;
+    if (geomMat.uniforms.uDensityCount) geomMat.uniforms.uDensityCount.value = activeCount;
+    if (geomMat.uniforms.uViewportSizePx && args.viewportSizePx) {
+      (geomMat.uniforms.uViewportSizePx.value as THREE.Vector2).set(args.viewportSizePx.x, args.viewportSizePx.y);
+    }
     geomMat.uniforms.uGeomScale.value = config.gpgpuBounceRadius * 0.02 * config.gpgpuGeomScale;
     geomMat.uniforms.uVelocityAlign.value = config.gpgpuGeomVelocityAlign ? 1 : 0;
     if (geomMat.uniforms.uTime) geomMat.uniforms.uTime.value = time ?? 0;

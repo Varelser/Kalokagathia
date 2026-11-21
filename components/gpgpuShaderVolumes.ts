@@ -109,7 +109,16 @@ export const GEOM_VERT = /* glsl */ `
   uniform float uAgeMax;
   uniform bool  uAgeCurveRotationEnabled;
   uniform float uAgeCurveRotation[5];
+  // Density compensation (Phase DN, DA6): same formula as the
+  // points draw; the per-instance pixel size is estimated from
+  // the projected scale (see estimateSolidSizePx in
+  // lib/densityComp.ts). Disabled yields exactly 1.0.
+  uniform bool  uDensityCompEnabled;
+  uniform float uDensityTarget;
+  uniform float uDensityCount;
+  uniform vec2  uViewportSizePx;
   varying vec3 vNormal;
+  varying float vDensityMul;
   // Image-based lighting (Phase AL): world-space normal / position
   // for the equirect sampling in GEOM_FRAG. Written always, read
   // only inside the IBL branch, so the legacy look is untouched.
@@ -215,6 +224,19 @@ export const GEOM_VERT = /* glsl */ `
     vNormal = normalize(normalMatrix * totalRot * normal);
     vWorldNormal = totalRot * normal;
     vWorldPos = instancePos + local;
+    // Density compensation (Phase DN): projected pixel diameter
+    // of the instance. pixels-per-world-unit comes from the
+    // projection matrix (m[1][1] = 1/tan(fov/2)); the world
+    // diameter is uGeomScale (base geometries are ~unit size).
+    if (uDensityCompEnabled) {
+      vec4 mvC = modelViewMatrix * vec4(instancePos, 1.0);
+      float distC = max(-mvC.z, 0.001);
+      float sizePx = uGeomScale * (uViewportSizePx.y * 0.5 * projectionMatrix[1][1] / distC);
+      sizePx = max(sizePx, 0.001);
+      vDensityMul = clamp(uDensityTarget * (uViewportSizePx.x * uViewportSizePx.y) / (max(uDensityCount, 1.0) * sizePx * sizePx), 0.0, 1.0);
+    } else {
+      vDensityMul = 1.0;
+    }
     gl_Position = projectionMatrix * modelViewMatrix * vec4(instancePos + local, 1.0);
   }
 `;
@@ -236,6 +258,7 @@ export const GEOM_FRAG = /* glsl */ `
   varying vec3 vNormal;
   varying vec3 vWorldNormal;
   varying vec3 vWorldPos;
+  varying float vDensityMul;
 
   vec3 kaloIblRotYaw(vec3 d, float yaw) {
     float c = cos(yaw);
@@ -281,7 +304,7 @@ export const GEOM_FRAG = /* glsl */ `
       float fresI = pow(1.0 - abs(dot(WN, WV)), 3.0);
       col += uIblIntensity * (iblDiff * uColor * 0.6 + iblRefl * (0.15 + 0.85 * fresI));
     }
-    gl_FragColor = vec4(col, uOpacity);
+    gl_FragColor = vec4(col, uOpacity * vDensityMul);
   }
 `;
 

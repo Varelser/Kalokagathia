@@ -107,6 +107,13 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
             レイヤーと GPGPU の時間の進み方を全体で拡縮します（Kinetix timeScale）。負値で逆再生。決定論的レンダー書き出し中は自動で 1 に固定されます。
           </div>
           <Slider label="Opacity" value={config.gpgpuOpacity} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuOpacity', v)} />
+          <Toggle label="Density Compensation" value={config.gpgpuDensityCompEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuDensityCompEnabled', v)} />
+          {config.gpgpuDensityCompEnabled && (
+            <Slider label="Density Target ρ" value={config.gpgpuDensityCompTarget} min={0.05} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuDensityCompTarget', v)} />
+          )}
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            密度補償は粒子数・点サイズ・画面サイズが変わっても見かけの濃度を目標密度ρに揃えます（下げる方向のみ、上限1.0）。対象は points と solids です。
+          </div>
           <div className="mb-4">
             <div className="mb-2 text-[10px] uppercase tracking-widest font-medium opacity-70">GPGPU Color</div>
             <div className="flex items-center gap-3">
