@@ -151,17 +151,35 @@ const main = async () => {
     await clickButton(page, 'Pause');
 
     await clickButton(page, 'L2');
-    await setToggleValue(page, 'Enable Layer 2', 'On');
+    await page.waitForFunction(
+      () => Array.from(document.querySelectorAll('div')).some((node) => node.textContent?.trim() === 'Layer 2 Enabled'),
+      { timeout: 10000 }
+    );
+    await setToggleValue(page, 'Layer 2 Enabled', 'On');
     await setRangeValue(page, 'Source Count', 2);
     await setRangeValue(page, 'Source Spread', 0);
     await setToggleValue(page, 'Draw Lines', 'On');
 
     await clickButton(page, 'Main');
+    await page.waitForFunction(
+      () => Array.from(document.querySelectorAll('div')).some((node) => node.textContent?.trim() === 'Layer Repulsion'),
+      { timeout: 10000 }
+    );
     await setToggleValue(page, 'Layer Repulsion', 'On');
     await setToggleValue(page, 'Collider Mode', 'Per Source');
     await setToggleValue(page, 'Audio Link', 'On');
 
+    await clickButton(page, 'Lab');
+    await page.waitForFunction(
+      () => Array.from(document.querySelectorAll('button')).some((node) => node.textContent?.trim() === 'FX'),
+      { timeout: 10000 }
+    );
+
     await clickButton(page, 'FX');
+    await page.waitForFunction(
+      () => Array.from(document.querySelectorAll('span')).some((node) => node.textContent?.trim() === 'Mic Sensitivity'),
+      { timeout: 10000 }
+    );
     await setRangeValue(page, 'Mic Sensitivity', 5);
     await setRangeValue(page, 'Bass Input Gain', 2);
     await setRangeValue(page, 'Treble Input Gain', 2);
@@ -174,6 +192,10 @@ const main = async () => {
     );
 
     await clickButton(page, 'Main');
+    await page.waitForFunction(
+      () => Boolean(document.querySelector('[data-contact-meter]')),
+      { timeout: 10000 }
+    );
     await page.waitForTimeout(500);
 
     await page.evaluate(() => window.__setFakeAudioLevels({ bass: 0, treble: 0 }));
