@@ -1,6 +1,5 @@
 import React from 'react';
 import type * as THREE from 'three';
-import { ControlPanel } from './ControlPanel';
 import { AppScene } from './AppScene';
 import { CpuFallbackScene } from './CpuFallbackScene';
 import { setCpuFallbackSetting, useCpuFallback } from '../lib/cpuFallback';
@@ -9,7 +8,15 @@ import { AppExecutionDiagnosticsOverlay } from './AppExecutionDiagnosticsOverlay
 import { CanvasStreamWidget } from './canvasStreamWidget';
 import { getInterLayerContactAmount } from '../lib/appState';
 import type { ParticleConfig } from '../types';
-import type { ComparePreviewOrientation } from './controlPanelTypes';
+import type { ComparePreviewOrientation, ControlPanelProps } from './controlPanelTypes';
+
+// Phase DK step A: the control panel code is split out of the initial
+// bundle. The lazy load is triggered from the panelReady effect below
+// (first frame rendered, then the first idle window, hard cap 800ms —
+// the same scheduling as lib/lazyStarterLibrary).
+const ControlPanel = React.lazy(() =>
+  import('./ControlPanel').then((m) => ({ default: m.ControlPanel })),
+);
 import type { PointCloudCaptureState } from '../lib/pointCloudExport';
 import type { AudioLevels } from '../lib/audioControllerTypes';
 
@@ -20,7 +27,7 @@ export type AppRootLayoutProps = {
   comparePreviewOrientation: ComparePreviewOrientation;
   comparePreviewSlotIndex: number;
   config: ParticleConfig;
-  controlPanelProps: React.ComponentProps<typeof ControlPanel>;
+  controlPanelProps: ControlPanelProps;
   displayConfig: ParticleConfig;
   isPlaying: boolean;
   isSequencePlaying: boolean;
@@ -48,19 +55,40 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
 }) => {
   // Perf stage 4: two-phase mount. The scene canvas mounts and paints
   // first; the control deck (top bar / rail / shelf / sheet / transport)
-  // mounts two animation frames later, so its large DOM tree stays out
+  // mounts after the first frame plus an idle window (Phase DK step A),
+  // so its large DOM tree — and now its code chunk as well — stays out
   // of the first-paint task. All panel state lives in App, and the deck
   // is a fixed overlay (the canvas is absolute inset-0), so the swap
   // causes no layout shift.
   const [panelReady, setPanelReady] = React.useState(false);
   React.useEffect(() => {
-    let second = 0;
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => setPanelReady(true));
-    });
+    // Phase DK step A: the panel now mounts only after the scene has
+    // rendered its first frame ('kalokagathia:first-frame', dispatched by
+    // both the WebGL scene and the CPU fallback) and an idle window opens
+    // (hard cap 800ms, mirroring lib/lazyStarterLibrary). Mounting renders
+    // the React.lazy ControlPanel, which starts the chunk download at
+    // that point instead of in the initial bundle.
+    let cancelled = false;
+    let idleId = 0;
+    let timer = 0;
+    const schedule = () => {
+      const win = window as unknown as {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      };
+      if (typeof win.requestIdleCallback === 'function') {
+        idleId = win.requestIdleCallback(() => { if (!cancelled) setPanelReady(true); }, { timeout: 800 });
+      } else {
+        timer = window.setTimeout(() => { if (!cancelled) setPanelReady(true); }, 250);
+      }
+    };
+    window.addEventListener('kalokagathia:first-frame', schedule, { once: true });
     return () => {
-      cancelAnimationFrame(first);
-      if (second) cancelAnimationFrame(second);
+      cancelled = true;
+      window.removeEventListener('kalokagathia:first-frame', schedule);
+      const win = window as unknown as { cancelIdleCallback?: (id: number) => void };
+      if (idleId) win.cancelIdleCallback?.(idleId);
+      if (timer) window.clearTimeout(timer);
     };
   }, []);
   // CPU fallback (2026-11-15): on software renderers / missing WebGL
@@ -174,7 +202,11 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
       isSequencePlaying={isSequencePlaying}
       sequenceStepProgress={sequenceStepProgress}
     />
-    {panelReady && <ControlPanel {...controlPanelProps} />}
+    {panelReady && (
+      <React.Suspense fallback={null}>
+        <ControlPanel {...controlPanelProps} />
+      </React.Suspense>
+    )}
     <CanvasStreamWidget rendererRef={rendererRef} />
     <AppExecutionDiagnosticsOverlay config={config} />
     {cinema && hint && (
