@@ -1,10 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { AppBodyScene } from './components/AppBodyScene';
-import { AppEmbedPlayer } from './components/AppEmbedPlayer';
-import { AppKioskPlayer } from './components/AppKioskPlayer';
-import { AppStreamPlayer } from './components/AppStreamPlayer';
 import { AppModeGate } from './components/AppModeGate';
+
+// Phase DK step C: the mode players are split out of the initial bundle.
+// Only the player for the active mode is ever rendered (early returns
+// below), so each becomes a lazy chunk fetched on demand for that mode.
+const AppEmbedPlayer = React.lazy(() =>
+  import('./components/AppEmbedPlayer').then((m) => ({ default: m.AppEmbedPlayer })),
+);
+const AppKioskPlayer = React.lazy(() =>
+  import('./components/AppKioskPlayer').then((m) => ({ default: m.AppKioskPlayer })),
+);
+const AppStreamPlayer = React.lazy(() =>
+  import('./components/AppStreamPlayer').then((m) => ({ default: m.AppStreamPlayer })),
+);
 import { isEmbedMode } from './lib/embedMode';
 import { isKioskMode } from './lib/kioskMode';
 import { getStreamBackground, isStreamMode } from './lib/streamMode';
@@ -203,7 +213,7 @@ const AppBody: React.FC = () => {
         })
         .catch(() => { /* unknown preset id: keep the default scene */ });
     })();
-  }, [applyConfigMorph, presetBlendDuration, presets, setPresets]);
+  }, [applyConfigMorph, isPublicLibraryMode, presetBlendDuration, presets, setPresets]);
 
   if (initialPresetSequenceRef.current === null) {
     initialPresetSequenceRef.current = isPublicLibraryMode
@@ -635,6 +645,7 @@ const AppBody: React.FC = () => {
 
   if (kioskMode) {
     return (
+      <React.Suspense fallback={null}>
       <AppKioskPlayer
         audioRef={audioRef}
         config={config}
@@ -648,11 +659,13 @@ const AppBody: React.FC = () => {
         sequenceStepProgress={kiosk.stepProgress}
         pointCloudCaptureRef={pointCloudCaptureRef}
       />
+      </React.Suspense>
     );
   }
 
   if (streamMode) {
     return (
+      <React.Suspense fallback={null}>
       <AppStreamPlayer
         audioRef={audioRef}
         background={streamBackground}
@@ -664,11 +677,13 @@ const AppBody: React.FC = () => {
         sequenceStepProgress={sequenceStepProgress}
         pointCloudCaptureRef={pointCloudCaptureRef}
       />
+      </React.Suspense>
     );
   }
 
   if (embedMode) {
     return (
+      <React.Suspense fallback={null}>
       <AppEmbedPlayer
         audioRef={audioRef}
         config={config}
@@ -699,6 +714,7 @@ const AppBody: React.FC = () => {
           getState: () => ({ presetId: activePresetId, isPlaying: ui.isPlaying }),
         }}
       />
+      </React.Suspense>
     );
   }
 
