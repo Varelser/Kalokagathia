@@ -171,8 +171,8 @@
         if (!show) return;
         img.fetchPriority = 'high';
         img.src = window.matchMedia('(max-width: 899px)').matches
-          ? '/poster-mobile.jpg'
-          : '/poster-desktop.jpg';
+          ? '/poster-mobile.webp'
+          : '/poster-desktop.webp';
         poster.hidden = false;
         var done = false;
         var startFade = function () {
@@ -210,5 +210,63 @@
       }
     </script>
     <script type="module" src="/index.tsx"></script>
+  
+    <!-- Studio Console bridge (additive, 2026-11-16) -->
+    <script>
+(function(){
+'use strict';
+/* ═══ Studio Console bridge for Kalokagathia (2026-11-16, additive) ═══
+   Kalokagathia は monosphere.pages.dev (別オリジン) のため Studio の
+   BroadcastChannel が届かない。代わりに Studio が iframe へ送る
+   postMessage (console v2 と同形式) を受けて transport を反映する。
+   送信元オリジンは varelser.github.io / varelser.pages.dev のみ許可。
+   停止方式は他の映像アプリと同じ rAF ゲート。seed はアプリ側の状態に
+   外部から触る手段がないため v1 では対象外 (アプリ側フックが次の段)。
+   読み込み時に親へ hello を送り、Studio 側で橋渡しの存在を表示する。 */
+var ALLOW={ 'https://varelser.github.io':1, 'https://varelser.pages.dev':1 };
+var paused=false, fakeId=2000000000;
+var held=new Map();
+var origRAF=window.requestAnimationFrame.bind(window);
+var origCAF=window.cancelAnimationFrame.bind(window);
+window.requestAnimationFrame=function(cb){
+  if(paused){ var id=++fakeId; held.set(id,cb); return id; }
+  return origRAF(cb);
+};
+window.cancelAnimationFrame=function(id){
+  if(held.has(id)){ held.delete(id); return; }
+  return origCAF(id);
+};
+var badge=null, badgeTimer=null;
+function showBadge(text, sticky){
+  if(!badge){
+    badge=document.createElement('div');
+    badge.style.cssText='position:fixed;left:10px;bottom:10px;z-index:99999;pointer-events:none;background:rgba(10,10,10,.8);color:#eee;border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:4px 12px;font:11px/1.5 sans-serif;letter-spacing:.08em';
+    document.body.appendChild(badge);
+  }
+  badge.textContent=text; badge.style.display='block';
+  if(badgeTimer)clearTimeout(badgeTimer);
+  if(!sticky)badgeTimer=setTimeout(function(){ badge.style.display='none'; },1400);
+}
+function setPaused(p){
+  p=!!p; if(p===paused)return; paused=p;
+  if(paused){ showBadge('STUDIO ■ 一時停止中', true); }
+  else{
+    var h=Array.from(held.values()); held.clear();
+    for(var i=0;i<h.length;i++)origRAF(h[i]);
+    showBadge('STUDIO ▶ 再開', false);
+  }
+}
+window.__studioBridge={version:1,paused:function(){return paused;},held:function(){return held.size;}};
+window.addEventListener('message',function(e){
+  if(!ALLOW[e.origin])return;
+  var m=e.data; if(!m||typeof m!=='object')return;
+  if(m.app!=='studio'||m.type!=='console')return;
+  if(m.transport==='stop')setPaused(true);
+  else if(m.transport==='play')setPaused(false);
+});
+try{ if(window.parent&&window.parent!==window)window.parent.postMessage({app:'kalokagathia',type:'studio-bridge',version:1},'*'); }catch(err){}
+})();
+
+    </script>
   </body>
 </html>
