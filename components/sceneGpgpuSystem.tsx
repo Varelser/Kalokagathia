@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import type { PointCloudCaptureState } from '../lib/pointCloudExport';
 import { LodSystem } from '../lib/lodSystem';
+import { ATTRACTOR_RING_Z_SHIFT } from '../lib/attractorSpace';
 import { scaleFrameDelta } from '../lib/playbackTime';
 import { useGpgpuAssets } from './useGpgpuAssets';
 import { getTexSize, useGpgpuRuntime } from './useGpgpuRuntime';
@@ -1056,6 +1057,22 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       texSize,
       posReadbackRef,
     });
+
+    // Ring (attractor space mode): the readback feeds only the
+    // CPU draw paths (SmoothTube, metaballs), so it gets the
+    // same draw-side -z offset as the shader paths. The readback
+    // above fully rewrites the buffer from the GPU whenever it
+    // runs, so this never accumulates; the PLY capture below
+    // uses its own buffer and keeps the true positions.
+    if (
+      config.gpgpuAttractorEnabled &&
+      config.gpgpuAttractorSpaceMode === 'ring' &&
+      routing.readbackMode === 'webgl-readback' &&
+      posReadbackRef?.current
+    ) {
+      const buf = posReadbackRef.current;
+      for (let i = 2; i < buf.length; i += 4) buf[i] -= ATTRACTOR_RING_Z_SHIFT;
+    }
 
     // One-shot point-cloud capture for the PLY export (roadmap Phase 9).
     const capture = pointCloudCaptureRef?.current;

@@ -1480,12 +1480,20 @@
   <url><loc>https://monosphere.pages.dev/share/starter-attr-dyn-pulse</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-expr-group-gravity</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-expr-product-size</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-attr-feedback-accumulate</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-radius-group-gravity</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-species-size</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-burst-spin-sprites</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-cellular-life-field</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-contour-text-outline</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-csg-cube-minus-sphere</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-csg-extrude-custom-star</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-csg-extrude-twist</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-csg-hull-bridge</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-csg-mesh-torus</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-csg-refine-diff</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-distance-bloom</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-edge-output-mask</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-emission-curve-pulse</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-emission-curve-swell</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-erosion-manuscript</loc><priority>0.6</priority></url>
@@ -1576,6 +1584,7 @@
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-voxel-matrix</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-layer2-age-gradient-sumie</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-lsys-dragon-rules</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-mesh-sdf-collider-sphere</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-moire-grid-veil</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-multitouch-attract</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-noise-field-chroma</loc><priority>0.6</priority></url>
@@ -1587,7 +1596,10 @@
   <url><loc>https://monosphere.pages.dev/share/starter-obj-mesh-radial-chain</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-parallax-gpgpu-depth</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-parallax-layer-drift</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-point-cache-color</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-point-cache-orbit</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-polygon-hex-plate</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-post-custom-glsl-lumalock</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-horizon-mist-radial</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-horizon-obsidian-fade</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-lux-spot</loc><priority>0.6</priority></url>
@@ -1595,6 +1607,7 @@
   <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-starglow-field</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-starglow-shimmer</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-tone-print</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pyro-grid-plume</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-pyro-smoke-column</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-pyro-stirred-plume</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-rbd-glued-drop</loc><priority>0.6</priority></url>

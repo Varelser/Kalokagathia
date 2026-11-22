@@ -4,10 +4,12 @@ export const VOLUMETRIC_VERT = /* glsl */ `
   attribute vec2 aTexCoord;
   uniform sampler2D uPosTex;
   uniform float uRadius;
+  uniform float uRingOffsetZ;
   varying vec3 vWorldCenter;
   varying vec3 vQuadPos;
   void main() {
     vec3 center = texture2D(uPosTex, aTexCoord).xyz;
+    center.z -= uRingOffsetZ;
     vWorldCenter = center;
     // Billboard: derive camera axes from cameraPosition
     vec3 toCamera = normalize(cameraPosition - center);
@@ -90,6 +92,7 @@ export const GEOM_VERT = /* glsl */ `
   attribute vec2 aTexCoord;
   uniform sampler2D uPosTex;
   uniform sampler2D uVelTex;
+  uniform float uRingOffsetZ;
   uniform float uGeomScale;
   uniform float uVelocityAlign;
   uniform float uTime;
@@ -165,6 +168,7 @@ export const GEOM_VERT = /* glsl */ `
 
   void main() {
     vec3 instancePos = texture2D(uPosTex, aTexCoord).xyz;
+    instancePos.z -= uRingOffsetZ;
     vec3 vel         = texture2D(uVelTex, aTexCoord).xyz;
     float spd = length(vel);
     // Self-rotation (Kinetix integration B1b): each instance spins

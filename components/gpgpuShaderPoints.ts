@@ -149,6 +149,9 @@ export const DRAW_VERT = /* glsl */ `
   uniform sampler2D uSortTex;
   uniform bool      uSortEnabled;
   uniform float uSize;
+  // Ring (attractor space mode): draw-side -z offset of the
+  // sampled position; 0 unless ring is active.
+  uniform float uRingOffsetZ;
   uniform bool  uAgeEnabled;
   uniform float uAgeMax;
   uniform bool  uAgeSizeEnabled;
@@ -336,6 +339,7 @@ export const DRAW_VERT = /* glsl */ `
     vec2 particleUv = uSortEnabled ? texture2D(uSortTex, aTexCoord).xy : aTexCoord;
     vec4 posData  = texture2D(uPosTex, particleUv);
     vec3 worldPos = posData.xyz;
+    worldPos.z -= uRingOffsetZ;
     // Displacement map (Phase X): the baked point is pushed along
     // its own radial direction by the displacement map's luminance
     // at its position — the map-space twin of the media relief the

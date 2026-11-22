@@ -4,6 +4,7 @@ import type { ParticleConfig } from '../types';
 import type { LodSystem } from '../lib/lodSystem';
 import type { GpgpuAssetBundle } from './useGpgpuAssets';
 import { MAX_TRAIL } from './gpgpuShaders';
+import { ATTRACTOR_RING_Z_SHIFT } from '../lib/attractorSpace';
 import { fillGradientLutDataResolved, gradientStopsLutKey } from '../lib/kinetixGradients';
 import { getGradImageTexture } from '../lib/gradImageTexture';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
@@ -210,6 +211,21 @@ export function syncVisualUniforms(args: {
     volumetricGeo,
     volumetricMat,
   } = assets;
+
+  // Ring (attractor space mode): every visual material that
+  // samples the population's positions gets the same draw-side
+  // -z offset, so the legacy band is drawn centred as a ring.
+  // 0 in every other mode, which keeps those paths identical.
+  const ringOffsetZ = config.gpgpuAttractorEnabled && config.gpgpuAttractorSpaceMode === 'ring'
+    ? ATTRACTOR_RING_Z_SHIFT
+    : 0;
+  if (drawMat.uniforms.uRingOffsetZ) drawMat.uniforms.uRingOffsetZ.value = ringOffsetZ;
+  if (streakMat.uniforms.uRingOffsetZ) streakMat.uniforms.uRingOffsetZ.value = ringOffsetZ;
+  if (geomMat.uniforms.uRingOffsetZ) geomMat.uniforms.uRingOffsetZ.value = ringOffsetZ;
+  if (volumetricMat.uniforms.uRingOffsetZ) volumetricMat.uniforms.uRingOffsetZ.value = ringOffsetZ;
+  for (const m of trailMats) if (m.uniforms.uRingOffsetZ) m.uniforms.uRingOffsetZ.value = ringOffsetZ;
+  for (const m of ribbonMats) if (m.uniforms.uRingOffsetZ) m.uniforms.uRingOffsetZ.value = ringOffsetZ;
+  for (const m of tubeMats) if (m.uniforms.uRingOffsetZ) m.uniforms.uRingOffsetZ.value = ringOffsetZ;
 
   drawMat.uniforms.uPosTex.value = posTexture;
   drawMat.uniforms.uVelTex.value = velTexture;

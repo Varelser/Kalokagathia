@@ -698,7 +698,7 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uAgeCurveForce) velSimMat.uniforms.uAgeCurveForce.value = [...acForcePoints];
   velSimMat.uniforms.uAttractorStrength.value = config.gpgpuAttractorStrength;
   velSimMat.uniforms.uAttractorScale.value = config.gpgpuAttractorScale;
-  if (velSimMat.uniforms.uAttractorSpaceMode) velSimMat.uniforms.uAttractorSpaceMode.value = { legacy: 0, spread: 1, frame: 2 }[config.gpgpuAttractorSpaceMode] ?? 0;
+  if (velSimMat.uniforms.uAttractorSpaceMode) velSimMat.uniforms.uAttractorSpaceMode.value = { legacy: 0, spread: 1, frame: 2, ring: 3 }[config.gpgpuAttractorSpaceMode] ?? 0;
   velSimMat.uniforms.uVortexEnabled.value = config.gpgpuVortexEnabled;
   velSimMat.uniforms.uVortexStrength.value = config.gpgpuVortexStrength;
   velSimMat.uniforms.uVortexTilt.value = config.gpgpuVortexTilt;

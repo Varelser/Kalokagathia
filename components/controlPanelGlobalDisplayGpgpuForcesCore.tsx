@@ -540,7 +540,7 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
           <Toggle
             label="Space Mode"
             value={config.gpgpuAttractorSpaceMode}
-            options={[{ label: 'Legacy', val: 'legacy' }, { label: 'Spread', val: 'spread' }, { label: 'Frame', val: 'frame' }]}
+            options={[{ label: 'Legacy', val: 'legacy' }, { label: 'Spread', val: 'spread' }, { label: 'Frame', val: 'frame' }, { label: 'Ring', val: 'ring' }]}
             onChange={(v) => updateConfig('gpgpuAttractorSpaceMode', v)}
           />
         </>

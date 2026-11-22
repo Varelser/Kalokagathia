@@ -4,6 +4,7 @@ export const TRAIL_VERT = /* glsl */ `
   uniform sampler2D uPosTex;
   uniform sampler2D uVelTex;
   uniform float uSize;
+  uniform float uRingOffsetZ;
   uniform bool  uKuramotoEnabled;
   uniform float uKuramotoInfluence;
   attribute vec2 aTexCoord;
@@ -11,6 +12,7 @@ export const TRAIL_VERT = /* glsl */ `
   varying float vPhaseMix;
   void main() {
     vec3 worldPos = texture2D(uPosTex, aTexCoord).xyz;
+    worldPos.z -= uRingOffsetZ;
     vec4 velData  = texture2D(uVelTex, aTexCoord);
     vec3 vel      = velData.xyz;
     vSpeed = clamp(length(vel) / 80.0, 0.0, 1.0);
@@ -58,6 +60,7 @@ export const RIBBON_VERT = /* glsl */ `
   uniform float uKuramotoInfluence;
   uniform float uWidth;
   uniform float uMaxSegLen;
+  uniform float uRingOffsetZ;
   varying float vAlpha;
   varying float vRibbonU;
   varying float vRibbonV;
@@ -65,6 +68,8 @@ export const RIBBON_VERT = /* glsl */ `
   void main() {
     vec3 posA = texture2D(uPosTexA, aTexCoord).xyz;
     vec3 posB = texture2D(uPosTexB, aTexCoord).xyz;
+    posA.z -= uRingOffsetZ;
+    posB.z -= uRingOffsetZ;
     vec3 pos  = mix(posA, posB, aIsB);
     vRibbonV  = aIsB;
     vRibbonU  = aSide;
@@ -122,6 +127,7 @@ export const TUBE_VERT = /* glsl */ `
   uniform float uKuramotoInfluence;
   uniform float uTubeRadius;
   uniform float uMaxSegLen;
+  uniform float uRingOffsetZ;
   varying float vAlpha;
   varying float vRibbonV;
   varying float vPhaseMix;
@@ -130,6 +136,8 @@ export const TUBE_VERT = /* glsl */ `
   void main() {
     vec3 posA = texture2D(uPosTexA, aTexCoord).xyz;
     vec3 posB = texture2D(uPosTexB, aTexCoord).xyz;
+    posA.z -= uRingOffsetZ;
+    posB.z -= uRingOffsetZ;
     vec3 pos  = mix(posA, posB, aIsB);
     vRibbonV  = aIsB;
     vPhaseMix = 1.0;
@@ -178,6 +186,7 @@ export const STREAK_VERT = /* glsl */ `
   uniform sampler2D uPosTex;
   uniform sampler2D uVelTex;
   uniform float uStreakLength;
+  uniform float uRingOffsetZ;
   uniform bool  uAgeEnabled;
   uniform float uAgeMax;
   varying float vEndAlpha;
@@ -185,6 +194,7 @@ export const STREAK_VERT = /* glsl */ `
   void main() {
     vec4 posData = texture2D(uPosTex, aTexCoord);
     vec3 pos     = posData.xyz;
+    pos.z -= uRingOffsetZ;
     vec3 vel     = texture2D(uVelTex, aTexCoord).xyz;
     float spd    = length(vel);
     vEndAlpha    = 1.0 - aIsEnd;

@@ -722,7 +722,11 @@ export function stepCpuParticles(
       // for every force, so the morph terms below use this, not the
       // position this iteration is about to integrate.
       const sx = pos[i3]; const sy = pos[i3 + 1]; const sz = pos[i3 + 2];
-      if (spaceMode === 'legacy') {
+      if (spaceMode === 'legacy' || spaceMode === 'ring') {
+        // Ring shares the legacy dynamics (its framing shift is
+        // a GPU world-space output transform with no counterpart
+        // in this renderer's divisor framing — see
+        // lib/attractorSpace.ts).
         attractorDerivative(config.gpgpuAttractorType, pos[i3], pos[i3 + 1], pos[i3 + 2], dvScratch);
         const dl = Math.hypot(dvScratch[0], dvScratch[1], dvScratch[2]) || 1;
         vel[i3] = vel[i3] * damping + (dvScratch[0] / dl) * pull;

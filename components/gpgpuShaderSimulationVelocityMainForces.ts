@@ -363,7 +363,7 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       // attractor's z, world z its y), so the two wings stand
       // in the view plane as two medallions around an open
       // centre.
-      if (uAttractorSpaceMode != 0) {
+      if (uAttractorSpaceMode == 1 || uAttractorSpaceMode == 2) {
         float zc = 0.0;
         if (uAttractorType == 0 || uAttractorType == 4 || uAttractorType == 5) zc = 23.0;
         else if (uAttractorType == 1) zc = 1.5;
@@ -412,7 +412,10 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       } else { // Thomas (2)
         dv = vec3(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
       }
-      if (uAttractorSpaceMode == 0) {
+      if (uAttractorSpaceMode == 0 || uAttractorSpaceMode == 3) {
+        // Legacy pull. Ring (3) shares it: ring keeps the legacy
+        // dynamics and does its work at the end of the position
+        // pass instead (see gpgpuShaderSimulationPosition).
         vel += normalize(dv + vec3(0.0001)) * uAttractorStrength * uDelta * 40.0;
       } else {
         // Velocity matching (Phase DO): impose the field
