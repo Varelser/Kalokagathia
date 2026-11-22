@@ -1,8 +1,8 @@
 {
   "version": 1,
   "algorithm": "sha256(sorted keys joined by newline)",
-  "fingerprint": "2dd27b6481585b59f823a11f4e9ed5e3ebfe7f9827a0c400eddb1d92a7a71371",
-  "keyCount": 1368,
+  "fingerprint": "a6508c5b7a6d0a175e104305a7ed4d96f7761a42505faf7f962a4552f2c653f8",
+  "keyCount": 1369,
   "keys": [
     "ambientBaseSize",
     "ambientColor",
@@ -554,6 +554,7 @@
     "gpgpuTrailFade",
     "gpgpuTrailLength",
     "gpgpuTrailVelocityScale",
+    "gpgpuTubeDrawFraction",
     "gpgpuTubeEnabled",
     "gpgpuTubeOpacity",
     "gpgpuTubeRadius",
@@ -1373,5 +1374,5 @@
     "volumeFogGlslCode",
     "volumeFogGlslEnabled"
   ],
-  "recordedAt": "2026-11-21T21:05:56.669Z"
+  "recordedAt": "2026-11-22T09:30:20.459Z"
 }

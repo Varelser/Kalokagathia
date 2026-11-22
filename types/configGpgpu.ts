@@ -1230,6 +1230,7 @@ export interface ParticleConfigGpgpu {
   gpgpuTubeEnabled: boolean;
   gpgpuTubeRadius: number;
   gpgpuTubeOpacity: number;
+  gpgpuTubeDrawFraction: number;
   // Smooth Tube (CatmullRom per-particle subset)
   gpgpuSmoothTubeEnabled: boolean;
   gpgpuSmoothTubeCount: number;

@@ -1015,6 +1015,7 @@ f 8 1 105`,
   gpgpuTubeEnabled: false,
   gpgpuTubeRadius: 3.0,
   gpgpuTubeOpacity: 0.6,
+  gpgpuTubeDrawFraction: 1,
   // Smooth Tube
   gpgpuSmoothTubeEnabled: false,
   gpgpuSmoothTubeCount: 32,

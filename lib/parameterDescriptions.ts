@@ -652,6 +652,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuVolumetricSteps: 'ボリューメトリックのレイマーチ段数。多いほど精密で重い',
   gpgpuTubeRadius: 'チューブ描画の太さ',
   gpgpuTubeOpacity: 'チューブ描画の不透明度',
+  gpgpuTubeDrawFraction: 'チューブ／リボン描画の間引き率（先頭の粒子から何割を描くか。1で全粒子、値を下げると加算の重なりが減り白化しにくくなる）',
   gpgpuSmoothTubeCount: 'スムーズチューブの粒子数',
   gpgpuSmoothTubeRadius: 'スムーズチューブの太さ',
   gpgpuSmoothTubeOpacity: 'スムーズチューブの不透明度',

@@ -43,6 +43,7 @@ export const GlobalDisplayGpgpuTrailsSection: React.FC<GlobalDisplayEffectsShare
           </div>
           <Slider label="Tube Radius" value={config.gpgpuTubeRadius} min={0.5} max={20} step={0.5} onChange={(v) => updateConfig('gpgpuTubeRadius', v)} />
           <Slider label="Opacity" value={config.gpgpuTubeOpacity} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuTubeOpacity', v)} />
+          <Slider label="Draw Fraction" value={config.gpgpuTubeDrawFraction} min={0.05} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuTubeDrawFraction', v)} />
         </>
       )}
     </div>

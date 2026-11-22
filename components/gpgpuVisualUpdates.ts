@@ -3,8 +3,9 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import type { LodSystem } from '../lib/lodSystem';
 import type { GpgpuAssetBundle } from './useGpgpuAssets';
-import { MAX_TRAIL } from './gpgpuShaders';
+import { MAX_TRAIL, TUBE_SIDES } from './gpgpuShaders';
 import { ATTRACTOR_RING_Z_SHIFT } from '../lib/attractorSpace';
+import { tubeLayerAlphaB1 as tubeLayerAlpha, trailDrawCount } from '../lib/trailAlpha';
 import { fillGradientLutDataResolved, gradientStopsLutKey } from '../lib/kinetixGradients';
 import { getGradImageTexture } from '../lib/gradImageTexture';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
@@ -204,7 +205,9 @@ export function syncVisualUniforms(args: {
     trailMats,
     trailHead,
     ribbonMats,
+    ribbonGeo,
     tubeMats,
+    tubeGeo,
     streakMat,
     geomMat,
     instGeo,
@@ -491,6 +494,11 @@ export function syncVisualUniforms(args: {
   }
 
   if (config.gpgpuRibbonEnabled) {
+    // Phase DP: cap the ribbon index range at the thinned active
+    // prefix (6 indices per particle, laid out sequentially). The
+    // geometry is built for texSize^2 particles and was drawn in
+    // full; the draw fraction thins the additive overlap further.
+    if (ribbonGeo) ribbonGeo.setDrawRange(0, trailDrawCount(activeCount, config.gpgpuTubeDrawFraction) * 6);
     const trailLength = Math.min(MAX_TRAIL - 1, Math.max(2, config.gpgpuTrailLength));
     for (let i = 0; i < MAX_TRAIL - 1; i++) {
       const rtIdxB = ((trailHead.current - 1 - i) + MAX_TRAIL * 2) % MAX_TRAIL;
@@ -510,11 +518,24 @@ export function syncVisualUniforms(args: {
   }
 
   if (config.gpgpuTubeEnabled) {
+    // Phase DP: cap the tube index range at the thinned active
+    // prefix (TUBE_SIDES * 6 = 48 indices per particle, laid out
+    // sequentially in useGpgpuTrailAssets). At texSize 256 the
+    // uncapped geometry drew 65,536 tubes for 20,000 active
+    // particles (3.28x the intended density), a direct contributor
+    // to the additive white-out alongside the unnormalised alphas.
+    if (tubeGeo) tubeGeo.setDrawRange(0, trailDrawCount(activeCount, config.gpgpuTubeDrawFraction) * TUBE_SIDES * 6);
     const trailLength = Math.min(MAX_TRAIL - 1, Math.max(2, config.gpgpuTrailLength));
     for (let i = 0; i < MAX_TRAIL - 1; i++) {
       const rtIdxB = ((trailHead.current - 1 - i) + MAX_TRAIL * 2) % MAX_TRAIL;
       const rtIdxA = ((trailHead.current - 2 - i) + MAX_TRAIL * 2) % MAX_TRAIL;
-      const alpha = i < trailLength - 1 ? Math.pow(config.gpgpuTrailFade, i + 1) * config.gpgpuTubeOpacity : 0;
+      // Phase DP: layer alphas follow rule b1 (lib/trailAlpha) —
+      // the legacy fade profile divided by the visible layer
+      // count, so the additive stack sums to ≈0.214 for
+      // coverage-050 (legacy ≈1.28; rule b2's exact-normalised
+      // 0.6 still saturated at the real-GPU gate, b1 + draw
+      // thinning is the shipped combination).
+      const alpha = tubeLayerAlpha(config.gpgpuTrailFade, i, trailLength - 1, config.gpgpuTubeOpacity);
       tubeMats[i].uniforms.uPosTexA.value = trailRTs[rtIdxA].texture;
       tubeMats[i].uniforms.uPosTexB.value = trailRTs[rtIdxB].texture;
       if (tubeMats[i].uniforms.uVelTex) tubeMats[i].uniforms.uVelTex.value = velTexture;

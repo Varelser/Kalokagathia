@@ -675,6 +675,7 @@ const NUMS: NumDef[] = [
   ['gpgpuGradSpatialScale', 'GPGPUグラデーションの空間ドライバの換算倍率'],
   ['gpgpuTubeRadius', 'GPGPUチューブ描画の太さ'],
   ['gpgpuTubeOpacity', 'GPGPUチューブ描画の不透明度'],
+  ['gpgpuTubeDrawFraction', 'GPGPUチューブ／リボン描画の間引き率（1で全粒子）'],
   ['gpgpuLevyStrength', 'GPGPUのLévyフライトの跳躍の大きさ'],
   ['gpgpuLevyRate', 'GPGPUのLévyフライトの跳躍の頻度'],
   ['gpgpuKuramotoCoupling', 'GPGPU蔵本モデルの結合の強さ（位相同期）'],
