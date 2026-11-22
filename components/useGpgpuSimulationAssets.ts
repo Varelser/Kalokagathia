@@ -61,6 +61,7 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uAttractorType:     { value: 0 },
       uAttractorStrength: { value: 1.0 },
       uAttractorScale:    { value: 8.0 },
+      uAttractorSpaceMode: { value: 0 },
       uLevyEnabled:       { value: false },
       uLevyStrength:      { value: 2.0 },
       uLevyRate:          { value: 6.0 },

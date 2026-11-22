@@ -352,6 +352,27 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
     // Strange Attractor
     if (uAttractorEnabled) {
       vec3 ap = pos / max(0.1, uAttractorScale);
+      // Attractor space modes (Phase DO; TS twin:
+      // lib/attractorSpace.ts). 0 = legacy sampling. Spread
+      // recentres the sampling on the attractor's own centre
+      // (per-type z centre) so world origin maps to the centre
+      // and the structure forms around it — the sign matters:
+      // subtracting the centre instead projects it onto the
+      // containment sphere and worsens the legacy collapse.
+      // Frame samples in rotated coordinates (world y is the
+      // attractor's z, world z its y), so the two wings stand
+      // in the view plane as two medallions around an open
+      // centre.
+      if (uAttractorSpaceMode != 0) {
+        float zc = 0.0;
+        if (uAttractorType == 0 || uAttractorType == 4 || uAttractorType == 5) zc = 23.0;
+        else if (uAttractorType == 1) zc = 1.5;
+        if (uAttractorSpaceMode == 1) {
+          ap.z += zc;
+        } else {
+          ap = vec3(ap.x, ap.z, ap.y + zc);
+        }
+      }
       vec3 dv;
       if (uAttractorType == 0) { // Lorenz
         dv = vec3(10.0*(ap.y-ap.x), ap.x*(28.0-ap.z)-ap.y, ap.x*ap.y-2.667*ap.z);
@@ -391,7 +412,25 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       } else { // Thomas (2)
         dv = vec3(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
       }
-      vel += normalize(dv + vec3(0.0001)) * uAttractorStrength * uDelta * 40.0;
+      if (uAttractorSpaceMode == 0) {
+        vel += normalize(dv + vec3(0.0001)) * uAttractorStrength * uDelta * 40.0;
+      } else {
+        // Velocity matching (Phase DO): impose the field
+        // itself as the velocity, so particles trace the
+        // attractor's actual orbits instead of accumulating
+        // momentum, overshooting to the containment sphere
+        // and sliding to its tangent fixed points (the legacy
+        // two-cluster collapse behind the black Star Section
+        // Tube). The 0.015 rate advances the attractor's own
+        // time by ~0.016 per frame at strength 1 through the
+        // position pass's vel * dt * speed * 60 step — the
+        // classic integration step for these fields. Frame
+        // rotates the derivative with the same y/z swap as
+        // the sampling.
+        vec3 fv = dv;
+        if (uAttractorSpaceMode == 2) fv = vec3(dv.x, dv.z, dv.y);
+        vel = fv * uAttractorScale * 0.015 * uAttractorStrength;
+      }
     }
 
     // Lévy flight: rare heavy-tailed impulses. The gate is quantised by tick

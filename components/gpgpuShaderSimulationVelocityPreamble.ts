@@ -38,6 +38,7 @@ export const VEL_FRAG_PREAMBLE = /* glsl */ `
   uniform int   uAttractorType;
   uniform float uAttractorStrength;
   uniform float uAttractorScale;
+  uniform int   uAttractorSpaceMode;
   uniform bool  uLevyEnabled;
   uniform float uLevyStrength;
   uniform float uLevyRate;

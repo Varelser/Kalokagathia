@@ -708,17 +708,37 @@ export function stepCpuParticles(
     const damping = Math.max(0, 1 - 4.5 * step);
     const extent = state.attractorRenderDivisor;
     const bound = extent * 2.6;
+    // Attractor space modes (Phase DO; twin: lib/attractorSpace.ts).
+    // The CPU pool lives in attractor units, where the render
+    // divisor maps the uncentred field (Lorenz z 0..45) into the
+    // view, so spread needs no recentring here: velocity matching
+    // (direct ODE integration at the same ~0.016-per-frame rate,
+    // expressed per second) forms the same structure the GPU
+    // path draws. Frame applies the same y/z swap as the shader.
+    const spaceMode = config.gpgpuAttractorSpaceMode ?? 'legacy';
     for (let i = 0; i < count; i += 1) {
       const i3 = i * 3;
       // Start-of-step position: the WebGL velocity pass reads posIn
       // for every force, so the morph terms below use this, not the
       // position this iteration is about to integrate.
       const sx = pos[i3]; const sy = pos[i3 + 1]; const sz = pos[i3 + 2];
-      attractorDerivative(config.gpgpuAttractorType, pos[i3], pos[i3 + 1], pos[i3 + 2], dvScratch);
-      const dl = Math.hypot(dvScratch[0], dvScratch[1], dvScratch[2]) || 1;
-      vel[i3] = vel[i3] * damping + (dvScratch[0] / dl) * pull;
-      vel[i3 + 1] = vel[i3 + 1] * damping + (dvScratch[1] / dl) * pull;
-      vel[i3 + 2] = vel[i3 + 2] * damping + (dvScratch[2] / dl) * pull;
+      if (spaceMode === 'legacy') {
+        attractorDerivative(config.gpgpuAttractorType, pos[i3], pos[i3 + 1], pos[i3 + 2], dvScratch);
+        const dl = Math.hypot(dvScratch[0], dvScratch[1], dvScratch[2]) || 1;
+        vel[i3] = vel[i3] * damping + (dvScratch[0] / dl) * pull;
+        vel[i3 + 1] = vel[i3 + 1] * damping + (dvScratch[1] / dl) * pull;
+        vel[i3 + 2] = vel[i3 + 2] * damping + (dvScratch[2] / dl) * pull;
+      } else if (spaceMode === 'spread') {
+        attractorDerivative(config.gpgpuAttractorType, pos[i3], pos[i3 + 1], pos[i3 + 2], dvScratch);
+        vel[i3] = dvScratch[0] * strength;
+        vel[i3 + 1] = dvScratch[1] * strength;
+        vel[i3 + 2] = dvScratch[2] * strength;
+      } else {
+        attractorDerivative(config.gpgpuAttractorType, pos[i3], pos[i3 + 2], pos[i3 + 1], dvScratch);
+        vel[i3] = dvScratch[0] * strength;
+        vel[i3 + 1] = dvScratch[2] * strength;
+        vel[i3 + 2] = dvScratch[1] * strength;
+      }
       pos[i3] += vel[i3] * step;
       pos[i3 + 1] += vel[i3 + 1] * step;
       pos[i3 + 2] += vel[i3 + 2] * step;

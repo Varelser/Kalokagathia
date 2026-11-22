@@ -204,6 +204,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuParticleLifeFriction: 'Particle Lifeの摩擦（速度の残り方）。小さいほど構造が凝縮しやすい',
   gpgpuParticleLifeSeed: 'Particle Lifeのランダム行列のシード。同じ値なら同じ世界になる',
   gpgpuAttractorScale: 'アトラクタの影響範囲の広さ',
+  gpgpuAttractorSpaceMode: 'アトラクタ空間モード（legacy=従来の定量引力／spread=中心化した軌道追随で構造を広げる／frame=流れを回転させ両翼を額縁のように見せる）',
   gpgpuVortexStrength: '渦（ボルテックス）の回転力',
   gpgpuWindStrength: '風の強さ',
   gpgpuWindX: '風の向き X 成分',

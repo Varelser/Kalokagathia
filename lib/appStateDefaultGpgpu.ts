@@ -129,6 +129,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuAttractorType: 'lorenz' as const,
   gpgpuAttractorStrength: 1.0,
   gpgpuAttractorScale: 8.0,
+  gpgpuAttractorSpaceMode: 'legacy' as const,
   // Vortex
   gpgpuVortexEnabled: false,
   gpgpuVortexStrength: 1.0,

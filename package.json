@@ -97,5 +97,5 @@
     "generate:sitemap": "node scripts/build-sitemap.mjs"
   },
   "type": "module",
-  "version": "1.93.0"
+  "version": "1.94.0"
 }

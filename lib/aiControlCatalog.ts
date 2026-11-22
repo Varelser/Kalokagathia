@@ -149,6 +149,7 @@ const NUMS: NumDef[] = [
   ['gpgpuSpeed', 'GPGPUの動きの速さ'],
   ['gpgpuCurlStrength', 'GPGPUの渦（カール）の強さ'],
   ['gpgpuAttractorScale', 'GPGPUアトラクタの大きさ'],
+  ['gpgpuAttractorSpaceMode', 'アトラクタ空間モード（legacy=従来／spread=広がった構造／frame=輪として額縁）'],
   // Ambient
   ['ambientCount', '漂う微粒子の数'],
   ['ambientBaseSize', '微粒子の大きさ'],
@@ -850,6 +851,7 @@ const ENUMS: { key: keyof ParticleConfig; gloss: string; values: readonly string
     values: ['sphere', 'ring', 'grid', 'cube', 'cylinder', 'torus', 'spiral', 'helix', 'plane', 'text', 'image', 'video'],
   },
   { key: 'gpgpuAttractorType', gloss: 'GPGPUアトラクタの種類', values: ['lorenz', 'thomas', 'rossler', 'halvorsen', 'chen', 'lu', 'aizawa', 'sprott', 'rabinovich', 'dejong', 'ikeda', 'chua'] },
+  { key: 'gpgpuAttractorSpaceMode', gloss: 'アトラクタ空間モード', values: ['legacy', 'spread', 'frame'] },
   { key: 'gpgpuMorphTarget', gloss: 'GPGPUモーフの目標形状（terrain はシード付きフラクタル高度場の地形）', values: ['trefoil', 'torusKnot', 'galaxy', 'mobius', 'geodesic', 'crown', 'blackhole', 'klein', 'cymatic', 'gyroid', 'dnaRibbon', 'hypercube', 'mandelbulb', 'shell', 'text', 'image', 'svg', 'obj', 'terrain', 'data', 'contour', 'polygon'] },
   { key: 'gpgpuMorphReplicaAxis', gloss: 'GPGPUモーフ複製を並べる軸', values: ['x', 'y', 'z'] },
   { key: 'gpgpuMorphObjSampleMode', gloss: 'GPGPUモーフOBJのサンプリング方式（surface=表面 / vertices=頂点 / volume=閉メッシュ内部、非閉時は surface）', values: ['surface', 'vertices', 'volume'] },

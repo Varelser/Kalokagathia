@@ -166,6 +166,11 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
     && ((config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) || groupConsumerActive)) {
     features.push('attr-feedback');
   }
+  // Attractor space modes (Phase DO): the velocity-matching /
+  // rotated sampling lives in the WebGL velocity pass only —
+  // declaring it routes to WebGL (the CPU fallback mirrors it in
+  // attractor units).
+  if (config.gpgpuAttractorEnabled && config.gpgpuAttractorSpaceMode && config.gpgpuAttractorSpaceMode !== 'legacy') features.push('attractor-space-mode');
   // Wind volume (Phase AL): the placed wind localisation lives in
   // the WebGL velocity pass only — declaring it routes to WebGL.
   if (config.gpgpuWindVolumeEnabled) features.push('wind-volume');

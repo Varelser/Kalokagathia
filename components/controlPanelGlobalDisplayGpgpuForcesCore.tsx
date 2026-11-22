@@ -537,6 +537,12 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
           />
           <Slider label="Strength" value={config.gpgpuAttractorStrength} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuAttractorStrength', v)} />
           <Slider label="Scale" value={config.gpgpuAttractorScale} min={0.5} max={50} step={0.5} onChange={(v) => updateConfig('gpgpuAttractorScale', v)} />
+          <Toggle
+            label="Space Mode"
+            value={config.gpgpuAttractorSpaceMode}
+            options={[{ label: 'Legacy', val: 'legacy' }, { label: 'Spread', val: 'spread' }, { label: 'Frame', val: 'frame' }]}
+            onChange={(v) => updateConfig('gpgpuAttractorSpaceMode', v)}
+          />
         </>
       )}
     </div>

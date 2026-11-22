@@ -221,6 +221,7 @@ export interface ParticleConfigGpgpu {
   gpgpuAttractorType: 'lorenz' | 'rossler' | 'thomas' | 'halvorsen' | 'chen' | 'lu' | 'aizawa' | 'sprott' | 'rabinovich' | 'dejong' | 'ikeda' | 'chua';
   gpgpuAttractorStrength: number;
   gpgpuAttractorScale: number;
+  gpgpuAttractorSpaceMode: 'legacy' | 'spread' | 'frame';
   // Vortex
   gpgpuVortexEnabled: boolean;
   gpgpuVortexStrength: number;
