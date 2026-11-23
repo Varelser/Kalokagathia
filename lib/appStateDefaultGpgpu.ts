@@ -214,6 +214,11 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGrainsRestDamping: 0.5,
   // Angle of repose, direct (Phase BB): 0 = off (friction rules).
   gpgpuGrainsReposeAngle: 0,
+  // Position projection (Phase 19): full strength while Grains
+  // is on; Grains off never reaches the segment.
+  gpgpuGrainsProjection: 1,
+  // Neighbourhood scan (Phase 19): 0 = legacy subsample.
+  gpgpuGrainsNeighborhood: 0,
   // Pyro (Phase AS, particle-side temperature / buoyancy solver):
   // disabled = off. Buoyancy is in gravity units (1.2 at full
   // temperature out-lifts the default gravity 0.2 and gravity 1.0
@@ -234,6 +239,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuPyroGridTransfer: 1.0,
   gpgpuPyroVorticityEpsilon: 0,
   gpgpuPyroFuelRate: 0,
+  gpgpuPyroVolumeRender: 'fog' as const,
+  gpgpuPyroVolumeSteps: 0,
+  gpgpuPyroVolumeDensity: 1.0,
+  gpgpuPyroVolumeShadowSteps: 0,
   // Phase CC: CSG panel state (see types/configGpgpu.ts).
   // Disabled = no worker, no WASM, bit-identical output.
   gpgpuCsgEnabled: false,
@@ -808,6 +817,15 @@ f 8 1 105`,
   gpgpuVellumStitch: 0,
   gpgpuVellumGlue: 0,
   gpgpuVellumGlueBreak: 0,
+  // XPBD completion (Phase 19 stage 3): 'legacy' + zeros keep
+  // every new pass uncreated and the frame verbatim legacy.
+  gpgpuVellumSolverMode: 'legacy' as const,
+  gpgpuVellumCompliance: 0,
+  gpgpuVellumBendCompliance: 0,
+  gpgpuVellumVolumeEnabled: false,
+  gpgpuVellumVolumeRatio: 1,
+  gpgpuVellumVolumeCompliance: 0,
+  gpgpuVellumTearGap: 0,
   // SDF Collider
   gpgpuSdfEnabled: false,
   gpgpuSdfShape: 'sphere' as const,
@@ -1042,6 +1060,10 @@ f 8 1 105`,
   gpgpuFlipTransfer: 1.0,
   gpgpuFlipVorticityEnabled: false,
   gpgpuFlipVorticityEpsilon: 0.5,
+  gpgpuFlipMode: '2d' as const,
+  gpgpuFlip3dResolution: 0,
+  gpgpuFlipViscosity: 0,
+  gpgpuFlipSurfaceTension: 0,
   gpgpuDensityCompEnabled: false,
   gpgpuDensityCompTarget: 0.5,
   // Whitewater (Phase BC): off by default — identity.

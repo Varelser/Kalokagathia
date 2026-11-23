@@ -243,7 +243,7 @@ export interface ParticleConfigLayer3 {
   layer3ReactionScale: number;
   layer3ReactionWarp: number;
   layer3ReactionAudioReactive: number;
-  layer3ReactionModel: 'gray-scott' | 'fhn' | 'lenia';
+  layer3ReactionModel: 'gray-scott' | 'fhn' | 'lenia' | 'deposit-bleed';
   layer3ReactionFhnEpsilon: number;
   layer3ReactionFhnA: number;
   layer3ReactionFhnB: number;
@@ -254,6 +254,9 @@ export interface ParticleConfigLayer3 {
   layer3ReactionLeniaDt: number;
   layer3ReactionLeniaKernel: 'ring' | 'double' | 'blob';
   layer3ReactionLeniaGain: number;
+  // Phase 19 stage 5 (deposit-bleed): per-step retention of the
+  // deposit channel. 1 = the deposit never decays (default).
+  layer3ReactionDepositRetention: number;
   layer3PhysarumSensorAngle: number;
   layer3PhysarumSensorDistance: number;
   layer3PhysarumTurnSpeed: number;

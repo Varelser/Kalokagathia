@@ -1,8 +1,19 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { ParticleConfig } from "../types";
 import { createGradientLutTextureResolved } from "../lib/kinetixGradients";
-import { DRAW_FRAG, DRAW_VERT, STREAK_FRAG, STREAK_VERT } from "./gpgpuShaders";
+import { STREAK_FRAG, STREAK_VERT, buildDrawFrag, buildDrawVert } from "./gpgpuShaders";
+
+// Phase 19 gate fix: the points draw's string variant follows
+// the config side of the Vellum crack condition (the same terms
+// gpgpuVisualUpdates uses for uVellumCrackEnabled, minus the
+// per-frame state texture). Off, the draw strings are
+// byte-identical to v2.00.
+export function vellumCrackVariantOn(config: ParticleConfig): boolean {
+  return !!config.gpgpuVellumEnabled
+    && (config.gpgpuVellumTearGap ?? 0) > 0
+    && (config.gpgpuVellumTear ?? 0) > 0;
+}
 import { AUX_DRAW_FRAG, AUX_DRAW_VERT, AUX_TEX_SIZE } from "./gpgpuShaderAux";
 import { WW_DRAW_FRAG, WW_DRAW_VERT, WW_TEX_SIZE } from "./gpgpuShaderWhitewater";
 
@@ -144,15 +155,32 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       // count and viewport are inert placeholders until the
       // per-frame sync supplies the real values; off keeps the
       // legacy draw bit-identical.
+      uVellumCrackEnabled: { value: false },
+      uVellumStateTex:     { value: null },
+      uVellumMode:         { value: 0 },
       uDensityCompEnabled: { value: false },
       uDensityTarget:      { value: 0.5 },
       uDensityCount:       { value: texSize * texSize },
       uViewportSizePx:     { value: new THREE.Vector2(1, 1) },
     },
-    vertexShader: DRAW_VERT, fragmentShader: DRAW_FRAG,
+    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(config) }),
+    fragmentShader: buildDrawFrag({ vellumCrack: vellumCrackVariantOn(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
+
+  // Phase 19 gate fix: swap the draw strings when the crack
+  // variant condition flips (creation already used the initial
+  // config's variant).
+  const drawCrackRef = useRef(vellumCrackVariantOn(config));
+  useEffect(() => {
+    const on = vellumCrackVariantOn(config);
+    if (drawCrackRef.current === on) return;
+    drawCrackRef.current = on;
+    drawMat.vertexShader = buildDrawVert({ vellumCrack: on });
+    drawMat.fragmentShader = buildDrawFrag({ vellumCrack: on });
+    drawMat.needsUpdate = true;
+  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, drawMat]);
 
   const drawGeo = useMemo(() => {
     const count = texSize * texSize;

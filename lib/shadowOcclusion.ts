@@ -484,6 +484,42 @@ export function fogSampleTransmittance(
 }
 
 /**
+ * Cube-domain variant (Phase 19 stage 4): transmittance of the
+ * light reaching a sample inside the Pyro grid's cube domain,
+ * where the density is NOT the analytic sphere falloff above
+ * but an arbitrary field supplied by the caller (in the app:
+ * the grid's scalar atlas, sampled in the fragment shader; the
+ * GLSL twin lives in components/gpgpuShaderPyroVolume.ts).
+ * Marches `steps` equal steps from `from` along the unit
+ * direction `toLight` for `segmentLength` world units and
+ * applies Beer-Lambert per step. Returns 1 when steps or the
+ * segment length are 0 (self-shadow off = identity).
+ */
+export function cubeSampleTransmittance(
+  sampleDensity: (p: ShadowVec3) => number,
+  from: ShadowVec3,
+  toLight: ShadowVec3,
+  segmentLength: number,
+  steps: number,
+  densityScale: number,
+): number {
+  const n = Math.min(8, Math.max(0, Math.floor(steps)));
+  if (n <= 0 || !(segmentLength > 0)) return 1;
+  const segLen = segmentLength / n;
+  let transmittance = 1;
+  for (let j = 0; j < n; j++) {
+    const t = (j + 0.5) * segLen;
+    const d = sampleDensity({
+      x: from.x + toLight.x * t,
+      y: from.y + toLight.y * t,
+      z: from.z + toLight.z * t,
+    });
+    transmittance *= Math.exp(-Math.max(0, d) * Math.max(0, densityScale) * segLen);
+  }
+  return transmittance;
+}
+
+/**
  * Brightness factor for one fog sample: 1 when self-shadow is 0
  * (the legacy identity), otherwise a mix toward the transmittance
  * by the (clamped) strength. Lit-side samples keep a factor near

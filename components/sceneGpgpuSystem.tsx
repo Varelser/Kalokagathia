@@ -48,7 +48,9 @@ import {
 } from './gpgpuSimulationPasses';
 import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
 import { pyroGridCurrentScalarTexture, runPyroGridPasses } from './gpgpuPyroGridPasses';
+import { applyFlip3dCoupleUniforms, runFlip3dPasses } from './gpgpuFlip3dPasses';
 import { EMPTY_PYRO_GRID_FOG_FEED, type PyroGridFogFeed } from '../lib/pyroGrid';
+import { labelVellumComponents } from '../lib/gpgpuVellum';
 import { GpgpuAttrDynPass } from './gpgpuAttrDynPass';
 import { buildAttrDynFragment } from '../lib/expressionGlsl';
 import { GpgpuAttrFeedbackPass } from './gpgpuAttrFeedbackPass';
@@ -466,6 +468,13 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     vellumProjMat,
     vellumStateMat,
     vellumVelMat,
+    vellumXpbdClearMat,
+    vellumXpbdLambdaMat,
+    vellumXpbdProjMat,
+    vellumVolumeReduceMat,
+    vellumVolumeProjMat,
+    vellumVolumeApplyMat,
+    vellumXpbdVelMat,
     auxVelMat,
     auxPosMat,
     auxChainVelMat,
@@ -478,6 +487,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     blitMat,
     sortDepthMat,
     bitonicMat,
+    grainsCellKeyMat,
     fluidAdvectMat,
     flipSplatMat,
     flipCompositeMat,
@@ -496,6 +506,20 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     pyroCurlMat,
     pyroVorticityForceMat,
     pyroClearMat,
+    flip3dSplatMat,
+    flip3dCompositeMat,
+    flip3dPhiMat,
+    flip3dPhiAdvectMat,
+    flip3dViscosityMat,
+    flip3dCurvatureMat,
+    flip3dTensionMat,
+    flip3dJacobiMat,
+    flip3dSubtractMat,
+    flip3dCurlMat,
+    flip3dVorticityForceMat,
+    flip3dClearMat,
+    ww3VelMat,
+    ww3PosMat,
     drawGeo,
     streakGeo,
     auxDrawGeo,
@@ -531,6 +555,11 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const attrFeedbackSignatureRef = useRef('');
   const attrFeedbackTextureRef = useRef<THREE.Texture | null>(null);
   const attrFeedbackFrameRef = useRef(0);
+  // Vellum XPBD components (Phase 19 stage 3): throttled
+  // readback bookkeeping for labelVellumComponents.
+  const vellumComponentFrameRef = useRef(0);
+  const vellumComponentStateBufRef = useRef<Float32Array | null>(null);
+  const vellumComponentPosBufRef = useRef<Float32Array | null>(null);
 
   // Phase BO: dynamic attribute re-evaluation (stage 2). The
   // generated fragment is null unless the key is on AND at least
@@ -598,6 +627,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     flipPressureRTRef,
     sortRTARef,
     sortRTBRef,
+    grainsSortRTARef,
+    grainsSortRTBRef,
     auxRtRef,
     auxPingIsA,
     wwRtRef,
@@ -610,11 +641,17 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     vellumRestTexRef,
     vellumStateRtRef,
     vellumStatePingIsA,
+    vellumXpbdRtRef,
+    vellumGradTexRef,
+    vellumVolumeInfoRef,
+    vellumComponentTexRef,
+    vellumComponentsRef,
     rigidCellTexRef,
     rigidBodyTexRef,
     rigidBodyDataRef,
     rigidSolverRef,
     pyroGridRef,
+    flip3dRef,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,
@@ -637,6 +674,24 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     points.frustumCulled = false;
     return points;
   }, [texSize, flipSplatMat]);
+
+  // FLIP 3D (Phase 19 stage 2): the same texel-vertex points
+  // carrying the 3D splat material (the runner adds them to the
+  // sim scene for the 8 trilinear deposit draws).
+  const flip3dPoints = useMemo(() => {
+    const count = texSize * texSize;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = ((i % texSize) + 0.5) / texSize;
+      positions[i * 3 + 1] = (Math.floor(i / texSize) + 0.5) / texSize;
+      positions[i * 3 + 2] = 0;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const points = new THREE.Points(geo, flip3dSplatMat);
+    points.frustumCulled = false;
+    return points;
+  }, [texSize, flip3dSplatMat]);
 
   useFrame(({ gl: glCtx }, delta) => {
     if (!isPlaying || !rtRef.current || !simMeshRef.current) return;
@@ -976,6 +1031,17 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         targets: pyroGridRef.current,
         useWebGPU: routing.useWebGPU,
       });
+      // FLIP 3D coupling (Phase 19 stage 2): same staggered
+      // discipline — fill the velocity material's FLIP3D
+      // uniforms from the 3D solver's latest completed step,
+      // right after the Pyro fill (the design's ordering:
+      // field -> pyro -> flip3d).
+      applyFlip3dCoupleUniforms({
+        config,
+        velSimMat,
+        targets: flip3dRef.current,
+        useWebGPU: routing.useWebGPU,
+      });
       runSimulationPasses({
         useWebGPU: routing.useWebGPU,
         config,
@@ -1009,10 +1075,27 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         vellumProjMat,
         vellumStateMat,
         vellumVelMat,
+        vellumXpbdClearMat,
+        vellumXpbdLambdaMat,
+        vellumXpbdProjMat,
+        vellumVolumeReduceMat,
+        vellumVolumeProjMat,
+        vellumVolumeApplyMat,
+        vellumXpbdVelMat,
+        vellumLambda0RT: vellumXpbdRtRef.current?.lambda0 ?? null,
+        vellumLambda1RT: vellumXpbdRtRef.current?.lambda1 ?? null,
+        vellumVolumeChain: vellumXpbdRtRef.current?.volumeChain ?? null,
+        vellumLambdaVolRT: vellumXpbdRtRef.current?.lambdaVol ?? null,
+        vellumGradTex: vellumGradTexRef.current,
+        vellumVolumeInfo: vellumVolumeInfoRef.current,
         vellumStateIn,
         vellumStateOut,
         vellumSpareRT: prevPosRTRef.current,
         blitMat,
+        grainsCellKeyMat,
+        grainsBitonicMat: bitonicMat,
+        grainsSortRTA: grainsSortRTARef.current,
+        grainsSortRTB: grainsSortRTBRef.current,
         rigidCellTex: rigidCellTexRef.current,
         rigidBodyTex: rigidBodyTexRef.current,
         webgpuState: webgpuStateRef.current,
@@ -1026,6 +1109,49 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         && ((config.gpgpuVellumTear || 0) > 0
           || ((config.gpgpuVellumGlue || 0) > 0 && (config.gpgpuVellumGlueBreak || 0) > 0))) {
         vellumStatePingIsA.current = !vellumStatePingIsA.current;
+      }
+      // Component labelling (Phase 19 stage 3, design 3-4-3):
+      // in xpbd mode with a live tear rule, read the state +
+      // position targets back at most once per 30 frames, BFS
+      // the live links on the CPU (labelVellumComponents) and
+      // publish the labels into the component texture + the
+      // components ref ({id, texelCount, centroid, mass} —
+      // Phase 20's rigid-candidate shape). The readback cost
+      // is real and is a gate measurement item; the throttle
+      // drops first if it proves heavy.
+      if (vellumStateOut && vellumComponentTexRef.current
+        && config.gpgpuVellumEnabled && config.gpgpuVellumSolverMode === 'xpbd'
+        && (config.gpgpuVellumTear || 0) > 0) {
+        vellumComponentFrameRef.current += 1;
+        if (vellumComponentFrameRef.current % 30 === 1) {
+          const count = texSize * texSize;
+          if (!vellumComponentStateBufRef.current || vellumComponentStateBufRef.current.length !== count * 4) {
+            vellumComponentStateBufRef.current = new Float32Array(count * 4);
+          }
+          if (!vellumComponentPosBufRef.current || vellumComponentPosBufRef.current.length !== count * 4) {
+            vellumComponentPosBufRef.current = new Float32Array(count * 4);
+          }
+          glCtx.readRenderTargetPixels(vellumStateOut, 0, 0, texSize, texSize, vellumComponentStateBufRef.current);
+          glCtx.readRenderTargetPixels(posOut, 0, 0, texSize, texSize, vellumComponentPosBufRef.current);
+          const labelled = labelVellumComponents(
+            vellumComponentStateBufRef.current,
+            texSize,
+            config.gpgpuVellumMode === 'shell' ? 1 : 0,
+            vellumComponentPosBufRef.current,
+            4,
+          );
+          vellumComponentsRef.current = labelled.components;
+          const compTex = vellumComponentTexRef.current;
+          const data = compTex.image.data as Float32Array;
+          const norm = Math.max(1, labelled.count);
+          for (let i = 0; i < count; i++) {
+            data[i * 4] = labelled.labels[i] / norm;
+            data[i * 4 + 1] = labelled.count;
+            data[i * 4 + 2] = 0;
+            data[i * 4 + 3] = 1;
+          }
+          compTex.needsUpdate = true;
+        }
       }
     }
 
@@ -1057,6 +1183,40 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         simScene,
         simCamera,
         dt,
+      });
+    }
+
+    // FLIP 3D (Phase 19 stage 2, WebGL path only — the WebGPU
+    // compute backend has no 3D FLIP solver): steps here, after
+    // the Pyro grid, reading the frame-start particle textures
+    // (the same state the 2D FLIP layer's P2G reads). The
+    // runner no-ops unless the mode is '3d' and targets exist.
+    if (!routing.useWebGPU && flip3dRef.current && simMeshRef.current) {
+      runFlip3dPasses({
+        config,
+        targets: flip3dRef.current,
+        materials: {
+          flip3dSplatMat,
+          flip3dCompositeMat,
+          flip3dPhiMat,
+          flip3dPhiAdvectMat,
+          flip3dViscosityMat,
+          flip3dCurvatureMat,
+          flip3dTensionMat,
+          flip3dJacobiMat,
+          flip3dSubtractMat,
+          flip3dCurlMat,
+          flip3dVorticityForceMat,
+          flip3dClearMat,
+        },
+        simMesh: simMeshRef.current,
+        gl: glCtx,
+        simScene,
+        simCamera,
+        dt,
+        splatPoints: flip3dPoints,
+        posTex: posIn.texture,
+        velTex: velIn.texture,
       });
     }
 
@@ -1106,6 +1266,9 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           wwVelOut: wwTargets.velOut,
           wwVelMat,
           wwPosMat,
+          ww3VelMat,
+          ww3PosMat,
+          flip3dTargets: flip3dRef.current,
         });
         wwPingIsA.current = !wwPingIsA.current;
         wwDrawMat.uniforms.uWwPosTex.value = wwTargets.posOut.texture;
@@ -1331,6 +1494,9 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       velTexture: velOut.texture,
       finalSortTex,
       attrTexture: attrFinalTexture ?? attrTexRef.current,
+      vellumStateTexture: vellumStateRtRef.current
+        ? (vellumStatePingIsA.current ? vellumStateRtRef.current.a.texture : vellumStateRtRef.current.b.texture)
+        : null,
       texSize,
       time: timeRef.current,
       viewportSizePx: { x: gl.domElement.width, y: gl.domElement.height },

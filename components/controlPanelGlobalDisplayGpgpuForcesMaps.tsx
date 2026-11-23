@@ -218,6 +218,20 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
               <Slider label="Pressure Iterations" value={config.gpgpuFlipPressureIterations} min={0} max={32} step={1} onChange={(v) => updateConfig('gpgpuFlipPressureIterations', v)} />
               <Slider label="Transfer" value={config.gpgpuFlipTransfer} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuFlipTransfer', v)} />
               <div className="mt-1 text-[9px] text-white/40">2D planar FLIP on the field grid: particles &lt;-&gt; grid transfer + pressure projection (incompressible xz flow). No free surface / y-pressure — gravity, SPH and colliders still own the vertical.</div>
+              <Toggle
+                label="FLIP Mode (格子モード)"
+                value={config.gpgpuFlipMode}
+                options={[{ label: '2D (従来)', val: '2d' as const }, { label: '3D (完全化)', val: '3d' as const }]}
+                onChange={(v) => updateConfig('gpgpuFlipMode', v)}
+              />
+              {config.gpgpuFlipMode === '3d' && (
+                <>
+                  <Slider label="3D Resolution (0=Auto)" value={config.gpgpuFlip3dResolution} min={0} max={96} step={1} onChange={(v) => updateConfig('gpgpuFlip3dResolution', v)} />
+                  <Slider label="3D Viscosity" value={config.gpgpuFlipViscosity} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuFlipViscosity', v)} />
+                  <Slider label="3D Surface Tension" value={config.gpgpuFlipSurfaceTension} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuFlipSurfaceTension', v)} />
+                  <div className="mt-1 text-[9px] text-white/40">3D grid FLIP: y-pressure + free surface solved on the atlas grid; viscosity / surface tension are opt-in (0 = their passes do not exist). The grid-&gt;particle scale conversion differs from 2D, so 3D is aimed at new presets — existing presets keep the 2D mode. Whitewater follows this mode (foam spawns on the 3D free surface).</div>
+                </>
+              )}
               <Toggle label="Vorticity Confinement" value={config.gpgpuFlipVorticityEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuFlipVorticityEnabled', v)} />
               {config.gpgpuFlipVorticityEnabled && (
                 <Slider label="Vorticity ε" value={config.gpgpuFlipVorticityEpsilon} min={0} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuFlipVorticityEpsilon', v)} />

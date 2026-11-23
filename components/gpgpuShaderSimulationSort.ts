@@ -11,6 +11,31 @@ export const SORT_DEPTH_FRAG = /* glsl */ `
   }
 `;
 
+// ── Grains cell key (Phase 19 fix2): per-texel spatial cell key ──
+// Writes the SORT_DEPTH payload layout (uv.x, uv.y, key, 1) so
+// the bitonic pass above sorts the pool by cell key unchanged.
+// The grid is resolved CPU-side (lib/gpgpuGrains.ts
+// grainsCellGrid): origin = -(bounceRadius x 1.05 + gd), cell
+// size >= gd, every dim <= 256 so the key stays below 2^24 and
+// is exact in float32. Cell coords clamp into the grid — a
+// monotone contraction, so clamping can only add candidates,
+// never lose a true neighbour (the consumers' distance test is
+// the exact brute-force one).
+export const GRAINS_CELL_KEY_FRAG = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uPosTex;
+  uniform float uGrainsCellOrigin;
+  uniform float uGrainsCellSize;
+  uniform vec3  uGrainsCellDims;
+  varying vec2 vUv;
+  void main() {
+    vec3 pos = texture2D(uPosTex, vUv).xyz;
+    vec3 cell = clamp(floor((pos - uGrainsCellOrigin) / uGrainsCellSize), vec3(0.0), uGrainsCellDims - vec3(1.0));
+    float key = (cell.x * uGrainsCellDims.y + cell.y) * uGrainsCellDims.z + cell.z;
+    gl_FragColor = vec4(vUv.x, vUv.y, key, 1.0);
+  }
+`;
+
 // ── Sort: bitonic sort pass (one compare-swap step) ──
 export const SORT_BITONIC_FRAG = /* glsl */ `
   precision highp float;

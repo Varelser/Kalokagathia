@@ -8,14 +8,30 @@ import { getSceneGeneration, noteSceneComposition } from '../lib/sceneGeneration
 // scenePrimitives) stays eager — it is the first thing on screen. While a
 // system chunk loads, its layer simply renders nothing for a few frames
 // (Suspense fallback below), mirroring the lazy starter library pattern.
-function lazySystem<K extends string, C extends React.ComponentType<any>>(
+// Props of a scene system component, inferred directly: React's own
+// ComponentProps / LazyExoticComponent constrain the component to
+// ComponentType<any>, which a precisely-typed component type cannot
+// satisfy without any (class statics are invariant).
+type PropsOf<C> =
+  C extends (props: infer P) => unknown ? P
+  : C extends new (props: infer P) => unknown ? P
+  : Record<string, never>;
+
+function lazySystem<K extends string, C extends React.ComponentType<never>>(
   load: () => Promise<Record<K, C>>,
   name: K,
-): React.LazyExoticComponent<C> {
-  return React.lazy(() => load().then((m) => ({ default: m[name] })));
+): React.ExoticComponent<PropsOf<C>> {
+  // React.lazy constrains its component to ComponentType<any> (see
+  // PropsOf above), so bridge just this call — C itself stays exact
+  // at every call site and in the component's props.
+  const lazyExact = React.lazy as unknown as (
+    factory: () => Promise<{ default: C }>,
+  ) => React.ExoticComponent<PropsOf<C>>;
+  return lazyExact(() => load().then((m) => ({ default: m[name] })));
 }
 
 const GpgpuSystem = lazySystem(() => import('./sceneGpgpuSystem'), 'GpgpuSystem');
+const PyroVolumeSystem = lazySystem(() => import('./scenePyroVolumeSystem'), 'PyroVolumeSystem');
 const LightVolume = lazySystem(() => import('./LightVolume'), 'LightVolume');
 const GpgpuSmoothTube = lazySystem(() => import('./sceneGpgpuSmoothTube'), 'GpgpuSmoothTube');
 const MembraneSystem = lazySystem(() => import('./sceneMembraneSystem'), 'MembraneSystem');
@@ -290,6 +306,14 @@ export const AppSceneLayerContent: React.FC<LayerContentProps> = ({
       )}
       {gpgpuPlan.core && (
         <GpgpuSystem config={config} audioRef={audioRef} isPlaying={isPlaying} posReadbackRef={metaballPosRef} pointCloudCaptureRef={pointCloudCaptureRef} pyroFeedRef={pyroFeedRef} />
+      )}
+      {/* Pyro volume raymarch (Phase 19 stage 4): sibling of
+          the GPGPU system — the grid belongs to no layer. The
+          component itself returns null unless the render key
+          is 'raymarch' and the grid solver is enabled, so the
+          default scene graph is unchanged. */}
+      {gpgpuPlan.core && config.gpgpuPyroVolumeRender === 'raymarch' && (
+        <PyroVolumeSystem config={config} pyroFeedRef={pyroFeedRef} />
       )}
       {gpgpuPlan.smoothTubes && (
         <GpgpuSmoothTube config={config} posReadbackRef={metaballPosRef} isPlaying={isPlaying} />

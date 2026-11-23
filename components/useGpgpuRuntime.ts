@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
 import { buildSpawnDistanceValues } from '../lib/gpgpuLifecycle';
-import { buildVellumBakeData, vellumStatePoolActive } from '../lib/gpgpuVellum';
+import { buildVellumBakeData, buildVellumVolumeGradientData, vellumStatePoolActive, vellumVolumeActive, vellumXpbdPoolActive, type VellumComponent } from '../lib/gpgpuVellum';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
 import { setBakedSpeciesData } from '../lib/speciesAllocation';
 import { planVerticalTextOnPath, splitTextOnPathGlyphs, type TextGlyphRaster } from '../lib/gpgpuTextOnPath';
@@ -64,6 +64,11 @@ import {
   disposePyroGridTargets,
   type PyroGridTargets,
 } from './gpgpuPyroGridPasses';
+import { flip3dActive, resolveFlip3dResolution } from '../lib/flip3d';
+import {
+  disposeFlip3dTargets,
+  type Flip3dTargets,
+} from './gpgpuFlip3dPasses';
 import {
   buildAttributeData,
   buildAttributeDataExt,
@@ -76,6 +81,7 @@ import {
   resolveAttrExtConsumers,
 } from '../lib/gpgpuAttributes';
 import { evaluateGpgpuGroup, parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
+import { grainsCellSortActive } from '../lib/gpgpuGrains';
 import { setLastAttrBake } from '../lib/gpgpuGroupBridge';
 
 // The GPGPU tex-size caps (MAX_GPGPU_TEX_SIZE / GPGPU_TEX_SIZE_CAPS /
@@ -200,6 +206,63 @@ function createPyroGridTargets(
   const copyMesh = new THREE.Mesh(copyGeo, copyMat);
   copyScene.add(copyMesh);
   for (const rt of [targets.velA, targets.velB, targets.scalarA, targets.scalarB, targets.presA, targets.presB, targets.div, targets.curl]) {
+    gl.setRenderTarget(rt);
+    gl.render(copyScene, copyCam);
+  }
+  gl.setRenderTarget(null);
+  zeroTex.dispose();
+  copyMat.dispose();
+  copyGeo.dispose();
+  return targets;
+}
+
+// FLIP 3D (Phase 19 stage 2): allocates and zero-initialises
+// one FLIP3D target set (the pyro atlas discipline: velocity /
+// phi / scratch fields filter linearly when the device can,
+// pressure / transfer are exact-fetch nearest). Zero state
+// matters: the first Jacobi solve starts from the cleared
+// pressure targets and the fields must read as empty.
+function createFlip3dTargets(
+  gl: THREE.WebGLRenderer,
+  resolution: number,
+  floatLinear: boolean,
+): Flip3dTargets | null {
+  const layout = PYRO_GRID_LAYOUTS[resolution];
+  const size = pyroGridAtlasSize(resolution);
+  if (!layout || !size) return null;
+  const targets: Flip3dTargets = {
+    velA: makePyroFieldRT(size.width, size.height, floatLinear),
+    velB: makePyroFieldRT(size.width, size.height, floatLinear),
+    presA: makePyroFieldRT(size.width, size.height, false),
+    presB: makePyroFieldRT(size.width, size.height, false),
+    transfer: makePyroFieldRT(size.width, size.height, false),
+    phiA: makePyroFieldRT(size.width, size.height, floatLinear),
+    phiB: makePyroFieldRT(size.width, size.height, floatLinear),
+    scratch: makePyroFieldRT(size.width, size.height, floatLinear),
+    curv: makePyroFieldRT(size.width, size.height, false),
+    baseVelTexture: null,
+    phiTexture: null,
+    resolution,
+    atlasWidth: size.width,
+    atlasHeight: size.height,
+    tilesX: layout.cols,
+    tilesY: layout.rows,
+    floatLinear,
+    velPingIsA: true,
+    phiPingIsA: true,
+    framesStepped: 0,
+  };
+  const zeroData = new Float32Array(size.width * size.height * 4);
+  const zeroTex = new THREE.DataTexture(zeroData, size.width, size.height, THREE.RGBAFormat, THREE.FloatType);
+  zeroTex.needsUpdate = true;
+  const copyScene = new THREE.Scene();
+  const copyCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const copyGeo = new THREE.PlaneGeometry(2, 2);
+  const copyMat = new THREE.MeshBasicMaterial({ map: zeroTex });
+  copyMat.blending = THREE.NoBlending;
+  const copyMesh = new THREE.Mesh(copyGeo, copyMat);
+  copyScene.add(copyMesh);
+  for (const rt of [targets.velA, targets.velB, targets.presA, targets.presB, targets.transfer, targets.phiA, targets.phiB, targets.scratch, targets.curv]) {
     gl.setRenderTarget(rt);
     gl.render(copyScene, copyCam);
   }
@@ -407,6 +470,8 @@ export type GpgpuRuntimeRefs = {
   flipPressureRTRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   sortRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   sortRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
+  grainsSortRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
+  grainsSortRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   auxRtRef: MutableRefObject<{
     posA: THREE.WebGLRenderTarget;
     posB: THREE.WebGLRenderTarget;
@@ -436,6 +501,21 @@ export type GpgpuRuntimeRefs = {
   vellumRestTexRef: MutableRefObject<THREE.DataTexture | null>;
   vellumStateRtRef: MutableRefObject<{ a: THREE.WebGLRenderTarget; b: THREE.WebGLRenderTarget } | null>;
   vellumStatePingIsA: MutableRefObject<boolean>;
+  // Vellum XPBD (Phase 19 stage 3): λ pair, the volume
+  // reduction chain + 1×1 volume-λ target, the baked volume
+  // gradient texture (+ its rest volume / denominator), and
+  // the component-label texture with its latest CPU labelling.
+  // All exist only in xpbd mode; legacy allocates none.
+  vellumXpbdRtRef: MutableRefObject<{
+    lambda0: THREE.WebGLRenderTarget;
+    lambda1: THREE.WebGLRenderTarget;
+    volumeChain: THREE.WebGLRenderTarget[];
+    lambdaVol: THREE.WebGLRenderTarget;
+  } | null>;
+  vellumGradTexRef: MutableRefObject<THREE.DataTexture | null>;
+  vellumVolumeInfoRef: MutableRefObject<{ restVolume: number; denom: number } | null>;
+  vellumComponentTexRef: MutableRefObject<THREE.DataTexture | null>;
+  vellumComponentsRef: MutableRefObject<VellumComponent[] | null>;
   // Rigid bodies (Phase AU): the per-particle cell texture
   // (xyz = local offset in the body, w = body index), the
   // solver's body-state supply texture (64×4) with its CPU
@@ -451,6 +531,12 @@ export type GpgpuRuntimeRefs = {
   // diagnostics gate confirmed float render targets; null at all
   // other times (the passes no-op on null).
   pyroGridRef: MutableRefObject<PyroGridTargets | null>;
+  // FLIP 3D (Phase 19 stage 2): the atlas target set for the 3D
+  // FLIP solver, allocated only while the FLIP mode is '3d'
+  // (and the FLIP layer + fluid field are on) AND float render
+  // targets are confirmed; null at all other times, so the 2D
+  // default allocates nothing (the passes no-op on null).
+  flip3dRef: MutableRefObject<Flip3dTargets | null>;
   webgpuStateRef: MutableRefObject<WebGPUComputeState | null>;
   webgpuPosTexRef: MutableRefObject<THREE.DataTexture | null>;
   webgpuPingIsARef: MutableRefObject<boolean>;
@@ -820,6 +906,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const flipPressureRTRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const sortRTARef = useRef<THREE.WebGLRenderTarget | null>(null);
   const sortRTBRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const grainsSortRTARef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const grainsSortRTBRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const auxRtRef = useRef<{
     posA: THREE.WebGLRenderTarget;
     posB: THREE.WebGLRenderTarget;
@@ -837,12 +925,23 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const aux2RtRef = useRef<AuxPoolTargets | null>(null);
   const aux2PingIsA = useRef(true);
   const pyroGridRef = useRef<PyroGridTargets | null>(null);
+  const flip3dRef = useRef<Flip3dTargets | null>(null);
   const aux3RtRef = useRef<AuxPoolTargets | null>(null);
   const aux3PingIsA = useRef(true);
   const replicaStacksRef = useRef<ReplicaStack[] | null>(null);
   const vellumRestTexRef = useRef<THREE.DataTexture | null>(null);
   const vellumStateRtRef = useRef<{ a: THREE.WebGLRenderTarget; b: THREE.WebGLRenderTarget } | null>(null);
   const vellumStatePingIsA = useRef(true);
+  const vellumXpbdRtRef = useRef<{
+    lambda0: THREE.WebGLRenderTarget;
+    lambda1: THREE.WebGLRenderTarget;
+    volumeChain: THREE.WebGLRenderTarget[];
+    lambdaVol: THREE.WebGLRenderTarget;
+  } | null>(null);
+  const vellumGradTexRef = useRef<THREE.DataTexture | null>(null);
+  const vellumVolumeInfoRef = useRef<{ restVolume: number; denom: number } | null>(null);
+  const vellumComponentTexRef = useRef<THREE.DataTexture | null>(null);
+  const vellumComponentsRef = useRef<VellumComponent[] | null>(null);
   const rigidCellTexRef = useRef<THREE.DataTexture | null>(null);
   const rigidBodyTexRef = useRef<THREE.DataTexture | null>(null);
   const rigidBodyDataRef = useRef<Float32Array | null>(null);
@@ -1237,6 +1336,62 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     };
   }, [gl, pyroResolution, pyroSupport.floatLinearFiltering]);
 
+  // FLIP 3D (Phase 19 stage 2): the target set exists only
+  // while the FLIP mode is '3d' (with the FLIP layer and the
+  // fluid field on) AND float render targets are confirmed —
+  // the same support store the Pyro grid uses (it is a generic
+  // float-target probe). At the default mode '2d' nothing is
+  // allocated and no 3D pass can run: that is the structural
+  // half of the bit-identity guarantee.
+  const flip3dOn = flip3dActive(config);
+  useEffect(() => {
+    if (!flip3dOn) return;
+    ensurePyroGridSupport();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 外部診断ストアとの同期: 購読開始前に現在値を取り込む必要がある（初期値も同じストアから読んでいる）
+    setPyroSupport(getPyroGridSupport());
+    return subscribePyroGridSupport(() => setPyroSupport(getPyroGridSupport()));
+  }, [flip3dOn]);
+  const flip3dResolution = flip3dOn
+    && pyroSupport.status === 'ready'
+    && pyroSupport.colorBufferFloat
+    ? resolveFlip3dResolution(resolveEffectiveTierSync(), config.gpgpuFlip3dResolution)
+    : 0;
+  useEffect(() => {
+    disposeFlip3dTargets(flip3dRef.current);
+    flip3dRef.current = null;
+    if (!flip3dResolution) return;
+    flip3dRef.current = createFlip3dTargets(gl, flip3dResolution, pyroSupport.floatLinearFiltering);
+    return () => {
+      disposeFlip3dTargets(flip3dRef.current);
+      flip3dRef.current = null;
+    };
+  }, [gl, flip3dResolution, pyroSupport.floatLinearFiltering]);
+
+  // Grains cell sort (Phase 19 fix2): the ping-pong pair the
+  // spatial cell index is built into exists only while the
+  // complete neighbourhood runs through the sort (Grains on
+  // AND neighbourhood mode 1) — at mode 0 nothing is allocated
+  // and no sort pass can run: the structural half of the
+  // identity guarantee, the same discipline as the FLIP 3D
+  // targets above. The passes rebuild the index from the
+  // frame-start positions every frame while the pair exists.
+  const grainsCellOn = grainsCellSortActive(config);
+  useEffect(() => {
+    grainsSortRTARef.current?.dispose();
+    grainsSortRTARef.current = null;
+    grainsSortRTBRef.current?.dispose();
+    grainsSortRTBRef.current = null;
+    if (!grainsCellOn) return;
+    grainsSortRTARef.current = makeRT(texSize);
+    grainsSortRTBRef.current = makeRT(texSize);
+    return () => {
+      grainsSortRTARef.current?.dispose();
+      grainsSortRTARef.current = null;
+      grainsSortRTBRef.current?.dispose();
+      grainsSortRTBRef.current = null;
+    };
+  }, [gl, texSize, grainsCellOn]);
+
   // Vellum tear state pool (Phase AR): a texSize ping-pong pair
   // holding link survival (.r = right link, .g = up link) and,
   // since Phase BB, glue survival (.b) — allocated only while a
@@ -1281,6 +1436,81 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       vellumStateRtRef.current = null;
     };
   }, [gl, texSize, tearOn, config.gpgpuVellumMode, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuCount]);
+
+  // Vellum XPBD pool (Phase 19 stage 3): λ pair + volume
+  // reduction chain (texSize/2 … 1) + the 1×1 volume-λ target
+  // + the component-label texture, allocated only while the
+  // solver runs in xpbd mode — in a dedicated effect like the
+  // tear pool, so flipping the mode never reseeds the main
+  // pool. The component texture starts at label 0 everywhere;
+  // the scene loop refreshes it from throttled state readbacks
+  // (labelVellumComponents) while a tear rule is live.
+  const xpbdOn = vellumXpbdPoolActive(config);
+  useEffect(() => {
+    if (vellumXpbdRtRef.current) {
+      vellumXpbdRtRef.current.lambda0.dispose();
+      vellumXpbdRtRef.current.lambda1.dispose();
+      for (const rt of vellumXpbdRtRef.current.volumeChain) rt.dispose();
+      vellumXpbdRtRef.current.lambdaVol.dispose();
+      vellumXpbdRtRef.current = null;
+    }
+    vellumComponentTexRef.current?.dispose();
+    vellumComponentTexRef.current = null;
+    vellumComponentsRef.current = null;
+    if (!xpbdOn) return;
+    const chain: THREE.WebGLRenderTarget[] = [];
+    for (let size = Math.max(1, texSize >> 1); ; size >>= 1) {
+      chain.push(makeRT(size));
+      if (size <= 1) break;
+    }
+    vellumXpbdRtRef.current = {
+      lambda0: makeRT(texSize),
+      lambda1: makeRT(texSize),
+      volumeChain: chain,
+      lambdaVol: makeRT(1),
+    };
+    const compData = new Float32Array(texSize * texSize * 4);
+    const compTex = new THREE.DataTexture(compData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    compTex.needsUpdate = true;
+    vellumComponentTexRef.current = compTex;
+    return () => {
+      if (vellumXpbdRtRef.current) {
+        vellumXpbdRtRef.current.lambda0.dispose();
+        vellumXpbdRtRef.current.lambda1.dispose();
+        for (const rt of vellumXpbdRtRef.current.volumeChain) rt.dispose();
+        vellumXpbdRtRef.current.lambdaVol.dispose();
+        vellumXpbdRtRef.current = null;
+      }
+      vellumComponentTexRef.current?.dispose();
+      vellumComponentTexRef.current = null;
+      vellumComponentsRef.current = null;
+    };
+  }, [gl, texSize, xpbdOn]);
+
+  // Vellum volume gradient texture (Phase 19 stage 3): the
+  // rest-shape gradient weights ∇C_i and the denominator,
+  // baked from the same deterministic bake the rest texture
+  // uses (identical inputs → identical positions). Exists only
+  // while the volume constraint can engage (xpbd + shell +
+  // volume key); solverMode is NOT a bake input anywhere else.
+  const volumeOn = vellumVolumeActive(config);
+  useEffect(() => {
+    vellumGradTexRef.current?.dispose();
+    vellumGradTexRef.current = null;
+    vellumVolumeInfoRef.current = null;
+    if (!volumeOn) return;
+    const { posData } = buildVellumBakeData(texSize, config.gpgpuVellumMode, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax);
+    const grad = buildVellumVolumeGradientData(posData, texSize);
+    const gradTex = new THREE.DataTexture(grad.gradData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    gradTex.needsUpdate = true;
+    vellumGradTexRef.current = gradTex;
+    vellumVolumeInfoRef.current = { restVolume: grad.restVolume, denom: grad.denom };
+    return () => {
+      vellumGradTexRef.current?.dispose();
+      vellumGradTexRef.current = null;
+      vellumVolumeInfoRef.current = null;
+    };
+  }, [gl, texSize, volumeOn, config.gpgpuVellumMode, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax]);
 
   // Replica simulation stacks (Phase W2): allocated only while
   // the independent sim is active (key on + morph on + count > 1),
@@ -2095,6 +2325,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     flipPressureRTRef,
     sortRTARef,
     sortRTBRef,
+    grainsSortRTARef,
+    grainsSortRTBRef,
     auxRtRef,
     auxPingIsA,
     wwRtRef,
@@ -2107,11 +2339,17 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     vellumRestTexRef,
     vellumStateRtRef,
     vellumStatePingIsA,
+    vellumXpbdRtRef,
+    vellumGradTexRef,
+    vellumVolumeInfoRef,
+    vellumComponentTexRef,
+    vellumComponentsRef,
     rigidCellTexRef,
     rigidBodyTexRef,
     rigidBodyDataRef,
     rigidSolverRef,
     pyroGridRef,
+    flip3dRef,
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,

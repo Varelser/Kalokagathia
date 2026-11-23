@@ -53,6 +53,7 @@ export function useReactionDiffusionRuntime({ config, layerIndex, audioRef, isPl
       leniaMu: { value: 0.15 },
       leniaSigma: { value: 0.016 },
       leniaDt: { value: 0.1 },
+      depositRetention: { value: 1 },
     },
     vertexShader: simVertex,
     fragmentShader: simFragment,
@@ -168,7 +169,8 @@ export function useReactionDiffusionRuntime({ config, layerIndex, audioRef, isPl
     simMaterial.uniforms.dA.value = profile.diffusionA;
     simMaterial.uniforms.dB.value = profile.diffusionB;
     simMaterial.uniforms.dt.value = profile.dtMul;
-    simMaterial.uniforms.model.value = params.model === 'fhn' ? 1 : params.model === 'lenia' ? 2 : 0;
+    simMaterial.uniforms.model.value = params.model === 'fhn' ? 1 : params.model === 'lenia' ? 2 : params.model === 'deposit-bleed' ? 3 : 0;
+    if (simMaterial.uniforms.depositRetention) simMaterial.uniforms.depositRetention.value = params.depositRetention;
     simMaterial.uniforms.fhnEpsilon.value = params.fhnEpsilon;
     simMaterial.uniforms.fhnA.value = params.fhnA;
     simMaterial.uniforms.fhnB.value = params.fhnB;
@@ -183,7 +185,7 @@ export function useReactionDiffusionRuntime({ config, layerIndex, audioRef, isPl
     simMaterial.uniforms.pulse.value = pulse * params.audioReactive;
     displayMaterial.uniforms.time.value = clock.elapsedTime;
     displayMaterial.uniforms.pulse.value = pulse;
-    displayMaterial.uniforms.model.value = params.model === 'fhn' ? 1 : params.model === 'lenia' ? 2 : 0;
+    displayMaterial.uniforms.model.value = params.model === 'fhn' ? 1 : params.model === 'lenia' ? 2 : params.model === 'deposit-bleed' ? 3 : 0;
     displayMaterial.uniforms.fhnGain.value = params.model === 'fhn' ? params.fhnGain : 1;
     if (displayMaterial.uniforms.leniaGain) displayMaterial.uniforms.leniaGain.value = params.model === 'lenia' ? params.leniaGain : 1;
 

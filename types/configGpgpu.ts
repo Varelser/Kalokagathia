@@ -341,7 +341,10 @@ export interface ParticleConfigGpgpu {
   // Grains (Phase AQ): a DEM-style penalty contact + Coulomb
   // friction solver in the velocity pass — grain-grain contact
   // resolved as forces over the same statistical subsample
-  // neighbourhood as SPH (no position projection, no new passes).
+  // neighbourhood as SPH. Phase 19 completes the two AQ limits:
+  // a position projection segment in the position pass
+  // (gpgpuGrainsProjection) and an optional complete
+  // neighbourhood scan (gpgpuGrainsNeighborhood), both below.
   // Size is the grain diameter in world units (the SPH radius'
   // unit system). Enabled false (default) = the block is skipped
   // and the pass is verbatim legacy. The angle of repose was an
@@ -362,6 +365,19 @@ export interface ParticleConfigGpgpu {
   // slope steeper than the angle slides and a gentler one rests,
   // monotonically in the key.
   gpgpuGrainsReposeAngle: number;
+  // Position projection (Phase 19): 0..1 strength of the
+  // position-pass Jacobi projection segment (half the overlap per
+  // pair member, per pass). 1 (default) = full projection while
+  // Grains is on — a Grains-on behaviour change only; Grains off,
+  // or 0 here, is the exact legacy position pass.
+  gpgpuGrainsProjection: number;
+  // Neighbourhood scan (Phase 19): 0 (default) = the Phase AQ
+  // statistical subsample (max 64 over the first texture row's
+  // span); 1 = the complete scan — the whole position texture in
+  // texel order up to the scan budget, deterministic integer
+  // stride beyond it. Applies to the Grains contact loop and the
+  // projection segment only; SPH keeps the subsample either way.
+  gpgpuGrainsNeighborhood: number;
   // Pyro (Phase AS): a particle-side temperature / buoyancy
   // solver in the velocity pass. Each particle's temperature is
   // derived deterministically from its normalised age —
@@ -401,6 +417,21 @@ export interface ParticleConfigGpgpu {
   gpgpuPyroGridTransfer: number;
   gpgpuPyroVorticityEpsilon: number;
   gpgpuPyroFuelRate: number;
+  // Phase 19 stage 4: Pyro volume raymarch render path. The
+  // render selector defaults to 'fog' — the legacy fog-feed
+  // rendering, bit-identical, and the new box-march system
+  // (components/scenePyroVolumeSystem.tsx) never mounts. In
+  // 'raymarch' mode the grid's scalar atlas is marched through
+  // the domain cube (Beer-Lambert); steps 0 = tier default
+  // (entry 16 / standard 24 / high+flagship 32, manual 8..64),
+  // density is the extinction scale (1 = a full domain crossing
+  // at density 1 accumulates optical depth 1), shadow steps 0
+  // = no self-shadow secondary march (max 8). The solver files
+  // are untouched; this stage only reads the published atlas.
+  gpgpuPyroVolumeRender: 'fog' | 'raymarch';
+  gpgpuPyroVolumeSteps: number;
+  gpgpuPyroVolumeDensity: number;
+  gpgpuPyroVolumeShadowSteps: number;
   // Phase CC: CSG (manifold-3d in a lazily-created worker).
   // The enabled flag only arms the Graph-tab CSG panel; the
   // worker and WASM load on the first explicit execution, and
@@ -910,6 +941,24 @@ export interface ParticleConfigGpgpu {
   gpgpuVellumStitch: number;
   gpgpuVellumGlue: number;
   gpgpuVellumGlueBreak: number;
+  // XPBD completion (Phase 19 stage 3): solver mode switch.
+  // 'legacy' (default) runs the AR/BB passes verbatim — the new
+  // passes and pools are never created. 'xpbd' reinterprets
+  // Substeps as XPBD substeps and solves the same links with
+  // per-constraint Δλ accumulation and physical compliance
+  // (lib/xpbdConstraints.ts). The compliance keys are the XPBD
+  // α in physical units (cell mass = 1); 0 = rigid. Volume keys
+  // add a single global volume-preservation constraint (shell
+  // mode only — an open sheet has no volume). TearGap pushes the
+  // two sides of a dead link apart in the projection and doubles
+  // as the crack-visualisation switch (no separate key).
+  gpgpuVellumSolverMode: 'legacy' | 'xpbd';
+  gpgpuVellumCompliance: number;
+  gpgpuVellumBendCompliance: number;
+  gpgpuVellumVolumeEnabled: boolean;
+  gpgpuVellumVolumeRatio: number;
+  gpgpuVellumVolumeCompliance: number;
+  gpgpuVellumTearGap: number;
   // SDF Collider ('gyroid' added by Kinetix integration B3: the TPMS
   // gyroid surface as a signed-distance collider, Kinetix 'gyro')
   gpgpuSdfEnabled: boolean;
@@ -1322,6 +1371,28 @@ export interface ParticleConfigGpgpu {
   // > 0; the defaults keep the projected field byte-identical.
   gpgpuFlipVorticityEnabled: boolean;
   gpgpuFlipVorticityEpsilon: number;
+  // FLIP 3D completion (Phase 19 stage 2): the opt-in 3D grid
+  // mode. '2d' (default) = the Phase AT planar layer above,
+  // verbatim — no 3D target is allocated and no 3D pass runs.
+  // '3d' swaps the grid for an atlas-packed 3D FLIP solver
+  // (lib/flip3d.ts / components/gpgpuShaderSimulationFlip3d.ts)
+  // with a particle-derived free surface; the 2D field still
+  // advects as before but no longer carries the FLIP transfer.
+  gpgpuFlipMode: '2d' | '3d';
+  // 3D grid resolution: 0 (default) = GPU-tier auto via the
+  // shared pyro atlas resolution rule (entry 32 / standard 48 /
+  // high+flagship 64; 96 manual, flagship only).
+  gpgpuFlip3dResolution: number;
+  // Grid viscosity (Phase 19 stage 2): dynamic-viscosity-style
+  // coefficient in cells^2/s for the implicit (Helmholtz) grid
+  // viscosity solve. 0 (default) = the viscosity passes do not
+  // exist. 3D mode only.
+  gpgpuFlipViscosity: number;
+  // Grid surface tension (Phase 19 stage 2): CSF coefficient
+  // sigma for the curvature force on the free surface. 0
+  // (default) = neither the curvature nor the force pass
+  // exists. 3D mode only.
+  gpgpuFlipSurfaceTension: number;
   gpgpuDensityCompEnabled: boolean;
   gpgpuDensityCompTarget: number;
   // Whitewater (Phase BC): foam points derived from the FLIP

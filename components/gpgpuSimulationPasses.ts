@@ -7,7 +7,8 @@ import {
 } from '../lib/webgpuCompute';
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
 import { resolveVellum } from '../lib/gpgpuVellum';
-import { effectiveGrainsFriction } from '../lib/gpgpuGrains';
+import { XPBD_JACOBI_RELAXATION } from '../lib/xpbdConstraints';
+import { effectiveGrainsFriction, grainsCellGrid, grainsCellSortActive, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsProjection, type GrainsCellGrid } from '../lib/gpgpuGrains';
 import { resolveRigid } from '../lib/rigidBodies';
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
@@ -30,6 +31,11 @@ import {
   type PyroGridTargets,
 } from './gpgpuPyroGridPasses';
 import { pyroGridVelScale } from '../lib/pyroGrid';
+import { flip3dHalfExtent } from '../lib/flip3d';
+import {
+  flip3dCurrentVelTexture,
+  type Flip3dTargets,
+} from './gpgpuFlip3dPasses';
 
 // Particle Life matrix cache: the flat uniform array only changes when
 // preset / species / seed change, so avoid reallocating it every frame.
@@ -180,6 +186,19 @@ export function runFluidAdvectionPass(args: {
     velSimMat.uniforms.uFluidInfluence.value = config.gpgpuFluidInfluence;
     velSimMat.uniforms.uFluidScale.value = config.gpgpuFluidScale;
     if (!flipActive) {
+      if (velSimMat.uniforms.uFlipEnabled) velSimMat.uniforms.uFlipEnabled.value = false;
+      if (fluidFinalTargetRef) fluidFinalTargetRef.current = currentFluid;
+      return;
+    }
+
+    // FLIP 3D (Phase 19 stage 2): in '3d' mode the 2D FLIP
+    // pipeline below does not run — the atlas solver
+    // (runFlip3dPasses, stepped from the scene like the Pyro
+    // grid) owns the transfer, and the velocity pass couples
+    // through its own FLIP3D block. The 2D field keeps
+    // advecting and feeding the legacy one-way consumers
+    // exactly as the no-FLIP path above.
+    if (config.gpgpuFlipMode === '3d') {
       if (velSimMat.uniforms.uFlipEnabled) velSimMat.uniforms.uFlipEnabled.value = false;
       if (fluidFinalTargetRef) fluidFinalTargetRef.current = currentFluid;
       return;
@@ -346,6 +365,61 @@ export function applyPyroGridCoupleUniforms(args: {
   if (u.uPyroGridBounds) (u.uPyroGridBounds.value as THREE.Vector4).set(0, 0, 0, config.gpgpuBounceRadius);
 }
 
+// Grains cell sort (Phase 19 fix2): build the spatial cell
+// index of the frame-start positions — a cell-key pass into
+// sortRTA, then the shared bitonic machinery (the same
+// stage/step drive as runDepthSortPass in gpgpuVisualUpdates)
+// sorts the pool DESCENDING by cell key. The velocity contact
+// loop and the position projection segment both binary-search
+// the result. The last-written target is tracked explicitly
+// (the depth sort's return relies on pass parity; a searched
+// structure must hand back the fully sorted texture, so this
+// runner does not copy that convention).
+export function runGrainsCellSortPass(args: {
+  gl: THREE.WebGLRenderer;
+  simScene: THREE.Scene;
+  simCamera: THREE.Camera;
+  simMesh: THREE.Mesh;
+  posTexture: THREE.Texture;
+  texSize: number;
+  grid: GrainsCellGrid;
+  sortRTA: THREE.WebGLRenderTarget | null;
+  sortRTB: THREE.WebGLRenderTarget | null;
+  cellKeyMat: THREE.ShaderMaterial;
+  bitonicMat: THREE.ShaderMaterial;
+}): THREE.Texture | null {
+  const { gl, simScene, simCamera, simMesh, posTexture, texSize, grid, sortRTA, sortRTB, cellKeyMat, bitonicMat } = args;
+  if (!sortRTA || !sortRTB) return null;
+
+  cellKeyMat.uniforms.uPosTex.value = posTexture;
+  cellKeyMat.uniforms.uGrainsCellOrigin.value = grid.origin;
+  cellKeyMat.uniforms.uGrainsCellSize.value = grid.cellSize;
+  (cellKeyMat.uniforms.uGrainsCellDims.value as THREE.Vector3).set(grid.dimX, grid.dimY, grid.dimZ);
+  simMesh.material = cellKeyMat;
+  gl.setRenderTarget(sortRTA);
+  gl.render(simScene, simCamera);
+
+  const logN = Math.log2(texSize * texSize);
+  let pingA = true;
+  let current: THREE.WebGLRenderTarget = sortRTA;
+  bitonicMat.uniforms.uTexSizeF.value = texSize;
+  for (let stage = 0; stage < logN; stage++) {
+    for (let step = stage; step >= 0; step--) {
+      const sIn = pingA ? sortRTA : sortRTB;
+      const sOut = pingA ? sortRTB : sortRTA;
+      bitonicMat.uniforms.uSortIn.value = sIn.texture;
+      bitonicMat.uniforms.uStep.value = step;
+      bitonicMat.uniforms.uStage.value = stage;
+      simMesh.material = bitonicMat;
+      gl.setRenderTarget(sOut);
+      gl.render(simScene, simCamera);
+      current = sOut;
+      pingA = !pingA;
+    }
+  }
+  return current.texture;
+}
+
 export function runSimulationPasses(args: {
   useWebGPU: boolean;
   config: ParticleConfig;
@@ -417,6 +491,36 @@ export function runSimulationPasses(args: {
   vellumStateOut?: THREE.WebGLRenderTarget | null;
   vellumSpareRT?: THREE.WebGLRenderTarget | null;
   blitMat?: THREE.ShaderMaterial;
+  // Grains cell sort (Phase 19 fix2): the cell-key material,
+  // the shared bitonic material and the sort ping-pong pair
+  // (allocated by the runtime only while Grains runs the
+  // complete neighbourhood). All optional: the replica-stack
+  // runner passes none of them, and absent extras leave
+  // uGrainsCellSort false — the shaders keep their complete
+  // scan fallback and no sort pass runs.
+  grainsCellKeyMat?: THREE.ShaderMaterial;
+  grainsBitonicMat?: THREE.ShaderMaterial;
+  grainsSortRTA?: THREE.WebGLRenderTarget | null;
+  grainsSortRTB?: THREE.WebGLRenderTarget | null;
+  // Vellum XPBD (Phase 19 stage 3): the Δλ-solve extras — the
+  // four new materials, the λ pair, the volume reduction chain
+  // + 1×1 volume-λ target, and the baked volume gradient
+  // texture with its rest volume / denominator. All optional
+  // and only ever supplied in xpbd mode; absent extras keep
+  // the runner on the legacy projection below.
+  vellumXpbdClearMat?: THREE.ShaderMaterial;
+  vellumXpbdLambdaMat?: THREE.ShaderMaterial;
+  vellumXpbdProjMat?: THREE.ShaderMaterial;
+  vellumVolumeReduceMat?: THREE.ShaderMaterial;
+  vellumVolumeProjMat?: THREE.ShaderMaterial;
+  vellumVolumeApplyMat?: THREE.ShaderMaterial;
+  vellumXpbdVelMat?: THREE.ShaderMaterial;
+  vellumLambda0RT?: THREE.WebGLRenderTarget | null;
+  vellumLambda1RT?: THREE.WebGLRenderTarget | null;
+  vellumVolumeChain?: THREE.WebGLRenderTarget[] | null;
+  vellumLambdaVolRT?: THREE.WebGLRenderTarget | null;
+  vellumGradTex?: THREE.Texture | null;
+  vellumVolumeInfo?: { restVolume: number; denom: number } | null;
   // Rigid bodies (Phase AU): the per-particle cell texture and
   // the solver's body-state texture. The solver itself is stepped
   // CPU-side by the scene before this runner is called; these
@@ -600,6 +704,31 @@ export function runSimulationPasses(args: {
     }
     return;
   }
+
+  // Grains cell sort (Phase 19 fix2): while the complete
+  // neighbourhood is on AND the scene supplied the sort pool,
+  // build the spatial cell index from the frame-start
+  // positions once, here — the velocity contact loop and the
+  // position projection below both consume it. Absent pool
+  // (replica stacks, mode 0) leaves grainsCellTex null and the
+  // uniform writes below resolve uGrainsCellSort false, so
+  // the shaders keep their scan fallback.
+  const grainsGrid = grainsCellGrid(config.gpgpuBounceRadius, Math.max(0.001, config.gpgpuGrainsSize || 0));
+  const grainsCellTex = grainsCellSortActive(config) && args.grainsCellKeyMat && args.grainsBitonicMat && args.grainsSortRTA && args.grainsSortRTB
+    ? runGrainsCellSortPass({
+      gl,
+      simScene,
+      simCamera,
+      simMesh,
+      posTexture: posIn.texture,
+      texSize,
+      grid: grainsGrid,
+      sortRTA: args.grainsSortRTA,
+      sortRTB: args.grainsSortRTB,
+      cellKeyMat: args.grainsCellKeyMat,
+      bitonicMat: args.grainsBitonicMat,
+    })
+    : null;
 
   // Vellum (Phase AR): the single resolution every Vellum
   // consumer in this runner shares. While active, the lifecycle
@@ -842,6 +971,26 @@ export function runSimulationPasses(args: {
     velSimMat.uniforms.uGrainsCohesion.value = Math.max(0, config.gpgpuGrainsCohesion || 0);
     velSimMat.uniforms.uGrainsRestitution.value = Math.max(0, config.gpgpuGrainsRestitution || 0);
     velSimMat.uniforms.uGrainsRestDamping.value = Math.max(0, config.gpgpuGrainsRestDamping || 0);
+    // Neighbourhood scan (Phase 19): 0 keeps the AQ subsample
+    // plan bit-for-bit; 1 switches the Grains loop (only) to
+    // the complete scan.
+    if (velSimMat.uniforms.uGrainsNeighborhood) {
+      velSimMat.uniforms.uGrainsNeighborhood.value = grainsNeighborhoodMode(config);
+    }
+    // Cell sort (Phase 19 fix2): true only on frames where the
+    // sort above actually ran (mode 1 AND the pool was
+    // supplied); the grid uniforms follow the same resolution
+    // the sort pass used. Guarded like the scan uniform — the
+    // legacy shader string declares none of these.
+    if (velSimMat.uniforms.uGrainsCellSort) {
+      velSimMat.uniforms.uGrainsCellSort.value = !!grainsCellTex;
+      if (velSimMat.uniforms.uGrainsSortTex) velSimMat.uniforms.uGrainsSortTex.value = grainsCellTex;
+      if (velSimMat.uniforms.uGrainsCellOrigin) velSimMat.uniforms.uGrainsCellOrigin.value = grainsGrid.origin;
+      if (velSimMat.uniforms.uGrainsCellSize) velSimMat.uniforms.uGrainsCellSize.value = grainsGrid.cellSize;
+      if (velSimMat.uniforms.uGrainsCellDims) {
+        (velSimMat.uniforms.uGrainsCellDims.value as THREE.Vector3).set(grainsGrid.dimX, grainsGrid.dimY, grainsGrid.dimZ);
+      }
+    }
   }
   // Vellum (Phase AR): guarded like Grains — the pressure force
   // and the velocity damping are the velocity pass's share of
@@ -849,7 +998,13 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uVellumEnabled) {
     velSimMat.uniforms.uVellumEnabled.value = vellum.active;
     velSimMat.uniforms.uVellumMode.value = vellum.modeId;
-    velSimMat.uniforms.uVellumPressure.value = vellum.active ? vellum.pressure : 0;
+    // XPBD volume (Phase 19 stage 3, design 3-1): while the
+    // volume constraint engages (xpbd + shell + volume key)
+    // the legacy normal-force pressure is zeroed — the volume
+    // constraint replaces it, never stacks on top of it.
+    const volumeEngaged = vellum.active && vellum.solverMode === 'xpbd'
+      && vellum.modeId === 1 && vellum.volumeEnabled;
+    velSimMat.uniforms.uVellumPressure.value = vellum.active && !volumeEngaged ? vellum.pressure : 0;
     velSimMat.uniforms.uVellumDamping.value = vellum.active ? vellum.damping : 0;
   }
   // Rigid bodies (Phase AU): guarded like Grains — stack
@@ -945,6 +1100,30 @@ export function runSimulationPasses(args: {
   // would shred the bodies' point membership).
   posSimMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled && !vellum.active && !rigidActive;
   if (posSimMat.uniforms.uVellumEnabled) posSimMat.uniforms.uVellumEnabled.value = vellum.active;
+  // Grains projection (Phase 19): resolved through
+  // lib/gpgpuGrains.ts — Grains off or strength 0 writes false
+  // and the position pass stays verbatim legacy. The sample
+  // count mirrors the velocity pass's uNBodySamples resolution
+  // so both Grains scans share one plan.
+  if (posSimMat.uniforms.uGrainsProjEnabled) {
+    posSimMat.uniforms.uGrainsProjEnabled.value = grainsProjectionActive(config);
+    posSimMat.uniforms.uGrainsSize.value = Math.max(0.001, config.gpgpuGrainsSize || 0);
+    posSimMat.uniforms.uGrainsProjection.value = resolveGrainsProjection(config);
+    if (posSimMat.uniforms.uGrainsNeighborhood) posSimMat.uniforms.uGrainsNeighborhood.value = grainsNeighborhoodMode(config);
+    if (posSimMat.uniforms.uGrainsSamples) posSimMat.uniforms.uGrainsSamples.value = Math.max(2, Math.min(64, config.gpgpuNBodySampleCount));
+    // Cell sort (Phase 19 fix2): the projection segment
+    // consumes the same sorted index the velocity pass used
+    // this frame (built once, before both passes).
+    if (posSimMat.uniforms.uGrainsCellSort) {
+      posSimMat.uniforms.uGrainsCellSort.value = !!grainsCellTex;
+      if (posSimMat.uniforms.uGrainsSortTex) posSimMat.uniforms.uGrainsSortTex.value = grainsCellTex;
+      if (posSimMat.uniforms.uGrainsCellOrigin) posSimMat.uniforms.uGrainsCellOrigin.value = grainsGrid.origin;
+      if (posSimMat.uniforms.uGrainsCellSize) posSimMat.uniforms.uGrainsCellSize.value = grainsGrid.cellSize;
+      if (posSimMat.uniforms.uGrainsCellDims) {
+        (posSimMat.uniforms.uGrainsCellDims.value as THREE.Vector3).set(grainsGrid.dimX, grainsGrid.dimY, grainsGrid.dimZ);
+      }
+    }
+  }
   // Rigid bodies (Phase AU): while bound, the position pass
   // composes world positions from the body transforms (early
   // return in the shader); the solver was stepped by the scene.
@@ -1127,6 +1306,144 @@ export function runSimulationPasses(args: {
       gl.render(simScene, simCamera);
       stateTex = args.vellumStateOut.texture;
     }
+    const xpbdReady = vellum.solverMode === 'xpbd'
+      && args.vellumXpbdClearMat && args.vellumXpbdLambdaMat && args.vellumXpbdProjMat
+      && args.vellumLambda0RT && args.vellumLambda1RT;
+    if (xpbdReady) {
+      // ── XPBD solve (Phase 19 stage 3) ──
+      // Substeps are true XPBD substeps: dt_s = dt / substeps,
+      // λ resets at each substep head, each constraint solves
+      // once per substep (λ pass pair → apply pass), then the
+      // volume constraint when it engages. Positions ping-pong
+      // between posOut and the spare target exactly like the
+      // legacy projection, and land back in posOut.
+      const dtSub = Math.max(args.dt, 1e-6) / vellum.substeps;
+      const alphaTilde = vellum.compliance / (dtSub * dtSub);
+      const alphaTildeBend = vellum.bendCompliance / (dtSub * dtSub);
+      const volumeEngaged = vellum.modeId === 1 && vellum.volumeEnabled
+        && args.vellumVolumeReduceMat && args.vellumVolumeProjMat && args.vellumVolumeApplyMat
+        && args.vellumVolumeChain && args.vellumVolumeChain.length > 0
+        && args.vellumLambdaVolRT && args.vellumGradTex && args.vellumVolumeInfo;
+      const clearU = args.vellumXpbdClearMat!.uniforms;
+      const lamU = args.vellumXpbdLambdaMat!.uniforms;
+      lamU.uVellumRestTex.value = args.vellumRestTex;
+      lamU.uVellumStateTex.value = stateTex;
+      lamU.uVellumTearEnabled.value = !!stateTex;
+      lamU.uVellumGlueStateEnabled.value = !!stateTex && glueBreakLive;
+      lamU.uVellumMode.value = vellum.modeId;
+      lamU.uVellumPin.value = vellum.pinId;
+      lamU.uAlphaTilde.value = alphaTilde;
+      lamU.uAlphaTildeBend.value = alphaTildeBend;
+      lamU.uVellumGlue.value = vellum.glue;
+      lamU.uTexSizeF.value = texSize;
+      const xpU = args.vellumXpbdProjMat!.uniforms;
+      xpU.uVellumRestTex.value = args.vellumRestTex;
+      xpU.uVellumStateTex.value = stateTex;
+      xpU.uVellumTearEnabled.value = !!stateTex;
+      xpU.uVellumGlueStateEnabled.value = !!stateTex && glueBreakLive;
+      xpU.uVellumMode.value = vellum.modeId;
+      xpU.uVellumPin.value = vellum.pinId;
+      xpU.uVellumGlue.value = vellum.glue;
+      xpU.uVellumTearGap.value = vellum.tearGap;
+      xpU.uXpbdRelaxation.value = XPBD_JACOBI_RELAXATION;
+      xpU.uLambda0Tex.value = args.vellumLambda0RT!.texture;
+      xpU.uLambda1Tex.value = args.vellumLambda1RT!.texture;
+      xpU.uTexSizeF.value = texSize;
+      let cur: THREE.WebGLRenderTarget = posOut;
+      const renderTo = (mat: THREE.ShaderMaterial, dst: THREE.WebGLRenderTarget) => {
+        simMesh.material = mat;
+        gl.setRenderTarget(dst);
+        gl.render(simScene, simCamera);
+      };
+      for (let s = 0; s < vellum.substeps; s++) {
+        // λ clear (both sets) — XPBD resets λ per substep.
+        (clearU.uClearValue.value as THREE.Vector4).set(0, 0, 0, 0);
+        renderTo(args.vellumXpbdClearMat!, args.vellumLambda0RT!);
+        renderTo(args.vellumXpbdClearMat!, args.vellumLambda1RT!);
+        // λ passes: set 0 (structural/shear) and set 1
+        // (bend/glue), both from the substep's input positions.
+        lamU.uPosTex.value = cur.texture;
+        lamU.uLambdaSet.value = 0;
+        lamU.uLambdaTex.value = args.vellumLambda0RT!.texture;
+        renderTo(args.vellumXpbdLambdaMat!, args.vellumLambda0RT!);
+        lamU.uLambdaSet.value = 1;
+        lamU.uLambdaTex.value = args.vellumLambda1RT!.texture;
+        renderTo(args.vellumXpbdLambdaMat!, args.vellumLambda1RT!);
+        // Apply: corrections land in the other position target.
+        const dst = cur === posOut ? args.vellumSpareRT! : posOut;
+        xpU.uPosTex.value = cur.texture;
+        renderTo(args.vellumXpbdProjMat!, dst);
+        cur = dst;
+        if (volumeEngaged) {
+          // Reduction chain: level 0 builds the signed-volume
+          // partials from the current positions, later levels
+          // sum 2×2 blocks down to 1×1.
+          const chain = args.vellumVolumeChain!;
+          const redU = args.vellumVolumeReduceMat!.uniforms;
+          redU.uVellumMode.value = vellum.modeId;
+          redU.uVellumPin.value = vellum.pinId;
+          redU.uTexSizeF.value = texSize;
+          for (let level = 0; level < chain.length; level++) {
+            if (level === 0) {
+              redU.uLevel0.value = true;
+              redU.uPosTex.value = cur.texture;
+              redU.uSrcTex.value = null;
+              redU.uSrcSizeF.value = texSize;
+            } else {
+              redU.uLevel0.value = false;
+              redU.uSrcTex.value = chain[level - 1].texture;
+              redU.uSrcSizeF.value = chain[level - 1].width;
+            }
+            renderTo(args.vellumVolumeReduceMat!, chain[level]);
+          }
+          // Volume λ at 1×1, then the apply over the pool.
+          const vpU = args.vellumVolumeProjMat!.uniforms;
+          vpU.uVolumeTex.value = chain[chain.length - 1].texture;
+          vpU.uRestVolume.value = args.vellumVolumeInfo!.restVolume;
+          vpU.uTargetRatio.value = vellum.volumeRatio;
+          vpU.uAlphaTildeVol.value = vellum.volumeCompliance / (dtSub * dtSub);
+          vpU.uVolumeDenom.value = Math.max(args.vellumVolumeInfo!.denom, 1e-9);
+          renderTo(args.vellumVolumeProjMat!, args.vellumLambdaVolRT!);
+          const vaU = args.vellumVolumeApplyMat!.uniforms;
+          vaU.uPosTex.value = cur.texture;
+          vaU.uLambdaVolTex.value = args.vellumLambdaVolRT!.texture;
+          vaU.uVellumGradTex.value = args.vellumGradTex;
+          vaU.uVellumMode.value = vellum.modeId;
+          vaU.uVellumPin.value = vellum.pinId;
+          vaU.uTexSizeF.value = texSize;
+          const vDst = cur === posOut ? args.vellumSpareRT! : posOut;
+          renderTo(args.vellumVolumeApplyMat!, vDst);
+          cur = vDst;
+        }
+      }
+      if (cur !== posOut) {
+        args.blitMat.uniforms.uTex.value = cur.texture;
+        simMesh.material = args.blitMat;
+        gl.setRenderTarget(posOut);
+        gl.render(simScene, simCamera);
+      }
+      // Velocity reconstruction (XPBD): v = (x_new − x_start)
+      // / dt over the whole frame, through the spare target —
+      // then the stitch sweep below can still run on top.
+      if (args.vellumXpbdVelMat) {
+        const xvU = args.vellumXpbdVelMat.uniforms;
+        xvU.uPosTex.value = posOut.texture;
+        xvU.uPrevPosTex.value = posIn.texture;
+        xvU.uVelTex.value = velOut.texture;
+        xvU.uDt.value = Math.max(args.dt, 1e-6);
+        xvU.uVellumDamping.value = vellum.damping;
+        xvU.uVellumMode.value = vellum.modeId;
+        xvU.uVellumPin.value = vellum.pinId;
+        xvU.uTexSizeF.value = texSize;
+        simMesh.material = args.vellumXpbdVelMat;
+        gl.setRenderTarget(args.vellumSpareRT!);
+        gl.render(simScene, simCamera);
+        args.blitMat.uniforms.uTex.value = args.vellumSpareRT!.texture;
+        simMesh.material = args.blitMat;
+        gl.setRenderTarget(velOut);
+        gl.render(simScene, simCamera);
+      }
+    } else {
     const projU = args.vellumProjMat.uniforms;
     projU.uVellumRestTex.value = args.vellumRestTex;
     projU.uVellumStateTex.value = stateTex;
@@ -1137,6 +1454,7 @@ export function runSimulationPasses(args: {
     projU.uVellumPin.value = vellum.pinId;
     projU.uVellumGlue.value = vellum.glue;
     projU.uVellumGlueStateEnabled.value = !!stateTex && glueBreakLive;
+    projU.uVellumTearGap.value = vellum.tearGap;
     projU.uTexSizeF.value = texSize;
     let cur: THREE.WebGLRenderTarget = posOut;
     for (let i = 0; i < vellum.substeps; i++) {
@@ -1152,6 +1470,7 @@ export function runSimulationPasses(args: {
       simMesh.material = args.blitMat;
       gl.setRenderTarget(posOut);
       gl.render(simScene, simCamera);
+    }
     }
     // Stitch (Phase BB): the velocity-coupling sweep, after the
     // solved positions have landed in posOut. It rewrites this
@@ -1320,6 +1639,15 @@ export function runWhitewaterSimulationPasses(args: {
   wwVelOut: THREE.WebGLRenderTarget;
   wwVelMat: THREE.ShaderMaterial;
   wwPosMat: THREE.ShaderMaterial;
+  // Whitewater 3D (Phase 19 stage 2): while the FLIP mode is
+  // '3d' and the 3D targets have stepped, the foam pool runs
+  // on the 3D materials against the FLIP3D grid / phi textures
+  // instead of the 2D field. Absent extras (or mode '2d') keep
+  // the legacy path below verbatim. No extra key: the branch
+  // follows gpgpuFlipMode.
+  ww3VelMat?: THREE.ShaderMaterial;
+  ww3PosMat?: THREE.ShaderMaterial;
+  flip3dTargets?: Flip3dTargets | null;
 }): void {
   const {
     config,
@@ -1336,9 +1664,56 @@ export function runWhitewaterSimulationPasses(args: {
     wwVelOut,
     wwVelMat,
     wwPosMat,
+    ww3VelMat,
+    ww3PosMat,
+    flip3dTargets,
   } = args;
 
   if (!config.gpgpuWhitewaterEnabled || !config.gpgpuFluidEnabled || !config.gpgpuFlipEnabled) return;
+
+  if (
+    config.gpgpuFlipMode === '3d'
+    && ww3VelMat && ww3PosMat && flip3dTargets
+    && flip3dTargets.framesStepped > 0 && flip3dTargets.phiTexture
+  ) {
+    const t = flip3dTargets;
+    const setWw3Common = (mat: THREE.ShaderMaterial) => {
+      const u = mat.uniforms;
+      u.uWw3VelTex.value = flip3dCurrentVelTexture(t);
+      u.uWw3PhiTex.value = t.phiTexture;
+      u.uWw3GridN.value = t.resolution;
+      (u.uWw3AtlasSize.value as THREE.Vector2).set(t.atlasWidth, t.atlasHeight);
+      (u.uWw3AtlasTiles.value as THREE.Vector2).set(t.tilesX, t.tilesY);
+      u.uWw3ManualTrilinear.value = !t.floatLinear;
+      u.uBounceRadius.value = config.gpgpuBounceRadius;
+      u.uFluidScale.value = config.gpgpuFluidScale;
+      u.uWwThreshold.value = config.gpgpuWhitewaterThreshold;
+      u.uWwAmount.value = config.gpgpuWhitewaterAmount;
+      u.uWw3VelScale.value = pyroGridVelScale(flip3dHalfExtent(config), t.resolution);
+    };
+    const velU = ww3VelMat.uniforms;
+    setWw3Common(ww3VelMat);
+    velU.uWwPosTex.value = wwPosIn.texture;
+    velU.uWwVelTex.value = wwVelIn.texture;
+    velU.uWwLife.value = config.gpgpuWhitewaterLife;
+    velU.uDelta.value = dt;
+    velU.uTime.value = time;
+    simMesh.material = ww3VelMat;
+    gl.setRenderTarget(wwVelOut);
+    gl.render(simScene, simCamera);
+
+    const posU = ww3PosMat.uniforms;
+    setWw3Common(ww3PosMat);
+    posU.uWwPosTex.value = wwPosIn.texture;
+    posU.uWwVelTex.value = wwVelIn.texture;
+    posU.uWwVelOutTex.value = wwVelOut.texture;
+    posU.uDelta.value = dt;
+    posU.uTime.value = time;
+    simMesh.material = ww3PosMat;
+    gl.setRenderTarget(wwPosOut);
+    gl.render(simScene, simCamera);
+    return;
+  }
 
   const velU = wwVelMat.uniforms;
   velU.uWwPosTex.value = wwPosIn.texture;

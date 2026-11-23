@@ -1,9 +1,25 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLIP_VORTICITY_CURL_FRAG, FLIP_VORTICITY_FORCE_FRAG, FLUID_ADVECT_FRAG, SIM_POS_FRAG, SIM_VERT, SIM_VEL_FRAG, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildVelocityFragment } from "./gpgpuShaders";
-import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG, SIM_VELLUM_VEL_FRAG } from "./gpgpuShaderSimulationVellum";
+import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLIP_VORTICITY_CURL_FRAG, FLIP_VORTICITY_FORCE_FRAG, FLUID_ADVECT_FRAG, GRAINS_CELL_KEY_FRAG, SIM_VERT, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildPositionFragment, buildVelocityFragment } from "./gpgpuShaders";
+import type { VelocityFragmentVariantOptions } from "./gpgpuShaderSimulationVelocity";
+import { grainsCellSortActive, grainsNeighborhoodMode, grainsProjectionActive } from "../lib/gpgpuGrains";
+import { flip3dActive } from "../lib/flip3d";
+import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG, SIM_VELLUM_VEL_FRAG, SIM_VELLUM_VOLUME_APPLY_FRAG, SIM_VELLUM_VOLUME_PROJ_FRAG, SIM_VELLUM_VOLUME_REDUCE_FRAG, SIM_VELLUM_XPBD_CLEAR_FRAG, SIM_VELLUM_XPBD_LAMBDA_FRAG, SIM_VELLUM_XPBD_PROJ_FRAG, SIM_VELLUM_XPBD_VEL_FRAG } from "./gpgpuShaderSimulationVellum";
 import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG } from "./gpgpuShaderAux";
 import { WW_POS_FRAG, WW_VEL_FRAG } from "./gpgpuShaderWhitewater";
+import { WW3_POS_FRAG, WW3_VEL_FRAG } from "./gpgpuShaderWhitewater3d";
+import {
+  FLIP3D_COMPOSITE_FRAG,
+  FLIP3D_CURVATURE_FRAG,
+  FLIP3D_JACOBI_FRAG,
+  FLIP3D_PHI_ADVECT_FRAG,
+  FLIP3D_PHI_FRAG,
+  FLIP3D_SPLAT_FRAG,
+  FLIP3D_SPLAT_VERT,
+  FLIP3D_SUBTRACT_FRAG,
+  FLIP3D_TENSION_FRAG,
+  FLIP3D_VISCOSITY_FRAG,
+} from "./gpgpuShaderSimulationFlip3d";
 import {
   PYRO_GRID_ADVECT_SCALAR_FRAG,
   PYRO_GRID_ADVECT_VEL_FRAG,
@@ -28,6 +44,19 @@ import type { ParticleConfig } from "../types";
 // from the base SIM_VEL_FRAG — a user custom force swapped into
 // the shared material at runtime is not mirrored into stacks
 // (documented Phase W2 limitation).
+// Phase 19 gate fix: the velocity shader's string variant is
+// resolved from the same conditions that drive the Phase 19
+// uniforms — the Grains neighbourhood key (mode 1 = the complete
+// scan) and FLIP 3D activity (the config side of the condition
+// applyFlip3dCoupleUniforms uses to raise uFlip3dCouple). With
+// both off the built string is byte-identical to v2.00.
+export function velocityVariantOptions(config: ParticleConfig): VelocityFragmentVariantOptions {
+  return {
+    grainsFullScan: grainsNeighborhoodMode(config) === 1,
+    flip3dCouple: flip3dActive(config),
+  };
+}
+
 export function createVelSimMaterial(texSize: number, config: ParticleConfig): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -177,6 +206,16 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uGrainsCohesion:    { value: 0 },
       uGrainsRestitution: { value: 0 },
       uGrainsRestDamping: { value: 0.5 },
+      // Neighbourhood scan (Phase 19): 0 = legacy subsample.
+      uGrainsNeighborhood: { value: 0 },
+      // Cell sort (Phase 19 fix2): written by the passes only
+      // on frames where the sort ran; the legacy shader string
+      // declares none of these, so the entries stay inert there.
+      uGrainsSortTex:     { value: null },
+      uGrainsCellSort:    { value: false },
+      uGrainsCellOrigin:  { value: 0 },
+      uGrainsCellSize:    { value: 1 },
+      uGrainsCellDims:    { value: new THREE.Vector3(1, 1, 1) },
       // Vellum (Phase AR): disabled is the exact legacy path.
       uVellumEnabled:     { value: false },
       uVellumMode:        { value: 0 },
@@ -284,8 +323,23 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uAtlasTiles:      { value: new THREE.Vector2(1, 1) },
       uManualTrilinear: { value: false },
       uPyroGridBounds:  { value: new THREE.Vector4(0, 0, 0, 150) },
+      // FLIP 3D coupling (Phase 19 stage 2): set only by
+      // applyFlip3dCoupleUniforms; the defaults keep the G2P
+      // block inert (own atlas uniforms — the 3D grid may run
+      // at a different resolution than the Pyro grid).
+      uFlip3dCouple:  { value: false },
+      uFlip3dVelTex:  { value: null },
+      uFlip3dBaseTex: { value: null },
+      uFlip3dBlend:   { value: 0.95 },
+      uFlip3dTransfer: { value: 1.0 },
+      uFlip3dVelScale: { value: 0 },
+      uFlip3dBounds:  { value: new THREE.Vector4(0, 0, 0, 150) },
+      uFlip3dGridN:   { value: 1 },
+      uFlip3dAtlasSize: { value: new THREE.Vector2(1, 1) },
+      uFlip3dAtlasTiles: { value: new THREE.Vector2(1, 1) },
+      uFlip3dManualTrilinear: { value: false },
     },
-    vertexShader: SIM_VERT, fragmentShader: SIM_VEL_FRAG,
+    vertexShader: SIM_VERT, fragmentShader: buildVelocityFragment('', undefined, velocityVariantOptions(config)),
   });
 }
 
@@ -305,6 +359,19 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uTexSizeF:      { value: texSize },
       // Vellum (Phase AR): gates the pointer-paint teleport only.
       uVellumEnabled: { value: false },
+      // Grains projection (Phase 19): disabled is the exact
+      // legacy position pass.
+      uGrainsProjEnabled: { value: false },
+      uGrainsSize:        { value: 8.0 },
+      uGrainsProjection:  { value: 1 },
+      uGrainsNeighborhood: { value: 0 },
+      uGrainsSamples:     { value: 16 },
+      // Cell sort (Phase 19 fix2): as on the velocity material.
+      uGrainsSortTex:     { value: null },
+      uGrainsCellSort:    { value: false },
+      uGrainsCellOrigin:  { value: 0 },
+      uGrainsCellSize:    { value: 1 },
+      uGrainsCellDims:    { value: new THREE.Vector3(1, 1, 1) },
       // Rigid bodies (Phase AU): disabled is the exact legacy path.
       uRigidEnabled:  { value: false },
       uRigidCellTex:  { value: null },
@@ -388,7 +455,7 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uGroupHigh:    { value: 0.75 },
       uGroupInvert:  { value: false },
     },
-    vertexShader: SIM_VERT, fragmentShader: SIM_POS_FRAG,
+    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: grainsCellSortActive(config) }),
   });
 }
 
@@ -409,6 +476,7 @@ export function createVellumProjMaterial(texSize: number): THREE.ShaderMaterial 
       uVellumPin:       { value: 1 },
       uVellumGlue:      { value: 0 },
       uVellumGlueStateEnabled: { value: false },
+      uVellumTearGap:   { value: 0 },
       uTexSizeF:        { value: texSize },
     },
     vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_PROJ_FRAG,
@@ -451,6 +519,81 @@ export function createVellumVelMaterial(texSize: number): THREE.ShaderMaterial {
   });
 }
 
+// Vellum XPBD materials (Phase 19 stage 3): created always
+// (cheap ShaderMaterial shells) but only ever RUN while
+// solverMode = 'xpbd' and the xpbd pool exists — legacy mode
+// never renders with them.
+export function createVellumXpbdClearMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: { uClearValue: { value: new THREE.Vector4(0, 0, 0, 0) } },
+    vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_XPBD_CLEAR_FRAG,
+  });
+}
+export function createVellumXpbdLambdaMaterial(texSize: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex: { value: null }, uVellumRestTex: { value: null },
+      uVellumStateTex: { value: null }, uLambdaTex: { value: null },
+      uVellumTearEnabled: { value: false }, uVellumGlueStateEnabled: { value: false },
+      uVellumMode: { value: 0 }, uVellumPin: { value: 1 }, uLambdaSet: { value: 0 },
+      uAlphaTilde: { value: 0 }, uAlphaTildeBend: { value: 0 },
+      uVellumGlue: { value: 0 }, uTexSizeF: { value: texSize },
+    },
+    vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_XPBD_LAMBDA_FRAG,
+  });
+}
+export function createVellumXpbdProjMaterial(texSize: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex: { value: null }, uVellumRestTex: { value: null },
+      uVellumStateTex: { value: null }, uLambda0Tex: { value: null }, uLambda1Tex: { value: null },
+      uVellumTearEnabled: { value: false }, uVellumGlueStateEnabled: { value: false },
+      uVellumMode: { value: 0 }, uVellumPin: { value: 1 },
+      uVellumGlue: { value: 0 }, uVellumTearGap: { value: 0 },
+      uXpbdRelaxation: { value: 0.25 }, uTexSizeF: { value: texSize },
+    },
+    vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_XPBD_PROJ_FRAG,
+  });
+}
+export function createVellumVolumeReduceMaterial(texSize: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uSrcTex: { value: null }, uPosTex: { value: null },
+      uLevel0: { value: true }, uSrcSizeF: { value: texSize },
+      uTexSizeF: { value: texSize }, uVellumMode: { value: 1 }, uVellumPin: { value: 1 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_VOLUME_REDUCE_FRAG,
+  });
+}
+export function createVellumVolumeProjMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uVolumeTex: { value: null }, uRestVolume: { value: 0 },
+      uTargetRatio: { value: 1 }, uAlphaTildeVol: { value: 0 }, uVolumeDenom: { value: 1 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_VOLUME_PROJ_FRAG,
+  });
+}
+export function createVellumVolumeApplyMaterial(texSize: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex: { value: null }, uLambdaVolTex: { value: null }, uVellumGradTex: { value: null },
+      uVellumMode: { value: 1 }, uVellumPin: { value: 1 }, uTexSizeF: { value: texSize },
+    },
+    vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_VOLUME_APPLY_FRAG,
+  });
+}
+export function createVellumXpbdVelMaterial(texSize: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex: { value: null }, uPrevPosTex: { value: null }, uVelTex: { value: null },
+      uDt: { value: 1 / 60 }, uVellumDamping: { value: 0.05 },
+      uVellumMode: { value: 0 }, uVellumPin: { value: 1 }, uTexSizeF: { value: texSize },
+    },
+    vertexShader: SIM_VERT, fragmentShader: SIM_VELLUM_XPBD_VEL_FRAG,
+  });
+}
+
 export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: UseGpgpuAssetsArgs) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const velSimMat = useMemo(() => createVelSimMaterial(texSize, config), []);
@@ -462,6 +605,20 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   const vellumStateMat = useMemo(() => createVellumStateMaterial(texSize), []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const vellumVelMat = useMemo(() => createVellumVelMaterial(texSize), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vellumXpbdClearMat = useMemo(() => createVellumXpbdClearMaterial(), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vellumXpbdLambdaMat = useMemo(() => createVellumXpbdLambdaMaterial(texSize), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vellumXpbdProjMat = useMemo(() => createVellumXpbdProjMaterial(texSize), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vellumVolumeReduceMat = useMemo(() => createVellumVolumeReduceMaterial(texSize), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vellumVolumeProjMat = useMemo(() => createVellumVolumeProjMaterial(), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vellumVolumeApplyMat = useMemo(() => createVellumVolumeApplyMaterial(texSize), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vellumXpbdVelMat = useMemo(() => createVellumXpbdVelMaterial(texSize), []);
 
   // Aux event emission materials (B3): the shared event uniforms are
   // declared in gpgpuShaderAux's AUX_EVENT_GLSL chunk; the passes in
@@ -599,6 +756,20 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uStage:    { value: 0.0 },
     },
     vertexShader: SIM_VERT, fragmentShader: SORT_BITONIC_FRAG,
+  }), []);
+
+  // Grains cell sort (Phase 19 fix2): the cell-key pass feeding
+  // the shared bitonic material above. The passes drive it only
+  // while the runtime's sort pool exists (Grains on + complete
+  // neighbourhood); the grid uniforms are rewritten per frame.
+  const grainsCellKeyMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex:          { value: null },
+      uGrainsCellOrigin: { value: 0 },
+      uGrainsCellSize:   { value: 1 },
+      uGrainsCellDims:   { value: new THREE.Vector3(1, 1, 1) },
+    },
+    vertexShader: SIM_VERT, fragmentShader: GRAINS_CELL_KEY_FRAG,
   }), []);
 
   const fluidAdvectMat = useMemo(() => new THREE.ShaderMaterial({
@@ -799,6 +970,108 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   }), []);
   const pyroClearMat = flipClearMat;
 
+  // FLIP 3D materials (Phase 19 stage 2): the atlas solver's
+  // passes. The shared atlas uniforms are declared in
+  // PYRO_GRID_COMMON (the flip3d shaders compose it); the pass
+  // runner (gpgpuFlip3dPasses) fills every uniform per step, so
+  // the defaults here are placeholders only. The vorticity pair
+  // reuses the Pyro grid's curl / force shaders on the atlas,
+  // and the clear reuses the FLIP clear.
+  const flip3dSplatMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uPosTex:       { value: null },
+      uVelTex:       { value: null },
+      uBounceRadius: { value: 150.0 },
+      uFluidScale:   { value: 1.5 },
+      uCellOffset:   { value: new THREE.Vector3(0, 0, 0) },
+    },
+    vertexShader: FLIP3D_SPLAT_VERT, fragmentShader: FLIP3D_SPLAT_FRAG,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneFactor,
+    depthTest: false,
+    depthWrite: false,
+    transparent: false,
+  }), []);
+  const flip3dCompositeMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uTransferTex: { value: null },
+      uAvgWeight:   { value: 1.0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP3D_COMPOSITE_FRAG,
+  }), []);
+  const flip3dPhiMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uTransferTex: { value: null },
+      uAvgWeight:   { value: 1.0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP3D_PHI_FRAG,
+  }), []);
+  const flip3dPhiAdvectMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uPhiIn:       { value: null },
+      uVelTex:      { value: null },
+      uTransferTex: { value: null },
+      uAvgWeight:   { value: 1.0 },
+      uDelta:       { value: 0.016 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP3D_PHI_ADVECT_FRAG,
+  }), []);
+  const flip3dViscosityMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uVelStar: { value: null },
+      uVelIter: { value: null },
+      uPhiTex:  { value: null },
+      uAlpha:   { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP3D_VISCOSITY_FRAG,
+  }), []);
+  const flip3dCurvatureMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uPhiTex: { value: null },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP3D_CURVATURE_FRAG,
+  }), []);
+  const flip3dTensionMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uVelIn:   { value: null },
+      uPhiTex:  { value: null },
+      uCurvTex: { value: null },
+      uSigma:   { value: 0 },
+      uDelta:   { value: 0.016 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP3D_TENSION_FRAG,
+  }), []);
+  const flip3dJacobiMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uVelTex: { value: null },
+      uPresIn: { value: null },
+      uPhiTex: { value: null },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP3D_JACOBI_FRAG,
+  }), []);
+  const flip3dSubtractMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...pyroCommonUniforms(),
+      uVelIn:   { value: null },
+      uPresTex: { value: null },
+      uPhiTex:  { value: null },
+    },
+    vertexShader: SIM_VERT, fragmentShader: FLIP3D_SUBTRACT_FRAG,
+  }), []);
+  const flip3dCurlMat = pyroCurlMat;
+  const flip3dVorticityForceMat = pyroVorticityForceMat;
+  const flip3dClearMat = flipClearMat;
+
   // Whitewater materials (Phase BC): the foam pool's two passes.
   // The shared field uniforms are declared in
   // gpgpuShaderWhitewater's WW_SPAWN_GLSL chunk; the passes in
@@ -837,7 +1110,48 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uTime:           { value: 0 },
     },
     vertexShader: SIM_VERT, fragmentShader: WW_POS_FRAG,
-   
+
+  }), []);
+
+  // Whitewater 3D materials (Phase 19 stage 2): the foam pool's
+  // two passes while the FLIP mode is '3d'. The shared spawn
+  // uniforms are declared in gpgpuShaderWhitewater3d's
+  // WW3_SPAWN_GLSL chunk; runWhitewaterSimulationPasses fills
+  // them per frame in its 3D branch.
+  const ww3CommonUniforms = () => ({
+    uWw3VelTex:       { value: null },
+    uWw3PhiTex:       { value: null },
+    uWw3GridN:        { value: 1 },
+    uWw3AtlasSize:    { value: new THREE.Vector2(1, 1) },
+    uWw3AtlasTiles:   { value: new THREE.Vector2(1, 1) },
+    uWw3ManualTrilinear: { value: false },
+    uBounceRadius:    { value: 150.0 },
+    uFluidScale:      { value: 1.5 },
+    uWwThreshold:     { value: 0.3 },
+    uWwAmount:        { value: 1.0 },
+    uWw3VelScale:     { value: 0 },
+  });
+  const ww3VelMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...ww3CommonUniforms(),
+      uWwPosTex: { value: null },
+      uWwVelTex: { value: null },
+      uWwLife:   { value: 0.7 },
+      uDelta:    { value: 0.016 },
+      uTime:     { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: WW3_VEL_FRAG,
+  }), []);
+  const ww3PosMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      ...ww3CommonUniforms(),
+      uWwPosTex:    { value: null },
+      uWwVelTex:    { value: null },
+      uWwVelOutTex: { value: null },
+      uDelta:       { value: 0.016 },
+      uTime:        { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: WW3_POS_FRAG,
   }), []);
 
   const simMeshRef = useRef<THREE.Mesh | null>(null);
@@ -853,26 +1167,31 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // material. On any failure the previously working shader stays active
   // and the panel shows the error via the custom-force status store.
   const gl = useThree((state) => state.gl);
-  const appliedForceCodeRef = useRef<string | null>(null);
+  // Phase 19 gate fix: the applied-key ref also tracks the Phase
+  // 19 string variant, and it starts at the creation key (the
+  // factories above already built the material from the initial
+  // config's variant), so a variant-only change swaps the shader
+  // through this same path and the mount behaviour is unchanged.
+  const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}`;
+  const appliedForceCodeRef = useRef<string | null>(
+    `\n\n${variantKeyOf(velocityVariantOptions(config))}`,
+  );
   useEffect(() => {
     const enabled = config.gpgpuCustomForceEnabled;
     const code = enabled ? config.gpgpuCustomForceCode : '';
     // Phase 18 stage 2: the force order key rides the same swap
     // path. The applied-key ref tracks code + order together.
     const order = config.gpgpuForceOrder ?? '';
-    const appliedKey = `${code}\n${order}`;
+    // Phase 19 gate fix: the string variant rides the same path.
+    const variantOpts = velocityVariantOptions(config);
+    const appliedKey = `${code}\n${order}\n${variantKeyOf(variantOpts)}`;
     if (!code.trim()) {
-      if (!order.trim()) {
-        if (appliedForceCodeRef.current !== null) {
-          velSimMat.fragmentShader = SIM_VEL_FRAG;
-          velSimMat.needsUpdate = true;
-          appliedForceCodeRef.current = null;
-        }
-      } else if (appliedForceCodeRef.current !== appliedKey) {
-        // Order-only change: the chunks are built-in GLSL, so the
-        // rearranged fragment swaps in directly (the default
-        // order never reaches this branch and stays SIM_VEL_FRAG).
-        velSimMat.fragmentShader = buildVelocityFragment('', order);
+      if (appliedForceCodeRef.current !== appliedKey) {
+        // No custom snippet: the base is the stock shader for the
+        // current order + variant (the default order with no
+        // variant on is SIM_VEL_FRAG itself).
+        velSimMat.fragmentShader = buildVelocityFragment('', order, variantOpts);
         velSimMat.needsUpdate = true;
         appliedForceCodeRef.current = appliedKey;
       }
@@ -888,7 +1207,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       setCustomForceStatus({ state: 'error', message: validation.error ?? 'invalid code' });
       return;
     }
-    const built = buildVelocityFragment(code, order);
+    const built = buildVelocityFragment(code, order, variantOpts);
     const check = compileCheckShader(gl.getContext() as WebGL2RenderingContext, SIM_VERT, buildCustomForceHarness(code));
     if (!check.ok) {
       setCustomForceStatus({ state: 'error', message: check.error ?? 'compile failed' });
@@ -898,7 +1217,29 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     velSimMat.needsUpdate = true;
     appliedForceCodeRef.current = appliedKey;
     setCustomForceStatus({ state: 'active' });
-  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, gl, velSimMat]);
+  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, gl, velSimMat]);
+
+  // Phase 19 gate fix: the position material's string variant
+  // follows the Grains projection activity (the same condition
+  // that resolves uGrainsProjEnabled in the passes). The factory
+  // built the initial variant from the initial config; this
+  // effect swaps it when the condition flips.
+  // Phase 19 fix2: the variant key gains the cell-sort activity
+  // (Grains on + complete neighbourhood) — while it holds, the
+  // projection segment searches the sorted cell index instead
+  // of walking the whole texture.
+  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${grainsCellSortActive(c)}`;
+  const posProjectionRef = useRef(posVariantKey(config));
+  useEffect(() => {
+    const key = posVariantKey(config);
+    if (posProjectionRef.current === key) return;
+    posProjectionRef.current = key;
+    posSimMat.fragmentShader = buildPositionFragment({
+      grainsProjection: grainsProjectionActive(config),
+      grainsCellSort: grainsCellSortActive(config),
+    });
+    posSimMat.needsUpdate = true;
+  }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, posSimMat]);
 
   return {
     simMeshRef,
@@ -907,6 +1248,13 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     vellumProjMat,
     vellumStateMat,
     vellumVelMat,
+    vellumXpbdClearMat,
+    vellumXpbdLambdaMat,
+    vellumXpbdProjMat,
+    vellumVolumeReduceMat,
+    vellumVolumeProjMat,
+    vellumVolumeApplyMat,
+    vellumXpbdVelMat,
     auxVelMat,
     auxPosMat,
     auxChainVelMat,
@@ -916,6 +1264,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     blitMat,
     sortDepthMat,
     bitonicMat,
+    grainsCellKeyMat,
     fluidAdvectMat,
     flipSplatMat,
     flipCompositeMat,
@@ -934,5 +1283,19 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     pyroCurlMat,
     pyroVorticityForceMat,
     pyroClearMat,
+    flip3dSplatMat,
+    flip3dCompositeMat,
+    flip3dPhiMat,
+    flip3dPhiAdvectMat,
+    flip3dViscosityMat,
+    flip3dCurvatureMat,
+    flip3dTensionMat,
+    flip3dJacobiMat,
+    flip3dSubtractMat,
+    flip3dCurlMat,
+    flip3dVorticityForceMat,
+    flip3dClearMat,
+    ww3VelMat,
+    ww3PosMat,
   };
 }

@@ -9,6 +9,15 @@
 // and buildVelocityFragment('')) and pins them by sha256 + length,
 // per chunk, so a drift can be localised to one chunk.
 //
+// Phase 19 gate fix: the Phase 19 shader additions (Grains scan
+// plan + projection, FLIP 3D coupling, Vellum crack) are spliced
+// in only by builder options, because on the target GPU any
+// code-text change breaks bit-identity with v2.00 even when the
+// code never runs. The baseline therefore pins BOTH sides: the
+// default exports at their v2.00 hashes and the *_PHASE19 variant
+// exports at the Phase 19 hashes, plus the position / points /
+// geometry draw strings in both forms.
+//
 // Usage:
 //   node scripts/phase18-shader-hash.mjs
 //       print the current hashes (no comparison)
@@ -42,13 +51,15 @@ const recordPath = args[1] ? join(ROOT, args[1]) : DEFAULT_RECORD_PATH;
 await build({
   stdin: {
     contents: `
-      export { SIM_VEL_FRAG, buildVelocityFragment } from './components/gpgpuShaderSimulationVelocity.ts';
-      export { VEL_FRAG_PREAMBLE } from './components/gpgpuShaderSimulationVelocityPreamble.ts';
+      export { SIM_VEL_FRAG, SIM_VEL_FRAG_PHASE19, buildVelocityFragment } from './components/gpgpuShaderSimulationVelocity.ts';
+      export { VEL_FRAG_PREAMBLE, VEL_FRAG_PREAMBLE_PHASE19 } from './components/gpgpuShaderSimulationVelocityPreamble.ts';
       export { VEL_FRAG_HELPERS } from './components/gpgpuShaderSimulationVelocityHelpers.ts';
       export { VEL_FRAG_MAIN_FORCES } from './components/gpgpuShaderSimulationVelocityMainForces.ts';
-      export { VEL_FRAG_MAIN_SPH_GRAINS } from './components/gpgpuShaderSimulationVelocityMainSphGrains.ts';
-      export { VEL_FRAG_MAIN_TAIL } from './components/gpgpuShaderSimulationVelocityMainTail.ts';
-      export { SIM_POS_FRAG } from './components/gpgpuShaderSimulationPosition.ts';
+      export { VEL_FRAG_MAIN_SPH_GRAINS, VEL_FRAG_MAIN_SPH_GRAINS_PHASE19 } from './components/gpgpuShaderSimulationVelocityMainSphGrains.ts';
+      export { VEL_FRAG_MAIN_TAIL, VEL_FRAG_MAIN_TAIL_PHASE19 } from './components/gpgpuShaderSimulationVelocityMainTail.ts';
+      export { SIM_POS_FRAG, SIM_POS_FRAG_PHASE19, SIM_POS_FRAG_PHASE19_CELL, buildPositionFragment } from './components/gpgpuShaderSimulationPosition.ts';
+      export { DRAW_VERT, DRAW_VERT_PHASE19, DRAW_FRAG, DRAW_FRAG_PHASE19 } from './components/gpgpuShaderPoints.ts';
+      export { GEOM_VERT, GEOM_VERT_PHASE19, GEOM_FRAG, GEOM_FRAG_PHASE19 } from './components/gpgpuShaderVolumes.ts';
     `,
     resolveDir: ROOT, loader: 'ts',
   },
@@ -69,6 +80,29 @@ const parts = {
   VEL_FRAG_MAIN_TAIL: lib.VEL_FRAG_MAIN_TAIL,
   SIM_POS_FRAG: lib.SIM_POS_FRAG,
   'buildVelocityFragment(empty)': lib.buildVelocityFragment(''),
+  // Phase 19 string variants: defaults above pin the v2.00
+  // strings; these pin the Phase 19 (all-options-on) strings.
+  SIM_VEL_FRAG_PHASE19: lib.SIM_VEL_FRAG_PHASE19,
+  VEL_FRAG_PREAMBLE_PHASE19: lib.VEL_FRAG_PREAMBLE_PHASE19,
+  VEL_FRAG_MAIN_SPH_GRAINS_PHASE19: lib.VEL_FRAG_MAIN_SPH_GRAINS_PHASE19,
+  VEL_FRAG_MAIN_TAIL_PHASE19: lib.VEL_FRAG_MAIN_TAIL_PHASE19,
+  SIM_POS_FRAG_PHASE19: lib.SIM_POS_FRAG_PHASE19,
+  // Phase 19 fix2: the position variant whose projection
+  // segment searches the sorted cell index. The stage-1
+  // SIM_POS_FRAG_PHASE19 string above is unchanged — the cell
+  // text is a separate, additional variant.
+  SIM_POS_FRAG_PHASE19_CELL: lib.SIM_POS_FRAG_PHASE19_CELL,
+  DRAW_VERT: lib.DRAW_VERT,
+  DRAW_VERT_PHASE19: lib.DRAW_VERT_PHASE19,
+  DRAW_FRAG: lib.DRAW_FRAG,
+  DRAW_FRAG_PHASE19: lib.DRAW_FRAG_PHASE19,
+  GEOM_VERT: lib.GEOM_VERT,
+  GEOM_VERT_PHASE19: lib.GEOM_VERT_PHASE19,
+  GEOM_FRAG: lib.GEOM_FRAG,
+  GEOM_FRAG_PHASE19: lib.GEOM_FRAG_PHASE19,
+  'buildVelocityFragment(phase19)': lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true }),
+  'buildPositionFragment(phase19)': lib.buildPositionFragment({ grainsProjection: true }),
+  'buildPositionFragment(phase19-cell)': lib.buildPositionFragment({ grainsProjection: true, grainsCellSort: true }),
 };
 const report = { version: 1, parts: {} };
 for (const [name, s] of Object.entries(parts)) report.parts[name] = measure(s);
@@ -81,6 +115,11 @@ const concat = lib.VEL_FRAG_PREAMBLE + lib.VEL_FRAG_HELPERS + lib.VEL_FRAG_MAIN_
 const invariants = {
   concatenationMatches: concat === lib.SIM_VEL_FRAG,
   emptySnippetIsStock: lib.buildVelocityFragment('') === lib.SIM_VEL_FRAG,
+  phase19SnippetIsVariant: lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true }) === lib.SIM_VEL_FRAG_PHASE19,
+  positionDefaultIsStock: lib.buildPositionFragment() === lib.SIM_POS_FRAG,
+  positionPhase19IsVariant: lib.buildPositionFragment({ grainsProjection: true }) === lib.SIM_POS_FRAG_PHASE19,
+  positionCellIsVariant: lib.buildPositionFragment({ grainsProjection: true, grainsCellSort: true }) === lib.SIM_POS_FRAG_PHASE19_CELL,
+  positionCellNeedsProjection: lib.buildPositionFragment({ grainsCellSort: true }) === lib.SIM_POS_FRAG,
 };
 
 console.log('phase18-shader-hash: GPGPU simulation shader byte identity');
@@ -89,7 +128,15 @@ for (const [name, m] of Object.entries(report.parts)) {
 }
 console.log(`  invariant concatenation === SIM_VEL_FRAG: ${invariants.concatenationMatches}`);
 console.log(`  invariant buildVelocityFragment('') === SIM_VEL_FRAG: ${invariants.emptySnippetIsStock}`);
-if (!invariants.concatenationMatches || !invariants.emptySnippetIsStock) {
+console.log(`  invariant buildVelocityFragment(phase19) === SIM_VEL_FRAG_PHASE19: ${invariants.phase19SnippetIsVariant}`);
+console.log(`  invariant buildPositionFragment() === SIM_POS_FRAG: ${invariants.positionDefaultIsStock}`);
+console.log(`  invariant buildPositionFragment(phase19) === SIM_POS_FRAG_PHASE19: ${invariants.positionPhase19IsVariant}`);
+console.log(`  invariant buildPositionFragment(phase19-cell) === SIM_POS_FRAG_PHASE19_CELL: ${invariants.positionCellIsVariant}`);
+console.log(`  invariant buildPositionFragment(cell-only) === SIM_POS_FRAG: ${invariants.positionCellNeedsProjection}`);
+if (!invariants.concatenationMatches || !invariants.emptySnippetIsStock
+  || !invariants.phase19SnippetIsVariant || !invariants.positionDefaultIsStock
+  || !invariants.positionPhase19IsVariant || !invariants.positionCellIsVariant
+  || !invariants.positionCellNeedsProjection) {
   console.error('  result: FAIL — structural invariant broken');
   process.exit(1);
 }

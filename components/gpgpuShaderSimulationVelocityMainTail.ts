@@ -4,7 +4,7 @@
 // of the original SIM_VEL_FRAG template literal. The shell
 // module concatenates all five chunks in order; the assembled
 // string is pinned byte-for-byte by phaseav_test.mjs.
-export const VEL_FRAG_MAIN_TAIL = /* glsl */ `    // Morph Target Attraction (Kinetix integration B1a): each particle
+const VEL_FRAG_TAIL_HEAD = /* glsl */ `    // Morph Target Attraction (Kinetix integration B1a): each particle
     // owns one target point baked into uMorphTex (same texel layout as
     // the position texture; scale and jitter are baked in). The target
     // cloud orbits around Y by uTime * uMorphOrbitSpeed, matching
@@ -317,7 +317,33 @@ export const VEL_FRAG_MAIN_TAIL = /* glsl */ `    // Morph Target Attraction (Ki
       vel = mix(vel, target, uPyroGridTransfer);
     }
 
-    // __CUSTOM_FORCE__
+`;
+const VEL_FRAG_TAIL_FLIP3D_COUPLE = /* glsl */ `    // FLIP 3D coupling (Phase 19 stage 2): G2P transfer from
+    // the 3D FLIP solver, placed after the Pyro coupling (the
+    // design's ordering: the legacy field -> pyro -> flip3d
+    // sequence is preserved). PIC takes the grid velocity
+    // itself; FLIP takes the particle velocity plus the grid's
+    // change this step (projected minus the pre-projection
+    // base). The scale converts cells/second into the particle
+    // velocity unit (uFlip3dVelScale, set CPU-side via
+    // pyroGridVelScale). The domain fade drops the transfer at
+    // the cube faces, where the grid holds no liquid. The block
+    // is skipped entirely unless the 3D solver is live.
+    if (uFlip3dCouple) {
+      vec3 cellPos = flip3dCellOfWorld(pos);
+      float fade = flip3dDomainFade(cellPos);
+      if (fade > 0.0) {
+        vec3 gridVel = flip3dSample(uFlip3dVelTex, cellPos).xyz;
+        vec3 baseVel = flip3dSample(uFlip3dBaseTex, cellPos).xyz;
+        vec3 picVel = gridVel * uFlip3dVelScale;
+        vec3 flipVel = vel + (gridVel - baseVel) * uFlip3dVelScale;
+        vec3 target = mix(picVel, flipVel, uFlip3dBlend);
+        vel = mix(vel, target, uFlip3dTransfer * fade);
+      }
+    }
+
+`;
+const VEL_FRAG_TAIL_REST = /* glsl */ `    // __CUSTOM_FORCE__
 
     // Force over Lifetime (Phase AC): scale only the built-in
     // force delta captured above; everything after it (collisions,
@@ -379,3 +405,24 @@ export const VEL_FRAG_MAIN_TAIL = /* glsl */ `    // Morph Target Attraction (Ki
     gl_FragColor = vec4(vel, phaseState);
   }
 `;
+
+// ── Phase 19 gate fix: string-level shader variants ──
+// On the target GPU, ANY code-text change in these shaders
+// breaks bit-identity with v2.00 — even code gated off by a
+// false uniform (measured, see PHASE19_GATE_DIAGNOSIS). The
+// Phase 19 additions therefore sit behind builder options:
+// the default exports below are byte-identical to v2.00 and
+// the *_PHASE19 exports are byte-identical to the Phase 19
+// strings (both pinned by scripts/phase18-shader-hash.mjs).
+export interface VelocityTailVariantOptions {
+  flip3dCouple?: boolean;
+}
+
+export function buildVelocityTail(options?: VelocityTailVariantOptions): string {
+  return VEL_FRAG_TAIL_HEAD
+    + (options?.flip3dCouple ? VEL_FRAG_TAIL_FLIP3D_COUPLE : '')
+    + VEL_FRAG_TAIL_REST;
+}
+
+export const VEL_FRAG_MAIN_TAIL = buildVelocityTail();
+export const VEL_FRAG_MAIN_TAIL_PHASE19 = buildVelocityTail({ flip3dCouple: true });

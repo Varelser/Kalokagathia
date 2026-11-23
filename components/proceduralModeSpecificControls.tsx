@@ -307,7 +307,10 @@ export const ProceduralModeSpecificControls: React.FC<ProceduralModeSpecificCont
     <Slider label="Scale" value={numberValue('ReactionScale')} min={0.1} max={4} step={0.01} onChange={(value) => setNumber('ReactionScale', value)} />
     <Slider label="Warp" value={numberValue('ReactionWarp')} min={0} max={1} step={0.01} onChange={(value) => setNumber('ReactionWarp', value)} />
     <Slider label="Audio Reactive" value={numberValue('ReactionAudioReactive')} min={0} max={2} step={0.01} onChange={(value) => setNumber('ReactionAudioReactive', value)} />
-    <Toggle label="Model" value={stringValue('ReactionModel')} options={[{ label: 'Gray-Scott', val: 'gray-scott' }, { label: 'FitzHugh-Nagumo', val: 'fhn' }, { label: 'Lenia', val: 'lenia' }]} onChange={(value) => setString('ReactionModel', value)} />
+    <Toggle label="Model" value={stringValue('ReactionModel')} options={[{ label: 'Gray-Scott', val: 'gray-scott' }, { label: 'FitzHugh-Nagumo', val: 'fhn' }, { label: 'Lenia', val: 'lenia' }, { label: 'Deposit-Bleed', val: 'deposit-bleed' }]} onChange={(value) => setString('ReactionModel', value)} />
+    {stringValue('ReactionModel') === 'deposit-bleed' && (
+    <Slider label="Deposit Retention（堆積の保持率）" value={numberValue('ReactionDepositRetention')} min={0.9} max={1} step={0.001} onChange={(value) => setNumber('ReactionDepositRetention', value)} />
+    )}
     <Slider label="FHN Epsilon" value={numberValue('ReactionFhnEpsilon')} min={0.01} max={0.3} step={0.005} onChange={(value) => setNumber('ReactionFhnEpsilon', value)} />
     <Slider label="FHN a" value={numberValue('ReactionFhnA')} min={0} max={1.5} step={0.01} onChange={(value) => setNumber('ReactionFhnA', value)} />
     <Slider label="FHN b" value={numberValue('ReactionFhnB')} min={0} max={1.5} step={0.01} onChange={(value) => setNumber('ReactionFhnB', value)} />

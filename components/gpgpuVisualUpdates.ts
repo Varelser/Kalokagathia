@@ -191,6 +191,10 @@ export function syncVisualUniforms(args: {
   // while no consumer is active — null resolves the draw drives
   // off and keeps the legacy draw bit-identical.
   attrTexture?: THREE.Texture | null;
+  // Vellum crack visualisation (Phase 19 stage 3): the tear
+  // state texture (this frame's output), or null — null keeps
+  // the crack flag off and the draw bit-identical.
+  vellumStateTexture?: THREE.Texture | null;
   texSize?: number;
   time?: number;
   // Density compensation (Phase DN): drawing-buffer size in
@@ -458,6 +462,23 @@ export function syncVisualUniforms(args: {
     if (drawMat.uniforms.uShadowReady) drawMat.uniforms.uShadowReady.value = shadowTex !== null;
     if (drawMat.uniforms.uShadowExtent) drawMat.uniforms.uShadowExtent.value = shadowCacheExtent;
     if (drawMat.uniforms.uShadowHeightScale) drawMat.uniforms.uShadowHeightScale.value = shadowCacheHeightScale;
+  }
+  // Vellum crack visualisation (Phase 19 stage 3): linked to
+  // the tear gap — the crack flag exists only while the gap
+  // separates a torn seam (design: no separate key).
+  if (drawMat.uniforms.uVellumCrackEnabled) {
+    const crackOn = !!args.vellumStateTexture && config.gpgpuVellumEnabled
+      && (config.gpgpuVellumTearGap ?? 0) > 0 && (config.gpgpuVellumTear ?? 0) > 0;
+    drawMat.uniforms.uVellumCrackEnabled.value = crackOn;
+    if (drawMat.uniforms.uVellumStateTex) drawMat.uniforms.uVellumStateTex.value = args.vellumStateTexture ?? null;
+    if (drawMat.uniforms.uVellumMode) drawMat.uniforms.uVellumMode.value = config.gpgpuVellumMode === 'shell' ? 1 : 0;
+  }
+  if (geomMat.uniforms.uVellumCrackEnabled) {
+    const crackOn = !!args.vellumStateTexture && config.gpgpuVellumEnabled
+      && (config.gpgpuVellumTearGap ?? 0) > 0 && (config.gpgpuVellumTear ?? 0) > 0;
+    geomMat.uniforms.uVellumCrackEnabled.value = crackOn;
+    if (geomMat.uniforms.uVellumStateTex) geomMat.uniforms.uVellumStateTex.value = args.vellumStateTexture ?? null;
+    if (geomMat.uniforms.uVellumMode) geomMat.uniforms.uVellumMode.value = config.gpgpuVellumMode === 'shell' ? 1 : 0;
   }
   if (drawMat.uniforms.uPointShape) drawMat.uniforms.uPointShape.value = { soft: 0, sphere: 1, ring: 2, star: 3, hexagon: 4, diamond: 5, flare: 6, cloud: 7, bokeh: 8, crosshair: 9, iris: 10, lightning: 11 }[config.gpgpuPointShape] ?? 0;
   drawMat.uniforms.uSortEnabled.value = config.gpgpuSortEnabled && finalSortTex !== null;

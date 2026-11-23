@@ -142,7 +142,7 @@ const LIGHT_GLSL = /* glsl */ `
 `;
 
 // ── Draw vertex (main points) ──
-export const DRAW_VERT = /* glsl */ `
+const DRAW_VERT_HEAD = /* glsl */ `
   precision highp float;
   uniform sampler2D uPosTex;
   uniform sampler2D uVelTex;
@@ -254,7 +254,18 @@ export const DRAW_VERT = /* glsl */ `
   uniform float     uDensityTarget;
   uniform float     uDensityCount;
   uniform vec2      uViewportSizePx;
-  attribute vec2 aTexCoord;
+`;
+const DRAW_VERT_CRACK_UNIFORMS = /* glsl */ `  // Vellum crack visualisation (Phase 19 stage 3): while the
+  // tear gap is on, texels touching a dead structural link are
+  // flagged in the vertex (vCrack) — the fragment darkens them
+  // and the point grows slightly, giving the torn seam a
+  // visible thickness. Disabled (the default) leaves vCrack at
+  // exactly 0 and the draw bit-identical.
+  uniform bool      uVellumCrackEnabled;
+  uniform sampler2D uVellumStateTex;
+  uniform int       uVellumMode;
+`;
+const DRAW_VERT_MID_A = /* glsl */ `  attribute vec2 aTexCoord;
   varying float vSpeed;
   varying float vNormAge;
   // Sprite rotation (Phase AX): the raw particle age, for the
@@ -269,7 +280,10 @@ export const DRAW_VERT = /* glsl */ `
   varying float vLightMul;
   varying float vShadowMul;
   varying float vDensityMul;
-
+`;
+const DRAW_VERT_CRACK_VARYING = /* glsl */ `  varying float vCrack;
+`;
+const DRAW_VERT_MID_B = /* glsl */ `
   ${AGE_CURVE_GLSL}
 
   ${NOISE_MAP_GLSL}
@@ -451,7 +465,27 @@ export const DRAW_VERT = /* glsl */ `
       sizeMul *= mix(1.0, 0.45 + 1.0 * kPulse, uKuramotoInfluence);
       vPhaseMix = mix(1.0, 0.25 + 0.75 * kPulse, uKuramotoInfluence);
     }
-    vec4 mvPos = modelViewMatrix * vec4(worldPos, 1.0);
+`;
+const DRAW_VERT_CRACK_COMPUTE = /* glsl */ `    // Crack flag: any dead structural link touching this
+    // texel (own right/up, or the left/down neighbours' owned
+    // links). State .r/.g are the survival channels.
+    vCrack = 0.0;
+    if (uVellumCrackEnabled) {
+      vec2 tc = floor(particleUv * uTexSizeF);
+      vec2 ts = vec2(uTexSizeF);
+      float dead = 0.0;
+      dead = max(dead, 1.0 - texture2D(uVellumStateTex, particleUv).r);
+      dead = max(dead, 1.0 - texture2D(uVellumStateTex, particleUv).g);
+      vec2 leftUv = (tc + vec2(-1.0, 0.0) + 0.5) / ts;
+      vec2 downUv = (tc + vec2(0.0, -1.0) + 0.5) / ts;
+      if (uVellumMode == 1) leftUv.x = fract(leftUv.x);
+      if (tc.x > 0.5 || uVellumMode == 1) dead = max(dead, 1.0 - texture2D(uVellumStateTex, leftUv).r);
+      if (tc.y > 0.5) dead = max(dead, 1.0 - texture2D(uVellumStateTex, downUv).g);
+      vCrack = dead;
+      sizeMul *= 1.0 + 0.35 * vCrack;
+    }
+`;
+const DRAW_VERT_TAIL = /* glsl */ `    vec4 mvPos = modelViewMatrix * vec4(worldPos, 1.0);
     float dist = -mvPos.z;
     gl_PointSize = max(0.5, uSize * sizeMul * (dist > 0.5 ? min(4.0, 500.0 / dist) : 1.0));
     // Density compensation (Phase DN): use the FINAL pixel size
@@ -465,8 +499,34 @@ export const DRAW_VERT = /* glsl */ `
   }
 `;
 
+// ── Phase 19 gate fix: string-level shader variants ──
+// On the target GPU, ANY code-text change in these shaders
+// breaks bit-identity with v2.00 — even code gated off by a
+// false uniform (measured, see PHASE19_GATE_DIAGNOSIS). The
+// Phase 19 additions therefore sit behind builder options:
+// the default exports below are byte-identical to v2.00 and
+// the *_PHASE19 exports are byte-identical to the Phase 19
+// strings (both pinned by scripts/phase18-shader-hash.mjs).
+export interface DrawShaderVariantOptions {
+  vellumCrack?: boolean;
+}
+
+export function buildDrawVert(options?: DrawShaderVariantOptions): string {
+  const crack = !!options?.vellumCrack;
+  return DRAW_VERT_HEAD
+    + (crack ? DRAW_VERT_CRACK_UNIFORMS : '')
+    + DRAW_VERT_MID_A
+    + (crack ? DRAW_VERT_CRACK_VARYING : '')
+    + DRAW_VERT_MID_B
+    + (crack ? DRAW_VERT_CRACK_COMPUTE : '')
+    + DRAW_VERT_TAIL;
+}
+
+export const DRAW_VERT = buildDrawVert();
+export const DRAW_VERT_PHASE19 = buildDrawVert({ vellumCrack: true });
+
 // ── Draw fragment ──
-export const DRAW_FRAG = /* glsl */ `
+const DRAW_FRAG_HEAD = /* glsl */ `
   precision highp float;
   uniform vec3  uColor;
   uniform float uOpacity;
@@ -556,7 +616,10 @@ export const DRAW_FRAG = /* glsl */ `
   varying float vLightMul;
   varying float vShadowMul;
   varying float vDensityMul;
-
+`;
+const DRAW_FRAG_CRACK_VARYING = /* glsl */ `  varying float vCrack;
+`;
+const DRAW_FRAG_MID = /* glsl */ `
   ${PARTICLE_SHAPE_GLSL}
 
   ${AGE_CURVE_GLSL}
@@ -667,7 +730,13 @@ export const DRAW_FRAG = /* glsl */ `
     if (uParticleLifeEnabled) {
       col *= vPlBright;
     }
-    // 3D light (Phase T): brightness from the light object, computed
+`;
+const DRAW_FRAG_CRACK_DARKEN = /* glsl */ `    // Vellum crack (Phase 19 stage 3): torn-seam texels read
+    // darker (a cut face in shadow, monochrome as ever). vCrack
+    // is exactly 0 unless the crack flag was computed.
+    col *= 1.0 - 0.45 * vCrack;
+`;
+const DRAW_FRAG_TAIL = /* glsl */ `    // 3D light (Phase T): brightness from the light object, computed
     // per-particle in the vertex shader from the world position.
     // vLightMul is exactly 1.0 while the light is disabled (or the
     // particle sits outside its radius), so this multiply is a
@@ -747,4 +816,24 @@ export const DRAW_FRAG = /* glsl */ `
     gl_FragColor = vec4(col, shapeAlpha * uOpacity * opacityMul * vPhaseMix * vDensityMul);
   }
 `;
+
+// ── Phase 19 gate fix: string-level shader variants ──
+// On the target GPU, ANY code-text change in these shaders
+// breaks bit-identity with v2.00 — even code gated off by a
+// false uniform (measured, see PHASE19_GATE_DIAGNOSIS). The
+// Phase 19 additions therefore sit behind builder options:
+// the default exports below are byte-identical to v2.00 and
+// the *_PHASE19 exports are byte-identical to the Phase 19
+// strings (both pinned by scripts/phase18-shader-hash.mjs).
+export function buildDrawFrag(options?: DrawShaderVariantOptions): string {
+  const crack = !!options?.vellumCrack;
+  return DRAW_FRAG_HEAD
+    + (crack ? DRAW_FRAG_CRACK_VARYING : '')
+    + DRAW_FRAG_MID
+    + (crack ? DRAW_FRAG_CRACK_DARKEN : '')
+    + DRAW_FRAG_TAIL;
+}
+
+export const DRAW_FRAG = buildDrawFrag();
+export const DRAW_FRAG_PHASE19 = buildDrawFrag({ vellumCrack: true });
 

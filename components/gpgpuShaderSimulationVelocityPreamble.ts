@@ -6,7 +6,7 @@ import { PYRO_GRID_SAMPLING, PYRO_GRID_UNIFORMS, PYRO_GRID_WORLD } from './gpgpu
 // of the original SIM_VEL_FRAG template literal. The shell
 // module concatenates all five chunks in order; the assembled
 // string is pinned byte-for-byte by phaseav_test.mjs.
-export const VEL_FRAG_PREAMBLE = /* glsl */ `
+const VEL_FRAG_PREAMBLE_HEAD = /* glsl */ `
   precision highp float;
   uniform sampler2D uPosTex;
   uniform sampler2D uVelTex;
@@ -190,7 +190,53 @@ export const VEL_FRAG_PREAMBLE = /* glsl */ `
   uniform float uGrainsCohesion;
   uniform float uGrainsRestitution;
   uniform float uGrainsRestDamping;
-  // Vellum (Phase AR): the pressure force + velocity damping
+`;
+const VEL_FRAG_PREAMBLE_GRAINS_SCAN = /* glsl */ `  // Neighbourhood scan (Phase 19): 0 = the AQ subsample above;
+  // 1 = the complete scan over the whole position texture (the
+  // Grains loops' candidate plan switches; SPH is untouched).
+  uniform int   uGrainsNeighborhood;
+`;
+const VEL_FRAG_PREAMBLE_GRAINS_CELL = /* glsl */ `  // Cell sort (Phase 19 fix2): the complete neighbourhood's
+  // fast path. uGrainsSortTex holds the pool sorted DESCENDING
+  // by spatial cell key (the bitonic output order), built once
+  // per frame from the frame-start positions by the passes;
+  // uGrainsCellSort is true only on frames where that sort
+  // actually ran — otherwise the Grains loops keep the
+  // complete-scan fallback branch. The grid is resolved
+  // CPU-side (grainsCellGrid in lib/gpgpuGrains.ts): cell size
+  // >= grain diameter, every dim <= 256 so keys stay exact in
+  // float32. TS twin: grainsNeighborsViaCellSearch there.
+  uniform sampler2D uGrainsSortTex;
+  uniform bool  uGrainsCellSort;
+  uniform float uGrainsCellOrigin;
+  uniform float uGrainsCellSize;
+  uniform vec3  uGrainsCellDims;
+  float grainsCellKeyAt(float idx) {
+    vec2 uv = (vec2(mod(idx, uTexSizeF), floor(idx / uTexSizeF)) + 0.5) / uTexSizeF;
+    return texture2D(uGrainsSortTex, uv).z;
+  }
+  // First index whose key is <= K in the descending order, or
+  // the pool size when every key is greater.
+  float grainsCellLowerBound(float K) {
+    float total = uTexSizeF * uTexSizeF;
+    float lo = 0.0;
+    float hi = total;
+    for (int s = 0; s < 24; s++) {
+      if (lo >= hi) break;
+      float mid = floor((lo + hi) * 0.5);
+      if (grainsCellKeyAt(mid) > K) lo = mid + 1.0;
+      else hi = mid;
+    }
+    return lo;
+  }
+  vec3 grainsCellOf(vec3 p) {
+    return clamp(floor((p - uGrainsCellOrigin) / uGrainsCellSize), vec3(0.0), uGrainsCellDims - vec3(1.0));
+  }
+  float grainsCellKeyOf(vec3 cell) {
+    return (cell.x * uGrainsCellDims.y + cell.y) * uGrainsCellDims.z + cell.z;
+  }
+`;
+const VEL_FRAG_PREAMBLE_MID = /* glsl */ `  // Vellum (Phase AR): the pressure force + velocity damping
   // of the constraint solver (the projection itself lives in a
   // dedicated pass). uVellumEnabled false is the exact legacy
   // path — both blocks below are skipped whole. The pressure
@@ -322,6 +368,92 @@ export const VEL_FRAG_PREAMBLE = /* glsl */ `
   ${PYRO_GRID_UNIFORMS}
   ${PYRO_GRID_SAMPLING}
   ${PYRO_GRID_WORLD}
-  varying vec2 vUv;
+`;
+const VEL_FRAG_PREAMBLE_FLIP3D = /* glsl */ `  // FLIP 3D coupling (Phase 19 stage 2): G2P transfer from the
+  // atlas-packed 3D FLIP solver, in the same PIC/FLIP pattern
+  // as the Pyro coupling above but with its OWN atlas uniforms
+  // (the two grids may run at different resolutions in the same
+  // pass, so the shared uGridN family cannot serve both).
+  // uFlip3dCouple is only ever true while the FLIP mode is
+  // '3d', the solver has stepped, and the couple fill ran — set
+  // by applyFlip3dCoupleUniforms; off, the block in the main
+  // tail never runs.
+  uniform bool  uFlip3dCouple;
+  uniform sampler2D uFlip3dVelTex;
+  uniform sampler2D uFlip3dBaseTex;
+  uniform float uFlip3dBlend;
+  uniform float uFlip3dTransfer;
+  uniform float uFlip3dVelScale;
+  uniform vec4  uFlip3dBounds;
+  uniform float uFlip3dGridN;
+  uniform vec2  uFlip3dAtlasSize;
+  uniform vec2  uFlip3dAtlasTiles;
+  uniform bool  uFlip3dManualTrilinear;
+  vec2 flip3dUvOfCell(vec3 cell) {
+    vec2 tile = vec2(mod(cell.z, uFlip3dAtlasTiles.x), floor(cell.z / uFlip3dAtlasTiles.x));
+    return (tile * uFlip3dGridN + cell.xy + 0.5) / uFlip3dAtlasSize;
+  }
+  vec4 flip3dFetch(sampler2D tex, vec3 cell) {
+    vec3 c = clamp(cell, vec3(0.0), vec3(uFlip3dGridN - 1.0));
+    return texture2D(tex, flip3dUvOfCell(c));
+  }
+  vec4 flip3dSample(sampler2D tex, vec3 p) {
+    vec3 pc = clamp(p, vec3(0.0), vec3(uFlip3dGridN - 1.0));
+    vec3 b = floor(pc);
+    vec3 f = pc - b;
+    if (uFlip3dManualTrilinear) {
+      vec4 c000 = flip3dFetch(tex, b);
+      vec4 c100 = flip3dFetch(tex, b + vec3(1.0, 0.0, 0.0));
+      vec4 c010 = flip3dFetch(tex, b + vec3(0.0, 1.0, 0.0));
+      vec4 c110 = flip3dFetch(tex, b + vec3(1.0, 1.0, 0.0));
+      vec4 c001 = flip3dFetch(tex, b + vec3(0.0, 0.0, 1.0));
+      vec4 c101 = flip3dFetch(tex, b + vec3(1.0, 0.0, 1.0));
+      vec4 c011 = flip3dFetch(tex, b + vec3(0.0, 1.0, 1.0));
+      vec4 c111 = flip3dFetch(tex, b + vec3(1.0, 1.0, 1.0));
+      return mix(mix(mix(c000, c100, f.x), mix(c010, c110, f.x), f.y),
+                 mix(mix(c001, c101, f.x), mix(c011, c111, f.x), f.y), f.z);
+    }
+    float z1 = min(b.z + 1.0, uFlip3dGridN - 1.0);
+    vec2 tile0 = vec2(mod(b.z, uFlip3dAtlasTiles.x), floor(b.z / uFlip3dAtlasTiles.x));
+    vec2 tile1 = vec2(mod(z1, uFlip3dAtlasTiles.x), floor(z1 / uFlip3dAtlasTiles.x));
+    vec2 xy = pc.xy + 0.5;
+    vec4 s0 = texture2D(tex, (tile0 * uFlip3dGridN + xy) / uFlip3dAtlasSize);
+    vec4 s1 = texture2D(tex, (tile1 * uFlip3dGridN + xy) / uFlip3dAtlasSize);
+    return mix(s0, s1, f.z);
+  }
+  vec3 flip3dCellOfWorld(vec3 worldPos) {
+    return ((worldPos - uFlip3dBounds.xyz) / (2.0 * uFlip3dBounds.w) + 0.5) * uFlip3dGridN - 0.5;
+  }
+  float flip3dDomainFade(vec3 cellPos) {
+    vec3 d = min(cellPos, vec3(uFlip3dGridN - 1.0) - cellPos);
+    float m = min(d.x, min(d.y, d.z));
+    return clamp(m + 0.5, 0.0, 1.0);
+  }
+`;
+const VEL_FRAG_PREAMBLE_TAIL = /* glsl */ `  varying vec2 vUv;
 
 `;
+
+// ── Phase 19 gate fix: string-level shader variants ──
+// On the target GPU, ANY code-text change in these shaders
+// breaks bit-identity with v2.00 — even code gated off by a
+// false uniform (measured, see PHASE19_GATE_DIAGNOSIS). The
+// Phase 19 additions therefore sit behind builder options:
+// the default exports below are byte-identical to v2.00 and
+// the *_PHASE19 exports are byte-identical to the Phase 19
+// strings (both pinned by scripts/phase18-shader-hash.mjs).
+export interface VelocityPreambleVariantOptions {
+  grainsFullScan?: boolean;
+  flip3dCouple?: boolean;
+}
+
+export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions): string {
+  return VEL_FRAG_PREAMBLE_HEAD
+    + (options?.grainsFullScan ? VEL_FRAG_PREAMBLE_GRAINS_SCAN + VEL_FRAG_PREAMBLE_GRAINS_CELL : '')
+    + VEL_FRAG_PREAMBLE_MID
+    + (options?.flip3dCouple ? VEL_FRAG_PREAMBLE_FLIP3D : '')
+    + VEL_FRAG_PREAMBLE_TAIL;
+}
+
+export const VEL_FRAG_PREAMBLE = buildVelocityPreamble();
+export const VEL_FRAG_PREAMBLE_PHASE19 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true });

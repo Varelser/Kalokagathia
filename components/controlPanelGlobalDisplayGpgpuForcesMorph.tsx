@@ -556,8 +556,30 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Slider label="Stitch （縫合・速度結合）" value={config.gpgpuVellumStitch} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuVellumStitch', v)} />
           <Slider label="Glue （接着・ベイク位置へ）" value={config.gpgpuVellumGlue} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuVellumGlue', v)} />
           <Slider label="Glue Break （接着の破断・変位）" value={config.gpgpuVellumGlueBreak} min={0} max={500} step={1} onChange={(v) => updateConfig('gpgpuVellumGlueBreak', v)} />
+          <Slider label="Tear Gap （破れの分離・亀裂表示）" value={config.gpgpuVellumTearGap} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuVellumTearGap', v)} />
+          <Toggle
+            label="Solver Mode （解法）"
+            value={config.gpgpuVellumSolverMode}
+            options={[{ label: 'Legacy （従来PBD）', val: 'legacy' as const }, { label: 'XPBD （完成形）', val: 'xpbd' as const }]}
+            onChange={(v) => updateConfig('gpgpuVellumSolverMode', v)}
+          />
+          {config.gpgpuVellumSolverMode === 'xpbd' && (
+            <>
+              <Slider label="Compliance （XPBD・構造α）" value={config.gpgpuVellumCompliance} min={0} max={0.1} step={0.0005} onChange={(v) => updateConfig('gpgpuVellumCompliance', v)} />
+              <Slider label="Bend Compliance （XPBD・曲げα）" value={config.gpgpuVellumBendCompliance} min={0} max={0.1} step={0.0005} onChange={(v) => updateConfig('gpgpuVellumBendCompliance', v)} />
+              <Toggle label="Volume （体積保存・Shell専用）" value={config.gpgpuVellumVolumeEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuVellumVolumeEnabled', v)} />
+              {config.gpgpuVellumVolumeEnabled && (
+                <>
+                  <Slider label="Volume Ratio （目標体積比）" value={config.gpgpuVellumVolumeRatio} min={0.5} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuVellumVolumeRatio', v)} />
+                  <Slider label="Volume Compliance （体積α）" value={config.gpgpuVellumVolumeCompliance} min={0} max={0.1} step={0.0005} onChange={(v) => updateConfig('gpgpuVellumVolumeCompliance', v)} />
+                </>
+              )}
+            </>
+          )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            PBD 系の距離拘束ソルバです（XPBD の厳密実装ではなく、剛性は補正率×反復の実効値）。有効にするとプール全体が格子状に再配置され（リセット＝再ベイク）、年齢リスポーン／キル条件／スポーンゲート／モーフ／レプリカ独立 sim／ポインタペイントは格子を守るため無効化されます。自己衝突は解きません。圧力は体積保存ではなく面法線方向の力です。
+            {config.gpgpuVellumSolverMode === 'xpbd'
+              ? 'XPBD 完成形です（Δλ蓄積＋物理単位のコンプライアンス。Substeps はサブステップ数として解釈され、剛性は dt に依りません）。Compliance が 0 の間は Stiffness／Bend からの写像で初期化されます。有効にするとプール全体が格子状に再配置され（リセット＝再ベイク）、年齢リスポーン／キル条件／スポーンゲート／モーフ／レプリカ独立 sim／ポインタペイントは格子を守るため無効化されます。自己衝突は解きません。体積保存は Shell 専用で、有効時は Pressure（法線方向の力）は打ち消されます。'
+              : 'PBD 系の距離拘束ソルバです（XPBD の厳密実装ではなく、剛性は補正率×反復の実効値）。有効にするとプール全体が格子状に再配置され（リセット＝再ベイク）、年齢リスポーン／キル条件／スポーンゲート／モーフ／レプリカ独立 sim／ポインタペイントは格子を守るため無効化されます。自己衝突は解きません。圧力は体積保存ではなく面法線方向の力です。'}
           </div>
         </>
       )}

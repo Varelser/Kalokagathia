@@ -232,6 +232,7 @@ export const APP_STATE_DEFAULT_LAYER_2: Partial<ParticleConfig> = {
   layer2ReactionLeniaDt: 0.1,
   layer2ReactionLeniaKernel: 'ring',
   layer2ReactionLeniaGain: 1,
+  layer2ReactionDepositRetention: 1,
   layer2PhysarumSensorAngle: 0.65,
   layer2PhysarumSensorDistance: 7,
   layer2PhysarumTurnSpeed: 0.7,

@@ -2,11 +2,16 @@ export { MAX_TRAIL, FLUID_SIZE } from "./gpgpuShaderConstants";
 export {
   SIM_VERT,
   SIM_VEL_FRAG,
+  SIM_VEL_FRAG_PHASE19,
   buildVelocityFragment,
   SIM_POS_FRAG,
+  SIM_POS_FRAG_PHASE19,
+  SIM_POS_FRAG_PHASE19_CELL,
+  buildPositionFragment,
   BLIT_FRAG,
   SORT_DEPTH_FRAG,
   SORT_BITONIC_FRAG,
+  GRAINS_CELL_KEY_FRAG,
   FLUID_ADVECT_FRAG,
   FLIP_SPLAT_VERT,
   FLIP_SPLAT_FRAG,
@@ -17,7 +22,7 @@ export {
   FLIP_VORTICITY_FORCE_FRAG,
   FLIP_CLEAR_FRAG,
 } from "./gpgpuShaderSimulation";
-export { DRAW_VERT, DRAW_FRAG } from "./gpgpuShaderPoints";
+export { DRAW_VERT, DRAW_VERT_PHASE19, DRAW_FRAG, DRAW_FRAG_PHASE19, buildDrawVert, buildDrawFrag } from "./gpgpuShaderPoints";
 export {
   TRAIL_VERT,
   TRAIL_FRAG,
@@ -33,7 +38,9 @@ export {
   VOLUMETRIC_VERT,
   VOLUMETRIC_FRAG,
   GEOM_VERT,
+  GEOM_VERT_PHASE19,
   GEOM_FRAG,
+  GEOM_FRAG_PHASE19,
   buildGeomVert,
   buildGeomFrag,
 } from "./gpgpuShaderVolumes";

@@ -196,3 +196,173 @@ export function whitewaterFieldUvFromWorld(
   const extent = bounceRadius * fluidScale;
   return { u: x / extent * 0.5 + 0.5, v: z / extent * 0.5 + 0.5 };
 }
+
+// ── Whitewater 3D (Phase 19 stage 2) ─────────────────────────
+// The 3D twin of components/gpgpuShaderWhitewater3d.ts, active
+// only while the FLIP mode is '3d'. The 2D system above is
+// untouched: in 3D mode the spawn source moves from the planar
+// field's thin sheet to the FLIP3D free surface — a candidate
+// cell must sit in the surface band (|phi| <= 1.5 cells), on
+// the liquid side (chi >= 0.5), and pass the same agitation
+// gate (now with the full 3D curl vector). The birth position
+// is projected onto the surface (phi = 0) along the phi
+// gradient, and the birth pop runs along the surface normal
+// instead of straight up. Still one foam population (no
+// foam/spray split) and still one-way: nothing is written back
+// into the grid. Field layout matches lib/flip3d.ts: cell
+// index (z * n + y) * n + x, velocities interleaved xyz.
+
+/** Surface band half-width, in cells (the sheet's replacement). */
+export const WHITEWATER3D_SURFACE_BAND = 1.5;
+
+const clampCell3 = (v: number, n: number) => Math.max(0, Math.min(n - 1, v));
+const idx3 = (n: number, x: number, y: number, z: number) => (z * n + y) * n + x;
+
+/** The candidate cell a slot probes on a tick — the (slot,
+ *  tick) hash extended to 3D with an independent constant for
+ *  k (mirrors findWw3Spawn). */
+export function whitewater3dCandidateCell(wwIdx: number, tick: number, n: number): { i: number; j: number; k: number } {
+  return {
+    i: Math.floor(whitewaterHash(wwIdx * 3.71 + tick * 13.13) * n),
+    j: Math.floor(whitewaterHash(wwIdx * 7.93 + tick * 5.37) * n),
+    k: Math.floor(whitewaterHash(wwIdx * 13.71 + tick * 7.37) * n),
+  };
+}
+
+/** Grid velocity at a cell (edge-clamped), cells/second. */
+export function whitewater3dFieldAt(
+  vel: Float32Array, n: number, x: number, y: number, z: number,
+): { x: number; y: number; z: number } {
+  const c = idx3(n, clampCell3(x, n), clampCell3(y, n), clampCell3(z, n)) * 3;
+  return { x: vel[c], y: vel[c + 1], z: vel[c + 2] };
+}
+
+/** Full 3D curl, per-cell units, central differences with
+ *  edge-clamped taps (mirrors ww3Curl). */
+export function whitewater3dCurl(
+  vel: Float32Array, n: number, x: number, y: number, z: number,
+): { x: number; y: number; z: number } {
+  const duzDy = (whitewater3dFieldAt(vel, n, x, y + 1, z).z - whitewater3dFieldAt(vel, n, x, y - 1, z).z) * 0.5;
+  const duyDz = (whitewater3dFieldAt(vel, n, x, y, z + 1).y - whitewater3dFieldAt(vel, n, x, y, z - 1).y) * 0.5;
+  const duxDz = (whitewater3dFieldAt(vel, n, x, y, z + 1).x - whitewater3dFieldAt(vel, n, x, y, z - 1).x) * 0.5;
+  const duzDx = (whitewater3dFieldAt(vel, n, x + 1, y, z).z - whitewater3dFieldAt(vel, n, x - 1, y, z).z) * 0.5;
+  const duyDx = (whitewater3dFieldAt(vel, n, x + 1, y, z).y - whitewater3dFieldAt(vel, n, x - 1, y, z).y) * 0.5;
+  const duxDy = (whitewater3dFieldAt(vel, n, x, y + 1, z).x - whitewater3dFieldAt(vel, n, x, y - 1, z).x) * 0.5;
+  return { x: duzDy - duyDz, y: duxDz - duzDx, z: duyDx - duxDy };
+}
+
+/** Divergence with backward differences (mirrors ww3Divergence). */
+export function whitewater3dDivergence(vel: Float32Array, n: number, x: number, y: number, z: number): number {
+  const vC = whitewater3dFieldAt(vel, n, x, y, z);
+  const vL = whitewater3dFieldAt(vel, n, x - 1, y, z);
+  const vB = whitewater3dFieldAt(vel, n, x, y - 1, z);
+  const vD = whitewater3dFieldAt(vel, n, x, y, z - 1);
+  return (vC.x - vL.x) + (vC.y - vB.y) + (vC.z - vD.z);
+}
+
+/** Agitation source: |curl| + convergence (mirrors ww3Source). */
+export function whitewater3dSource(vel: Float32Array, n: number, x: number, y: number, z: number): number {
+  const w = whitewater3dCurl(vel, n, x, y, z);
+  return Math.hypot(w.x, w.y, w.z) + Math.max(0, -whitewater3dDivergence(vel, n, x, y, z));
+}
+
+/** Surface normal from phi's gradient (the flip3dNormal
+ *  arithmetic, kept local so this module stays dependency-free
+ *  like the 2D twin). */
+export function whitewater3dNormal(
+  phi: Float32Array, n: number, x: number, y: number, z: number,
+): { x: number; y: number; z: number } {
+  const gx = (phi[idx3(n, clampCell3(x + 1, n), y, z)] - phi[idx3(n, clampCell3(x - 1, n), y, z)]) * 0.5;
+  const gy = (phi[idx3(n, x, clampCell3(y + 1, n), z)] - phi[idx3(n, x, clampCell3(y - 1, n), z)]) * 0.5;
+  const gz = (phi[idx3(n, x, y, clampCell3(z + 1, n))] - phi[idx3(n, x, y, clampCell3(z - 1, n))]) * 0.5;
+  const len = Math.hypot(gx, gy, gz);
+  if (len < 1e-9) return { x: 0, y: 0, z: 0 };
+  return { x: gx / len, y: gy / len, z: gz / len };
+}
+
+export interface Whitewater3dSpawn {
+  spawned: boolean;
+  cellI: number;
+  cellJ: number;
+  cellK: number;
+  factor: number;
+  /** World birth position, projected onto the surface. */
+  x: number;
+  y: number;
+  z: number;
+  /** Birth velocity: grid PIC + normal pop (before hash spread). */
+  vx: number;
+  vy: number;
+  vz: number;
+}
+
+/** The full 3D spawn decision for one slot on one tick,
+ *  mirroring findWw3Spawn minus the in-cell jitter / spread. */
+export function whitewater3dSpawnDecision(args: {
+  vel: Float32Array;
+  phi: Float32Array;
+  chi: Float32Array;
+  n: number;
+  wwIdx: number;
+  tick: number;
+  threshold: number;
+  amount: number;
+  halfExtent: number;
+  /** Grid -> particle velocity scale (pyroGridVelScale form). */
+  velScale: number;
+}): Whitewater3dSpawn {
+  const { vel, phi, chi, n, wwIdx, tick, threshold, amount, halfExtent, velScale } = args;
+  const { i, j, k } = whitewater3dCandidateCell(wwIdx, tick, n);
+  const idx = idx3(n, i, j, k);
+  const phiHere = phi[idx];
+  const inBand = Math.abs(phiHere) <= WHITEWATER3D_SURFACE_BAND && chi[idx] >= 0.5;
+  const factor = inBand ? whitewaterFoamFactor(whitewater3dSource(vel, n, i, j, k), threshold) : 0;
+  const gate = whitewaterSpawnGate(wwIdx, tick);
+  const spawned = gate < Math.min(1, Math.max(0, factor * amount));
+  const normal = whitewater3dNormal(phi, n, i, j, k);
+  const cellWorld = (2 * halfExtent) / n;
+  // Cell centre in world, then projected onto phi = 0 along the
+  // gradient: world offset = -normal * phi (phi is in cells).
+  const cx = ((i + 0.5) / n - 0.5) * 2 * halfExtent - normal.x * phiHere * cellWorld;
+  const cy = ((j + 0.5) / n - 0.5) * 2 * halfExtent - normal.y * phiHere * cellWorld;
+  const cz = ((k + 0.5) / n - 0.5) * 2 * halfExtent - normal.z * phiHere * cellWorld;
+  const gv = whitewater3dFieldAt(vel, n, i, j, k);
+  const pop = (0.25 + 0.75 * whitewaterHash(wwIdx * 9.31 + tick)) * WHITEWATER_POP_SPEED;
+  return {
+    spawned,
+    cellI: i,
+    cellJ: j,
+    cellK: k,
+    factor,
+    x: cx,
+    y: cy,
+    z: cz,
+    vx: gv.x * velScale + normal.x * pop,
+    vy: gv.y * velScale + normal.y * pop,
+    vz: gv.z * velScale + normal.z * pop,
+  };
+}
+
+/** Expected spawn count over the pool for one tick (the 3D
+ *  analogue of whitewaterExpectedSpawns). */
+export function whitewater3dExpectedSpawns(args: {
+  vel: Float32Array;
+  phi: Float32Array;
+  chi: Float32Array;
+  n: number;
+  tick: number;
+  threshold: number;
+  amount: number;
+  slots?: number;
+}): number {
+  const slots = args.slots ?? WHITEWATER_TEX_SIZE * WHITEWATER_TEX_SIZE;
+  let sum = 0;
+  for (let s = 0; s < slots; s++) {
+    const { i, j, k } = whitewater3dCandidateCell(s, args.tick, args.n);
+    const idx = idx3(args.n, i, j, k);
+    if (Math.abs(args.phi[idx]) > WHITEWATER3D_SURFACE_BAND || args.chi[idx] < 0.5) continue;
+    const factor = whitewaterFoamFactor(whitewater3dSource(args.vel, args.n, i, j, k), args.threshold);
+    sum += Math.min(1, Math.max(0, factor * args.amount));
+  }
+  return sum;
+}

@@ -4,7 +4,7 @@
 // of the original SIM_VEL_FRAG template literal. The shell
 // module concatenates all five chunks in order; the assembled
 // string is pinned byte-for-byte by phaseav_test.mjs.
-export const VEL_FRAG_MAIN_SPH_GRAINS = /* glsl */ `    // SPH Fluid Simulation
+const VEL_FRAG_SPH_GRAINS_HEAD = /* glsl */ `    // SPH Fluid Simulation
     if (uSphEnabled) {
       float density = 0.0;
       vec3 pressureForce = vec3(0.0);
@@ -67,10 +67,18 @@ export const VEL_FRAG_MAIN_SPH_GRAINS = /* glsl */ `    // SPH Fluid Simulation
     // SPH-only path). Per sampled neighbour closer than the
     // grain diameter:
     //   normal  — penalty repulsion, overlap x stiffness, at
-    //             the SPH force gain (x15). No position
+`;
+const VEL_FRAG_SPH_GRAINS_COMMENT_PHASE19 = /* glsl */ `    //             the SPH force gain (x15). Phase 19 adds the
+    //             position projection AQ lacked (a Jacobi
+    //             segment in the position pass, driven by
+    //             uGrainsProjection there), so deep compression
+    //             no longer keeps its interpenetration.
+`;
+const VEL_FRAG_SPH_GRAINS_COMMENT_LEGACY = /* glsl */ `    //             the SPH force gain (x15). No position
     //             projection exists, so deep compression keeps
     //             some interpenetration (documented limit).
-    //   friction — Coulomb: cancel the tangential relative
+`;
+const VEL_FRAG_SPH_GRAINS_MID_A = /* glsl */ `    //   friction — Coulomb: cancel the tangential relative
     //             velocity, capped at friction x the contact's
     //             normal push; below the cap the contact sticks.
     //             The pile's angle of repose emerges from this
@@ -100,19 +108,45 @@ export const VEL_FRAG_MAIN_SPH_GRAINS = /* glsl */ `    // SPH Fluid Simulation
     if (uGrainsEnabled) {
       float gd = max(uGrainsSize, 0.001);
       float gd2 = gd * gd;
-      float strideG = uTexSizeF / float(uNBodySamples);
-      float grainsVel0Len = length(vel);
+`;
+const VEL_FRAG_SPH_GRAINS_SCAN_PHASE19 = /* glsl */ `      // Neighbourhood scan plan (Phase 19, TS twin grainsScanPlan
+      // in lib/gpgpuGrains.ts): mode 0 reproduces the AQ plan
+      // exactly — uNBodySamples candidates at the fractional
+      // stride uTexSizeF / uNBodySamples over the first-row span,
+      // same order, same arithmetic. Mode 1 walks the whole
+      // position texture (span uTexSizeF^2): stride 1 up to the
+      // 65536-texel budget (the default pool is exhaustive —
+      // no in-range neighbour is skipped), the smallest integer
+      // stride that fits the budget beyond it.
+      float gCount = float(uNBodySamples);
+      float gStride = uTexSizeF / float(uNBodySamples);
+      if (uGrainsNeighborhood == 1) {
+        float gSpan = uTexSizeF * uTexSizeF;
+        gStride = gSpan > 65536.0 ? ceil(gSpan / 65536.0) : 1.0;
+        gCount = ceil(gSpan / gStride);
+      }
+`;
+const VEL_FRAG_SPH_GRAINS_SCAN_LEGACY = /* glsl */ `      float strideG = uTexSizeF / float(uNBodySamples);
+`;
+const VEL_FRAG_SPH_GRAINS_MID_B = /* glsl */ `      float grainsVel0Len = length(vel);
       vec3 pushForce = vec3(0.0);
       vec3 frictionDelta = vec3(0.0);
       vec3 dampDelta = vec3(0.0);
       vec3 bounceDelta = vec3(0.0);
       vec3 cohesionPull = vec3(0.0);
       float contactCount = 0.0;
-      for (int i = 0; i < 64; i++) {
+`;
+const VEL_FRAG_SPH_GRAINS_LOOP_PHASE19 = /* glsl */ `      for (int i = 0; i < 65536; i++) {
+        if (float(i) >= gCount) break;
+        float si = float(i) * gStride;
+`;
+const VEL_FRAG_SPH_GRAINS_LOOP_LEGACY = /* glsl */ `      for (int i = 0; i < 64; i++) {
         if (i >= uNBodySamples) break;
         float si = float(i) * strideG;
-        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
-        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
+`;
+const VEL_FRAG_SPH_GRAINS_TAIL_SUV = /* glsl */ `        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
+`;
+const VEL_FRAG_SPH_GRAINS_TAIL_CORE = /* glsl */ `        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
         vec3 oPos = texture2D(uPosTex, sUv).xyz;
         vec3 oVel = texture2D(uVelTex, sUv).xyz;
         vec3 r = pos - oPos;
@@ -146,7 +180,8 @@ export const VEL_FRAG_MAIN_SPH_GRAINS = /* glsl */ `    // SPH Fluid Simulation
           }
         }
       }
-      vel += pushForce * uGrainsStiffness * uDelta * 15.0;
+`;
+const VEL_FRAG_SPH_GRAINS_TAIL_POST = /* glsl */ `      vel += pushForce * uGrainsStiffness * uDelta * 15.0;
       vel += bounceDelta;
       // Contact damping is priced on the frame-start velocity
       // (it removes a fraction of the normal relative velocity
@@ -230,3 +265,78 @@ export const VEL_FRAG_MAIN_SPH_GRAINS = /* glsl */ `    // SPH Fluid Simulation
     }
 
 `;
+
+// ── Phase 19 gate fix: string-level shader variants ──
+// On the target GPU, ANY code-text change in these shaders
+// breaks bit-identity with v2.00 — even code gated off by a
+// false uniform (measured, see PHASE19_GATE_DIAGNOSIS). The
+// Phase 19 additions therefore sit behind builder options:
+// the default exports below are byte-identical to v2.00 and
+// the *_PHASE19 exports are byte-identical to the Phase 19
+// strings (both pinned by scripts/phase18-shader-hash.mjs).
+export interface VelocitySphGrainsVariantOptions {
+  grainsFullScan?: boolean;
+}
+
+const VEL_FRAG_SPH_GRAINS_CELL_OPEN = /* glsl */ `      // Cell sort (Phase 19 fix2): while the passes resolved
+      // uGrainsCellSort, candidates come from the sorted cell
+      // index instead of the complete walk in the else branch —
+      // the 27 cells around this particle, each located by
+      // binary search and walked with the per-candidate test
+      // verbatim (the shared TAIL_CORE below), so the contact
+      // SET is the brute-force set; only the accumulation
+      // order changes (cell order instead of texel order).
+      // Without the sort (replica stacks receive no sort pool)
+      // the else branch keeps the stage-1 complete scan.
+      if (uGrainsCellSort) {
+        vec3 myCell = grainsCellOf(pos);
+        for (int gz = -1; gz <= 1; gz++)
+        for (int gy = -1; gy <= 1; gy++)
+        for (int gx = -1; gx <= 1; gx++) {
+          vec3 cell = myCell + vec3(float(gx), float(gy), float(gz));
+          if (cell.x < 0.0 || cell.y < 0.0 || cell.z < 0.0
+            || cell.x >= uGrainsCellDims.x || cell.y >= uGrainsCellDims.y || cell.z >= uGrainsCellDims.z) continue;
+          float cellKey = grainsCellKeyOf(cell);
+          float start = grainsCellLowerBound(cellKey);
+          float total = uTexSizeF * uTexSizeF;
+          for (float k = start; k < total; k += 1.0) {
+            vec4 entry = texture2D(uGrainsSortTex, (vec2(mod(k, uTexSizeF), floor(k / uTexSizeF)) + 0.5) / uTexSizeF);
+            if (entry.z < cellKey) break;
+            vec2 sUv = entry.xy;
+`;
+const VEL_FRAG_SPH_GRAINS_CELL_ELSE = /* glsl */ `          }
+      } else {
+`;
+const VEL_FRAG_SPH_GRAINS_CELL_CLOSE = /* glsl */ `      }
+`;
+
+export function buildVelocitySphGrains(options?: VelocitySphGrainsVariantOptions): string {
+  const full = !!options?.grainsFullScan;
+  if (!full) {
+    return VEL_FRAG_SPH_GRAINS_HEAD
+      + VEL_FRAG_SPH_GRAINS_COMMENT_LEGACY
+      + VEL_FRAG_SPH_GRAINS_MID_A
+      + VEL_FRAG_SPH_GRAINS_SCAN_LEGACY
+      + VEL_FRAG_SPH_GRAINS_MID_B
+      + VEL_FRAG_SPH_GRAINS_LOOP_LEGACY
+      + VEL_FRAG_SPH_GRAINS_TAIL_SUV
+      + VEL_FRAG_SPH_GRAINS_TAIL_CORE
+      + VEL_FRAG_SPH_GRAINS_TAIL_POST;
+  }
+  return VEL_FRAG_SPH_GRAINS_HEAD
+    + VEL_FRAG_SPH_GRAINS_COMMENT_PHASE19
+    + VEL_FRAG_SPH_GRAINS_MID_A
+    + VEL_FRAG_SPH_GRAINS_SCAN_PHASE19
+    + VEL_FRAG_SPH_GRAINS_MID_B
+    + VEL_FRAG_SPH_GRAINS_CELL_OPEN
+    + VEL_FRAG_SPH_GRAINS_TAIL_CORE
+    + VEL_FRAG_SPH_GRAINS_CELL_ELSE
+    + VEL_FRAG_SPH_GRAINS_LOOP_PHASE19
+    + VEL_FRAG_SPH_GRAINS_TAIL_SUV
+    + VEL_FRAG_SPH_GRAINS_TAIL_CORE
+    + VEL_FRAG_SPH_GRAINS_CELL_CLOSE
+    + VEL_FRAG_SPH_GRAINS_TAIL_POST;
+}
+
+export const VEL_FRAG_MAIN_SPH_GRAINS = buildVelocitySphGrains();
+export const VEL_FRAG_MAIN_SPH_GRAINS_PHASE19 = buildVelocitySphGrains({ grainsFullScan: true });

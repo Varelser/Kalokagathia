@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import type { ParticleConfig } from "../types";
-import { GEOM_FRAG, GEOM_VERT, VOLUMETRIC_FRAG, VOLUMETRIC_VERT, buildGeomFrag, buildGeomVert } from "./gpgpuShaders";
+import { VOLUMETRIC_FRAG, VOLUMETRIC_VERT, buildGeomFrag, buildGeomVert } from "./gpgpuShaders";
+import { vellumCrackVariantOn } from "./useGpgpuDrawAssets";
 import { buildObjGeomBaseData } from "../lib/objMesh";
 import { compileCheckShader } from "../lib/glslInjection";
 import {
@@ -73,21 +74,28 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
   // status store (the shared injection fallback rule). Disabled /
   // empty keeps the stock strings, byte-identical.
   const gl = useThree((state) => state.gl);
-  const [geomVertShader, setGeomVertShader] = useState(GEOM_VERT);
-  const [geomFragShader, setGeomFragShader] = useState(GEOM_FRAG);
+  // Phase 19 gate fix: the GEOM string variant (Vellum crack)
+  // rides the same swap path as the custom GLSL — the applied
+  // ref tracks code + variant, the initial state already carries
+  // the initial config's variant, and an empty snippet resolves
+  // to the variant base string (default = v2.00 GEOM_VERT).
+  const [geomVertShader, setGeomVertShader] = useState(() => buildGeomVert('', { vellumCrack: vellumCrackVariantOn(config) }));
+  const [geomFragShader, setGeomFragShader] = useState(() => buildGeomFrag('', { vellumCrack: vellumCrackVariantOn(config) }));
   const appliedGeomVertCodeRef = useRef<string | null>(null);
   const appliedGeomFragCodeRef = useRef<string | null>(null);
   useEffect(() => {
     const code = config.gpgpuGeomCustomVertexEnabled ? config.gpgpuGeomCustomVertexCode : '';
+    const crack = vellumCrackVariantOn(config);
+    const appliedKey = `${code}\n${crack ? 1 : 0}`;
     if (!code.trim()) {
-      if (appliedGeomVertCodeRef.current !== null) {
-        setGeomVertShader(GEOM_VERT);
-        appliedGeomVertCodeRef.current = null;
+      if (appliedGeomVertCodeRef.current !== appliedKey) {
+        setGeomVertShader(buildGeomVert('', { vellumCrack: crack }));
+        appliedGeomVertCodeRef.current = appliedKey;
       }
       setGeomCustomVertexGlslStatus({ state: 'inactive' });
       return;
     }
-    if (appliedGeomVertCodeRef.current === code) return;
+    if (appliedGeomVertCodeRef.current === appliedKey) return;
     const validation = validateGeomCustomVertexGlslCode(code);
     if (!validation.ok) {
       setGeomCustomVertexGlslStatus({ state: 'error', message: validation.error ?? 'invalid code' });
@@ -102,21 +110,23 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       setGeomCustomVertexGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
       return;
     }
-    setGeomVertShader(buildGeomVert(code));
-    appliedGeomVertCodeRef.current = code;
+    setGeomVertShader(buildGeomVert(code, { vellumCrack: crack }));
+    appliedGeomVertCodeRef.current = appliedKey;
     setGeomCustomVertexGlslStatus({ state: 'active' });
-  }, [config.gpgpuGeomCustomVertexEnabled, config.gpgpuGeomCustomVertexCode, gl]);
+  }, [config.gpgpuGeomCustomVertexEnabled, config.gpgpuGeomCustomVertexCode, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, gl]);
   useEffect(() => {
     const code = config.gpgpuGeomCustomFragmentEnabled ? config.gpgpuGeomCustomFragmentCode : '';
+    const crack = vellumCrackVariantOn(config);
+    const appliedKey = `${code}\n${crack ? 1 : 0}`;
     if (!code.trim()) {
-      if (appliedGeomFragCodeRef.current !== null) {
-        setGeomFragShader(GEOM_FRAG);
-        appliedGeomFragCodeRef.current = null;
+      if (appliedGeomFragCodeRef.current !== appliedKey) {
+        setGeomFragShader(buildGeomFrag('', { vellumCrack: crack }));
+        appliedGeomFragCodeRef.current = appliedKey;
       }
       setGeomCustomFragmentGlslStatus({ state: 'inactive' });
       return;
     }
-    if (appliedGeomFragCodeRef.current === code) return;
+    if (appliedGeomFragCodeRef.current === appliedKey) return;
     const validation = validateGeomCustomFragmentGlslCode(code);
     if (!validation.ok) {
       setGeomCustomFragmentGlslStatus({ state: 'error', message: validation.error ?? 'invalid code' });
@@ -131,10 +141,10 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       setGeomCustomFragmentGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
       return;
     }
-    setGeomFragShader(buildGeomFrag(code));
-    appliedGeomFragCodeRef.current = code;
+    setGeomFragShader(buildGeomFrag(code, { vellumCrack: crack }));
+    appliedGeomFragCodeRef.current = appliedKey;
     setGeomCustomFragmentGlslStatus({ state: 'active' });
-  }, [config.gpgpuGeomCustomFragmentEnabled, config.gpgpuGeomCustomFragmentCode, gl]);
+  }, [config.gpgpuGeomCustomFragmentEnabled, config.gpgpuGeomCustomFragmentCode, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, gl]);
 
   const instGeo = useMemo(() => {
     if (config.gpgpuGeomMode === 'point') return null;
@@ -184,6 +194,12 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       uDensityCount:       { value: texSize * texSize },
       uViewportSizePx:     { value: new THREE.Vector2(1, 1) },
       uRingOffsetZ:        { value: 0 },
+      // Vellum crack (Phase 19 stage 3): inert defaults; the
+      // per-frame sync supplies the state texture when on.
+      uVellumCrackEnabled: { value: false },
+      uVellumStateTex:     { value: null },
+      uVellumMode:         { value: 0 },
+      uTexSizeF:           { value: texSize },
     },
     vertexShader: geomVertShader, fragmentShader: geomFragShader,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,

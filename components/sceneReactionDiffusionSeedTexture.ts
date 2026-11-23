@@ -16,7 +16,7 @@ function dmHash11(n: number): number {
   return fract((x + y) * z);
 }
 
-export function buildSeedTexture(size: number, mode: ReactionMode, source: ReactionSource, profile: ReactionProfile, model: 'gray-scott' | 'fhn' | 'lenia' = 'gray-scott') {
+export function buildSeedTexture(size: number, mode: ReactionMode, source: ReactionSource, profile: ReactionProfile, model: 'gray-scott' | 'fhn' | 'lenia' | 'deposit-bleed' = 'gray-scott') {
   const data = new Float32Array(size * size * 4);
   const biofilm = mode === 'biofilm_skin';
   const front = mode === 'cellular_front';
@@ -103,7 +103,9 @@ export function buildSeedTexture(size: number, mode: ReactionMode, source: React
         data[i + 1] = b;
       }
       data[i + 2] = 0;
-      data[i + 3] = 1;
+      // Deposit-bleed stores its bleed channel in .w, so it must seed
+      // at 0; every other model keeps the historical .w = 1.
+      data[i + 3] = model === 'deposit-bleed' ? 0 : 1;
     }
   }
   const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.FloatType);

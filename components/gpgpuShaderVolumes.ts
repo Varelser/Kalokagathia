@@ -92,7 +92,7 @@ export const VOLUMETRIC_FRAG = /* glsl */ `
 `;
 
 // ── Instanced geometry vertex ──
-export const GEOM_VERT = /* glsl */ `
+const GEOM_VERT_HEAD = /* glsl */ `
   precision highp float;
   attribute vec2 aTexCoord;
   uniform sampler2D uPosTex;
@@ -125,9 +125,21 @@ export const GEOM_VERT = /* glsl */ `
   uniform float uDensityTarget;
   uniform float uDensityCount;
   uniform vec2  uViewportSizePx;
-  varying vec3 vNormal;
+`;
+const GEOM_VERT_CRACK_UNIFORMS = /* glsl */ `  // Vellum crack visualisation (Phase 19 stage 3): same flag
+  // rule as the points draw — dead-link texels darken. Off
+  // (default) leaves vCrack at exactly 0.
+  uniform bool  uVellumCrackEnabled;
+  uniform sampler2D uVellumStateTex;
+  uniform int   uVellumMode;
+  uniform float uTexSizeF;
+`;
+const GEOM_VERT_MID_A = /* glsl */ `  varying vec3 vNormal;
   varying float vDensityMul;
-  // Image-based lighting (Phase AL): world-space normal / position
+`;
+const GEOM_VERT_CRACK_VARYING = /* glsl */ `  varying float vCrack;
+`;
+const GEOM_VERT_MID_B = /* glsl */ `  // Image-based lighting (Phase AL): world-space normal / position
   // for the equirect sampling in GEOM_FRAG. Written always, read
   // only inside the IBL branch, so the legacy look is untouched.
   varying vec3 vWorldNormal;
@@ -246,12 +258,53 @@ export const GEOM_VERT = /* glsl */ `
     } else {
       vDensityMul = 1.0;
     }
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(instancePos + local, 1.0);
+`;
+const GEOM_VERT_CRACK_COMPUTE = /* glsl */ `    vCrack = 0.0;
+    if (uVellumCrackEnabled) {
+      vec2 tc = floor(aTexCoord * uTexSizeF);
+      float dead = 0.0;
+      dead = max(dead, 1.0 - texture2D(uVellumStateTex, aTexCoord).r);
+      dead = max(dead, 1.0 - texture2D(uVellumStateTex, aTexCoord).g);
+      vec2 leftUv = (tc + vec2(-1.0, 0.0) + 0.5) / uTexSizeF;
+      vec2 downUv = (tc + vec2(0.0, -1.0) + 0.5) / uTexSizeF;
+      if (uVellumMode == 1) leftUv.x = fract(leftUv.x);
+      if (tc.x > 0.5 || uVellumMode == 1) dead = max(dead, 1.0 - texture2D(uVellumStateTex, leftUv).r);
+      if (tc.y > 0.5) dead = max(dead, 1.0 - texture2D(uVellumStateTex, downUv).g);
+      vCrack = dead;
+    }
+`;
+const GEOM_VERT_TAIL = /* glsl */ `    gl_Position = projectionMatrix * modelViewMatrix * vec4(instancePos + local, 1.0);
   }
 `;
 
+// ── Phase 19 gate fix: string-level shader variants ──
+// On the target GPU, ANY code-text change in these shaders
+// breaks bit-identity with v2.00 — even code gated off by a
+// false uniform (measured, see PHASE19_GATE_DIAGNOSIS). The
+// Phase 19 additions therefore sit behind builder options:
+// the default exports below are byte-identical to v2.00 and
+// the *_PHASE19 exports are byte-identical to the Phase 19
+// strings (both pinned by scripts/phase18-shader-hash.mjs).
+export interface GeomShaderVariantOptions {
+  vellumCrack?: boolean;
+}
+
+export function buildGeomVertShader(options?: GeomShaderVariantOptions): string {
+  const crack = !!options?.vellumCrack;
+  return GEOM_VERT_HEAD
+    + (crack ? GEOM_VERT_CRACK_UNIFORMS : '')
+    + GEOM_VERT_MID_A
+    + (crack ? GEOM_VERT_CRACK_VARYING : '')
+    + GEOM_VERT_MID_B
+    + (crack ? GEOM_VERT_CRACK_COMPUTE : '')
+    + GEOM_VERT_TAIL;
+}
+
+export const GEOM_VERT = buildGeomVertShader();
+export const GEOM_VERT_PHASE19 = buildGeomVertShader({ vellumCrack: true });
+
 // ── Instanced geometry fragment (Lambert + specular) ──
-export const GEOM_FRAG = /* glsl */ `
+const GEOM_FRAG_HEAD = /* glsl */ `
   precision highp float;
   uniform vec3  uColor;
   uniform float uOpacity;
@@ -274,7 +327,10 @@ export const GEOM_FRAG = /* glsl */ `
   varying vec3 vWorldNormal;
   varying vec3 vWorldPos;
   varying float vDensityMul;
-
+`;
+const GEOM_FRAG_CRACK_VARYING = /* glsl */ `  varying float vCrack;
+`;
+const GEOM_FRAG_MID = /* glsl */ `
   vec3 kaloIblRotYaw(vec3 d, float yaw) {
     float c = cos(yaw);
     float s = sin(yaw);
@@ -330,9 +386,34 @@ export const GEOM_FRAG = /* glsl */ `
       float fresI = pow(1.0 - abs(dot(WN, WV)), 3.0);
       col += uIblIntensity * (iblDiff * uColor * 0.6 + iblRefl * (0.15 + 0.85 * fresI));
     }
-    gl_FragColor = vec4(col, uOpacity * vDensityMul);
+`;
+const GEOM_FRAG_CRACK_DARKEN = /* glsl */ `    // Vellum crack (Phase 19 stage 3): torn-seam instances
+    // darken like the points draw. vCrack is 0 unless flagged.
+    col *= 1.0 - 0.45 * vCrack;
+`;
+const GEOM_FRAG_TAIL = /* glsl */ `    gl_FragColor = vec4(col, uOpacity * vDensityMul);
   }
 `;
+
+// ── Phase 19 gate fix: string-level shader variants ──
+// On the target GPU, ANY code-text change in these shaders
+// breaks bit-identity with v2.00 — even code gated off by a
+// false uniform (measured, see PHASE19_GATE_DIAGNOSIS). The
+// Phase 19 additions therefore sit behind builder options:
+// the default exports below are byte-identical to v2.00 and
+// the *_PHASE19 exports are byte-identical to the Phase 19
+// strings (both pinned by scripts/phase18-shader-hash.mjs).
+export function buildGeomFragShader(options?: GeomShaderVariantOptions): string {
+  const crack = !!options?.vellumCrack;
+  return GEOM_FRAG_HEAD
+    + (crack ? GEOM_FRAG_CRACK_VARYING : '')
+    + GEOM_FRAG_MID
+    + (crack ? GEOM_FRAG_CRACK_DARKEN : '')
+    + GEOM_FRAG_TAIL;
+}
+
+export const GEOM_FRAG = buildGeomFragShader();
+export const GEOM_FRAG_PHASE19 = buildGeomFragShader({ vellumCrack: true });
 
 // ── GEOM custom GLSL builders (Phase 16 stage 4) ──
 //
@@ -350,10 +431,15 @@ export const GEOM_FRAG = /* glsl */ `
 const GEOM_VERT_SEAM_ANCHOR = '    vWorldPos = instancePos + local;\n';
 const GEOM_FRAG_SEAM_ANCHOR = '    gl_FragColor = vec4(col, uOpacity * vDensityMul);';
 
-export function buildGeomVert(customVertCode: string): string {
+export function buildGeomVert(customVertCode: string, options?: GeomShaderVariantOptions): string {
+  // Phase 19 gate fix: the splice base is the requested string
+  // variant (default = the v2.00 string; vellumCrack = the Phase
+  // 19 string). An empty or invalid snippet returns that base
+  // unchanged, exactly as the stock string was returned before.
+  const base = buildGeomVertShader(options);
   const code = customVertCode ?? '';
-  if (!code.trim()) return GEOM_VERT;
-  if (!validateGeomCustomVertexGlslCode(code).ok) return GEOM_VERT;
+  if (!code.trim()) return base;
+  if (!validateGeomCustomVertexGlslCode(code).ok) return base;
   const block = `    { // geom vertex (user GLSL)
     vec3 worldPos = vWorldPos;
     vec3 normal = vWorldNormal;
@@ -363,17 +449,18 @@ ${code}
     vWorldPos += disp;
     }
 `;
-  return GEOM_VERT.replace(GEOM_VERT_SEAM_ANCHOR, GEOM_VERT_SEAM_ANCHOR + block);
+  return base.replace(GEOM_VERT_SEAM_ANCHOR, GEOM_VERT_SEAM_ANCHOR + block);
 }
 
-export function buildGeomFrag(customFragCode: string): string {
+export function buildGeomFrag(customFragCode: string, options?: GeomShaderVariantOptions): string {
+  const base = buildGeomFragShader(options);
   const code = customFragCode ?? '';
-  if (!code.trim()) return GEOM_FRAG;
-  if (!validateGeomCustomFragmentGlslCode(code).ok) return GEOM_FRAG;
+  if (!code.trim()) return base;
+  if (!validateGeomCustomFragmentGlslCode(code).ok) return base;
   const block = `    { // geom fragment (user GLSL)
 ${code}
     }
 `;
-  return GEOM_FRAG.replace(GEOM_FRAG_SEAM_ANCHOR, block + GEOM_FRAG_SEAM_ANCHOR);
+  return base.replace(GEOM_FRAG_SEAM_ANCHOR, block + GEOM_FRAG_SEAM_ANCHOR);
 }
 

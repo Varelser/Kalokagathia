@@ -1,5 +1,5 @@
 // ── Position sim fragment (+ Life/Age in .w) ──
-export const SIM_POS_FRAG = /* glsl */ `
+const POS_FRAG_HEAD = /* glsl */ `
   precision highp float;
   uniform sampler2D uPosTex;
   uniform sampler2D uVelTex;
@@ -25,7 +25,24 @@ export const SIM_POS_FRAG = /* glsl */ `
   // is the position pass's only Vellum surface. False (default)
   // keeps every statement below verbatim.
   uniform bool  uVellumEnabled;
-  // Rigid bodies (Phase AU): while the CPU rigid body solver is
+`;
+const POS_FRAG_PROJECTION_UNIFORMS = /* glsl */ `  // Grains projection (Phase 19): a Jacobi position-projection
+  // segment for the Grains solver — overlapping grain pairs are
+  // pushed apart in position, half the overlap per member,
+  // scaled by uGrainsProjection. uGrainsProjEnabled is resolved
+  // CPU-side (Grains on AND projection strength > 0); false
+  // (default for every legacy configuration) skips the segment
+  // whole and the pass is verbatim legacy. The neighbourhood
+  // scan plan matches the velocity pass (0 = AQ subsample,
+  // 1 = complete scan). TS twin: grainsProjectionCorrection in
+  // lib/gpgpuGrains.ts.
+  uniform bool  uGrainsProjEnabled;
+  uniform float uGrainsSize;
+  uniform float uGrainsProjection;
+  uniform int   uGrainsNeighborhood;
+  uniform int   uGrainsSamples;
+`;
+const POS_FRAG_MID = /* glsl */ `  // Rigid bodies (Phase AU): while the CPU rigid body solver is
   // bound, this pass composes every particle's world position
   // from its body's transform (body texture: row 0 = position +
   // bounding radius, row 1 = quaternion) applied to the
@@ -381,7 +398,84 @@ export const SIM_POS_FRAG = /* glsl */ `
       pos += vel * uDelta * uSpeed * 60.0;
     }
 
-    // Collision life (Phase 15): contact bookkeeping for the
+`;
+const POS_FRAG_PROJECTION_CELL = /* glsl */ `  // Cell sort (Phase 19 fix2): the sorted cell index the
+  // projection segment searches while uGrainsCellSort — the
+  // same uniforms, helpers and descending order as the
+  // velocity pass's copy (identical formulation; TS twin:
+  // grainsNeighborsViaCellSearch in lib/gpgpuGrains.ts).
+  uniform sampler2D uGrainsSortTex;
+  uniform bool  uGrainsCellSort;
+  uniform float uGrainsCellOrigin;
+  uniform float uGrainsCellSize;
+  uniform vec3  uGrainsCellDims;
+  float grainsCellKeyAt(float idx) {
+    vec2 uv = (vec2(mod(idx, uTexSizeF), floor(idx / uTexSizeF)) + 0.5) / uTexSizeF;
+    return texture2D(uGrainsSortTex, uv).z;
+  }
+  // First index whose key is <= K in the descending order, or
+  // the pool size when every key is greater.
+  float grainsCellLowerBound(float K) {
+    float total = uTexSizeF * uTexSizeF;
+    float lo = 0.0;
+    float hi = total;
+    for (int s = 0; s < 24; s++) {
+      if (lo >= hi) break;
+      float mid = floor((lo + hi) * 0.5);
+      if (grainsCellKeyAt(mid) > K) lo = mid + 1.0;
+      else hi = mid;
+    }
+    return lo;
+  }
+  vec3 grainsCellOf(vec3 p) {
+    return clamp(floor((p - uGrainsCellOrigin) / uGrainsCellSize), vec3(0.0), uGrainsCellDims - vec3(1.0));
+  }
+  float grainsCellKeyOf(vec3 cell) {
+    return (cell.x * uGrainsCellDims.y + cell.y) * uGrainsCellDims.z + cell.z;
+  }
+`;
+const POS_FRAG_PROJECTION_SEGMENT_A = /* glsl */ `    // Grains projection (Phase 19): Jacobi-style — every
+    // correction is computed from the frame-start positions
+    // (uPosTex, the same snapshot the velocity pass read), so
+    // both members of a pair derive mirrored corrections and
+    // the step stays deterministic. Half the overlap per member
+    // x strength, summed over the scan, the total clamped to
+    // one grain diameter so a dense pile cannot overshoot in a
+    // single pass. Skipped whole while resolved off.
+    if (uGrainsProjEnabled) {
+      float gd = max(uGrainsSize, 0.001);
+      float gd2 = gd * gd;
+      float gCount = float(uGrainsSamples);
+      float gStride = uTexSizeF / float(uGrainsSamples);
+      if (uGrainsNeighborhood == 1) {
+        float gSpan = uTexSizeF * uTexSizeF;
+        gStride = gSpan > 65536.0 ? ceil(gSpan / 65536.0) : 1.0;
+        gCount = ceil(gSpan / gStride);
+      }
+      vec3 corr = vec3(0.0);
+`;
+const POS_FRAG_PROJECTION_SEGMENT_LOOP = /* glsl */ `      for (int i = 0; i < 65536; i++) {
+        if (float(i) >= gCount) break;
+        float si = float(i) * gStride;
+        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
+        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
+        vec3 oPos = texture2D(uPosTex, sUv).xyz;
+        vec3 r = posData.xyz - oPos;
+        float r2 = dot(r, r);
+        if (r2 < gd2 && r2 > 0.0001) {
+          float dist = sqrt(r2);
+          corr += (r / dist) * ((gd - dist) * 0.5);
+        }
+      }
+`;
+const POS_FRAG_PROJECTION_SEGMENT_B = /* glsl */ `      corr *= uGrainsProjection;
+      float corrLen = length(corr);
+      if (corrLen > gd) corr *= gd / corrLen;
+      pos += corr;
+    }
+
+`;
+const POS_FRAG_TAIL = /* glsl */ `    // Collision life (Phase 15): contact bookkeeping for the
     // push-outs and clamps below. Recorded only while a life
     // option is live, so the default path is untouched.
     bool collisionContact = false;
@@ -598,3 +692,79 @@ export const SIM_POS_FRAG = /* glsl */ `
     gl_FragColor = vec4(pos, age);
   }
 `;
+
+// ── Phase 19 gate fix: string-level shader variants ──
+// On the target GPU, ANY code-text change in these shaders
+// breaks bit-identity with v2.00 — even code gated off by a
+// false uniform (measured, see PHASE19_GATE_DIAGNOSIS). The
+// Phase 19 additions therefore sit behind builder options:
+// the default exports below are byte-identical to v2.00 and
+// the *_PHASE19 exports are byte-identical to the Phase 19
+// strings (both pinned by scripts/phase18-shader-hash.mjs).
+const POS_FRAG_PROJECTION_SEGMENT = POS_FRAG_PROJECTION_SEGMENT_A
+  + POS_FRAG_PROJECTION_SEGMENT_LOOP
+  + POS_FRAG_PROJECTION_SEGMENT_B;
+const POS_FRAG_PROJECTION_SEGMENT_CELL_OPEN = /* glsl */ `      // Cell sort (Phase 19 fix2): while the passes resolved
+      // uGrainsCellSort, the candidates come from the sorted
+      // cell index instead of the complete walk in the else
+      // branch — the 27 cells around this particle, each
+      // located by binary search and walked with the
+      // per-candidate test verbatim, so the neighbour set is
+      // the brute-force set; only the accumulation order
+      // changes (cell order instead of texel order). Without
+      // the sort (replica stacks receive no sort pool) the
+      // else branch keeps the stage-1 complete scan.
+      if (uGrainsCellSort) {
+        vec3 myCell = grainsCellOf(posData.xyz);
+        for (int gz = -1; gz <= 1; gz++)
+        for (int gy = -1; gy <= 1; gy++)
+        for (int gx = -1; gx <= 1; gx++) {
+          vec3 cell = myCell + vec3(float(gx), float(gy), float(gz));
+          if (cell.x < 0.0 || cell.y < 0.0 || cell.z < 0.0
+            || cell.x >= uGrainsCellDims.x || cell.y >= uGrainsCellDims.y || cell.z >= uGrainsCellDims.z) continue;
+          float cellKey = grainsCellKeyOf(cell);
+          float start = grainsCellLowerBound(cellKey);
+          float total = uTexSizeF * uTexSizeF;
+          for (float k = start; k < total; k += 1.0) {
+            vec4 entry = texture2D(uGrainsSortTex, (vec2(mod(k, uTexSizeF), floor(k / uTexSizeF)) + 0.5) / uTexSizeF);
+            if (entry.z < cellKey) break;
+            vec2 sUv = entry.xy;
+            if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
+            vec3 oPos = texture2D(uPosTex, sUv).xyz;
+            vec3 r = posData.xyz - oPos;
+            float r2 = dot(r, r);
+            if (r2 < gd2 && r2 > 0.0001) {
+              float dist = sqrt(r2);
+              corr += (r / dist) * ((gd - dist) * 0.5);
+            }
+          }
+        }
+      } else {
+`;
+const POS_FRAG_PROJECTION_SEGMENT_CELL_CLOSE = /* glsl */ `      }
+`;
+const POS_FRAG_PROJECTION_SEGMENT_CELL = POS_FRAG_PROJECTION_SEGMENT_A
+  + POS_FRAG_PROJECTION_SEGMENT_CELL_OPEN
+  + POS_FRAG_PROJECTION_SEGMENT_LOOP
+  + POS_FRAG_PROJECTION_SEGMENT_CELL_CLOSE
+  + POS_FRAG_PROJECTION_SEGMENT_B;
+
+export interface PositionFragmentVariantOptions {
+  grainsProjection?: boolean;
+  grainsCellSort?: boolean;
+}
+
+export function buildPositionFragment(options?: PositionFragmentVariantOptions): string {
+  const projection = !!options?.grainsProjection;
+  const cell = projection && !!options?.grainsCellSort;
+  return POS_FRAG_HEAD
+    + (projection ? POS_FRAG_PROJECTION_UNIFORMS : '')
+    + (cell ? POS_FRAG_PROJECTION_CELL : '')
+    + POS_FRAG_MID
+    + (projection ? (cell ? POS_FRAG_PROJECTION_SEGMENT_CELL : POS_FRAG_PROJECTION_SEGMENT) : '')
+    + POS_FRAG_TAIL;
+}
+
+export const SIM_POS_FRAG = buildPositionFragment();
+export const SIM_POS_FRAG_PHASE19 = buildPositionFragment({ grainsProjection: true });
+export const SIM_POS_FRAG_PHASE19_CELL = buildPositionFragment({ grainsProjection: true, grainsCellSort: true });

@@ -153,6 +153,7 @@ export function resolveReactionParams(config: ParticleConfig, layerIndex: Reacti
     leniaDt: config.layer2ReactionLeniaDt ?? 0.1,
     leniaKernel: config.layer2ReactionLeniaKernel ?? 'ring',
     leniaGain: config.layer2ReactionLeniaGain ?? 1,
+    depositRetention: config.layer2ReactionDepositRetention ?? 1,
   } : {
     color: config.layer3Color,
     spread: config.layer3SourceSpread,
@@ -173,6 +174,7 @@ export function resolveReactionParams(config: ParticleConfig, layerIndex: Reacti
     leniaDt: config.layer3ReactionLeniaDt ?? 0.1,
     leniaKernel: config.layer3ReactionLeniaKernel ?? 'ring',
     leniaGain: config.layer3ReactionLeniaGain ?? 1,
+    depositRetention: config.layer3ReactionDepositRetention ?? 1,
   };
 }
 

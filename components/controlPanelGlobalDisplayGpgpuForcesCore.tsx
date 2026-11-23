@@ -847,8 +847,21 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
           <Slider label="Grid Transfer （結合の移転率）" value={config.gpgpuPyroGridTransfer} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuPyroGridTransfer', v)} />
           <Slider label="Vorticity ε （渦度閉じ込め）" value={config.gpgpuPyroVorticityEpsilon} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuPyroVorticityEpsilon', v)} />
           <Slider label="Fuel Rate （燃焼）" value={config.gpgpuPyroFuelRate} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuPyroFuelRate', v)} />
+          <Toggle
+            label="Volume Render （密度場の描画）"
+            value={config.gpgpuPyroVolumeRender}
+            options={[{ label: 'Fog （従来）', val: 'fog' }, { label: 'Raymarch', val: 'raymarch' }]}
+            onChange={(v) => updateConfig('gpgpuPyroVolumeRender', v)}
+          />
+          {config.gpgpuPyroVolumeRender === 'raymarch' && (
+            <>
+              <Slider label="Volume Steps （0=ティア既定）" value={config.gpgpuPyroVolumeSteps} min={0} max={64} step={1} onChange={(v) => updateConfig('gpgpuPyroVolumeSteps', v)} />
+              <Slider label="Volume Density （消散）" value={config.gpgpuPyroVolumeDensity} min={0} max={8} step={0.05} onChange={(v) => updateConfig('gpgpuPyroVolumeDensity', v)} />
+              <Slider label="Volume Shadow Steps （自己遮蔽）" value={config.gpgpuPyroVolumeShadowSteps} min={0} max={8} step={1} onChange={(v) => updateConfig('gpgpuPyroVolumeShadowSteps', v)} />
+            </>
+          )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            密度・温度をフォグ層へ供給し（レイヤー側の Pyro 量で効きます）、粒子結合は Blend が 0 より大きいときだけ働きます。ε と燃料は 0 で従来同一です。
+            密度・温度をフォグ層へ供給し（レイヤー側の Pyro 量で効きます）、粒子結合は Blend が 0 より大きいときだけ働きます。ε と燃料は 0 で従来同一です。Raymarch はグリッドの密度場そのものをドメイン箱の視線積分で描く経路で、ステップ数はグリッド解像度とは独立に効きます（既定は Fog で従来同一）。
           </div>
         </>
       )}

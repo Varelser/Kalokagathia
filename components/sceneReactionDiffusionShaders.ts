@@ -29,6 +29,7 @@ export const simFragment = /* glsl */`
   uniform float leniaMu;
   uniform float leniaSigma;
   uniform float leniaDt;
+  uniform float depositRetention;
 
   vec2 sampleAB(vec2 uv) {
     return texture2D(previousTexture, uv).xy;
@@ -88,6 +89,37 @@ export const simFragment = /* glsl */`
       float nu = u + (dA * lap.x * 3.0 + reactU * reactionBoost * 0.3) * dt;
       float nv = v + (dB * lap.y * 3.0 + reactV * reactionBoost * 0.3) * dt;
       gl_FragColor = vec4(clamp((nu + 1.5) / 3.0, 0.0, 1.0), clamp((nv + 1.5) / 3.0, 0.0, 1.0), 0.0, 1.0);
+      return;
+    }
+    if (model > 2.5) {
+      // Deposit–bleed (Phase 19 stage 5): 1:1 mirror of
+      // lib/reactionDepositBleed.ts depositBleedStep. Channels:
+      // A supply, B wet pigment, .z deposit (no decay beyond the
+      // retention multiplier, saturating clamp), .w bleed (wide
+      // convex blur spread, Kill decay). Feed/Kill are the layer's
+      // existing keys; depositRetention is the one new key.
+      float depD = texture2D(previousTexture, uv + flow).z;
+      float depL = texture2D(previousTexture, uv + flow).w;
+      float blurL = depL * 0.2
+        + 0.1 * (texture2D(previousTexture, uv + flow + vec2(0.0, texel.y)).w
+          + texture2D(previousTexture, uv + flow - vec2(0.0, texel.y)).w
+          + texture2D(previousTexture, uv + flow + vec2(texel.x, 0.0)).w
+          + texture2D(previousTexture, uv + flow - vec2(texel.x, 0.0)).w)
+        + 0.05 * (texture2D(previousTexture, uv + flow + vec2(texel.x, texel.y)).w
+          + texture2D(previousTexture, uv + flow + vec2(-texel.x, texel.y)).w
+          + texture2D(previousTexture, uv + flow + vec2(texel.x, -texel.y)).w
+          + texture2D(previousTexture, uv + flow + vec2(-texel.x, -texel.y)).w)
+        + 0.05 * (texture2D(previousTexture, uv + flow + vec2(0.0, texel.y * 2.0)).w
+          + texture2D(previousTexture, uv + flow - vec2(0.0, texel.y * 2.0)).w
+          + texture2D(previousTexture, uv + flow + vec2(texel.x * 2.0, 0.0)).w
+          + texture2D(previousTexture, uv + flow - vec2(texel.x * 2.0, 0.0)).w);
+      float audioFeedD = pulse * 0.006;
+      float nextA3 = clamp(A + (dA * lap.x + (feed + audioFeedD) * (1.0 - A)) * dt, 0.0, 1.0);
+      float transfer = B * feed * dt;
+      float nextD = clamp(depD * depositRetention + transfer * (1.0 - depD), 0.0, 1.0);
+      float nextB3 = clamp(B + (dB * lap.y - (kill + feed + audioFeedD * 0.35) * B) * dt, 0.0, 1.0);
+      float nextL = clamp(depL + (blurL - depL) * 0.5 + B * feed * 8.0 * dt - kill * 0.5 * depL * dt, 0.0, 1.0);
+      gl_FragColor = vec4(nextA3, nextB3, nextD, nextL);
       return;
     }
     float reaction = A * B * B * reactionBoost;
@@ -155,6 +187,12 @@ export const displayVertex = /* glsl */`
     }
     if (model > 1.5) {
       pattern = clamp(ab.x * leniaGain, 0.0, 1.0);
+    }
+    if (model > 2.5) {
+      // Deposit–bleed display: the deposit carries the pattern, the
+      // bleed channel is its halo (weights in lib/reactionDepositBleed.ts).
+      vec2 dl = texture2D(reactionTexture, uv).zw;
+      pattern = clamp(dl.x * 0.95 + dl.y * 0.55, 0.0, 1.0);
     }
     float contour = smoothstep(0.18, 0.18 + 0.54 / max(0.2, contourTightness), pattern) - smoothstep(0.62, 0.96, pattern);
     if (model > 0.5 && model < 1.5) {
@@ -248,6 +286,10 @@ export const displayFragment = /* glsl */`
     }
     if (model > 1.5) {
       pattern = clamp(ab.x * leniaGain, 0.0, 1.0);
+    }
+    if (model > 2.5) {
+      vec2 dl = texture2D(reactionTexture, vUv).zw;
+      pattern = clamp(dl.x * 0.95 + dl.y * 0.55, 0.0, 1.0);
     }
     float contour = smoothstep(0.2, 0.2 + 0.6 / contourTightness, pattern) - smoothstep(0.62, 0.98, pattern);
     if (model > 0.5 && model < 1.5) {
