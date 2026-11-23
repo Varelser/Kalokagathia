@@ -16,7 +16,7 @@ import {
   PYRO_GRID_VORTICITY_FORCE_FRAG,
 } from "./gpgpuShaderPyroGrid";
 import { useThree } from "@react-three/fiber";
-import { buildCustomForceHarness, compileCheckShader, setCustomForceStatus, validateCustomForceCode } from "../lib/gpgpuCustomForce";
+import { buildCustomForceHarness, compileCheckShader, extractCustomForceControls, setCustomForceStatus, syncCtrlUniforms, validateCustomForceCode } from "../lib/gpgpuCustomForce";
 import type { UseGpgpuAssetsArgs } from "./gpgpuAssetShared";
 import type { ParticleConfig } from "../types";
 
@@ -83,6 +83,8 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uParticleLifeMeanderAmount: { value: 0 },
       uParticleLifeMeanderScale:  { value: 1 },
       uParticleLifeAvoid:         { value: 0 },
+      uSteerAvoid:                { value: 0 },
+      uSteerAvoidRange:           { value: 0 },
       // Lifecycle grammar (Phase AB): gate off / legacy drag at
       // the defaults; the passes fill them from config per frame.
       uSpawnRate:   { value: 1.0 },
@@ -166,6 +168,7 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSphRadius:       { value: 40.0 },
       uSphRestDensity:  { value: 2.0 },
       uSphSurfaceTension: { value: 0 },
+      uSphSurfaceSelectivity: { value: 0 },
       // Grains (Phase AQ): disabled is the exact legacy path.
       uGrainsEnabled:     { value: false },
       uGrainsSize:        { value: 8.0 },
@@ -370,6 +373,8 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uEmissionCurveV:       { value: [1, 1, 1, 1, 1, 1, 1, 1] },
       uKillBoundary: { value: false },
       uKillMask:     { value: false },
+      uCollisionLifeLoss: { value: 0 },
+      uCollisionKill: { value: false },
       uKillMaskTex:  { value: null },
       uKillMaskThreshold: { value: 0.5 },
       uKillMaskInvert: { value: false },
@@ -861,6 +866,9 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       setCustomForceStatus({ state: 'inactive' });
       return;
     }
+    // KCB1: keep ctrl() uniform values in sync even when only values changed
+    // (no shader rebuild). Runs before the applied-code early return.
+    syncCtrlUniforms(velSimMat.uniforms as Record<string, { value: unknown }>, extractCustomForceControls(code).decls, config.gpgpuCustomForceCtrlValues);
     if (appliedForceCodeRef.current === code) return;
     const validation = validateCustomForceCode(code);
     if (!validation.ok) {
@@ -877,7 +885,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     velSimMat.needsUpdate = true;
     appliedForceCodeRef.current = code;
     setCustomForceStatus({ state: 'active' });
-  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, gl, velSimMat]);
+  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, gl, velSimMat]);
 
   return {
     simMeshRef,

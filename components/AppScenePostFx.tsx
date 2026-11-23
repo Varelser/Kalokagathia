@@ -5,6 +5,7 @@ import { BlendFunction } from 'postprocessing';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { getOrderedActivePostFxStageIds } from '../lib/postFxStack';
+import { SAFE_MODE_HEAVY_POST_STAGES, useSafeMode } from '../lib/safeMode';
 import { compileCheckShader } from '../lib/glslInjection';
 import {
   buildCustomPostGlslHarness,
@@ -18,6 +19,8 @@ import { SlitScanPass } from './slitScanPass';
 import { RadialBlurPass } from './radialBlurPass';
 import { LightFxPass } from './lightFxPass';
 import { OutputGradePass } from './outputGradePass';
+import { ChromaKeyPass } from './chromaKeyPass';
+import { BrushAccumPass } from './brushAccumPass';
 import { PosterizePass, OrderedDitherPass, HalftonePass } from './toneGradePasses';
 import { EdgeDetectPass } from './edgeDetectPass';
 import { EdgeCapturePass } from './edgeCapturePass';
@@ -36,7 +39,15 @@ import { afMapSource, parseAfMapSource, resolveAfMapSourceTexture } from '../lib
 import { compositeBlendModeIndex } from '../lib/compositeBlend';
 
 export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config }) => {
-  const orderedPostFxStages = React.useMemo(() => getOrderedActivePostFxStageIds(config), [config]);
+  const safeMode = useSafeMode();
+  const orderedPostFxStages = React.useMemo(() => {
+    const stages = getOrderedActivePostFxStageIds(config);
+    // Safe mode (Phase 15, Abyssal B): at ladder level >= 2 the
+    // heavy stages are dropped as a runtime override — the config
+    // itself is never rewritten.
+    if (safeMode.step.post !== 'reduced') return stages;
+    return stages.filter((stage) => !SAFE_MODE_HEAVY_POST_STAGES.has(stage));
+  }, [config, safeMode.step.post]);
   const feedbackPass = React.useMemo(() => new FeedbackPass(), []);
   React.useEffect(() => () => feedbackPass.dispose(), [feedbackPass]);
   feedbackPass.decay = config.postFeedbackDecay;
@@ -84,12 +95,33 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   lightFxPass.luxConeLength = config.postLuxConeLength;
   lightFxPass.luxConeAngle = config.postLuxConeAngle;
   lightFxPass.luxConeSpread = config.postLuxConeSpread;
+  // Chroma key (Phase 15, TD §6): final delivery stage; exists
+  // only while enabled in the stack order.
+  const chromaKeyPass = React.useMemo(() => new ChromaKeyPass(), []);
+  React.useEffect(() => () => chromaKeyPass.dispose(), [chromaKeyPass]);
+  chromaKeyPass.keyColor.set(config.postChromaKeyColor || '#00ff00');
+  chromaKeyPass.similarity = config.postChromaKeySimilarity;
+  chromaKeyPass.smoothness = config.postChromaKeySmoothness;
+  chromaKeyPass.spill = config.postChromaKeySpill;
+  // Brush accumulation (Phase 15, 2D §6): dedicated ping-pong
+  // accumulation of the brush line ribbons; exists only while
+  // enabled in the stack order. The pass re-renders the scene's
+  // brush layer itself, so it needs the live scene and camera.
+  const brushAccumPass = React.useMemo(() => new BrushAccumPass(), []);
+  React.useEffect(() => () => brushAccumPass.dispose(), [brushAccumPass]);
+  brushAccumPass.decay = config.layer1BrushAccumDecay;
+  brushAccumPass.strength = config.layer1BrushAccumStrength;
+  brushAccumPass.sceneRoot = useThree((state) => state.scene);
+  brushAccumPass.viewCamera = useThree((state) => state.camera);
   const outputGradePass = React.useMemo(() => new OutputGradePass(), []);
   React.useEffect(() => () => outputGradePass.dispose(), [outputGradePass]);
   outputGradePass.exposure = config.postExposure;
   outputGradePass.aces = config.postToneMapping === 'aces';
   outputGradePass.brandEnabled = config.postBrandColorEnabled;
   outputGradePass.brandColor.set(config.postBrandColor || '#000000');
+  outputGradePass.reservedEnabled = config.postReservedPaletteEnabled;
+  outputGradePass.reservedFloor = config.postReservedFloor;
+  outputGradePass.reservedCeiling = config.postReservedCeiling;
   // Phase AD passes: tone grade trio, Sobel edge, image displace.
   const posterizePass = React.useMemo(() => new PosterizePass(), []);
   React.useEffect(() => () => posterizePass.dispose(), [posterizePass]);
@@ -98,6 +130,8 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   React.useEffect(() => () => ditherPass.dispose(), [ditherPass]);
   ditherPass.strength = config.postDitherStrength;
   ditherPass.mode = config.postDitherMode;
+  ditherPass.anchor = config.postDitherAnchor;
+  ditherPass.viewCamera = useThree((state) => state.camera);
   const halftonePass = React.useMemo(() => new HalftonePass(), []);
   React.useEffect(() => () => halftonePass.dispose(), [halftonePass]);
   halftonePass.cellSize = config.postHalftoneCellSize;
@@ -334,6 +368,10 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
             return <primitive key={stage} object={lightFxPass} />;
           case 'output-grade':
             return <primitive key={stage} object={outputGradePass} />;
+          case 'chroma-key':
+            return <primitive key={stage} object={chromaKeyPass} />;
+          case 'brush-accum':
+            return <primitive key={stage} object={brushAccumPass} />;
           default:
             return null;
         }

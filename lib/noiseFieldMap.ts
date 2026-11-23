@@ -193,6 +193,15 @@ export function clampNoiseMapEvolve(value: number | undefined): number {
   return Math.min(4, Math.max(0, value));
 }
 
+/** Supply-slice field time (Phase 15): seconds of field evolution
+ *  baked into the static supply slice; 0 (or non-finite) is the
+ *  legacy time-0 slice. Capped at one hour — the offset direction
+ *  is periodic in effect and larger values only lose precision. */
+export function clampNoiseFieldSupplyTime(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.min(3600, Math.max(0, value));
+}
+
 export function clampNoiseMapAmount(value: number | undefined): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
   return Math.min(1, Math.max(0, value));

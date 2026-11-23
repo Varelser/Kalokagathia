@@ -8,6 +8,11 @@
 // SIM_VEL_FRAG is byte-identical to the pre-split string (pinned by
 // phaseav_test.mjs: length 70447, sha256
 // 49b31f9d7c004017b8f4d68cba8c6f5af258401dfcc98b0e9cb1a9ea2ff14889).
+import {
+  applyCtrlDeclarations,
+  buildCtrlUniformDeclarations,
+  extractCustomForceControls,
+} from '../lib/gpgpuCustomForceControls';
 import { VEL_FRAG_PREAMBLE } from './gpgpuShaderSimulationVelocityPreamble';
 import { VEL_FRAG_HELPERS } from './gpgpuShaderSimulationVelocityHelpers';
 import { VEL_FRAG_MAIN_FORCES } from './gpgpuShaderSimulationVelocityMainForces';
@@ -28,11 +33,25 @@ export const SIM_VEL_FRAG =
 // `pos`, `vel`, `uTime` and `uDelta` (see lib/gpgpuCustomForce.ts for the
 // validation and compile-check contract). An empty snippet yields the
 // stock shader unchanged.
+// KCB1: when the snippet declares ctrl() controls (see
+// lib/gpgpuCustomForceControls.ts), the calls are rewritten to
+// uCtrl_<id> uniform references and the uniform declarations are
+// injected right after the preamble's precision line. A snippet
+// without declarations takes the historical path only, so the
+// output stays byte-identical to the pre-KCB1 builder.
 export function buildVelocityFragment(customCode: string): string {
   const snippet = customCode.trim();
   if (!snippet) return SIM_VEL_FRAG;
-  return SIM_VEL_FRAG.replace(
+  const extraction = extractCustomForceControls(snippet);
+  const decls = extraction.ok ? extraction.decls : [];
+  const body = applyCtrlDeclarations(snippet, decls);
+  const injected = SIM_VEL_FRAG.replace(
     '    // __CUSTOM_FORCE__',
-    `    { // custom force (user GLSL)\n${snippet}\n    }`,
+    `    { // custom force (user GLSL)\n${body}\n    }`,
+  );
+  if (decls.length === 0) return injected;
+  return injected.replace(
+    '  precision highp float;\n',
+    `  precision highp float;\n${buildCtrlUniformDeclarations(decls)}`,
   );
 }

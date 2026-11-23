@@ -13,6 +13,7 @@ import {
 } from '../lib/cpuParticleSim';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
+import { getNoiseFieldLuma } from '../lib/mapSourceSupply';
 import { textLayoutOptionsFromTextMap } from '../lib/textColumnLayout';
 import { buildContourGeometryOption, buildTextOnPathOption } from './useGpgpuRuntime';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
@@ -42,6 +43,7 @@ const REASON_LABELS: Record<string, string> = {
   'no-webgl': 'WebGL が使えない環境のため、軽量な CPU 表示に切り替えました',
   manual: 'CPU フォールバックが手動で有効になっています',
   query: 'CPU フォールバック（テスト指定）',
+  'safe-mode': '前回の異常終了を受けて、セーフモード（最軽量）で表示しています',
 };
 
 /** World-space homes from the existing CPU layout generator (layer 1). */
@@ -87,6 +89,10 @@ function computeMorphBakeExtras(config: ParticleConfig): CpuMorphBakeExtras {
       textLayoutOptionsFromTextMap(config),
     );
     mediaMap = { map, width: 128, height: 128 };
+  } else if (config.gpgpuMorphTarget === 'image' && config.gpgpuMorphNoiseMapEnabled) {
+    // Phase 15 (TD §1): mirror of buildMorphBakeData — the noise
+    // field's static slice supplies the bake (see useGpgpuRuntime).
+    mediaMap = { map: getNoiseFieldLuma(config, 128), width: 128, height: 128 };
   } else if (
     config.gpgpuMorphTarget === 'image'
     && config.layer2MediaLumaMap && config.layer2MediaLumaMap.length > 0

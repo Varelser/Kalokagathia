@@ -11,6 +11,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSeed: 1,
   gpgpuCustomForceEnabled: false,
   gpgpuCustomForceCode: '',
+  gpgpuCustomForceCtrlValues: {},
   gpgpuSize: 1.5,
   gpgpuSpeed: 1.0,
   gpgpuColor: '#88aaff',
@@ -110,6 +111,9 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGroupColorEnabled: false,
   gpgpuKillBoundary: false,
   gpgpuKillMask: false,
+  // Collision life (Phase 15): 0 / off = no contact cost.
+  gpgpuCollisionLifeLoss: 0,
+  gpgpuCollisionKill: false,
   gpgpuDrag: 1.1,
   gpgpuMaxSpeed: 0,
   gpgpuCurlEnabled: false,
@@ -173,6 +177,8 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSphRestDensity: 2.0,
   // Surface tension (Phase AB, cohesion approximation): 0 = off.
   gpgpuSphSurfaceTension: 0,
+  // Surface selectivity (Phase 15): 0 = isotropic cohesion (AB).
+  gpgpuSphSurfaceSelectivity: 0,
   // Grains (Phase AQ, DEM-style contact solver): disabled = off.
   gpgpuGrainsEnabled: false,
   gpgpuGrainsSize: 8.0,
@@ -592,12 +598,16 @@ f 8 1 105`,
   // Obstacle avoidance (Phase AB): 0 = off (Steering stays
   // pursue / evade only, the Phase AA behaviour).
   gpgpuParticleLifeAvoid: 0,
+  // General steering avoidance (Phase 15): 0 = off.
+  gpgpuSteerAvoid: 0,
+  gpgpuSteerAvoidRange: 0,
   // Spring (to spawn pos)
   gpgpuSpringEnabled: false,
   gpgpuSpringStrength: 1.0,
   // Morph Targets (Kinetix integration B1a)
   gpgpuMorphEnabled: false,
   gpgpuMorphTarget: 'trefoil' as const,
+  gpgpuMorphNoiseMapEnabled: false,
   gpgpuMorphStrength: 3.0,
   gpgpuMorphScale: 1.0,
   gpgpuMorphJitter: 0.12,
@@ -691,6 +701,10 @@ f 8 1 105`,
   gpgpuMorphFiberGroomZ: 0.0,
   gpgpuMorphFiberGroomAlign: 0.0,
   gpgpuMorphFiberLengthVar: 0.0,
+  // Fiber root source / groom field (Phase 15): defaults = AG/AL paths.
+  gpgpuMorphFiberRootSource: 'morph' as const,
+  gpgpuMorphFiberGroomField: 'uniform' as const,
+  gpgpuMorphFiberGroomFieldScale: 1.0,
   // Shape stamping (Phase AA3): only read in path mode 'stamp'.
   gpgpuMorphStampSpacing: 0.125,
   gpgpuMorphStampSize: 0.18,
@@ -922,6 +936,7 @@ f 8 1 105`,
   // colour joins through the 'noise' gradient driver value.
   gpgpuNoiseMapScale: 0.01,
   gpgpuNoiseMapEvolve: 0,
+  gpgpuNoiseFieldSupplyTime: 0,
   gpgpuNoiseMapSizeAmount: 0,
   gpgpuNoiseMapDisplaceAmount: 0,
   // Noise field grammar (Phase BJ): kind 'perlin' and a single

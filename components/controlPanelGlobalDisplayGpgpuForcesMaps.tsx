@@ -125,6 +125,10 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
       />
       <Slider label="Noise Octaves" value={config.gpgpuNoiseMapOctaves} min={1} max={5} step={1} onChange={(v) => updateConfig('gpgpuNoiseMapOctaves', Math.round(v))} />
       <Slider label="Noise Evolve" value={config.gpgpuNoiseMapEvolve} min={0} max={4} step={0.01} onChange={(v) => updateConfig('gpgpuNoiseMapEvolve', v)} />
+      <Slider label="Noise Supply Time （供給断面の時刻）" value={config.gpgpuNoiseFieldSupplyTime} min={0} max={120} step={0.5} onChange={(v) => updateConfig('gpgpuNoiseFieldSupplyTime', v)} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        レイヤーマップやモーフへ供給されるノイズ場の断面を、場が発展した時刻の姿で切り取ります（Evolve が 0 のときは時刻を変えても断面は変わりません）。0 が従来の断面です。毎フレームの再生成はしません。
+      </div>
       <Slider label="Noise Size Amount" value={config.gpgpuNoiseMapSizeAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuNoiseMapSizeAmount', v)} />
       <Slider label="Noise Displace Amount" value={config.gpgpuNoiseMapDisplaceAmount} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuNoiseMapDisplaceAmount', v)} />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">

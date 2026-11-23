@@ -5,6 +5,7 @@ import { buildPresetVector, cosineSimilarity, projectPresetsTo2D } from '../lib/
 import { DEFAULT_WARMUP_FRAMES, MAX_DETERMINISTIC_FRAMES, MAX_DETERMINISTIC_VIDEO_FRAMES, renderDeterministicSequence, renderDeterministicVideo, type DeterministicBackgroundMode, type DeterministicLoopMeasurement, type DeterministicSequencePart } from '../lib/deterministicRender';
 import { VideoEncodeUnsupportedError, type VideoFormat } from '../lib/videoEncode';
 import { PerformanceRecorder, deleteTakeFrame, frameIndexAt, parseTake, reconstructAt, reconstructInterpolatedAt, serializeTake, shiftTakeFrame, type PerformanceTake } from '../lib/performanceRecorder';
+import { clearMotionReviewFindings, deriveLoopFindings, getMotionReviewFindings, recordMotionReviewFindings, subscribeMotionReviewFindings } from '../lib/motionReview';
 import { effectivePosition, offsetFromEffective, padToWorld, withPosition, worldToPad } from '../lib/sourceEditor';
 import { Slider } from './controlPanelParts';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
@@ -13,7 +14,7 @@ import { SectionTitle } from './controlPanelPlayTabShared';
 // App version handed to the deterministic renderer for its render.json
 // manifest. Keep in sync with package.json "version" (the renderer must
 // not import package.json, so the UI supplies it — see PRO1_BRIEF.md).
-export const KALOKAGATHIA_APP_VERSION = '1.96.0';
+export const KALOKAGATHIA_APP_VERSION = '1.97.0';
 
 // Phase C resolution presets for the deterministic renderer. 'canvas'
 // captures at the canvas's current size (the pre-Phase-C behaviour);
@@ -27,6 +28,43 @@ export const DETERMINISTIC_RESOLUTION_PRESETS = [
 ] as const;
 
 export type DeterministicResolutionPresetId = (typeof DETERMINISTIC_RESOLUTION_PRESETS)[number]['id'];
+
+/**
+ * Motion Review findings (Phase 15, ink — small version): the
+ * structured findings recorded from each loop measurement this
+ * session, newest first. Record-and-present only — nothing here
+ * changes the config or the render.
+ */
+const MotionReviewFindingsList: React.FC = () => {
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => subscribeMotionReviewFindings(() => setTick((t) => t + 1)), []);
+  const findings = getMotionReviewFindings();
+  if (findings.length === 0) return null;
+  const kindLabel = (kind: string) => (kind === 'loop-pop' ? 'Loop Pop （巻き戻しの跳び）' : kind === 'loop-drift' ? 'Loop Drift （周期ずれ）' : kind);
+  return (
+    <div className="mt-2 rounded border border-white/10 p-2">
+      <div className="mb-1 flex items-center justify-between">
+        <div className="text-[9px] uppercase tracking-widest opacity-60">Motion Review 所見</div>
+        <button type="button" className="text-[10px] text-white/50 underline" onClick={() => clearMotionReviewFindings()}>消去</button>
+      </div>
+      <ul className="space-y-1">
+        {findings.slice(0, 12).map((f) => (
+          <li key={f.id} className="text-[11px] leading-relaxed text-white/70">
+            <span className={f.severity === 'warn' ? 'text-amber-300' : 'text-white/50'}>
+              {f.severity === 'warn' ? '▲' : '・'} {kindLabel(f.kind)}
+            </span>
+            {' '}フレーム {f.frameStart}→{f.frameEnd} / 平均差 {f.value.toFixed(2)}
+            {f.ratio !== null && ` / 不一致 ${(f.ratio * 100).toFixed(2)}%`}
+            <span className="text-white/50"> — {f.note}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        所見はこのセッションのメモリ内だけに記録され、設定や保存データは変更しません（小版：記録と提示のみ）。
+      </div>
+    </div>
+  );
+};
 
 export const DeterministicRenderControls: React.FC<{
   config: ParticleConfig;
@@ -88,6 +126,9 @@ export const DeterministicRenderControls: React.FC<{
     const onLoopMeasured = (measurement: DeterministicLoopMeasurement) => {
       measuredLoop = measurement;
       setLoopReport(measurement);
+      // Motion Review (Phase 15, ink — small version): the same
+      // measurement, recorded as structured findings.
+      recordMotionReviewFindings(deriveLoopFindings(measurement, new Date().toISOString()));
     };
     const jobExtras = {
       ...(resolutionPreset.width > 0
@@ -273,6 +314,7 @@ export const DeterministicRenderControls: React.FC<{
             : 'ドリフトが残っています（状態を持つシミュレーションの蓄積）。継ぎ目が目立つ場合は編集側のクロスフェードが対処になります。'}
         </p>
       )}
+      <MotionReviewFindingsList />
     </div>
   );
 };

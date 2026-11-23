@@ -3,6 +3,61 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { isPngClipboardSupported, saveBlobFile } from '../lib/platformFeatures';
+import {
+  buildCaptureFilename,
+  captureAcceptMap,
+  captureFormatSpec,
+  captureQualityArg,
+  centerCropRect,
+  isFullFrameRect,
+  DEFAULT_CAPTURE_EXPORT_OPTIONS,
+  type CaptureExportOptions,
+} from '../lib/captureExport';
+
+export type { CaptureExportOptions };
+
+/**
+ * KCB3: still-image format / aspect selection is a transient UI choice
+ * (NOT a ParticleConfig key — the key set stays untouched). The deck
+ * footer (ControlPanelFooter) pushes its selection here while mounted
+ * and resets it on unmount; the defaults are PNG + 'original', which is
+ * exactly the legacy export path.
+ */
+let sharedCaptureExportOptions: CaptureExportOptions = { ...DEFAULT_CAPTURE_EXPORT_OPTIONS };
+
+export function setCaptureExportOptions(options: CaptureExportOptions): void {
+  sharedCaptureExportOptions = { ...options };
+}
+
+export function getCaptureExportOptions(): CaptureExportOptions {
+  return sharedCaptureExportOptions;
+}
+
+/**
+ * Centre-crop a snapshot canvas to the chosen aspect preset. Returns
+ * the SAME canvas when the crop covers the full frame (identity: the
+ * PNG + 'original' path encodes the original snapshot untouched), and
+ * null when a cropped canvas cannot be produced.
+ */
+function applyCaptureCrop(
+  snapshot: HTMLCanvasElement,
+  options: CaptureExportOptions,
+): HTMLCanvasElement | null {
+  const rect = centerCropRect(snapshot.width, snapshot.height, options.aspect);
+  if (isFullFrameRect(rect, snapshot.width, snapshot.height)) return snapshot;
+  if (rect.sw <= 0 || rect.sh <= 0) return null;
+  try {
+    const out = document.createElement('canvas');
+    out.width = rect.sw;
+    out.height = rect.sh;
+    const ctx = out.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(snapshot, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, rect.sw, rect.sh);
+    return out;
+  } catch {
+    return null;
+  }
+}
 
 export const ScreenshotManager: React.FC<{ config: ParticleConfig; saveTrigger: number }> = ({ config, saveTrigger }) => {
   const { gl, scene, camera } = useThree();
@@ -76,21 +131,25 @@ export const ScreenshotManager: React.FC<{ config: ParticleConfig; saveTrigger: 
     if (saveTrigger === 0 || saveTrigger === prevTrigger.current) return;
     prevTrigger.current = saveTrigger;
 
+    const options = getCaptureExportOptions();
+    const spec = captureFormatSpec(options.format);
+    const quality = captureQualityArg(options);
     const snapshot = captureFrame();
-    const filename = `kalokagathia_${Date.now()}.png`;
+    const filename = buildCaptureFilename(Date.now(), options.format);
     if (snapshot) {
-      snapshot.toBlob((blob) => {
+      const out = applyCaptureCrop(snapshot, options) ?? snapshot;
+      out.toBlob((blob) => {
         if (!blob) return;
         // File System Access picker where available; anchor download else.
         void saveBlobFile(blob, filename, {
-          description: 'PNG image',
-          accept: { 'image/png': ['.png'] },
+          description: spec.description,
+          accept: captureAcceptMap(options.format),
         });
-      }, 'image/png');
+      }, spec.mimeType, quality);
       return;
     }
     // 2D snapshot unavailable (exotic browser): keep the original path.
-    const dataURL = gl.domElement.toDataURL('image/png');
+    const dataURL = gl.domElement.toDataURL(spec.mimeType, quality);
     const link = document.createElement('a');
     link.download = filename;
     link.href = dataURL;

@@ -39,6 +39,18 @@ export interface MorphFiberOptions {
    * extra rng draws, so the legacy strands stay byte-identical.
    */
   lengthVar?: number;
+  /**
+   * Groom field (Phase 15): how the groom direction varies over
+   * the surface. 'uniform' / missing is the Phase AL global
+   * vector. 'radial' points away from the cloud centre, 'swirl'
+   * runs tangentially around the Y axis through the centre, and
+   * 'noise' is a trig direction field over the root position at
+   * groomFieldScale. Field modes are pure functions of position
+   * (no rng draws), so root picks and phases never shift.
+   */
+  groomField?: 'uniform' | 'noise' | 'radial' | 'swirl';
+  /** Spatial frequency of the 'noise' groom field (default 1). */
+  groomFieldScale?: number;
 }
 
 export function clampMorphFiberCount(v: number): number {
@@ -102,10 +114,18 @@ export function buildMorphFiberStrands(
   const lengthVar = clampMorphFiberLengthVar(options.lengthVar ?? 0);
   const groomRaw = options.groom ?? [0, 0, 0];
   const groomLen = Math.hypot(groomRaw[0], groomRaw[1], groomRaw[2]);
-  const grooming = groomAlign > 0 && groomLen > 1e-9;
-  const gx = grooming ? groomRaw[0] / groomLen : 0;
-  const gy = grooming ? groomRaw[1] / groomLen : 0;
-  const gz = grooming ? groomRaw[2] / groomLen : 0;
+  // Groom field (Phase 15): a non-uniform field supplies its own
+  // direction per root, so grooming can be active with a zero
+  // global vector. 'uniform' keeps the Phase AL condition exactly.
+  const groomField = options.groomField ?? 'uniform';
+  const useField = groomField !== 'uniform';
+  const groomFieldScale = Number.isFinite(options.groomFieldScale)
+    ? Math.min(20, Math.max(0.05, options.groomFieldScale as number))
+    : 1;
+  const grooming = groomAlign > 0 && (useField || groomLen > 1e-9);
+  const gx = grooming && groomLen > 1e-9 ? groomRaw[0] / groomLen : 0;
+  const gy = grooming && groomLen > 1e-9 ? groomRaw[1] / groomLen : 0;
+  const gz = grooming && groomLen > 1e-9 ? groomRaw[2] / groomLen : 0;
   const rng = mulberry32((Math.round(options.seed) * 2654435761) ^ 0x27d4eb2f);
 
   // Cloud centre for the radial normal fallback.
@@ -167,9 +187,29 @@ export function buildMorphFiberStrands(
     let dirX = nx; let dirY = ny; let dirZ = nz;
     let tanX = tx; let tanY = ty; let tanZ = tz;
     if (grooming) {
-      let bx = nx * (1 - groomAlign) + gx * groomAlign;
-      let by = ny * (1 - groomAlign) + gy * groomAlign;
-      let bz = nz * (1 - groomAlign) + gz * groomAlign;
+      // Groom direction for this strand: the global vector, or —
+      // in a field mode — a pure function of the root position
+      // (no rng draws, so picks and phases never shift). A
+      // degenerate field value falls back to the global vector.
+      let dx = gx; let dy = gy; let dz = gz;
+      if (useField) {
+        let fx = 0; let fy = 0; let fz = 0;
+        if (groomField === 'radial') {
+          fx = px - cx; fy = py - cy; fz = pz - cz;
+        } else if (groomField === 'swirl') {
+          fx = pz - cz; fy = 0; fz = -(px - cx);
+        } else {
+          const s = groomFieldScale;
+          fx = Math.sin(py * s * 3.1 + pz * s * 1.7);
+          fy = Math.sin(pz * s * 2.3 + px * s * 2.9);
+          fz = Math.sin(px * s * 1.9 + py * s * 2.7);
+        }
+        const fl = Math.hypot(fx, fy, fz);
+        if (fl > 1e-9) { dx = fx / fl; dy = fy / fl; dz = fz / fl; }
+      }
+      let bx = nx * (1 - groomAlign) + dx * groomAlign;
+      let by = ny * (1 - groomAlign) + dy * groomAlign;
+      let bz = nz * (1 - groomAlign) + dz * groomAlign;
       const bl = Math.hypot(bx, by, bz);
       if (bl > 1e-9) {
         bx /= bl; by /= bl; bz /= bl;

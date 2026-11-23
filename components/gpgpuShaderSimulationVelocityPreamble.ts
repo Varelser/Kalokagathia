@@ -60,6 +60,10 @@ export const VEL_FRAG_PREAMBLE = /* glsl */ `
   uniform float uParticleLifeMeanderAmount;
   uniform float uParticleLifeMeanderScale;
   uniform float uParticleLifeAvoid;
+  // General steering avoidance (Phase 15): same law, all
+  // particles, own range (0 = 1.5 * uSdfSize fallback).
+  uniform float uSteerAvoid;
+  uniform float uSteerAvoidRange;
   // Lifecycle grammar (Phase AB): spawn gate (burst < 1 holds part
   // of the pool parked until the release threshold crosses its
   // hash) and the pool-wide drag rate / max speed. uDragRate's
@@ -175,6 +179,7 @@ export const VEL_FRAG_PREAMBLE = /* glsl */ `
   uniform float uSphRadius;
   uniform float uSphRestDensity;
   uniform float uSphSurfaceTension;
+  uniform float uSphSurfaceSelectivity;
   // Grains (Phase AQ): DEM-style penalty contact + Coulomb
   // friction over the shared subsample neighbourhood. Disabled
   // is the exact legacy path (the block is skipped whole).

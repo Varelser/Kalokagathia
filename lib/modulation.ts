@@ -8,7 +8,14 @@ import {
   getNoiseLinkValues,
   type NoiseSourceId,
 } from './noiseLink';
-import { compileExpressionCached, evaluateCompiledExpression, EXPRESSION_MAX_LENGTH } from './expression';
+import {
+  compileExpressionCached,
+  compileExpressionCachedWithVars,
+  evaluateCompiledExpression,
+  evaluateCompiledExpressionWithVars,
+  EXPRESSION_MAX_LENGTH,
+} from './expression';
+import { EXPRESSION_PARAM_REF_NAMES, buildExpressionParamVars } from './expressionParamRefs';
 import { getDataTable, sampleDataColumn } from './dataTable';
 
 export { NOISE_SOURCE_OPTIONS };
@@ -414,6 +421,10 @@ export function evaluateSource(
   time: number,
   audio: AudioLevels | undefined,
   routeId?: string,
+  // Phase 15 (Houdini §2): parameter-reference environment for
+  // expression sources, built from the BASE config by
+  // applyModulation. Absent = the pre-15 expression path.
+  paramVars?: Record<string, number>,
 ): SignalValue {
   if (source.kind === 'lfo') {
     const settings = setup.lfos[source.index];
@@ -459,7 +470,18 @@ export function evaluateSource(
     // Expression (Phase AJ): the wrapped source supplies x; the
     // expression shapes it. Invalid expressions and non-finite
     // results fall back to the raw input value.
-    const inner = evaluateSource(source.input, setup, time, audio, routeId);
+    const inner = evaluateSource(source.input, setup, time, audio, routeId, paramVars);
+    if (paramVars) {
+      // Phase 15: with a parameter-reference environment the
+      // expression may also read other parameters (p_<key>) —
+      // base-config values normalised to [0, 1]; see
+      // lib/expressionParamRefs.ts for the fixed semantics.
+      const compiled = compileExpressionCachedWithVars(source.text, EXPRESSION_PARAM_REF_NAMES);
+      if (!compiled.ok) return { value01: inner.value01, center: 0.5 };
+      const value = evaluateCompiledExpressionWithVars(compiled.ast, { ...paramVars, x: inner.value01, t: time });
+      if (!Number.isFinite(value)) return { value01: inner.value01, center: 0.5 };
+      return { value01: Math.min(1, Math.max(0, value)), center: 0.5 };
+    }
     const compiled = compileExpressionCached(source.text);
     if (!compiled.ok) return { value01: inner.value01, center: 0.5 };
     const value = evaluateCompiledExpression(compiled.ast, inner.value01, time);
@@ -516,12 +538,23 @@ export function applyModulation(
   }
   let next: ParticleConfig | null = null;
   const contributions = new Map<keyof ParticleConfig, number>();
+  // Phase 15 (Houdini §2): build the parameter-reference
+  // environment once, from the BASE config, when any route's
+  // source tree contains an expression. Routes without
+  // expressions never pay for it and behave exactly as before.
+  // Only the 'expr' source kind wraps another source; every
+  // other kind is a leaf, so an expression is in play exactly
+  // when some route's source chain starts from one (nested
+  // expressions still pass paramVars down through evaluateSource).
+  const paramVars = setup.routes.some((route) => route.source.kind === 'expr')
+    ? buildExpressionParamVars(config)
+    : undefined;
   for (const route of setup.routes) {
     const entry = PARAMETER_CATALOG.find((candidate) => candidate.key === route.target);
     if (!entry) continue;
     const base = config[route.target];
     if (typeof base !== 'number') continue;
-    const evaluated = evaluateSource(route.source, setup, time, audio, route.id);
+    const evaluated = evaluateSource(route.source, setup, time, audio, route.id, paramVars);
     let { value01 } = evaluated;
     const { center } = evaluated;
     // CHOP chain (Phase AJ): stages apply in order between the

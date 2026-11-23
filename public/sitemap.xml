@@ -1475,7 +1475,26 @@
   <url><loc>https://monosphere.pages.dev/share/ray-blobs</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/ray-columns</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/ray-mandelbulb</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-advection-flow-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-advection-pressure-cycle</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-aizawa-ink</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-arcwave-halo</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ash-image-relief</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ash-script-shedding</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ashfall-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ashfall-vault</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-ash-rune-plane</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-cylinder-braid-spectral</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-glass-halo-orbit</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-grid-shell-script</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-image-relief-fossil</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-ion-prism-video</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-plane-velvet-manuscript</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-resin-lattice-grid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-ring-thread-halo</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-atlas-script-text-hologram</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-sphere-crystal-bloom</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-atlas-video-mirage-smoke</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-dyn-flow</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-dyn-pulse</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-expr-group-gravity</loc><priority>0.6</priority></url>
@@ -1483,32 +1502,119 @@
   <url><loc>https://monosphere.pages.dev/share/starter-attr-feedback-accumulate</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-radius-group-gravity</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-attr-species-size</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-audio-reactive-operator-stack</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-aura-eclipse-reliquary</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-aurora-thread-mirage</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-avalanche-field-slope</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-biofilm-colony-skin</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-bloom-torrent-spores</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-braid-stream</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-braid-web</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-branch-arbor-growth</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-branch-propagation-atlas</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-brownian-veil</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-burst-spin-sprites</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-capillary-sheet-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-caustic-nebula</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-cellular-front-grid</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-cellular-life-field</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-cellular-sheet</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-chaos-lorenz</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-charge-veil-nimbus</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-cinder-codex-web</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-cinder-web-script</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-cloth-membrane-sail</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-collapse-fracture</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-combo-operator-deposition-ink-plane-operator-glyph-weave-text</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-combo-operator-fluid-advection-plane-operator-vapor-pressure-grid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-combo-operator-granular-avalanche-operator-granular-jam-cube</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-combo-operator-membrane-viscoelastic-glyph-operator-shell-freeze-contour</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-combo-operator-shell-resin-palimpsest-operator-halo-eclipse-ring</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-condense-field-basin</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-contour-plate-echo</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-contour-script-manuscript</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-contour-text-outline</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-corrosion-front-etch</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-crawl-seep</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-creep-lattice-span</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-crystal-crust</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-crystal-lattice-core</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-csg-cube-minus-sphere</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-csg-extrude-custom-star</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-csg-extrude-twist</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-csg-hull-bridge</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-csg-mesh-torus</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-csg-refine-diff</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-cyclone-gridwave</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-cylinder-thread-prism</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-dynamics-capillary-review</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-dynamics-pit-review</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-dynamics-pressure-review</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-dynamics-static-review</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-erosion-wear</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-grid-architectonic</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-mode-capillary_sheet-review</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-mode-ink_bleed-review</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-phase-transition</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-plane-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-ring-orbit</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-erosion-cut</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-grid-lattice</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-grid-static</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-phase-freeze</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-phase-melt</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-plane-ink</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-plane-soot</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-ring-halo</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-ring-vortex</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-text-glyphic</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-text-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-sub-wear-pitted</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dedicated-text-inscription</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-deposition-topography</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-distance-bloom</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-dust-plume-column</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-echo-rings-reliquary</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-eclipse-amber-codex</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-edge-output-mask</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-elastic-lattice-span</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-elastic-sheet-span</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ember-cinder-lace</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ember-drift-manuscript</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-emission-curve-pulse</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-emission-curve-swell</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-erosion-manuscript</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-evaporative-sheet-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-fiber-cocoon</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-flip-planar-pool</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-flip-vortex-ferry</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-flock-drift-choir</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-fluid-curl</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-foam-soot-sanctuary</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-fog-cathedral</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-fog-volume</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-fractal-julia-field</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-fractal-ridged</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-fracture-bloom-orbit</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-fracture-grammar-plate</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-freeze-skin-shell</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-frost-lattice-script</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-geometry-lattice</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-glass-cathedral-sphere</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-glyph-weave-ledger</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-age-curve-mountain</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-agecurve-velocity-fade</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-attractor-smooth-tube</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-chain-burst2</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-chain-burst3</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-child-antigravity</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-child-vortex</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-aux-deathburst</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-boids-flock-array</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-curl-slow-evolution</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-curl-vortex-ribbon</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-flipbook-grow</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-fluid-metaball</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-fog-self-shadow</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-form-twist-knot</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-geom-torus</loc><priority>0.6</priority></url>
@@ -1550,12 +1656,42 @@
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-spawn-burst-bloom</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-sprite-image-star</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-symmetry-radial6</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-volumetric-ion-cloud</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-gpgpu-webgpu-curl-field</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gradient-five-stop</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-gradient-multi-stop</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-grains-cohesive-clumps</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-grains-pile</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-grains-repose-pile</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-granular-fall-pile</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-grid-shell-script</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-grid-stipple-calcify</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-grid-stipple-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-growth-bloom</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-growth-grammar-arbor</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-halo-bloom-equinox</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-halo-dust-shedding</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-hologram-script-text</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-accretion-lift</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-ash-echo-falloff</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-breathing-reliquary</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-crystal-bloom</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-deposition-growth</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-fog-glyph</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-fracture-spill</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-inscription-fade</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-liquid-rupture</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-membrane-crystal</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-mist-inscription-drift</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-plasma-skin-carapace</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-hybrid-shell-pulse</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ink-glyph-palimpsest</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ink-outline-palimpsest</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-interference-wave</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ion-rain-video</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ion-video-plume</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-jammed-pack-cube</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-kaleido-prism</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-audio-pulse-crown</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-blackhole-quasar</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-ember-fountain</loc><priority>0.6</priority></url>
@@ -1582,10 +1718,22 @@
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-text-typography</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-trefoil-sculpture</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-kinetix-voxel-matrix</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-knot-flare</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-layer2-age-gradient-sumie</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-liquid-smear-canvas</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-lsys-dragon-rules</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-mandala-bloom</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-melt-condense-cycle</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-melt-front-film</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-membrane-pollen-herbarium</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-membrane-pollen-orbit</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-mesh-sdf-collider-sphere</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-mesh-weave-cylinder</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-mirage-heatfield</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-mirror-starburst</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-mist-ribbon-manuscript</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-moire-grid-veil</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-monolith-nova</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-multitouch-attract</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-noise-field-chroma</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-noise-field-mask-carve</loc><priority>0.6</priority></url>
@@ -1594,19 +1742,233 @@
   <url><loc>https://monosphere.pages.dev/share/starter-obj-geom-knot-swarm</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-obj-mesh-knot-grid</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-obj-mesh-radial-chain</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-biofilm-palimpsest-plane</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-biofilm-palimpsest-plane--grid-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-biofilm-palimpsest-plane--plane-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-biofilm-palimpsest-plane--text-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-biofilm-palimpsest-plane--video-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-corrosion-rune-grid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-corrosion-rune-grid--grid-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-corrosion-rune-grid--plane-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-corrosion-rune-grid--text-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-corrosion-rune-grid--video-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-deposition-ink-plane</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-deposition-ink-plane--grid-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-deposition-ink-plane--image-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-deposition-ink-plane--plane-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-deposition-ink-plane--text-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-deposition-percolation-image</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-deposition-percolation-image--grid-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-deposition-percolation-image--image-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-deposition-percolation-image--plane-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-deposition-percolation-image--text-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-dissolution-seep-image</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-dissolution-seep-image--grid-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-dissolution-seep-image--image-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-dissolution-seep-image--plane-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-dissolution-seep-image--text-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-erosion-ledger-text</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-erosion-ledger-text--grid-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-erosion-ledger-text--plane-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-erosion-ledger-text--text-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-erosion-ledger-text--video-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fluid-advection-plane</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fluid-advection-plane--image-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fluid-advection-plane--plane-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fluid-advection-plane--text-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fluid-advection-plane--video-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fluid-capillary-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fluid-capillary-ledger--grid-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fluid-capillary-ledger--image-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fluid-capillary-ledger--plane-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fluid-capillary-ledger--text-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fog-ash-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fog-ash-ledger--plane-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fog-ash-ledger--ring-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fog-ash-ledger--sphere-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fog-ash-ledger--video-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fog-velvet-plane</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fog-velvet-plane--plane-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fog-velvet-plane--ring-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fog-velvet-plane--sphere-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fog-velvet-plane--video-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fracture-grammar-grid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fracture-grammar-grid--grid-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fracture-grammar-grid--plane-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fracture-grammar-grid--text-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-fracture-grammar-grid--video-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-glyph-weave-text</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-glyph-weave-text--cylinder-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-glyph-weave-text--grid-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-glyph-weave-text--ring-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-glyph-weave-text--text-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-granular-avalanche</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-granular-avalanche--cube-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-granular-avalanche--plane-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-granular-avalanche--sphere-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-granular-jam-cube</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-granular-jam-cube--cube-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-granular-jam-cube--plane-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-granular-jam-cube--sphere-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-growth-grammar-text</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-growth-grammar-text--grid-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-growth-grammar-text--plane-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-growth-grammar-text--text-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-growth-grammar-text--video-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-halo-eclipse-ring</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-halo-eclipse-ring--image-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-halo-eclipse-ring--plane-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-halo-eclipse-ring--ring-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-halo-eclipse-ring--sphere-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-lattice-creep-grid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-lattice-creep-grid--cube-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-lattice-creep-grid--cylinder-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-lattice-creep-grid--grid-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-lattice-elastic-glyph</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-lattice-elastic-glyph--cube-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-lattice-elastic-glyph--cylinder-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-lattice-elastic-glyph--grid-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-membrane-viscoelastic-glyph</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-membrane-viscoelastic-glyph--image-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-membrane-viscoelastic-glyph--plane-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-membrane-viscoelastic-glyph--text-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-membrane-viscoelastic-glyph--video-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-mesh-prism-cylinder</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-mesh-prism-cylinder--cylinder-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-mesh-prism-cylinder--grid-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-mesh-prism-cylinder--ring-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-mesh-prism-cylinder--text-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-condense-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-condense-ledger--plane-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-condense-ledger--ring-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-condense-ledger--sphere-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-condense-ledger--video-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-melt-palimpsest</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-melt-palimpsest--image-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-melt-palimpsest--plane-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-melt-palimpsest--text-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-melt-palimpsest--video-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-sublimate-ring</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-sublimate-ring--plane-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-sublimate-ring--ring-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-sublimate-ring--sphere-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-phase-sublimate-ring--video-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-pitted-calcify-grid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-pitted-calcify-grid--grid-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-pitted-calcify-grid--image-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-pitted-calcify-grid--plane-5</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-pitted-calcify-grid--ring-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-pitted-calcify-grid--sphere-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-calcified-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-calcified-ledger--grid-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-calcified-ledger--image-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-calcified-ledger--plane-5</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-calcified-ledger--ring-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-calcified-ledger--sphere-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-freeze-contour</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-freeze-contour--image-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-freeze-contour--plane-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-freeze-contour--ring-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-freeze-contour--sphere-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-resin-palimpsest</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-resin-palimpsest--image-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-resin-palimpsest--plane-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-resin-palimpsest--ring-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-shell-resin-palimpsest--sphere-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-static-grid-smoke</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-static-grid-smoke--grid-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-static-grid-smoke--plane-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-static-grid-smoke--ring-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-static-grid-smoke--sphere-5</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-static-grid-smoke--video-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-stipple-grid-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-stipple-grid-ledger--grid-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-stipple-grid-ledger--image-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-stipple-grid-ledger--plane-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-stipple-grid-ledger--text-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-pressure-grid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-pressure-grid--grid-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-pressure-grid--plane-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-pressure-grid--ring-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-pressure-grid--sphere-5</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-pressure-grid--video-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-vortex-rune</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-vortex-rune--plane-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-vortex-rune--ring-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-vortex-rune--sphere-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-vapor-vortex-rune--video-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-wear-residue-plane</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-wear-residue-plane--image-4</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-wear-residue-plane--plane-1</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-wear-residue-plane--ring-2</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-operator-wear-residue-plane--sphere-3</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-orbit-fracture-reliquary</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-orbit-swarm</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-orbital-epicycle</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ossify-corrosion-cycle</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-outline-codex-trace</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-geometrynodes-reaction-growth-plate</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-geometrynodes-simulation-lattice</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-houdini-destruction-fracture-debris</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-houdini-growth-arbor</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-houdini-mpm-slurry-stack</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-houdini-pyro-vortex-column</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-houdini-shell-metaball-volume</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-houdini-vellum-granular-drape</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-hybrid-audio-operator-stack</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-hybrid-contact-sdf-scatter</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-hybrid-pdg-variant-sweep</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-niagara-chaos-magnetic-tubes</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-niagara-collision-burst-field</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-niagara-stateless-orbit-mesh</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-touch-curve-relief-feedback</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-touch-feedback-topology</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-touch-pop-force-cloud</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-touch-top-cop-signal-field</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-trapcode-form-lattice</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-trapcode-form-sdf-swarm</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-trapcode-particular-audio-sparks</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-trapcode-particular-noir</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-unity-vfx-gpu-sheet</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-universe-broadcast-ghost</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pack-universe-retro-feedback</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-parallax-gpgpu-depth</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-parallax-layer-drift</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-patch-blueprint</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pendulum-noir</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-percolation-ledger-flow</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-phase42-brush-capillary-sheet</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-phase42-curve-path-script</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-phase42-glyph-sdf-shell</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-phase42-gpgpu-instanced-sdf-swarm</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-phase42-gpgpu-smoothtube-orbit</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-phase42-surface-image-relief</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pinwheel-runes</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-plane-velvet-manuscript</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-plasma-thread-cathedral</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-point-cache-color</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-point-cache-orbit</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pollen-fracture-codex</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pollen-shell-shedding</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pollen-storm-vault</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-polygon-hex-plate</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-custom-glsl-lumalock</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-post-dream-smear-stack</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-horizon-mist-radial</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-horizon-obsidian-fade</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-lux-spot</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-shine-logo</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-starglow-field</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-lightfx-starglow-shimmer</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-post-particular-glow-stack</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-post-retro-feedback-stack</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-post-tone-print</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-post-touch-smear-stack</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pressure-cells-basin</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-prism-charge-tempest</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-prismatic-storm-breathing</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pulse-breathing</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-pulse-shell</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-pyro-grid-plume</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-pyro-smoke-column</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-pyro-stirred-plume</loc><priority>0.6</priority></url>
@@ -1614,10 +1976,68 @@
   <url><loc>https://monosphere.pages.dev/share/starter-rbd-shatter-pile</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-rbd-terrain-debris</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-rbd-terrain-landing</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-reaction-inscription</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-reaction-plate-labyrinth</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-reaction-skin</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-residue-sigil-reliquary</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-resin-amber-shell</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-resin-eclipse-shell</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-resin-fossil-grid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-review-grid-architectonic-split</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-review-grid-local-residual-split</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-review-grid-relief-line-split</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-review-grid-relief-shell-split</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-review-plane-ledger-split</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-review-ring-orbit-split</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-review-text-inscription-split</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-review-text-local-residual-split</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-review-text-plate-weave-split</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ribbon-biofilm-petri</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ribbon-shear</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ribbon-veil-ring</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-ridge-scatter-terrain</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ring-halo-thread</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-ripple-broadcast</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-rune-ledger-text</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-rune-smoke-script</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-rune-soot-archive</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-runic-smoke-evaporation</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-script-accretion-skin</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-sediment-stack-dune</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-seep-fracture-delta</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-sheet-membrane</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-shell-text-sigil</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-sigil-frost-palace</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-sigil-shell-codex</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-signal-nerve-atlas</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-simple-clean</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-skin-lattice-vessel</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-soot-ink-ledger</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-source-grid-architectonic-contrast</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-source-grid-shell-fog-contrast</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-source-plane-fog-deposition-contrast</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-source-ring-halo-fog-contrast</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-source-ring-orbit-contrast</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-source-text-inscription-contrast</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-source-text-shell-deposition-contrast</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-spawn-pulse-waves</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-spectral-aurora-choir</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-spectral-braid-cylinder</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-spectral-mesh-lattice</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-spokes-breath</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-spore-halo-bloom</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-spore-halo-reliquary</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-spore-pollen-sanctum</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-star-section-tube</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-static-signal-lace</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-static-smoke-slab</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-stipple-relief-sigil</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-sublimate-cloud-ring</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-surge-lattice-grid</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-symmetry-lissajous</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-talus-heap-slope</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-temporal-recur-codex</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-temporal-rewrite-cycle</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-terrain-collider-bounce</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-terrain-derived-layermap</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-terrain-eroded-canyon</loc><priority>0.6</priority></url>
@@ -1628,17 +2048,36 @@
   <url><loc>https://monosphere.pages.dev/share/starter-terrain-texture-repeat</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-terrain-tunnel-cruise</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-glyph-weave-codex</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-text-glyph-weave-palimpsest</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-on-path</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-text-pollen-script</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-raster-mask</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-kinsoku</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-morph</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-ruby</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-tatechuyoko</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-text-vertical-yakumono</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-thread-smoke-reverie</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-toroidal-gyre</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-touch-feedback-topology</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-touch-pop-force-cloud</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-trapcode-form-lattice</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-trapcode-particular-noir</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-tremor-lattice-chamber</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-universe-retro-feedback</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-vapor-canopy-sanctum</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-veil-lattice-accretion</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-vellum-balloon</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-vellum-silk-cloth</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-vellum-stitched-cloth</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-velvet-ink-manuscript</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-viscoelastic-memory-sheet</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-viscous-flow-ledger</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-voronoi-fracture</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-vortex-sheet-gate</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-vortex-transport-column</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-voxel-scaffold</loc><priority>0.6</priority></url>
+  <url><loc>https://monosphere.pages.dev/share/starter-wave-shell</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-whitewater-pool-churn</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-whitewater-vortex-foam</loc><priority>0.6</priority></url>
   <url><loc>https://monosphere.pages.dev/share/starter-wind-volume-jet</loc><priority>0.6</priority></url>

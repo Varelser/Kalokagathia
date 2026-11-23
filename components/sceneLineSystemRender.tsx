@@ -4,11 +4,12 @@ import type { ParticleConfig } from '../types';
 import type { LineData } from './sceneLineSystemShared';
 import { BRUSH_LINE_FRAGMENT_SHADER, BRUSH_LINE_VERTEX_SHADER, getLineBlendMode, LINE_FRAGMENT_SHADER, LINE_VERTEX_SHADER } from './sceneLineSystemShared';
 import { createBrushLineUniforms, createClassicLineUniforms } from './sceneLineSystemMaterial';
+import { BRUSH_ACCUM_LAYER, BRUSH_ACCUM_OBJECT_NAME } from './brushAccumPass';
 import type { ShaderUniformMap } from './sceneShared';
 
 export const LineSystemRender: React.FC<{ config: ParticleConfig; lineData: LineData; layerConnectionStyle: ParticleConfig['layer2ConnectionStyle']; uniforms: ShaderUniformMap; lineRef: React.RefObject<THREE.LineSegments | null>; brushRef: React.RefObject<THREE.Mesh | null>; }> = ({ config, lineData, layerConnectionStyle, uniforms, lineRef, brushRef }) => {
   if (layerConnectionStyle !== 'classic') return (
-    <mesh ref={brushRef}>
+    <mesh name={BRUSH_ACCUM_OBJECT_NAME} ref={(node) => { if (node) node.layers.enable(BRUSH_ACCUM_LAYER); (brushRef as { current: THREE.Mesh | null }).current = node; }}>
       <bufferGeometry>
         <bufferAttribute args={[lineData.brush.aPosA, 3]} attach="attributes-position" count={lineData.brush.count} array={lineData.brush.aPosA} itemSize={3} />
         <bufferAttribute args={[lineData.brush.aPosA, 3]} attach="attributes-aPosA" count={lineData.brush.count} array={lineData.brush.aPosA} itemSize={3} />

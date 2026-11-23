@@ -20,6 +20,7 @@ import {
 } from '../lib/rigidBodies';
 import type { MorphMediaMap } from '../lib/gpgpuMorphTargets';
 import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
+import { getNoiseFieldLuma, noiseFieldCacheKey, noiseFieldSettingsFromConfig } from '../lib/mapSourceSupply';
 import { textLayoutOptionsFromTextMap } from '../lib/textColumnLayout';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
 import { parseSvgPathGeometry, type PathGeometry } from '../lib/pathGeometry';
@@ -601,6 +602,13 @@ export function buildMorphBakeData(
       textLayoutOptionsFromTextMap(config),
     );
     mediaMap = { map, width: 128, height: 128 };
+  } else if (config.gpgpuMorphTarget === 'image' && config.gpgpuMorphNoiseMapEnabled) {
+    // Phase 15 (TD §1): the noise field's static slice supplies the
+    // bake, rasterised by the same Phase BJ supply path the layer
+    // maps use (z = 0, time 0 — the bake is static by nature; the
+    // field's evolution stays with the live field on the render
+    // side). The field settings come from the gpgpuNoiseMap* keys.
+    mediaMap = { map: getNoiseFieldLuma(config, 128), width: 128, height: 128 };
   } else if (
     config.gpgpuMorphTarget === 'image'
     && config.layer2MediaLumaMap && config.layer2MediaLumaMap.length > 0
@@ -1323,6 +1331,16 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // fields above — toggling either re-bakes the 'text' target.
   const morphTextTateChuYoko = config.layer2TextMapTateChuYoko;
   const morphTextRuby = config.layer2TextMapRuby;
+  const morphNoiseMapEnabled = config.gpgpuMorphNoiseMapEnabled;
+  // The bake reads the noise field's static slice while the
+  // supply is on, so the field settings join the rebake deps
+  // through their cache key (Phase 15 gate fix: this effect had
+  // no noise branch at all — the shared builder had it, this
+  // primary WebGL effect did not, and the gate's OFF/ON captures
+  // came back pixel-identical).
+  const morphNoiseSignature = morphNoiseMapEnabled
+    ? noiseFieldCacheKey(noiseFieldSettingsFromConfig(config))
+    : '';
   const morphMediaMap = config.layer2MediaLumaMap;
   const morphMediaWidth = config.layer2MediaMapWidth;
   const morphMediaHeight = config.layer2MediaMapHeight;
@@ -1428,6 +1446,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         },
       );
       mediaMap = { map, width: 128, height: 128 };
+    } else if (morphTarget === 'image' && morphNoiseMapEnabled) {
+      // Phase 15 (TD §1): mirror of buildMorphBakeData — the
+      // noise field's static slice supplies the bake, taking
+      // precedence over a registered media map when enabled.
+      mediaMap = { map: getNoiseFieldLuma(config, 128), width: 128, height: 128 };
     } else if (morphTarget === 'image' && morphMediaMap.length > 0 && morphMediaWidth > 0 && morphMediaHeight > 0) {
       mediaMap = { map: morphMediaMap, width: morphMediaWidth, height: morphMediaHeight };
     }
@@ -1674,6 +1697,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphMediaMap,
     morphMediaWidth,
     morphMediaHeight,
+    morphNoiseMapEnabled,
+    morphNoiseSignature,
     morphSvgSource,
     morphObjSource,
     morphObjSampleMode,

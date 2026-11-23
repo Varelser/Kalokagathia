@@ -195,6 +195,133 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         gl.readRenderTargetPixels(ctx.fluidFinal, 0, 0, size, size, diagFluidBufRef.current);
         return { size, field: diagFluidBufRef.current, target: ctx.fluidFinalName };
       },
+      // Phase 15 (Houdini §7): SPH droplet probe for the surface
+      // tension measurements. Aggregates over one synchronous
+      // position/velocity readback: centroid, covariance aspect
+      // ratio (sqrt of the eigenvalue ratio), mean speed squared,
+      // and mean speeds split by kernel-density neighbourhood —
+      // surface = density below 0.6 x the median, interior =
+      // above 0.95 x the median — with the shader's own kernel
+      // weight (max(0, 1 - q^2)) accumulated over a uniform grid.
+      // Callers pass the config's SPH radius. Used after a
+      // deterministic export, the targets hold a step-exact state.
+      captureSphProbe: (radius: number) => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        const count = ctx.texSize * ctx.texSize;
+        if (!diagPosBufRef.current || diagPosBufRef.current.length !== count * 4) {
+          diagPosBufRef.current = new Float32Array(count * 4);
+        }
+        if (!diagVelBufRef.current || diagVelBufRef.current.length !== count * 4) {
+          diagVelBufRef.current = new Float32Array(count * 4);
+        }
+        gl.readRenderTargetPixels(ctx.posOut, 0, 0, ctx.texSize, ctx.texSize, diagPosBufRef.current);
+        readbackParticleVelocities({
+          gl,
+          velOut: ctx.velOut,
+          texSize: ctx.texSize,
+          velReadbackRef: diagVelBufRef,
+        });
+        const pos = diagPosBufRef.current;
+        const vel = diagVelBufRef.current;
+        if (!pos || !vel) return { error: 'readback-failed' };
+        const h = Math.max(0.001, radius);
+        const h2 = h * h;
+        let cx = 0; let cy = 0; let cz = 0;
+        for (let i = 0; i < count; i++) {
+          cx += pos[i * 4]; cy += pos[i * 4 + 1]; cz += pos[i * 4 + 2];
+        }
+        cx /= count; cy /= count; cz /= count;
+        let cxx = 0; let cyy = 0; let czz = 0; let cxy = 0; let cxz = 0; let cyz = 0;
+        let speed2Sum = 0;
+        const speeds = new Float32Array(count);
+        for (let i = 0; i < count; i++) {
+          const dx = pos[i * 4] - cx; const dy = pos[i * 4 + 1] - cy; const dz = pos[i * 4 + 2] - cz;
+          cxx += dx * dx; cyy += dy * dy; czz += dz * dz;
+          cxy += dx * dy; cxz += dx * dz; cyz += dy * dz;
+          const s2 = vel[i * 4] * vel[i * 4] + vel[i * 4 + 1] * vel[i * 4 + 1] + vel[i * 4 + 2] * vel[i * 4 + 2];
+          speeds[i] = Math.sqrt(s2);
+          speed2Sum += s2;
+        }
+        cxx /= count; cyy /= count; czz /= count; cxy /= count; cxz /= count; cyz /= count;
+        // Eigenvalues of the symmetric covariance via cyclic
+        // Jacobi rotations (fixed 12 sweeps — a diagnostic, not
+        // a solver).
+        const m = [[cxx, cxy, cxz], [cxy, cyy, cyz], [cxz, cyz, czz]];
+        for (let sweep = 0; sweep < 12; sweep++) {
+          const off = Math.abs(m[0][1]) + Math.abs(m[0][2]) + Math.abs(m[1][2]);
+          if (off < 1e-12) break;
+          for (const [p, q] of [[0, 1], [0, 2], [1, 2]] as const) {
+            const apq = m[p][q];
+            if (Math.abs(apq) < 1e-15) continue;
+            const theta = 0.5 * Math.atan2(2 * apq, m[p][p] - m[q][q]);
+            const c = Math.cos(theta); const s = Math.sin(theta);
+            for (let k = 0; k < 3; k++) {
+              const mkp = m[k][p]; const mkq = m[k][q];
+              m[k][p] = c * mkp - s * mkq;
+              m[k][q] = s * mkp + c * mkq;
+            }
+            for (let k = 0; k < 3; k++) {
+              const mpk = m[p][k]; const mqk = m[q][k];
+              m[p][k] = c * mpk - s * mqk;
+              m[q][k] = s * mpk + c * mqk;
+            }
+          }
+        }
+        const eig = [m[0][0], m[1][1], m[2][2]].sort((a, b) => a - b);
+        const aspect = eig[2] > 0 && eig[0] > 0 ? Math.sqrt(eig[2] / eig[0]) : 1;
+        // Kernel densities over a uniform grid (cell = radius).
+        const grid = new Map<string, number[]>();
+        const cellOf = (v: number) => Math.floor(v / h);
+        for (let i = 0; i < count; i++) {
+          const key = `${cellOf(pos[i * 4])},${cellOf(pos[i * 4 + 1])},${cellOf(pos[i * 4 + 2])}`;
+          const bucket = grid.get(key);
+          if (bucket) bucket.push(i);
+          else grid.set(key, [i]);
+        }
+        const densities = new Float32Array(count);
+        for (let i = 0; i < count; i++) {
+          const px = pos[i * 4]; const py = pos[i * 4 + 1]; const pz = pos[i * 4 + 2];
+          const gx = cellOf(px); const gy = cellOf(py); const gz = cellOf(pz);
+          let d = 0;
+          for (let ax = gx - 1; ax <= gx + 1; ax++) {
+            for (let ay = gy - 1; ay <= gy + 1; ay++) {
+              for (let az = gz - 1; az <= gz + 1; az++) {
+                const bucket = grid.get(`${ax},${ay},${az}`);
+                if (!bucket) continue;
+                for (const j of bucket) {
+                  if (j === i) continue;
+                  const dx = px - pos[j * 4]; const dy = py - pos[j * 4 + 1]; const dz = pz - pos[j * 4 + 2];
+                  const r2 = dx * dx + dy * dy + dz * dz;
+                  if (r2 < h2 && r2 > 0.001) {
+                    const q = Math.sqrt(r2) / h;
+                    d += Math.max(0, 1 - q * q);
+                  }
+                }
+              }
+            }
+          }
+          densities[i] = d;
+        }
+        const sorted = Array.from(densities).sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+        let sCount = 0; let sSpeed = 0; let iCount = 0; let iSpeed = 0;
+        for (let i = 0; i < count; i++) {
+          if (densities[i] < median * 0.6) { sCount++; sSpeed += speeds[i]; }
+          else if (densities[i] > median * 0.95) { iCount++; iSpeed += speeds[i]; }
+        }
+        const round = (v: number) => Math.round(v * 10000) / 10000;
+        return {
+          texSize: ctx.texSize,
+          count,
+          centroid: [round(cx), round(cy), round(cz)],
+          aspect: round(aspect),
+          meanSpeed2: round(speed2Sum / count),
+          medianDensity: round(median),
+          surface: { count: sCount, meanSpeed: round(sCount > 0 ? sSpeed / sCount : 0) },
+          interior: { count: iCount, meanSpeed: round(iCount > 0 ? iSpeed / iCount : 0) },
+        };
+      },
     };
     (window as unknown as { __kaloDiag?: typeof hook }).__kaloDiag = hook;
     return () => {

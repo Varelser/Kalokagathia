@@ -94,6 +94,14 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
               Play タブ → Data Source で登録した属性点群の位置をターゲットにします（未登録の間は球殻にフォールバック）。点群の列は属性（Forces の Attributes 節、Data 源）として粒子へ渡ります。
             </div>
           )}
+          {config.gpgpuMorphTarget === 'image' && (
+            <>
+              <Toggle label="Noise Field Supply （ノイズ場を供給源にする）" value={config.gpgpuMorphNoiseMapEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphNoiseMapEnabled', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                On の間、画像マップの代わりにノイズ場（Forces の Noise Map の設定）の静止断面をベイクの形に使います。ベイクは静止画なので場の時間発展は入りません（発展は表示側の場が担います）。
+              </div>
+            </>
+          )}
           {config.gpgpuMorphTarget === 'contour' && (
             <>
               <Toggle label="Contour Source （輪郭の抽出源）" value={config.gpgpuMorphContourSource} options={[{ label: 'Text', val: 'text' as const }, { label: 'Image', val: 'image' as const }]} onChange={(v) => updateConfig('gpgpuMorphContourSource', v)} />
@@ -258,14 +266,19 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                 <Slider label="Fiber Count （本数）" value={config.gpgpuMorphFiberCount} min={50} max={4000} step={10} onChange={(v) => updateConfig('gpgpuMorphFiberCount', Math.round(v))} />
                 <Slider label="Fiber Length （長さ）" value={config.gpgpuMorphFiberLength} min={0.05} max={1.5} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberLength', v)} />
                 <Slider label="Fiber Curl （カール）" value={config.gpgpuMorphFiberCurl} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberCurl', v)} />
+                <Toggle label="Root Source （発生面）" value={config.gpgpuMorphFiberRootSource} options={[{ label: 'Morph 面', val: 'morph' }, { label: 'Emit 初期雲', val: 'emit' }, { label: 'Terrain 地形', val: 'terrain' }]} onChange={(v) => updateConfig('gpgpuMorphFiberRootSource', v)} />
                 <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Grooming （グルーミング・Phase AL）</div>
                 <Slider label="Groom Direction X" value={config.gpgpuMorphFiberGroomX} min={-1} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberGroomX', v)} />
                 <Slider label="Groom Direction Y" value={config.gpgpuMorphFiberGroomY} min={-1} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberGroomY', v)} />
                 <Slider label="Groom Direction Z" value={config.gpgpuMorphFiberGroomZ} min={-1} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphFiberGroomZ', v)} />
                 <Slider label="Groom Align （整列）" value={config.gpgpuMorphFiberGroomAlign} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphFiberGroomAlign', v)} />
+                <Toggle label="Groom Field （方向場）" value={config.gpgpuMorphFiberGroomField} options={[{ label: 'Uniform 一様', val: 'uniform' }, { label: 'Noise', val: 'noise' }, { label: 'Radial 放射', val: 'radial' }, { label: 'Swirl 渦', val: 'swirl' }]} onChange={(v) => updateConfig('gpgpuMorphFiberGroomField', v)} />
+                {config.gpgpuMorphFiberGroomField === 'noise' && (
+                  <Slider label="Groom Field Scale （方向場の細かさ）" value={config.gpgpuMorphFiberGroomFieldScale} min={0.1} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuMorphFiberGroomFieldScale', v)} />
+                )}
                 <Slider label="Length Variation （長さ分布）" value={config.gpgpuMorphFiberLengthVar} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuMorphFiberLengthVar', v)} />
                 <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-                  モーフベイクの表面点から法線方向（OBJ は実法線、その他は放射方向）へ繊維を生やします。描画のみの重ね表示で、シミュレーションには影響しません。根元の抽選は決定的です。グルーミングは成長方向を全体の方向場へ寄せる編集文法で、方向が零ベクトルか整列 0 の間は従来の繊維と一致します。
+                  発生面の表面点から法線方向（OBJ は実法線、その他は放射方向）へ繊維を生やします。発生面は Morph 面のほか、初期雲（Emit）と地形（Terrain）も選べます（後2者は Morph 無効でも生えます）。描画のみの重ね表示で、シミュレーションには影響しません。根元の抽選は決定的です。グルーミングは成長方向を方向場へ寄せる編集文法で、方向場が一様で方向が零ベクトルか、整列 0 の間は従来の繊維と一致します。方向場（Noise／放射／渦）は根元の位置だけで決まり、抽選には影響しません。
                 </div>
               </>
             )}

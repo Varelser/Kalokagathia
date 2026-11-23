@@ -555,15 +555,25 @@ export function clampSphSurfaceTension(v: number): number {
  * Cohesion sum for one particle: every neighbour inside the SPH
  * radius pulls the particle toward itself, weighted by the kernel
  * (the GLSL twin accumulates the identical sum in the SPH loop).
- * The caller scales by tension * dt * 15, the same application
- * factor as the pressure / viscosity forces. Zero tension or no
- * neighbours gives the zero vector.
+ * The shader applies the sum at tension * dt * 1.0 — a much
+ * gentler gain than the pressure / viscosity forces (x15); at
+ * x15 the spring heated the cloud on the Phase AB gate. Zero
+ * tension or no neighbours gives the zero vector.
+ *
+ * Surface selectivity (Phase 15): when `selectivity` > 0 the sum
+ * is scaled by mix(1, 1 - density / restDensity, selectivity) —
+ * the same density-deficit weighting as the shader. The caller
+ * supplies the particle's kernel density (the shader accumulates
+ * its own in the same loop). Defaults keep the AB behaviour.
  */
 export function sphSurfaceTensionForce(
   selfPos: Vec3Like,
   neighbours: ReadonlyArray<{ pos: Vec3Like }>,
   radius: number,
   tension: number,
+  selectivity = 0,
+  density = 0,
+  restDensity = 1,
 ): Vec3Like {
   const out = { x: 0, y: 0, z: 0 };
   if (clampSphSurfaceTension(tension) <= 0) return out;
@@ -585,6 +595,13 @@ export function sphSurfaceTensionForce(
     out.x += (dx / h) * w;
     out.y += (dy / h) * w;
     out.z += (dz / h) * w;
+  }
+  if (selectivity > 0) {
+    const deficit = 1 - Math.min(1, Math.max(0, density / Math.max(0.0001, restDensity)));
+    const factor = 1 + (deficit - 1) * Math.min(1, Math.max(0, selectivity));
+    out.x *= factor;
+    out.y *= factor;
+    out.z *= factor;
   }
   return out;
 }

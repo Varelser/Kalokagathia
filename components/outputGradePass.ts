@@ -28,6 +28,9 @@ uniform float uAces;
 uniform float uBrandEnabled;
 uniform vec3 uBrandColor;
 uniform float uBrandMid;
+uniform float uReservedEnabled;
+uniform float uReservedFloor;
+uniform float uReservedCeiling;
 varying vec2 vUv;
 
 vec3 acesFilmic(vec3 x) {
@@ -51,6 +54,15 @@ void main() {
       ? mix(vec3(0.0), uBrandColor, luma / mid)
       : mix(uBrandColor, vec3(1.0), (luma - mid) / (1.0 - mid));
   }
+  if (uReservedEnabled > 0.5) {
+    // Reserved palette ramp (Phase 15, ink): the finished frame is
+    // remapped into [floor, ceiling] as the stage's last word, so
+    // the extremes of the range stay reserved — no pixel can reach
+    // pure white or pure black, whatever the earlier stages did.
+    float lo = clamp(uReservedFloor, 0.0, 0.45);
+    float hi = clamp(uReservedCeiling, 0.55, 1.0);
+    color = mix(vec3(lo), vec3(hi), clamp(color, 0.0, 1.0));
+  }
   gl_FragColor = vec4(color, 1.0);
 }
 `;
@@ -63,6 +75,12 @@ export class OutputGradePass extends Pass {
   brandEnabled = false;
 
   brandColor = new THREE.Color('#c8372d');
+
+  reservedEnabled = false;
+
+  reservedFloor = 0.03;
+
+  reservedCeiling = 0.94;
 
   private material: THREE.ShaderMaterial;
 
@@ -78,6 +96,9 @@ export class OutputGradePass extends Pass {
         uBrandEnabled: { value: 0 },
         uBrandColor: { value: new THREE.Color('#c8372d') },
         uBrandMid: { value: 0.18 },
+        uReservedEnabled: { value: 0 },
+        uReservedFloor: { value: 0.03 },
+        uReservedCeiling: { value: 0.94 },
       },
       depthTest: false,
       depthWrite: false,
@@ -98,6 +119,9 @@ export class OutputGradePass extends Pass {
     (this.material.uniforms.uBrandColor.value as THREE.Color).copy(this.brandColor);
     this.material.uniforms.uBrandMid.value =
       0.2126 * this.brandColor.r + 0.7152 * this.brandColor.g + 0.0722 * this.brandColor.b;
+    this.material.uniforms.uReservedEnabled.value = this.reservedEnabled ? 1 : 0;
+    this.material.uniforms.uReservedFloor.value = this.reservedFloor;
+    this.material.uniforms.uReservedCeiling.value = this.reservedCeiling;
     renderer.setRenderTarget(this.renderToScreen ? null : outputBuffer);
     renderer.render(this.scene, this.camera);
   }

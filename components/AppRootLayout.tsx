@@ -3,6 +3,7 @@ import type * as THREE from 'three';
 import { AppScene } from './AppScene';
 import { CpuFallbackScene } from './CpuFallbackScene';
 import { setCpuFallbackSetting, useCpuFallback } from '../lib/cpuFallback';
+import { bootSafeMode, resetSafeMode, useSafeMode } from '../lib/safeMode';
 import { AppComparePreview } from './AppComparePreview';
 import { AppExecutionDiagnosticsOverlay } from './AppExecutionDiagnosticsOverlay';
 import { CanvasStreamWidget } from './canvasStreamWidget';
@@ -96,6 +97,11 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
   // mounted at all and the Canvas 2D degraded renderer takes its place.
   // The deck, shelf and transport below are untouched either way.
   const cpuFallback = useCpuFallback();
+  // Safe mode (Phase 15, Abyssal B): boot the crash-flag ladder
+  // once per page load (idempotent). A previous session that never
+  // reached its survival point advances the ladder one step.
+  bootSafeMode();
+  const safeMode = useSafeMode();
   const [cinema, setCinema] = React.useState(false);
   const [hint, setHint] = React.useState(false);
   const [cursorIdle, setCursorIdle] = React.useState(false);
@@ -169,13 +175,29 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
     }}
     style={config.backgroundHex ? { backgroundColor: config.backgroundHex } : undefined}
     className={`mg-root relative w-full h-screen ${config.backgroundColor === 'white' ? 'bg-white' : 'bg-black'}${cinema ? ' mg-cinema' : ''}${cinema && cursorIdle ? ' cursor-none' : ''}`}>
+    {safeMode.level > 0 && (
+      <div className="absolute left-1/2 top-2 z-[999] flex -translate-x-1/2 items-center gap-3 rounded border border-amber-300/40 bg-black/85 px-3 py-1.5 text-[11px] text-amber-200">
+        <span>
+          {safeMode.crashedLastTime ? '前回のセッションが異常終了したため、' : ''}セーフモード（段階 {safeMode.level}/3: {safeMode.step.name}）で起動しています
+        </span>
+        <button
+          type="button"
+          className="underline"
+          onClick={() => { resetSafeMode(); window.location.reload(); }}
+        >
+          通常モードに戻す
+        </button>
+      </div>
+    )}
     <div className="absolute inset-0">
-      {cpuFallback.active ? (
+      {cpuFallback.active || safeMode.step.fallback ? (
         <CpuFallbackScene
           config={displayConfig}
           isPlaying={isPlaying}
-          reason={cpuFallback.reason}
-          onExit={cpuFallback.reason === 'query' ? null : () => setCpuFallbackSetting('off')}
+          reason={cpuFallback.active ? cpuFallback.reason : 'safe-mode'}
+          onExit={cpuFallback.active
+            ? (cpuFallback.reason === 'query' ? null : () => setCpuFallbackSetting('off'))
+            : () => { resetSafeMode(); window.location.reload(); }}
         />
       ) : (
         <AppScene

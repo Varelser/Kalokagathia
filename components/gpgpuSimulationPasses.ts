@@ -472,10 +472,9 @@ export function runSimulationPasses(args: {
       // Phase X3 adds the OBJ normal kick (Phase O): the speed is
       // passed verbatim (0 = default skips the kick block in WGSL,
       // exactly as in the WebGL shader) and the kick start is the
-      // same timestamp the WebGL branch receives. The WebGL
-      // age-respawn trigger cannot fire here — the age lifecycle
-      // stays WebGL-only and the capability registry routes
-      // age-enabled configs to WebGL.
+      // same timestamp the WebGL branch receives. Phase 15 ported
+      // the age lifecycle to the WGSL position pass, so the
+      // age-respawn kick trigger fires on this path too.
       {
         enabled: Boolean(config.gpgpuMorphEnabled && morphTex),
         strength: config.gpgpuMorphStrength,
@@ -572,6 +571,21 @@ export function runSimulationPasses(args: {
         mouseMode: MOUSE_MODE_IDS[config.gpgpuMouseMode] ?? 0,
         mousePaintRate: config.gpgpuMousePaintRate,
         verletEnabled: config.gpgpuVerletEnabled,
+        // Age lifecycle (Phase 15, UE5 #18): the same derivations
+        // the WebGL branch applies to its position uniforms —
+        // replica step gated on morph + multi-copy, count clamped
+        // 1..8, emit-light from the emit shape. replicaAgeBase is
+        // the shared path's 0 (the W2 stack mode that sets it is a
+        // WebGL layer mechanism).
+        ageEnabled: config.gpgpuAgeEnabled,
+        ageMax: config.gpgpuAgeMax,
+        ageReplicaCount: Math.max(1, Math.min(8, Math.round(config.gpgpuMorphReplicaCount))),
+        ageReplicaStep: config.gpgpuMorphEnabled && config.gpgpuMorphReplicaCount > 1
+          ? Math.max(0, Math.min(1, config.gpgpuMorphReplicaAgeStep))
+          : 0,
+        replicaAgeBase: 0,
+        emitLightEnabled: config.gpgpuEmitShape === 'light',
+        emitLightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ },
       },
     );
     webgpuPingIsARef.current = !webgpuPingIsARef.current;
@@ -659,6 +673,8 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uParticleLifeMeanderAmount) velSimMat.uniforms.uParticleLifeMeanderAmount.value = config.gpgpuParticleLifeMeanderAmount;
   if (velSimMat.uniforms.uParticleLifeMeanderScale) velSimMat.uniforms.uParticleLifeMeanderScale.value = config.gpgpuParticleLifeMeanderScale;
   if (velSimMat.uniforms.uParticleLifeAvoid) velSimMat.uniforms.uParticleLifeAvoid.value = Math.max(0, config.gpgpuParticleLifeAvoid || 0);
+  if (velSimMat.uniforms.uSteerAvoid) velSimMat.uniforms.uSteerAvoid.value = Math.max(0, config.gpgpuSteerAvoid || 0);
+  if (velSimMat.uniforms.uSteerAvoidRange) velSimMat.uniforms.uSteerAvoidRange.value = Math.max(0, config.gpgpuSteerAvoidRange || 0);
   // Lifecycle grammar (Phase AB): spawn gate + global drag / max
   // speed. The clamps mirror lib/gpgpuLifecycle.ts.
   if (velSimMat.uniforms.uSpawnRate) velSimMat.uniforms.uSpawnRate.value = Math.max(0.01, Math.min(1, config.gpgpuSpawnRate || 1));
@@ -811,6 +827,7 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uSphRadius.value = config.gpgpuSphRadius;
   velSimMat.uniforms.uSphRestDensity.value = config.gpgpuSphRestDensity;
   if (velSimMat.uniforms.uSphSurfaceTension) velSimMat.uniforms.uSphSurfaceTension.value = Math.max(0, config.gpgpuSphSurfaceTension || 0);
+  if (velSimMat.uniforms.uSphSurfaceSelectivity) velSimMat.uniforms.uSphSurfaceSelectivity.value = Math.min(1, Math.max(0, config.gpgpuSphSurfaceSelectivity || 0));
   // Grains (Phase AQ): guarded like the surface tension — stack
   // materials built before this phase simply lack the uniforms.
   if (velSimMat.uniforms.uGrainsEnabled) {
@@ -1038,6 +1055,8 @@ export function runSimulationPasses(args: {
     }
   }
   if (posSimMat.uniforms.uKillBoundary) posSimMat.uniforms.uKillBoundary.value = !!config.gpgpuKillBoundary && !vellum.active && !rigidActive;
+  if (posSimMat.uniforms.uCollisionLifeLoss) posSimMat.uniforms.uCollisionLifeLoss.value = Math.max(0, config.gpgpuCollisionLifeLoss || 0) * (!vellum.active && !rigidActive ? 1 : 0);
+  if (posSimMat.uniforms.uCollisionKill) posSimMat.uniforms.uCollisionKill.value = !!config.gpgpuCollisionKill && !vellum.active && !rigidActive;
   if (posSimMat.uniforms.uKillMask) posSimMat.uniforms.uKillMask.value = !!config.gpgpuKillMask && !!args.killMaskTex && !vellum.active && !rigidActive;
   if (posSimMat.uniforms.uKillMaskTex) posSimMat.uniforms.uKillMaskTex.value = args.killMaskTex ?? null;
   if (posSimMat.uniforms.uKillMaskThreshold) posSimMat.uniforms.uKillMaskThreshold.value = Math.max(0, Math.min(1, config.gpgpuMaskThreshold ?? 0.5));

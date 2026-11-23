@@ -5,6 +5,7 @@ import { PARAMETER_CATALOG } from '../lib/parameterCatalog';
 import { getNoiseLinkStatus, type NoiseLinkStatus } from '../lib/noiseLink';
 import { AUDIO_BAND_OPTIONS, ENVELOPE_TRIGGER_OPTIONS, LFO_WAVEFORM_OPTIONS, NOISE_SOURCE_OPTIONS, createStarterModulationRoutes, describeModulationSource, evaluateLfo, fireModulationEnvelope, setModulationSetup, useModulationSetup, type EnvelopeTrigger, type LfoWaveform, type ModulationChainOp, type ModulationRoute, type ModulationSetup, type ModulationSource, type NoiseSourceId } from '../lib/modulation';
 import { compileExpression } from '../lib/expression';
+import { EXPRESSION_PARAM_REF_NAMES } from '../lib/expressionParamRefs';
 import { useDataTable } from '../lib/dataTable';
 import { closeCleanOutput, isCleanOutputOpen, openCleanOutput } from '../lib/cleanOutput';
 import { collectGpuDiagnostics, type GpuDiagnosticsReport } from '../lib/gpuDiagnostics';
@@ -933,10 +934,10 @@ export const ModulationSection: React.FC<{
                     spellCheck={false}
                   />
                   {(() => {
-                    const compiled = compileExpression(route.source.text);
+                    const compiled = compileExpression(route.source.text, EXPRESSION_PARAM_REF_NAMES);
                     return compiled.ok ? (
                       <p className="text-[10px] text-white/40 leading-relaxed">
-                        変数 x = 入力信号（0..1）、t = 時刻（秒）。結果は 0..1 に収められます。
+                        変数 x = 入力信号（0..1）、t = 時刻（秒）。結果は 0..1 に収められます。他のパラメータも参照できます: p_＋キー名（小文字）— 例 p_gpgpuboidsalignment。参照値はそのパラメータの基本値（変調前の値）を範囲で 0..1 に正規化したもので、循環参照にはなりません。
                       </p>
                     ) : (
                       <p className="text-[10px] text-amber-300/90 leading-relaxed">

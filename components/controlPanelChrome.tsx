@@ -45,6 +45,15 @@ import { useWakeLock } from '../lib/useWakeLock';
 import { MACRO_DEFINITIONS, getMacroUpdates, getMacroValue } from '../lib/macroControls';
 import { NOTE_GUIDE_URL } from '../lib/noteBacklinks';
 import { PresetShelf } from './controlPanelPlayTab';
+import { setCaptureExportOptions } from './sceneCapture';
+import {
+  CAPTURE_ASPECT_PRESETS,
+  CAPTURE_IMAGE_FORMATS,
+  DEFAULT_CAPTURE_EXPORT_OPTIONS,
+  captureFormatSpec,
+  type CaptureAspectPreset,
+  type CaptureImageFormat,
+} from '../lib/captureExport';
 
 export const CONTROL_PANEL_TABS: { id: ControlPanelTab; icon: LucideIcon; label: string; shortLabel: string; description: string }[] = [
   { id: 'play', icon: SlidersHorizontal, label: 'Play', shortLabel: 'Play', description: 'Pick a preset, bend it with macro knobs, and see the expression map.' },
@@ -690,6 +699,18 @@ export const ControlPanelFooter: React.FC<{
   // listens for the event and reports the outcome back.
   const copySupported = isPngClipboardSupported();
   const [copyNote, setCopyNote] = React.useState('');
+  // KCB3: still-image format / aspect / quality. Transient UI state
+  // only (no config key): pushed to the ScreenshotManager while this
+  // footer is mounted, reset to the PNG + original defaults on unmount.
+  const [captureFormat, setCaptureFormat] = React.useState<CaptureImageFormat>(DEFAULT_CAPTURE_EXPORT_OPTIONS.format);
+  const [captureAspect, setCaptureAspect] = React.useState<CaptureAspectPreset>(DEFAULT_CAPTURE_EXPORT_OPTIONS.aspect);
+  const [captureQuality, setCaptureQuality] = React.useState(DEFAULT_CAPTURE_EXPORT_OPTIONS.quality);
+  React.useEffect(() => {
+    setCaptureExportOptions({ format: captureFormat, aspect: captureAspect, quality: captureQuality });
+  }, [captureFormat, captureAspect, captureQuality]);
+  React.useEffect(() => () => {
+    setCaptureExportOptions({ ...DEFAULT_CAPTURE_EXPORT_OPTIONS });
+  }, []);
   React.useEffect(() => {
     if (!copySupported) return undefined;
     const onResult = (event: Event) => {
@@ -745,6 +766,61 @@ export const ControlPanelFooter: React.FC<{
           <button disabled={isPublicLibrary} onClick={() => updateConfig('exportScale', 4)} className={`${config.exportScale === 4 ? 'text-white underline' : ''} disabled:no-underline disabled:opacity-30`}>4x</button>
           <button disabled={isPublicLibrary} onClick={() => updateConfig('exportScale', 8)} className={`${config.exportScale === 8 ? 'text-white underline' : ''} disabled:no-underline disabled:opacity-30`}>8x</button>
         </div>
+      </div>
+    </div>
+    <div className="mg-footer-secondary mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="flex items-center justify-between gap-3 rounded-lg bg-[#171717] px-3 py-2 text-[10px] uppercase tracking-[0.24em] text-white/45">
+        <span>Format</span>
+        <span className="flex items-center gap-2">
+          <select
+            data-testid="deck-capture-format"
+            aria-label="静止画の形式"
+            disabled={isPublicLibrary}
+            value={captureFormat}
+            onChange={(event) => setCaptureFormat(event.target.value as CaptureImageFormat)}
+            className="rounded bg-white/10 px-1.5 py-1 font-mono text-[10px] normal-case tracking-normal text-white disabled:opacity-30"
+          >
+            {CAPTURE_IMAGE_FORMATS.map((format) => (
+              <option key={format} value={format} className="bg-[#171717]">
+                {format === 'jpeg' ? 'JPEG' : format.toUpperCase()}
+              </option>
+            ))}
+          </select>
+          {captureFormatSpec(captureFormat).supportsQuality && (
+            <span className="flex items-center gap-1.5 normal-case tracking-normal">
+              <input
+                data-testid="deck-capture-quality"
+                aria-label="静止画の品質"
+                type="range"
+                min={0.5}
+                max={1}
+                step={0.01}
+                disabled={isPublicLibrary}
+                value={captureQuality}
+                onChange={(event) => setCaptureQuality(Number(event.target.value))}
+                className="w-16 accent-white disabled:opacity-30"
+              />
+              <span className="font-mono text-[10px] text-white/70">{Math.round(captureQuality * 100)}%</span>
+            </span>
+          )}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-3 rounded-lg bg-[#171717] px-3 py-2 text-[10px] uppercase tracking-[0.24em] text-white/45">
+        <span>Aspect</span>
+        <select
+          data-testid="deck-capture-aspect"
+          aria-label="静止画のアスペクト比"
+          disabled={isPublicLibrary}
+          value={captureAspect}
+          onChange={(event) => setCaptureAspect(event.target.value as CaptureAspectPreset)}
+          className="rounded bg-white/10 px-1.5 py-1 font-mono text-[10px] normal-case tracking-normal text-white disabled:opacity-30"
+        >
+          {CAPTURE_ASPECT_PRESETS.map((preset) => (
+            <option key={preset} value={preset} className="bg-[#171717]">
+              {preset === 'original' ? 'Original' : preset}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
     <div className="mt-4 text-center">

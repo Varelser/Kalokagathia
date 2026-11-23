@@ -92,6 +92,8 @@ uniform sampler2D tDiffuse;
 uniform float uStrength;
 uniform float uMode;
 uniform vec2 uResolution;
+uniform float uAnchorMode;
+uniform vec2 uAnchorOffset;
 varying vec2 vUv;
 
 // Bayer 4x4 (lib/postFxMath.ts BAYER_4X4), threshold in [0, 1).
@@ -154,7 +156,14 @@ void main() {
     );
     return;
   }
-  float t = bayerThreshold(gl_FragCoord.xy);
+  // World anchor (Phase 15, ink): offset the pattern coordinates
+  // by the world origin's projected position (host-supplied), so
+  // the Bayer phase is fixed on the subject instead of the
+  // screen. uAnchorMode 0 keeps the legacy screen-fixed pattern
+  // bit-identically (the offset is not applied).
+  vec2 patternPx = gl_FragCoord.xy;
+  if (uAnchorMode > 0.5) patternPx += uAnchorOffset;
+  float t = bayerThreshold(patternPx);
   gl_FragColor = vec4(
     ditherChannel(src.r, t),
     ditherChannel(src.g, t),
@@ -168,14 +177,24 @@ export class OrderedDitherPass extends TonePass {
   strength = 1;
   mode: 'bayer' | 'diffusion' = 'bayer';
 
+  /** World anchor (Phase 15): 'screen' is the legacy pattern. */
+  anchor: 'screen' | 'world' = 'screen';
+
+  /** Host-wired: the live camera, for the origin projection. */
+  viewCamera: THREE.Camera | null = null;
+
   private width = 1;
   private height = 1;
+
+  private anchorScratch = new THREE.Vector3();
 
   constructor() {
     super('OrderedDitherPass', DITHER_FRAG, {
       uStrength: { value: 1 },
       uMode: { value: 0 },
       uResolution: { value: new THREE.Vector2(1, 1) },
+      uAnchorMode: { value: 0 },
+      uAnchorOffset: { value: new THREE.Vector2(0, 0) },
     });
   }
 
@@ -192,13 +211,39 @@ export class OrderedDitherPass extends TonePass {
     const tex = inputBuffer.texture as THREE.Texture & { image?: { width?: number; height?: number } };
     if (tex.image?.width) this.width = tex.image.width;
     if (tex.image?.height) this.height = tex.image.height;
+    // World anchor: project the world origin with the current
+    // camera (its matrices are fresh — the composer's scene
+    // render already ran this frame) and offset the pattern by
+    // the negative projected position, pinning the pattern phase
+    // to the origin. Behind the camera (z > 1 in NDC) the anchor
+    // falls back to the screen pattern for this frame.
+    if (this.anchor === 'world' && this.viewCamera) {
+      const p = this.anchorScratch.set(0, 0, 0).project(this.viewCamera);
+      if (p.z < 1) {
+        this.anchorOffset.set(
+          -((p.x * 0.5 + 0.5) * this.width),
+          -((p.y * 0.5 + 0.5) * this.height),
+        );
+        this.anchorActive = true;
+      } else {
+        this.anchorActive = false;
+      }
+    } else {
+      this.anchorActive = false;
+    }
     super.render(renderer, inputBuffer, outputBuffer);
   }
+
+  private anchorOffset = new THREE.Vector2(0, 0);
+
+  private anchorActive = false;
 
   protected override syncUniforms(): void {
     this.material.uniforms.uStrength.value = this.strength;
     this.material.uniforms.uMode.value = this.mode === 'diffusion' ? 1 : 0;
     (this.material.uniforms.uResolution.value as THREE.Vector2).set(this.width, this.height);
+    this.material.uniforms.uAnchorMode.value = this.anchorActive ? 1 : 0;
+    (this.material.uniforms.uAnchorOffset.value as THREE.Vector2).copy(this.anchorOffset);
   }
 }
 

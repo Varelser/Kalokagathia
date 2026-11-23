@@ -396,8 +396,14 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
               onChange={(v) => updateConfig('postDitherMode', v)}
             />
             <Slider label="Dither Strength" value={config.postDitherStrength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postDitherStrength', v)} />
+            <Toggle
+              label="Dither Anchor （固定先）"
+              value={config.postDitherAnchor}
+              options={[{ label: 'Screen', val: 'screen' as const }, { label: 'World', val: 'world' as const }]}
+              onChange={(v) => updateConfig('postDitherAnchor', v)}
+            />
             <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-              Diffusion は Floyd–Steinberg 誤差拡散の単一パス近似です（シェーダでは逐次走査ができないため、走査済み近傍の量子化誤差から推定します）。Bayer が従来の規則ディザです。
+              Diffusion は Floyd–Steinberg 誤差拡散の単一パス近似です（シェーダでは逐次走査ができないため、走査済み近傍の量子化誤差から推定します）。Bayer が従来の規則ディザです。Anchor の World は、Bayer の模様をワールド原点の投影位置へ固定します（カメラをパン／ズームしても被写体上の模様が泳ぎません。回転では近似になります）。Screen が従来の画面固定です。
             </div>
           </>
         )}
@@ -511,6 +517,63 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             </div>
             <div className="mt-1 text-[9px] leading-relaxed text-white/40">
               画面全体の輝度を 黒 → ブランド色 → 白 の3点ランプに写す単色デュオトーン（Pro-2、業務用）。ランプの中点はブランド色自体の輝度に合わせます。案件ごとの opt-in 機能で、既定は OFF（従来のモノクロ出力）。
+            </div>
+          </>
+        )}
+        <Toggle
+          label="Reserved Palette （予約パレット）"
+          value={config.postReservedPaletteEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postReservedPaletteEnabled', v)}
+        />
+        {config.postReservedPaletteEnabled && (
+          <>
+            <Slider label="Reserved Floor （黒の予約枠）" value={config.postReservedFloor} min={0} max={0.45} step={0.01} onChange={(v) => updateConfig('postReservedFloor', v)} />
+            <Slider label="Reserved Ceiling （白の予約枠）" value={config.postReservedCeiling} min={0.55} max={1} step={0.01} onChange={(v) => updateConfig('postReservedCeiling', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              完成画面を [Floor, Ceiling] の範囲へ写し直す予約枠です。出力グレード段の最後に効くので、露出や ACES で押しても純白・純黒には届かず、白飛びと黒つぶれが構造的に起きません。トーンマッピング（ACES）と束ねて使うのが前提の設計です。OFF の間は従来と完全一致します。
+            </div>
+          </>
+        )}
+        <div className="mb-1 mt-4 text-[9px] uppercase tracking-widest opacity-60">Chroma Key （色キー抜き）</div>
+        <Toggle
+          label="Chroma Key"
+          value={config.postChromaKeyEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('postChromaKeyEnabled', v)}
+        />
+        {config.postChromaKeyEnabled && (
+          <>
+            <div className="mb-2 flex items-center gap-2">
+              <input
+                type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(config.postChromaKeyColor) ? config.postChromaKeyColor : '#00ff00'}
+                onChange={(e) => updateConfig('postChromaKeyColor', e.target.value)}
+                className="h-8 w-14 cursor-pointer rounded border border-white/20 bg-transparent p-0.5"
+              />
+              <div className="flex-1 text-[10px] text-white/50">Key color {config.postChromaKeyColor}</div>
+            </div>
+            <Slider label="Similarity （キー色との距離のしきい値）" value={config.postChromaKeySimilarity} min={0} max={1} step={0.005} onChange={(v) => updateConfig('postChromaKeySimilarity', v)} />
+            <Slider label="Smoothness （境界のなめらかさ）" value={config.postChromaKeySmoothness} min={0} max={0.5} step={0.005} onChange={(v) => updateConfig('postChromaKeySmoothness', v)} />
+            <Slider label="Spill （色かぶり除去）" value={config.postChromaKeySpill} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postChromaKeySpill', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              完成画面の最後で、キー色に近い部分を透明にする段です。透明度が効くのは PNG 書き出しと透明背景キャプチャで、動画書き出しは不透明のままです。背景色自体をキー色にすると背景だけが抜けます。OFF の間は段自体が無く、出力は従来と完全一致します。
+            </div>
+          </>
+        )}
+        <div className="mb-1 mt-4 text-[9px] uppercase tracking-widest opacity-60">Brush Accumulation （筆の蓄積）</div>
+        <Toggle
+          label="Brush Accumulation"
+          value={config.layer1BrushAccumEnabled}
+          options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+          onChange={(v) => updateConfig('layer1BrushAccumEnabled', v)}
+        />
+        {config.layer1BrushAccumEnabled && (
+          <>
+            <Slider label="Decay （残像の減衰）" value={config.layer1BrushAccumDecay} min={0} max={0.99} step={0.01} onChange={(v) => updateConfig('layer1BrushAccumDecay', v)} />
+            <Slider label="Strength （蓄積の強さ）" value={config.layer1BrushAccumStrength} min={0} max={2} step={0.05} onChange={(v) => updateConfig('layer1BrushAccumStrength', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              ブラシ線（レイヤー2のブラシ接続スタイル）だけを専用の蓄積バッファに残し、筆が通った跡が残って重なっていく段です。ライブ表示専用で、決定論書き出しには入りません（フィードバック段と同じ扱い）。OFF の間は段自体が無く、出力は従来と完全一致します。
             </div>
           </>
         )}

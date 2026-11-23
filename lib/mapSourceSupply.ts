@@ -66,6 +66,8 @@ import type { MapImageTextureState } from './mapImageTexture';
 import type { ParticleConfig } from '../types';
 import { verticalGlyphPlacements } from './textColumnLayout';
 import {
+  clampNoiseFieldSupplyTime,
+  clampNoiseMapEvolve,
   clampNoiseMapOctaves,
   clampNoiseMapScale,
   normalizeNoiseMapKind,
@@ -552,6 +554,12 @@ export interface NoiseFieldSettings {
    *  the world box ±domainRadius — the same box every
    *  consumer's UV mapping covers (Phase BR). */
   domainRadius: number;
+  /** Field evolution rate and the field time the slice is
+   *  taken at (Phase 15): the slice samples the field with its
+   *  evolve offset applied at t = supplyTime. supplyTime 0 is
+   *  the legacy time-0 slice regardless of evolve. */
+  evolve: number;
+  supplyTime: number;
 }
 
 /** The effective domain radius for a raw radius value: a
@@ -573,11 +581,16 @@ export function noiseFieldSettingsFromConfig(config: ParticleConfig): NoiseField
     kind: normalizeNoiseMapKind(config.gpgpuNoiseMapKind),
     octaves: clampNoiseMapOctaves(config.gpgpuNoiseMapOctaves),
     domainRadius: resolveNoiseFieldDomainRadius(config.gpgpuBounceRadius),
+    evolve: clampNoiseMapEvolve(config.gpgpuNoiseMapEvolve),
+    supplyTime: clampNoiseFieldSupplyTime(config.gpgpuNoiseFieldSupplyTime),
   };
 }
 
 export function noiseFieldCacheKey(settings: NoiseFieldSettings): string {
-  return [settings.scale, settings.kind, settings.octaves, resolveNoiseFieldDomainRadius(settings.domainRadius)].join('|');
+  // Evolve only shapes the slice when supplyTime > 0 (the offset
+  // at t=0 is zero for any evolve), so it joins the key only then
+  // — changing evolve alone must not bust the cached slice.
+  return [settings.scale, settings.kind, settings.octaves, resolveNoiseFieldDomainRadius(settings.domainRadius), settings.supplyTime, settings.supplyTime > 0 ? settings.evolve : 0].join('|');
 }
 
 /**
@@ -586,9 +599,11 @@ export function noiseFieldCacheKey(settings: NoiseFieldSettings): string {
  * each cell centre maps to the plane [-1, 1] × [-1, 1] (x
  * right, y up), which stands for the world box ±domainRadius,
  * and takes sampleNoiseField01 at (plane * domainRadius),
- * z = 0, time 0 — evolve is a property of the live field,
- * never of the slice. Pure and deterministic: the same
- * settings rasterise bit-identically anywhere.
+ * z = 0, at the settings' supply time — the evolve offset at
+ * t = supplyTime is part of the slice; supplyTime 0 (the
+ * default) reproduces the legacy time-0 slice bit-for-bit.
+ * Pure and deterministic: the same settings rasterise
+ * bit-identically anywhere.
  */
 export function buildNoiseFieldLuma(settings: NoiseFieldSettings, size: number): Float32Array {
   const n = Math.max(2, Math.floor(size));
@@ -598,7 +613,7 @@ export function buildNoiseFieldLuma(settings: NoiseFieldSettings, size: number):
     const py = 1 - ((cy + 0.5) / n) * 2;
     for (let cx = 0; cx < n; cx++) {
       const px = ((cx + 0.5) / n) * 2 - 1;
-      out[cy * n + cx] = sampleNoiseField01(px * r, py * r, 0, settings.scale, 0, 0, settings.kind, settings.octaves);
+      out[cy * n + cx] = sampleNoiseField01(px * r, py * r, 0, settings.scale, settings.evolve, settings.supplyTime, settings.kind, settings.octaves);
     }
   }
   return out;

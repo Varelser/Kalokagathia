@@ -6,6 +6,30 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { ScreenOverlay, ScreenshotManager } from './scenePrimitives';
 import { DeterministicRenderManager } from './DeterministicRenderManager';
 import { noteSceneGenerationMounted, useSceneGeneration } from '../lib/sceneGeneration';
+import { useSafeMode } from '../lib/safeMode';
+import { installBenchSurface, pushBenchFrame } from '../lib/benchPack';
+
+/**
+ * Bench probe (Phase 15, Abyssal C): under ?diag=1 only, feeds
+ * frame times to the shared bench collector and installs the
+ * window.__kaloBench evidence surface. Inert otherwise.
+ */
+const BenchProbe: React.FC = () => {
+  const active = React.useMemo(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('diag') === '1';
+    } catch {
+      return false;
+    }
+  }, []);
+  React.useEffect(() => {
+    if (active) installBenchSurface();
+  }, [active]);
+  useFrame((_, delta) => {
+    if (active) pushBenchFrame(delta * 1000);
+  });
+  return null;
+};
 import { CameraImpulseRig, getAdaptiveDprRange, SceneBackgroundSync, shouldUseAntialias } from './AppSceneCameraRig';
 import { HorizonBackground } from './HorizonBackground';
 import { TerrainMesh } from './TerrainMesh';
@@ -77,7 +101,14 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
   React.useEffect(() => {
     noteSceneGenerationMounted(sceneGeneration);
   }, [sceneGeneration]);
-  const adaptiveDpr = React.useMemo(() => getAdaptiveDprRange(effectiveConfig), [effectiveConfig]);
+  const safeMode = useSafeMode();
+  const adaptiveDpr = React.useMemo(() => {
+    const range = getAdaptiveDprRange(effectiveConfig);
+    // Safe mode (Phase 15): the ladder's pixel cap scales the
+    // range maximum down; level 0 leaves the range untouched.
+    if (safeMode.step.pixCap >= 1) return range;
+    return [range[0], Math.max(0.5, range[1] * safeMode.step.pixCap)] as [number, number];
+  }, [effectiveConfig, safeMode.step.pixCap]);
   const antialias = React.useMemo(() => shouldUseAntialias(effectiveConfig), [effectiveConfig]);
   // Perf stage 5: PostFx mounts only after the first frames have rendered
   // without it (see StartupFrameSignals).
@@ -115,6 +146,7 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
         rendererRef.current = gl;
       }}
     >
+      <BenchProbe />
       <SceneBackgroundSync
         backgroundColor={effectiveConfig.backgroundColor}
         transparentBackground={transparentBackground}

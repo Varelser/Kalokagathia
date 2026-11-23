@@ -1,0 +1,1031 @@
+{
+ "tool": "headless-sweep-cases",
+ "version": 1,
+ "agreement": "Round 37 (ledger memo #72), crosschecked by #9: flagged + variant completion + 12 negative controls; capture times 2s and 8s in one continuous run; assert on the 8s frame (2s-only abnormal = warning); first real-GPU run is a dedicated flight.",
+ "generatedFrom": "catalog thumbs in thumbs classified by verify-thumbs classifier (spike v3 port)",
+ "counts": {
+  "flagged": 83,
+  "variant": 22,
+  "control": 12,
+  "total": 117
+ },
+ "cases": [
+  {
+   "id": "coverage-017-plane-wave-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-017-plane-wave-20261109-lite",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "coverage-017-plane-wave-20261109-lites",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-026-ring-phyllotaxis-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "coverage-038-sphere-hopalong-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "coverage-039-ring-echo-ring-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "coverage-081-spiral-branch-propagation-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "coverage-092-cone-resonance-flux-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "coverage-092-cone-resonance-flux-20261109-lite",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-092-cone-resonance-flux-20261109-lites",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-113-ring-shockwave-20261109-fixed",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "coverage-114-disc-epicycle-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "coverage-162-grid-gaussian-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-162-grid-gaussian-20261109-lite",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-162-grid-gaussian-20261109-lites",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-162-grid-gaussian-20261109-litess",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "coverage-171-plane-echo-ring-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-171-plane-echo-ring-20261109-lite",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "coverage-171-plane-echo-ring-20261109-lites",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-177-text-aux-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "coverage-178-video-branch-propagation-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "coverage-186-image-fronds-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "coverage-190-plane-linear-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "coverage-190-plane-linear-20261109-lite",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-190-plane-linear-20261109-lites",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "coverage-221-cube-field-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "coverage-242-plane-gyroflower-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "coverage-242-plane-gyroflower-20261109-lite",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-242-plane-gyroflower-20261109-lites",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-315-disc-petals-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "coverage-402-video-lattice-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "coverage-423-image-reaction-diffusion-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "coverage-438-video-vortex-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-438-video-vortex-20261109-lite",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "coverage-438-video-vortex-20261109-lites",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "coverage-438-video-vortex-20261109-litess",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "coverage-441-spiral-gyroflower-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "coverage-442-spiral-fronds-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-442-spiral-fronds-20261109-lite",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "coverage-442-spiral-fronds-20261109-lites",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-457-cone-wind-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "expansion-029-capsule-sdf-cone-emit-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "expansion-038-emerge-chrome-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "expansion-154-rossler-attractor-gyro-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "expansion-174-dejong-attractor-wave-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "expansion-238-rossler-attractor-tidal-lock-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "expansion-240-dipole-field-shockwave-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "expansion-290-latency-classic-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "expansion-311-worley-field-coil-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "expansion-366-box-sdf-disc-emit-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "expansion-416-audio-fft-band-phyllotaxis-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "expansion-456-chua-scroll-ikeda-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "expansion-483-audio-fft-bass-vortex-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "expansion-551-audio-fft-treble-fronds-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "expansion-563-dag-mix-pollen-storm-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "expansion-598-sprott-attractor-aero-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "expansion-600-particle-life-cells-eclipse-halo-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "expansion-601-dla-point-spiral-motion-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "expansion-602-l-system-plant-spiral-motion-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "expansion-609-dla-line-spiral-motion-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "expansion-650-particle-life-cells-lattice-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "expansion-664-particle-life-snakes-harmonic-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "expansion-682-particle-life-random-radial-steps-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "expansion-699-raymarch-blobs-spiral-motion-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "expansion-728-dla-multi-spiral-motion-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "expansion-742-particle-life-community-volume-fog-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "ignition-26-spring-gravity-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "ignition-39-tube-magnetic-tidal-lock-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "ignition-39-tube-magnetic-tidal-lock-20261109-lite",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "ignition-39-tube-magnetic-tidal-lock-20261109-lites",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "ignition-73-sph-tidal-lock-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "ignition-73-sph-tidal-lock-20261109-lite",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "variant",
+   "baseline": "OK"
+  },
+  {
+   "id": "ignition-73-sph-tidal-lock-20261109-lites",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "starter-aizawa-ink",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "starter-attr-expr-product-size",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "starter-cellular-life-field",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-gpgpu-attractor-smooth-tube",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-gpgpu-gradient-nebula-blur",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "starter-gpgpu-layer-maps-per-property",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "starter-gpgpu-life-avoid-swarm",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "starter-gpgpu-morph-svg-logo",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-gpgpu-morph-svg-path-along",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-gpgpu-morph-svg-path-writeon",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-gpgpu-morph-terrain-valley-mist",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-gpgpu-quadra-wells",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-gpgpu-volumetric-ion-cloud",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-kinetix-fireworks-aux",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "starter-kinetix-houdini-pyro",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "starter-lsys-dragon-rules",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-noise-field-chroma",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "starter-pack-houdini-destruction-fracture-debris",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-pack-houdini-vellum-granular-drape",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-pack-unity-vfx-gpu-sheet",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "WHITEOUT"
+  },
+  {
+   "id": "starter-phase42-curve-path-script",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-phase42-glyph-sdf-shell",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "REVIEW_BIMODAL"
+  },
+  {
+   "id": "starter-pyro-stirred-plume",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "starter-terrain-eroded-canyon",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-text-on-path",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-trapcode-form-lattice",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "DARK_SPARSE"
+  },
+  {
+   "id": "starter-vellum-silk-cloth",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "starter-vellum-stitched-cloth",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "flagged",
+   "baseline": "BLACK_EMPTY"
+  },
+  {
+   "id": "expansion-001-saddle-field-reaction-diffusion-20261115",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "starter-advection-flow-ledger",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "coverage-001-cube-aero-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "ignition-01-cross-echo-ring-20261109",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "theory-att-aizawa",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "chua-att-double-scroll",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "lenia-bubbles",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "plife-cells",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "dla-frost",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "lsys-coral",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "ray-blobs",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  },
+  {
+   "id": "fft-spectrum-bloom",
+   "times": [
+    2,
+    8
+   ],
+   "kind": "control",
+   "baseline": "OK"
+  }
+ ]
+}

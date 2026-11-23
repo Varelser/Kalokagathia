@@ -14,12 +14,14 @@
 // block is a verbatim port of the WebGL fragment force law and is
 // skipped entirely while its feature is disabled, so the legacy
 // step (gravity / turbulence / morph / bounce) is untouched for
-// configs that use none of them. Still WebGL-only (declared
-// unsupported by the capability registry, which routes those
-// configs to WebGL): the age lifecycle (respawn machinery lives
-// in the WebGL position pass), the fluid field (its solver is a
-// WebGL FBO pass), and user GLSL custom forces (WGSL cannot
-// compile GLSL).
+// configs that use none of them. Phase 15 added the age
+// lifecycle (advance + wrap respawn in the position pass, the
+// kick's respawn-frame trigger in the velocity pass). Still
+// WebGL-only (declared unsupported by the capability registry,
+// which routes those configs to WebGL): the fluid field (its
+// solver is a WebGL FBO pass), the Aux event pools (WebGL FBO
+// passes), and user GLSL custom forces (WGSL cannot compile
+// GLSL).
 
 const VEL_WGSL = /* wgsl */ `
 struct Uniforms {
@@ -121,6 +123,10 @@ struct Uniforms {
   mouseRadius : f32,
   mouseMode : i32,
   mousePaintRate : f32,
+  // Age lifecycle flag (Phase 15, UE5 #18): buffer index 98 —
+  // only the morph kick's respawn-frame trigger reads it here;
+  // the lifecycle itself runs in the position pass.
+  ageEnabled : f32,
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -617,17 +623,18 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     // normal (companion buffer, rotated by the same orbit angle
     // as the target). The envelope runs from the last (re)bake /
     // speed-key change (morphKickStart). The WebGL shader's second
-    // trigger — full strength on the age-respawn frame — cannot
-    // fire here because the age lifecycle itself stays WebGL-only
-    // (the registry declares 'age' unsupported, so age-enabled
-    // configs never reach this path); with age off, the WebGL
-    // semantics are exactly this envelope. Speed 0 skips the block.
+    // trigger — full strength on the age-respawn frame — fires
+    // here too since Phase 15 ported the age lifecycle to the
+    // position pass: a just-wrapped age (posIn.w near the restart
+    // value, tested exactly as WebGL tests it) is the signal.
+    // Speed 0 skips the block.
     if (u.morphObjNormalSpeed > 0.0) {
       var mNormal = morphNormalIn[idx].xyz;
       mNormal = vec3f(mNormal.x * mCos - mNormal.z * mSin,
                       mNormal.y,
                       mNormal.x * mSin + mNormal.z * mCos);
-      let kickEnv = exp(-max(u.time - u.morphKickStart, 0.0) * 4.5);
+      var kickEnv = exp(-max(u.time - u.morphKickStart, 0.0) * 4.5);
+      if (u.ageEnabled > 0.5 && posIn[idx].w < u.delta * 1.5) { kickEnv = 1.0; }
       if (kickEnv > 0.003) {
         vel = mix(vel, mNormal * u.morphObjNormalSpeed, clamp(kickEnv * 0.45, 0.0, 0.45));
       }
@@ -747,6 +754,17 @@ struct Uniforms {
   mouseRadius : f32,
   mouseMode : i32,
   mousePaintRate : f32,
+  // Age lifecycle (Phase 15, UE5 #18): appended at the buffer's
+  // tail (indices 21-29) — see stepWebGPUCompute.
+  ageEnabled : f32,
+  ageMax : f32,
+  ageReplicaCount : f32,
+  ageReplicaStep : f32,
+  replicaAgeBase : f32,
+  emitLightEnabled : f32,
+  emitLightPosX : f32,
+  emitLightPosY : f32,
+  emitLightPosZ : f32,
 };
 @group(0) @binding(0) var<uniform>             u      : Uniforms;
 @group(0) @binding(1) var<storage, read>       posIn  : array<vec4f>;
@@ -759,6 +777,22 @@ fn hash1(p: vec2f) -> f32 {
   var p3 = fract(vec3f(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + vec3f(33.33));
   return fract((p3.x + p3.y) * p3.z);
+}
+
+// dmHash11: the same hash the velocity shader defines and the
+// WebGL passes share. paintHash below already called it, but the
+// definition was missing from this module (the position pipeline
+// could not compile) — restored in Phase 15.
+fn dmHash11(n: f32) -> f32 {
+  var p3 = fract(vec3f(n) * vec3f(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yxz + vec3f(33.33));
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+// The WebGL position pass's hash1 (dmHash11 over the 127.1 /
+// 311.7 dot) — the age respawn placement draws use it verbatim.
+fn hash1Age(p: vec2f) -> f32 {
+  return dmHash11(p.x * 127.1 + p.y * 311.7);
 }
 
 fn gyroidField(p: vec3f, sc: vec3f, size: f32) -> f32 {
@@ -787,7 +821,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let texSizeF = f32(texSizeU);
   let vUv = (vec2f(f32(idx % texSizeU), f32(idx / texSizeU)) + 0.5) / texSizeF;
   var pos = posIn[idx].xyz;
-  let age = posIn[idx].w;
+  var age = posIn[idx].w;
   let vel = velIn[idx].xyz;
 
   // Verlet integration (Phase X3): prevPosIn holds the frame-start
@@ -857,10 +891,35 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     }
   }
 
-  // The age in .w is carried through untouched: the age lifecycle
-  // (advance + respawn) stays WebGL-only in Phase X3 (the registry
-  // declares 'age' unsupported, so age-enabled configs route to
-  // WebGL and never reach this pass).
+  // Age lifecycle (Phase 15, UE5 #18): advance + wrap respawn,
+  // ported from the WebGL position pass — the same placement law
+  // (hash ball, emit-light variant at 5% radius) and the same
+  // replica restart age. The lifecycle's other entries (spawn
+  // gate, kill conditions, emission curve, group kill) stay
+  // WebGL-only and are declared in the capability registry, so a
+  // config combining them with age still routes to WebGL.
+  if (u.ageEnabled > 0.5) {
+    age += u.delta;
+    if (age > u.ageMax) {
+      let r = u.bounceRadius * (0.05 + hash1Age(vUv + vec2f(age)) * 0.9);
+      let th = hash1Age(vUv + vec2f(1.3)) * 6.2832;
+      let phi = acos(2.0 * hash1Age(vUv + vec2f(2.7)) - 1.0);
+      if (u.emitLightEnabled > 0.5) {
+        let jr = r * 0.05;
+        pos = vec3f(u.emitLightPosX, u.emitLightPosY, u.emitLightPosZ)
+          + vec3f(jr * sin(phi) * cos(th), jr * sin(phi) * sin(th), jr * cos(phi));
+      } else {
+        pos = vec3f(r * sin(phi) * cos(th), r * sin(phi) * sin(th), r * cos(phi));
+      }
+      // Replica restart age: idx is the texel index, the same
+      // contiguous mapping the WebGL pass derives from vUv.
+      var replicaIdx = 0.0;
+      if (u.ageReplicaCount > 1.5) {
+        replicaIdx = floor(f32(idx) * u.ageReplicaCount / max(texSizeF * texSizeF, 1.0));
+      }
+      age = replicaIdx * u.ageReplicaStep * u.ageMax + u.replicaAgeBase;
+    }
+  }
   posOut[idx] = vec4f(pos, age);
 }
 `;
@@ -900,7 +959,7 @@ export type WebGPUComputeState = {
 // field order; int fields are written through an Int32Array view).
 const VEL_UNIFORM_BYTES = 400;
 // Pos uniform buffer: 21 f32 slots.
-const POS_UNIFORM_BYTES = 96;
+const POS_UNIFORM_BYTES = 128;
 
 export async function initWebGPUCompute(
   texSize: number,
@@ -1080,6 +1139,10 @@ export interface WebGPUForceParams {
   floorEnabled: boolean; floorY: number; floorBounce: number;
   mouseEnabled: boolean; mousePos: { x: number; y: number; z: number }; mouseStrength: number; mouseRadius: number; mouseMode: number; mousePaintRate: number;
   verletEnabled: boolean;
+  // Age lifecycle (Phase 15, UE5 #18): the position-pass respawn
+  // law's parameters, mirroring the WebGL uniform derivations.
+  ageEnabled: boolean; ageMax: number; ageReplicaCount: number; ageReplicaStep: number; replicaAgeBase: number;
+  emitLightEnabled: boolean; emitLightPos: { x: number; y: number; z: number };
 }
 
 export function stepWebGPUCompute(
@@ -1199,6 +1262,7 @@ export function stepWebGPUCompute(
   velU[95] = f ? f.mouseRadius : 0;
   velI[96] = f ? f.mouseMode : 0;
   velU[97] = f ? f.mousePaintRate : 0;
+  velU[98] = f && f.ageEnabled ? 1 : 0;
   new Uint32Array(velU.buffer)[0] = texSize; // texSizeはu32なのでUint32Arrayビューで書く
   device.queue.writeBuffer(velUBuf, 0, velU);
 
@@ -1231,6 +1295,17 @@ export function stepWebGPUCompute(
   posU[18] = f ? f.mouseRadius : 0;
   posI[19] = f ? f.mouseMode : 0;
   posU[20] = f ? f.mousePaintRate : 0;
+  // Age lifecycle (Phase 15): indices 21-29, matching the fields
+  // appended to the position Uniforms struct.
+  posU[21] = f && f.ageEnabled ? 1 : 0;
+  posU[22] = f ? f.ageMax : 0;
+  posU[23] = f ? f.ageReplicaCount : 1;
+  posU[24] = f ? f.ageReplicaStep : 0;
+  posU[25] = f ? f.replicaAgeBase : 0;
+  posU[26] = f && f.emitLightEnabled ? 1 : 0;
+  posU[27] = f ? f.emitLightPos.x : 0;
+  posU[28] = f ? f.emitLightPos.y : 0;
+  posU[29] = f ? f.emitLightPos.z : 0;
   new Uint32Array(posU.buffer)[0] = texSize;
   device.queue.writeBuffer(posUBuf, 0, posU);
 

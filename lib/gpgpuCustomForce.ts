@@ -7,6 +7,10 @@
 //   pos (vec3, current position), vel (vec3, current velocity),
 //   uTime (float, seconds), uDelta (float, frame step)
 // and add to `vel`, e.g.:
+// KCB1: a snippet may also declare UI sliders with
+// ctrl("id", min, max, default) (see lib/gpgpuCustomForceControls.ts
+// for the fixed spec); each declaration becomes a uCtrl_<id> float
+// uniform whose value the panel sliders drive.
 //   vel += vec3(sin(pos.y * 0.05 + uTime), 0.0, cos(pos.x * 0.05)) * 12.0 * uDelta;
 //
 // Safety model: this is the user's own code in their own browser, so the
@@ -39,8 +43,22 @@ import {
   type GlslInjectionContract,
   type GlslInjectionStatus,
 } from './glslInjection';
+import {
+  applyCtrlDeclarations,
+  buildCtrlUniformDeclarations,
+  extractCustomForceControls,
+} from './gpgpuCustomForceControls';
 
 export { compileCheckShader } from './glslInjection';
+export {
+  buildCtrlUniformEntries,
+  ctrlUniformName,
+  extractCustomForceControls,
+  resolveCtrlValues,
+  syncCtrlUniforms,
+  type CustomForceControlDecl,
+  type CustomForceControlExtraction,
+} from './gpgpuCustomForceControls';
 
 export const CUSTOM_FORCE_MAX_LENGTH = 4000;
 
@@ -62,7 +80,14 @@ export interface CustomForceValidation {
 }
 
 export function validateCustomForceCode(code: string): CustomForceValidation {
-  return validateGlslSnippet(code, FORBIDDEN_TOKENS, CUSTOM_FORCE_MAX_LENGTH);
+  const base = validateGlslSnippet(code, FORBIDDEN_TOKENS, CUSTOM_FORCE_MAX_LENGTH);
+  if (!base.ok) return base;
+  // KCB1: ctrl() control declarations are validated by the same
+  // gate — a malformed / duplicate / out-of-range declaration
+  // rejects the snippet here, before the compile check.
+  const extraction = extractCustomForceControls(code);
+  if (!extraction.ok) return { ok: false, error: extraction.error };
+  return { ok: true };
 }
 
 export const CUSTOM_FORCE_EXAMPLE = `// 渦巻き上昇: 中心軸の周りに回転しながら持ち上げる
@@ -89,22 +114,40 @@ export const useCustomForceStatus = statusStore.useStatus;
 
 // Builds the harness fragment shader used for the compile check: the
 // snippet sits in the same block scope it will occupy in the velocity
-// shader, with the documented interface as locals/uniforms.
+// shader, with the documented interface as locals/uniforms. KCB1:
+// declared ctrl() controls appear in the harness exactly as in the
+// real shader (uniform declarations + calls rewritten to uniform
+// references), so the compile verdict covers the generated shape.
+// A snippet without declarations yields the historical harness
+// byte-for-byte.
 export function buildCustomForceHarness(customCode: string): string {
+  const extraction = extractCustomForceControls(customCode);
+  const decls = extraction.ok ? extraction.decls : [];
+  const uniformDecls = buildCtrlUniformDeclarations(decls);
+  const body = applyCtrlDeclarations(customCode, decls);
   return `
   precision highp float;
   uniform float uTime;
   uniform float uDelta;
-  void main() {
+${uniformDecls}  void main() {
     vec3 pos = vec3(0.0);
     vec3 vel = vec3(0.0);
     {
-${customCode}
+${body}
     }
     gl_FragColor = vec4(vel, 1.0);
   }
 `;
 }
+
+export const CUSTOM_FORCE_CTRL_EXAMPLE = `// ctrl宣言: スライダーが自動生成されます
+float speed = ctrl("speed", 0.0, 5.0, 1.0);
+float lift = ctrl("lift", 0.0, 40.0, 12.0);
+vec2 toAxis = pos.xz;
+float dist = length(toAxis) + 0.001;
+vec2 tangent = vec2(-toAxis.y, toAxis.x) / dist;
+vel.xz += tangent * speed * 60.0 * uDelta;
+vel.y += lift * uDelta;`;
 
 // The compile check itself is the shared implementation in
 // lib/glslInjection.ts (Phase BX), re-exported at the top of

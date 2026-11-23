@@ -18,6 +18,7 @@ export type PostFxStageId =
   | 'cellular'
   | 'moire'
   | 'feedback'
+  | 'brush-accum'
   | 'posterize'
   | 'ordered-dither'
   | 'halftone'
@@ -27,7 +28,8 @@ export type PostFxStageId =
   | 'edge-capture'
   | 'radial-blur'
   | 'light-fx'
-  | 'output-grade';
+  | 'output-grade'
+  | 'chroma-key';
 
 export type PostFxStackProfile = ParticleConfig['postFxStackProfile'];
 
@@ -67,12 +69,20 @@ export type PostFxStackProfile = ParticleConfig['postFxStackProfile'];
 // the shared injection foundation) sits after 'composite' and
 // immediately before 'output-grade' in every profile, so the
 // grade stage keeps the final word on the finished frame.
+// Phase 15: 'chroma-key' is the delivery stage — it builds the
+// alpha matte from the finished frame, so it runs after
+// 'edge-capture' in every profile (edge capture must keep
+// reading the un-keyed frame).
+// Phase 15 (2D section 6): 'brush-accum' sits immediately after
+// 'feedback' in every profile — both are frame-history stages,
+// and the accumulated strokes should still pass through the
+// tonal finishes and the output grade like the rest of the frame.
 const STACK_ORDERS: Record<PostFxStackProfile, PostFxStageId[]> = {
-  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture'],
-  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture'],
-  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture'],
-  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture'],
-  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture'],
+  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
+  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
+  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
+  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
+  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
 };
 
 export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[] {
@@ -165,6 +175,17 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   if (configUsesEdgeSupply(config)) {
     active.add('edge-capture');
   }
+  // Phase 15: the chroma key stage exists only while enabled —
+  // disabled means no stage and a bit-identical output.
+  if (config.postChromaKeyEnabled) {
+    active.add('chroma-key');
+  }
+  // Phase 15 (2D section 6): the brush accumulation stage exists
+  // only while enabled — disabled means no stage and a
+  // bit-identical output.
+  if (config.layer1BrushAccumEnabled) {
+    active.add('brush-accum');
+  }
   if (config.postRadialBlurEnabled && config.postRadialBlurStrength > 0.001) {
     active.add('radial-blur');
   }
@@ -179,12 +200,14 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
     active.add('light-fx');
   }
   // Output grade only exists when it would change a pixel: exposure
-  // other than 1.0, the ACES curve selected, or the brand monochrome
-  // duotone (Pro-2) enabled. Defaults keep it off.
+  // other than 1.0, the ACES curve selected, the brand monochrome
+  // duotone (Pro-2) enabled, or the reserved palette ramp
+  // (Phase 15, ink) enabled. Defaults keep it off.
   if (
     Math.abs(config.postExposure - 1.0) > 0.001 ||
     config.postToneMapping === 'aces' ||
-    config.postBrandColorEnabled
+    config.postBrandColorEnabled ||
+    config.postReservedPaletteEnabled
   ) {
     active.add('output-grade');
   }

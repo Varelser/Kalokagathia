@@ -544,6 +544,30 @@ export function compileExpressionCached(text: string): ExpressionCompileResult {
   return result;
 }
 
+// Phase 15 (Houdini §2): cached compile against a caller-supplied
+// extra-variable set. Caches are kept per set identity (a WeakMap
+// keyed by the set object), so a module-level constant set — the
+// parameter-reference names — gets a stable cache of its own and
+// never mixes with the no-vars cache above.
+const varsCompileCaches = new WeakMap<object, Map<string, ExpressionCompileResult>>();
+
+export function compileExpressionCachedWithVars(
+  text: string,
+  extraVars: ReadonlySet<string>,
+): ExpressionCompileResult {
+  let cache = varsCompileCaches.get(extraVars);
+  if (!cache) {
+    cache = new Map<string, ExpressionCompileResult>();
+    varsCompileCaches.set(extraVars, cache);
+  }
+  const cached = cache.get(text);
+  if (cached) return cached;
+  const result = compileExpression(text, extraVars);
+  if (cache.size >= COMPILE_CACHE_LIMIT) cache.clear();
+  cache.set(text, result);
+  return result;
+}
+
 /**
  * The modulation-facing entry point: evaluate `text` with input x
  * at time t. Invalid expressions and non-finite results fall back

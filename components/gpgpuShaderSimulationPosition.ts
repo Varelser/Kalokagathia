@@ -121,6 +121,15 @@ export const SIM_POS_FRAG = /* glsl */ `
   uniform float uEmissionCurveV[8];
   uniform bool  uKillBoundary;
   uniform bool  uKillMask;
+  // Collision life (Phase 15, Unity §1): contact with a collider
+  // this step (sphere shell clamp / SDF push-out / mesh SDF
+  // push-out / floor clamp / terrain clamp) consumes life at
+  // uCollisionLifeLoss extra age-seconds per second of contact,
+  // or respawns the particle at once when uCollisionKill is on.
+  // Both inert by default — no contact is recorded and the pass
+  // is bit-identical.
+  uniform float uCollisionLifeLoss;
+  uniform bool  uCollisionKill;
   uniform sampler2D uKillMaskTex;
   uniform float uKillMaskThreshold;
   uniform bool  uKillMaskInvert;
@@ -372,8 +381,17 @@ export const SIM_POS_FRAG = /* glsl */ `
       pos += vel * uDelta * uSpeed * 60.0;
     }
 
+    // Collision life (Phase 15): contact bookkeeping for the
+    // push-outs and clamps below. Recorded only while a life
+    // option is live, so the default path is untouched.
+    bool collisionContact = false;
+    bool collisionTrack = uCollisionKill || uCollisionLifeLoss > 0.0;
+
     float dist = length(pos);
-    if (dist > uBounceRadius * 1.05) pos = normalize(pos) * uBounceRadius * 1.05;
+    if (dist > uBounceRadius * 1.05) {
+      pos = normalize(pos) * uBounceRadius * 1.05;
+      if (collisionTrack) collisionContact = true;
+    }
 
     // SDF Collider — position push-out
     if (uSdfEnabled) {
@@ -405,7 +423,10 @@ export const SIM_POS_FRAG = /* glsl */ `
         sd = length(dp) - uSdfSize * 0.4;
         sn = normalize(dp + vec3(0.0001));
       }
-      if (sd < 0.0) pos -= sn * sd;
+      if (sd < 0.0) {
+        pos -= sn * sd;
+        if (collisionTrack) collisionContact = true;
+      }
     }
 
     // Mesh SDF Collider (Phase BY) — position push-out on the
@@ -414,13 +435,17 @@ export const SIM_POS_FRAG = /* glsl */ `
     // a no-op there.
     if (uMeshSdfEnabled) {
       float msd = meshSdfDistance(pos);
-      if (msd < 0.0) pos -= meshSdfNormal(pos) * msd;
+      if (msd < 0.0) {
+        pos -= meshSdfNormal(pos) * msd;
+        if (collisionTrack) collisionContact = true;
+      }
     }
 
     // Floor clamp (B3): Kinetix resolves penetration as
     // floorY + (floorY - y) * 0.1; the velocity pass owns the bounce.
     if (uFloorEnabled && pos.y < uFloorY) {
       pos.y = uFloorY + (uFloorY - pos.y) * 0.1;
+      if (collisionTrack) collisionContact = true;
     }
 
     // Terrain clamp (Phase AI): push a particle that ended the
@@ -432,7 +457,10 @@ export const SIM_POS_FRAG = /* glsl */ `
       vec2 tcUv = pos.xz / (2.0 * max(uTerrainExtent, 0.001)) + 0.5;
       if (tcUv.x >= 0.0 && tcUv.x <= 1.0 && tcUv.y >= 0.0 && tcUv.y <= 1.0) {
         float tcH = terrainColliderSample(tcUv).x;
-        if (pos.y < tcH) pos.y = tcH;
+        if (pos.y < tcH) {
+          pos.y = tcH;
+          if (collisionTrack) collisionContact = true;
+        }
       }
     }
 
@@ -468,6 +496,13 @@ export const SIM_POS_FRAG = /* glsl */ `
     // activation, and the Phase AB kill conditions all enter the
     // same respawn block below, so every (re)birth in the pool
     // shares one placement law (and one Aux birth signal).
+    // Collision life cost (Phase 15): contact this step ages the
+    // particle faster (the loss is a rate — extra age seconds per
+    // second of contact). Applied before the age advance so a
+    // contact can end the life on this very step.
+    if (collisionContact && uCollisionLifeLoss > 0.0) {
+      age += uCollisionLifeLoss * uDelta;
+    }
     bool doRespawn = spawnActivating;
     bool ageRespawn = false;
     if (uAgeEnabled) {
@@ -509,6 +544,9 @@ export const SIM_POS_FRAG = /* glsl */ `
       }
     }
     if (uKillBoundary && length(pos) > uBounceRadius + 0.001) doRespawn = true;
+    // Collision kill (Phase 15): any collider contact this step
+    // respawns the particle through the shared block.
+    if (collisionContact && uCollisionKill) doRespawn = true;
     if (uKillMask) {
       vec2 maskUv = clamp(pos.xy * (1.0 / (2.0 * max(uBounceRadius, 1.0))) + 0.5, 0.0, 1.0);
       float mLuma = dot(texture2D(uKillMaskTex, maskUv).rgb, vec3(0.2126, 0.7152, 0.0722));

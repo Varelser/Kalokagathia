@@ -450,6 +450,11 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       )}
       <Toggle label="Boundary Kill （境界キル）" value={config.gpgpuKillBoundary} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuKillBoundary', v)} />
       <Toggle label="Mask Kill （マスクキル）" value={config.gpgpuKillMask} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuKillMask', v)} />
+      <Slider label="Collision Life Loss （衝突の寿命消費・接触1秒あたり）" value={config.gpgpuCollisionLifeLoss} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuCollisionLifeLoss', v)} />
+      <Toggle label="Collision Kill （衝突で消滅）" value={config.gpgpuCollisionKill} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuCollisionKill', v)} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        衝突の寿命連動です。コライダ（球の殻／SDF／メッシュSDF／床／地形）に触れている間、寿命の進みが速くなります（Life Loss は接触1秒あたりに余分に進む寿命の秒数）。Collision Kill は接触した瞬間に消滅→リスポーンさせます。どちらも既定 OFF で従来同一です。
+      </div>
       <Slider label="Global Drag （全体ドラッグ）" value={config.gpgpuDrag} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuDrag', v)} />
       <Slider label="Global Max Speed （全体の最高速度・0で無制限）" value={config.gpgpuMaxSpeed} min={0} max={350} step={1} onChange={(v) => updateConfig('gpgpuMaxSpeed', v)} />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
@@ -595,6 +600,11 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
           <Slider label="Meander Amount （徘徊）" value={config.gpgpuParticleLifeMeanderAmount} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuParticleLifeMeanderAmount', v)} />
           <Slider label="Meander Scale （徘徊スケール）" value={config.gpgpuParticleLifeMeanderScale} min={0.1} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuParticleLifeMeanderScale', v)} />
           <Slider label="Avoid （障害物回避・SDF有効時）" value={config.gpgpuParticleLifeAvoid} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuParticleLifeAvoid', v)} />
+          <Slider label="Steer Avoid （汎用回避・全粒子）" value={config.gpgpuSteerAvoid} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuSteerAvoid', v)} />
+          <Slider label="Steer Avoid Range （汎用回避の範囲・0で自動）" value={config.gpgpuSteerAvoidRange} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuSteerAvoidRange', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            汎用回避は Particle Life を有効にしなくても全粒子に効く障害物回避です（法則は上の Avoid と同じ、範囲は自前。0 の範囲は SDF サイズの1.5倍）。両方 ON のときは合算されます。どちらも 0 の間は従来と完全一致します。
+          </div>
           {config.gpgpuParticleLifePreset === 'random' && (
             <button
               onClick={() => updateConfig('gpgpuParticleLifeSeed', Math.floor(Math.random() * 1000000))}
@@ -698,6 +708,10 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
           <Slider label="Interaction Radius" value={config.gpgpuSphRadius} min={5} max={200} step={5} onChange={(v) => updateConfig('gpgpuSphRadius', v)} />
           <Slider label="Rest Density" value={config.gpgpuSphRestDensity} min={0.1} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuSphRestDensity', v)} />
           <Slider label="Surface Tension （表面張力・近似）" value={config.gpgpuSphSurfaceTension} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuSphSurfaceTension', v)} />
+          <Slider label="Surface Selectivity （表面選択性）" value={config.gpgpuSphSurfaceSelectivity} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSphSurfaceSelectivity', v)} />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            表面選択性は、凝集の引き寄せを「近傍密度が不足している粒子（＝表面）」にだけ効かせる重みです。0 の間は従来の等方的な凝集と完全一致します。
+          </div>
         </>
       )}
     </div>

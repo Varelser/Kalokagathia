@@ -17,13 +17,20 @@ export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   // (verbatim force laws in lib/webgpuCompute.ts), including the
   // OBJ normal kick inside the morph block, so every feature below
   // is genuinely implemented on this path. Still unsupported —
-  // and therefore still routing to WebGL — are 'age' (the respawn
-  // lifecycle lives in the WebGL position pass), 'fluid-field'
+  // and therefore still routing to WebGL — are 'fluid-field'
   // (its solver is a WebGL FBO pass with no WGSL counterpart),
   // 'flip' (Phase AT: the P2G / pressure-projection passes are
   // WebGL FBO passes with no WGSL counterpart) and
   // 'custom-force' (user GLSL cannot be compiled to WGSL).
+  // Phase 15 (UE5 #18): 'age' joined — the WGSL position pass now
+  // runs the age advance + wrap respawn with the WebGL placement
+  // law, and the velocity pass gained the kick's respawn-frame
+  // trigger. The lifecycle's OTHER entries (spawn gate, kill
+  // conditions, emission curve, group kill, collision life) stay
+  // WebGL-only under their own declarations below, so combining
+  // them with age still routes to WebGL.
   'audio-reactive',
+  'age',
   'verlet',
   'nbody',
   'curl',
@@ -110,6 +117,9 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   if ((config.gpgpuSpawnOrderMode ?? 'hash') !== 'hash') features.push('spawn-distance-order');
   if (config.gpgpuSpawnEventEnabled) features.push('spawn-burst-event');
   if (config.gpgpuKillBoundary || config.gpgpuKillMask) features.push('kill-conditions');
+  // Collision life (Phase 15, Unity §1): the contact bookkeeping
+  // lives in the WebGL position pass only — same treatment.
+  if (config.gpgpuCollisionKill || (config.gpgpuCollisionLifeLoss || 0) > 0) features.push('collision-life');
   if ((config.gpgpuMaxSpeed || 0) > 0 || Math.abs((config.gpgpuDrag ?? 1.1) - 1.1) > 1e-9) features.push('global-velocity-limit');
   if (config.gpgpuParticleLifeEnabled && (config.gpgpuParticleLifeAvoid || 0) > 0) features.push('particle-life-avoid');
   if (config.gpgpuSphEnabled && (config.gpgpuSphSurfaceTension || 0) > 0) features.push('sph-surface-tension');

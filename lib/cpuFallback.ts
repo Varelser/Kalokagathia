@@ -22,7 +22,7 @@ import {
 
 export type CpuFallbackSetting = 'auto' | 'on' | 'off';
 
-export type CpuFallbackReason = 'query' | 'manual' | 'software' | 'no-webgl' | null;
+export type CpuFallbackReason = 'query' | 'manual' | 'software' | 'no-webgl' | 'safe-mode' | null;
 
 export interface CpuFallbackState {
   active: boolean;

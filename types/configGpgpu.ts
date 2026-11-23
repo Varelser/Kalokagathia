@@ -8,6 +8,10 @@ export interface ParticleConfigGpgpu {
   gpgpuSeed: number;
   gpgpuCustomForceEnabled: boolean;
   gpgpuCustomForceCode: string;
+  // KCB1: slider values for ctrl() declarations in the custom force
+  // snippet (id -> value). Empty record = every control sits at its
+  // declared default, i.e. no behaviour change for existing data.
+  gpgpuCustomForceCtrlValues: Record<string, number>;
   gpgpuSize: number;
   gpgpuSpeed: number;
   gpgpuColor: string;
@@ -188,6 +192,14 @@ export interface ParticleConfigGpgpu {
   gpgpuGroupColorEnabled: boolean;
   gpgpuKillBoundary: boolean;
   gpgpuKillMask: boolean;
+  // Collision life (Phase 15, Unity §1): contact with a collider
+  // (sphere shell / SDF / mesh SDF / floor / terrain) in the
+  // position pass consumes life at this rate (extra age seconds
+  // per second of contact), or kills outright when the toggle is
+  // on. Both default off — no contact bookkeeping runs and the
+  // output is bit-identical.
+  gpgpuCollisionLifeLoss: number;
+  gpgpuCollisionKill: boolean;
   gpgpuDrag: number;
   gpgpuMaxSpeed: number;
   // Curl Noise
@@ -275,6 +287,12 @@ export interface ParticleConfigGpgpu {
   // kernel weight, so a droplet holds together. An approximation
   // (no curvature model); 0 (default) = off, legacy SPH.
   gpgpuSphSurfaceTension: number;
+  // Surface selectivity (Phase 15, Houdini §7): weights the
+  // cohesion by the particle's density deficit
+  // (1 - density / restDensity), so the pull acts on the
+  // droplet's surface instead of isotropically everywhere.
+  // 0 (default) = the Phase AB isotropic cohesion, bit-identical.
+  gpgpuSphSurfaceSelectivity: number;
   // Grains (Phase AQ): a DEM-style penalty contact + Coulomb
   // friction solver in the velocity pass — grain-grain contact
   // resolved as forces over the same statistical subsample
@@ -408,6 +426,13 @@ export interface ParticleConfigGpgpu {
   // acts while the SDF collider is enabled. TS twin:
   // obstacleAvoidForce in lib/particleLifeBehavior.ts.
   gpgpuParticleLifeAvoid: number;
+  // General steering avoidance (Phase 15, Houdini §3): the same
+  // normal-push law as the Particle Life avoidance above, but
+  // applied to every particle independently of the Life switch.
+  // 0 (default) = off, bit-identical. Range 0 = automatic
+  // (1.5 * SDF size). When both avoids are on, they add.
+  gpgpuSteerAvoid: number;
+  gpgpuSteerAvoidRange: number;
   // Spring (to spawn pos)
   gpgpuSpringEnabled: boolean;
   gpgpuSpringStrength: number;
@@ -416,6 +441,12 @@ export interface ParticleConfigGpgpu {
   // toward its assigned target with the Kinetix morph spring law.
   gpgpuMorphEnabled: boolean;
   gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj' | 'terrain' | 'data' | 'contour' | 'polygon';
+  // Noise-field morph supply (Phase 15, TD §1): on the 'image'
+  // target, the bake's media map comes from the noise field's
+  // static slice (lib/mapSourceSupply getNoiseFieldLuma) instead
+  // of the layer-2 media snapshot. False = legacy snapshot path,
+  // bit-identical.
+  gpgpuMorphNoiseMapEnabled: boolean;
   // SVG import (Pro-2): the imported SVG document's source text. Like
   // the TextMap text it lives in the config so it persists with
   // projects / presets; the point cloud is re-sampled from it
@@ -636,6 +667,21 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphFiberGroomZ: number;
   gpgpuMorphFiberGroomAlign: number;
   gpgpuMorphFiberLengthVar: number;
+  // Fiber root source (Phase 15, Houdini §11): which surface the
+  // strands root on. 'morph' (default) is the Phase AG path,
+  // byte-identical. 'emit' roots on the initial (spawn) cloud —
+  // fibers then work with morph disabled. 'terrain' roots on the
+  // morph terrain heightfield (the bake's terrain target with the
+  // current terrain parameters), also without morph enabled.
+  gpgpuMorphFiberRootSource: 'morph' | 'emit' | 'terrain';
+  // Groom field (Phase 15, Houdini §11): how the groom direction
+  // varies across the surface. 'uniform' (default) is the Phase
+  // AL global vector, byte-identical. The other modes evaluate a
+  // direction per root position (radial / swirl around Y / a trig
+  // noise field at GroomFieldScale) — position functions only,
+  // never rng draws, so strand picks stay identical.
+  gpgpuMorphFiberGroomField: 'uniform' | 'noise' | 'radial' | 'swirl';
+  gpgpuMorphFiberGroomFieldScale: number;
   // Shape stamping (Phase AA3, lib/stampPlacement.ts): path mode
   // 'stamp' places a small shape at equal arc-length intervals
   // along the authored path instead of distributing points along
@@ -1097,6 +1143,13 @@ export interface ParticleConfigGpgpu {
   // 'noise' gradient driver instead of a dedicated amount.
   gpgpuNoiseMapScale: number;
   gpgpuNoiseMapEvolve: number;
+  // Noise-field supply time (Phase 15, TD §1): the static slice
+  // the supply path (layer maps, morph bake) rasterises is taken
+  // at this field time — the field's evolve offset applied at
+  // t = this value. 0 = the legacy z=0/time-0 slice, bit-identical.
+  // Live per-frame regeneration is deliberately not offered (the
+  // slice stays a deterministic snapshot; see Phase AH notes).
+  gpgpuNoiseFieldSupplyTime: number;
   gpgpuNoiseMapSizeAmount: number;
   gpgpuNoiseMapDisplaceAmount: number;
   // Noise field grammar (Phase BJ): the field's kind (the

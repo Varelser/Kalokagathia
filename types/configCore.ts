@@ -260,6 +260,33 @@ export interface ParticleConfigCore {
   // (disabled) keep the stage inactive and the output unchanged.
   postBrandColorEnabled: boolean;
   postBrandColor: string;
+  // Reserved palette ramp (Phase 15, ink): the output grade stage
+  // remaps the finished frame into [floor, ceiling], reserving the
+  // extremes of the range so highlights structurally cannot blow
+  // out to pure white and shadows cannot crush to pure black.
+  // Runs last in the stage (after the tone curve and the brand
+  // duotone). Disabled by default — the stage stays inactive.
+  postReservedPaletteEnabled: boolean;
+  postReservedFloor: number;
+  postReservedCeiling: number;
+  // Chroma key (Phase 15, TD §6): the final delivery stage builds
+  // an alpha matte from the finished frame's colour distance to
+  // the key colour, with spill suppression. Disabled by default —
+  // the stage is then absent and the output is bit-identical.
+  // Video export stays opaque (alpha is a stills/capture feature).
+  postChromaKeyEnabled: boolean;
+  postChromaKeyColor: string;
+  postChromaKeySimilarity: number;
+  postChromaKeySmoothness: number;
+  postChromaKeySpill: number;
+  // Brush accumulation (Phase 15, 2D §6): the brush line ribbons
+  // accumulate into a dedicated ping-pong target with a per-frame
+  // decay, so strokes persist and build up. Disabled by default —
+  // the stage is then absent and the output is bit-identical.
+  // Live only: the deterministic renderer bypasses the composer.
+  layer1BrushAccumEnabled: boolean;
+  layer1BrushAccumDecay: number;
+  layer1BrushAccumStrength: number;
   // Custom GLSL post (Phase BX): the user's own GLSL snippet in a
   // fullscreen post stage immediately before 'output-grade',
   // registered on the shared injection foundation
@@ -346,6 +373,14 @@ export interface ParticleConfigCore {
   // approximation (single-pass, neighbour-error estimate — see
   // lib/postFxMath.ts; not a true sequential scan).
   postDitherMode: 'bayer' | 'diffusion';
+  // Dither anchor (Phase 15, ink): 'screen' (default) indexes the
+  // Bayer pattern by gl_FragCoord — the pattern is fixed to the
+  // screen and the content swims under it when the camera moves.
+  // 'world' offsets the pattern by the world origin's projected
+  // screen position, so the pattern phase stays fixed on the
+  // subject at the origin (exact under pan / zoom on the origin
+  // plane, approximate under orbit rotation). Bayer mode only.
+  postDitherAnchor: 'screen' | 'world';
   postHalftoneEnabled: boolean;
   postHalftoneCellSize: number;
   postHalftoneAngle: number;

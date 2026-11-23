@@ -48,7 +48,14 @@ export const VEL_FRAG_MAIN_SPH_GRAINS = /* glsl */ `    // SPH Fluid Simulation
         // Phase AB real-GPU gate (spread grew ~12% instead of
         // shrinking). Cohesion here is a slow bias, not a stiff
         // spring.
-        vel += cohesionForce * uSphSurfaceTension * uDelta * 1.0;
+        // Surface selectivity (Phase 15): scale the pull by the
+        // density deficit, so it acts where the neighbourhood is
+        // incomplete (the surface) instead of isotropically.
+        // Selectivity 0 gives a factor of exactly 1 — the AB
+        // behaviour bit-for-bit.
+        float deficit = 1.0 - clamp(density / max(uSphRestDensity, 0.0001), 0.0, 1.0);
+        float selFactor = mix(1.0, deficit, clamp(uSphSurfaceSelectivity, 0.0, 1.0));
+        vel += cohesionForce * selFactor * uSphSurfaceTension * uDelta * 1.0;
       }
     }
 

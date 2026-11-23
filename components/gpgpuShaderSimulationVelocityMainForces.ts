@@ -542,4 +542,22 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       vel += cross(vel, B) * uMagneticStrength * uDelta * 0.8;
     }
 
+    // General steering avoidance (Phase 15, Houdini §3): the
+    // Particle Life avoidance law generalised to every particle,
+    // independent of the Life switch — a push along the SDF
+    // collider's normal, quadratic in the proximity inside the
+    // range (range 0 falls back to 1.5 * the SDF size, the
+    // obstacleAvoidForce fallback shape). Strength 0 removes
+    // the term entirely (bit-identical). When the Life avoidance
+    // is also on, the two add. TS twin: obstacleAvoidForce in
+    // lib/particleLifeBehavior.ts.
+    if (uSteerAvoid > 0.0 && uSdfEnabled) {
+      float sRange = uSteerAvoidRange > 0.0 ? uSteerAvoidRange : max(uSdfSize * 1.5, 1.0);
+      float sSd = abSdfDistance(pos);
+      if (sSd < sRange) {
+        float sw = clamp(1.0 - sSd / sRange, 0.0, 1.0);
+        vel += abSdfNormal(pos) * (uSteerAvoid * sw * sw) * uDelta * 45.0;
+      }
+    }
+
 `;

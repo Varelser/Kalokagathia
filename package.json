@@ -92,10 +92,13 @@
     "verify:shaders": "node scripts/verify-shaders.mjs",
     "verify:shared-audio": "node scripts/verify-shared-audio.mjs",
     "verify:standalone-synth": "node scripts/verify-standalone-synth.mjs",
+    "verify:thumbs": "node scripts/verify-thumbs.mjs",
     "verify:video": "node scripts/verify-video.mjs",
     "verify:video-audio": "node scripts/verify-video-audio.mjs",
-    "generate:sitemap": "node scripts/build-sitemap.mjs"
+    "generate:sitemap": "node scripts/build-sitemap.mjs",
+    "verify:sweep": "node scripts/headless-sweep.mjs",
+    "verify:sweep-cases": "node scripts/headless-sweep-cases-generate.mjs"
   },
   "type": "module",
-  "version": "1.96.0"
+  "version": "1.97.0"
 }

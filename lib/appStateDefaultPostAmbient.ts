@@ -88,6 +88,20 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postToneMapping: 'legacy' as const,
   postBrandColorEnabled: false,
   postBrandColor: '#c8372d',
+  // Reserved palette (Phase 15): disabled = stage inactive.
+  postReservedPaletteEnabled: false,
+  postReservedFloor: 0.03,
+  postReservedCeiling: 0.94,
+  // Chroma key (Phase 15): disabled = stage absent, output unchanged.
+  postChromaKeyEnabled: false,
+  postChromaKeyColor: '#00ff00',
+  postChromaKeySimilarity: 0.08,
+  postChromaKeySmoothness: 0.04,
+  postChromaKeySpill: 0.5,
+  // Brush accumulation (Phase 15): disabled = stage absent.
+  layer1BrushAccumEnabled: false,
+  layer1BrushAccumDecay: 0.92,
+  layer1BrushAccumStrength: 1,
   // Custom GLSL post (Phase BX): stage absent while disabled or
   // empty — the defaults keep the output unchanged.
   postCustomGlslEnabled: false,
@@ -124,6 +138,7 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postDitherEnabled: false,
   postDitherStrength: 1,
   postDitherMode: 'bayer' as const,
+  postDitherAnchor: 'screen' as const,
   postHalftoneEnabled: false,
   postHalftoneCellSize: 8,
   postHalftoneAngle: 45,

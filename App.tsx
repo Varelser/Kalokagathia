@@ -54,6 +54,7 @@ import { initGpuTier } from './lib/gpuTier';
 import { requestPersistentStorageOnce } from './lib/platformFeatures';
 import { useGpuTierFeatureWarnings } from './lib/useGpuTierFeatureWarnings';
 import { GpuTierWarningHost } from './components/GpuTierWarningHost';
+import { FirstRunTutorial } from './components/FirstRunTutorial';
 import { AUDIO_BRIDGE_MODE_PARAM, AUDIO_BRIDGE_MODE_VALUE } from './lib/audioBridge';
 
 const AppBody: React.FC = () => {
@@ -737,6 +738,11 @@ const AppBody: React.FC = () => {
       pointCloudCaptureRef={pointCloudCaptureRef}
     />
     <GpuTierWarningHost />
+    {/* KCB4: first-visit tutorial card. Renders null unless this is a
+        first visit with no seen flag, so kiosk/stream/embed branches
+        above (which return earlier) and returning visitors never see
+        any change. */}
+    <FirstRunTutorial />
     </>
   );
 };
