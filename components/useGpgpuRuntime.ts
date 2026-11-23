@@ -66,11 +66,14 @@ import {
 } from './gpgpuPyroGridPasses';
 import {
   buildAttributeData,
+  buildAttributeDataExt,
   normalizeAttrExprs,
   normalizeAttrNames,
+  normalizeAttrNames2,
   normalizeAttrSources,
   resolveAttrColorSlots,
   resolveAttrConsumers,
+  resolveAttrExtConsumers,
 } from '../lib/gpgpuAttributes';
 import { evaluateGpgpuGroup, parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { setLastAttrBake } from '../lib/gpgpuGroupBridge';
@@ -396,6 +399,7 @@ export type GpgpuRuntimeRefs = {
   morphTexRef: MutableRefObject<THREE.DataTexture | null>;
   morphNormalTexRef: MutableRefObject<THREE.DataTexture | null>;
   attrTexRef: MutableRefObject<THREE.DataTexture | null>;
+  attrTex2Ref: MutableRefObject<THREE.DataTexture | null>;
   fluidRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   fluidRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   fluidPingIsA: MutableRefObject<boolean>;
@@ -764,6 +768,8 @@ export function buildMorphBakeData(
       scaleRandom: config.gpgpuMorphScatterScaleRandom,
       rotRandom: config.gpgpuMorphScatterRotRandom,
       bend: config.gpgpuMorphScatterBend,
+      pcgGraphEnabled: config.gpgpuPcgGraphEnabled,
+      pcgGraphData: config.gpgpuPcgGraphData,
     } : null,
     mask: morphMaskOption(config),
     // Attribute point cloud (Phase AK): the data target's
@@ -800,6 +806,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphTexRef = useRef<THREE.DataTexture | null>(null);
   const morphNormalTexRef = useRef<THREE.DataTexture | null>(null);
   const attrTexRef = useRef<THREE.DataTexture | null>(null);
+  // Ext attribute texture (Phase 18 stage 1): slots 4..7, built
+  // only while an enabled pass reads an ext slot name.
+  const attrTex2Ref = useRef<THREE.DataTexture | null>(null);
   // Attribute point cloud (Phase AK): subscribing here puts the
   // cloud's version into the morph bake's dependency set (the
   // 'data' target) and into the attribute texture's signature.
@@ -1420,6 +1429,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphScatterScaleRandom = config.gpgpuMorphScatterScaleRandom;
   const morphScatterRotRandom = config.gpgpuMorphScatterRotRandom;
   const morphScatterBend = config.gpgpuMorphScatterBend;
+  // PCG rule graph (Phase 18 stage 3): bake inputs like the above.
+  const morphPcgGraphEnabled = config.gpgpuPcgGraphEnabled;
+  const morphPcgGraphData = config.gpgpuPcgGraphData;
   const morphPathMode = config.gpgpuMorphPathMode;
   const morphTextOnPathEnabled = config.gpgpuMorphTextOnPathEnabled;
   const morphTextOnPathDelay = config.gpgpuMorphTextOnPathDelay;
@@ -1645,6 +1657,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         scaleRandom: morphScatterScaleRandom,
         rotRandom: morphScatterRotRandom,
         bend: morphScatterBend,
+        pcgGraphEnabled: morphPcgGraphEnabled,
+        pcgGraphData: morphPcgGraphData,
       } : null,
       // Raster mask (Phase X): same option the shared bake builder
       // assembles, from the effect's own captured values.
@@ -1817,6 +1831,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphScatterScaleRandom,
     morphScatterRotRandom,
     morphScatterBend,
+    morphPcgGraphEnabled,
+    morphPcgGraphData,
     morphPathMode,
     morphTextOnPathEnabled,
     morphTextOnPathDelay,
@@ -1924,6 +1940,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     const data = buildAttributeData({
       texSize,
       posData: initDataRef.current.posData,
+      // Phase 18 stage 1: the seeded velocities feed the
+      // bake-time value of the sim variable vel.
+      velData: initDataRef.current.velData,
       ageMax: config.gpgpuAgeMax,
       bounceRadius: config.gpgpuBounceRadius,
       speciesCount: config.gpgpuParticleLifeSpecies,
@@ -1975,6 +1994,90 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attrSignature]);
 
+  // Ext attribute bake (Phase 18 stage 1): slots 4..7 in a
+  // second texture, built ONLY while resolveAttrExtConsumers
+  // finds a reader (an enabled pass whose expressions name an
+  // ext slot). The ext expressions may read slots 0..3 by
+  // name, so the pristine stage-1 bake is an input and joins
+  // the signature through its own inputs. While no reader
+  // exists the ref stays null and the passes bind nothing.
+  const attrExtActive = resolveAttrExtConsumers(config);
+  const attrNames2Key = normalizeAttrNames2(config.gpgpuAttrNames2).join(',');
+  const attrSources2Key = normalizeAttrSources(config.gpgpuAttrSources2).join(',');
+  const attrExprs2Key = JSON.stringify(normalizeAttrExprs(config.gpgpuAttrExprs2));
+  const attrExtSignature = attrExtActive
+    ? [
+      texSize,
+      config.gpgpuSeed,
+      config.gpgpuBounceRadius,
+      config.gpgpuAgeMax,
+      config.gpgpuEmitShape,
+      config.gpgpuParticleLifeSpecies,
+      attrNamesKey,
+      attrSourcesKey,
+      attrExprsKey,
+      attrNames2Key,
+      attrSources2Key,
+      attrExprs2Key,
+      attrConsumers.colorActive ? 'attrColor' : '',
+      attrCloud?.version ?? 0,
+      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0,
+      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0,
+      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0,
+      (attrSourcesKey.includes('target') || attrSources2Key.includes('target')) ? JSON.stringify(config) : '',
+    ].join('|')
+    : '';
+  useEffect(() => {
+    attrTex2Ref.current?.dispose();
+    attrTex2Ref.current = null;
+    if (!attrExtSignature || !initDataRef.current) return;
+    const sources = normalizeAttrSources(config.gpgpuAttrSources);
+    const sources2 = normalizeAttrSources(config.gpgpuAttrSources2);
+    const needsTarget = sources.includes('target') || sources2.includes('target');
+    const bake = needsTarget ? buildMorphBakeData(config, texSize) : null;
+    const firstBake = buildAttributeData({
+      texSize,
+      posData: initDataRef.current.posData,
+      velData: initDataRef.current.velData,
+      ageMax: config.gpgpuAgeMax,
+      bounceRadius: config.gpgpuBounceRadius,
+      speciesCount: config.gpgpuParticleLifeSpecies,
+      morphData: bake ? bake.data : null,
+      morphWorldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,
+      cloud: getAttrPointCloud(),
+      names: normalizeAttrNames(config.gpgpuAttrNames),
+      sources,
+      exprs: config.gpgpuAttrExprs,
+      colorRawSlots: attrConsumers.colorActive
+        ? resolveAttrColorSlots(normalizeAttrNames(config.gpgpuAttrNames))
+        : null,
+    });
+    const data = buildAttributeDataExt({
+      texSize,
+      posData: initDataRef.current.posData,
+      velData: initDataRef.current.velData,
+      ageMax: config.gpgpuAgeMax,
+      bounceRadius: config.gpgpuBounceRadius,
+      speciesCount: config.gpgpuParticleLifeSpecies,
+      morphData: bake ? bake.data : null,
+      morphWorldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,
+      cloud: getAttrPointCloud(),
+      firstBake,
+      names: normalizeAttrNames(config.gpgpuAttrNames),
+      names2: normalizeAttrNames2(config.gpgpuAttrNames2),
+      sources2,
+      exprs2: config.gpgpuAttrExprs2,
+    });
+    const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    tex.needsUpdate = true;
+    attrTex2Ref.current = tex;
+    return () => {
+      tex.dispose();
+      if (attrTex2Ref.current === tex) attrTex2Ref.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attrExtSignature]);
+
   return {
     rtRef,
     pingIsA,
@@ -1984,6 +2087,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTexRef,
     morphNormalTexRef,
     attrTexRef,
+    attrTex2Ref,
     fluidRTARef,
     fluidRTBRef,
     fluidPingIsA,

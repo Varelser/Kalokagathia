@@ -8,6 +8,7 @@ export const APP_STATE_DEFAULT_LAYER_1: Partial<ParticleConfig> = {
   layer1SourceCount: 1,
   layer1SourceSpread: 200,
   layer1SourcePositions: [],
+  layer1SourceParents: [],
   layer1Counts: [],
   layer1Radii: [],
   layer1Volumes: [],

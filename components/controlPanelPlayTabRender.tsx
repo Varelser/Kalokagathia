@@ -7,6 +7,7 @@ import { VideoEncodeUnsupportedError, type VideoFormat } from '../lib/videoEncod
 import { PerformanceRecorder, deleteTakeFrame, frameIndexAt, parseTake, reconstructAt, reconstructInterpolatedAt, serializeTake, shiftTakeFrame, type PerformanceTake } from '../lib/performanceRecorder';
 import { clearMotionReviewFindings, deriveLoopFindings, getMotionReviewFindings, recordMotionReviewFindings, subscribeMotionReviewFindings } from '../lib/motionReview';
 import { effectivePosition, offsetFromEffective, padToWorld, withPosition, worldToPad } from '../lib/sourceEditor';
+import { effectivePositionWithParents } from '../lib/sourceHierarchy';
 import { Slider } from './controlPanelParts';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { SectionTitle } from './controlPanelPlayTabShared';
@@ -14,7 +15,7 @@ import { SectionTitle } from './controlPanelPlayTabShared';
 // App version handed to the deterministic renderer for its render.json
 // manifest. Keep in sync with package.json "version" (the renderer must
 // not import package.json, so the UI supplies it — see PRO1_BRIEF.md).
-export const KALOKAGATHIA_APP_VERSION = '1.99.0';
+export const KALOKAGATHIA_APP_VERSION = '2.00.0';
 
 // Phase C resolution presets for the deterministic renderer. 'canvas'
 // captures at the canvas's current size (the pre-Phase-C behaviour);
@@ -682,6 +683,8 @@ export const SourceEditorSection: React.FC<{
 
   const prefix = `layer${layer}` as 'layer1' | 'layer2' | 'layer3';
   const positionsKey = `${prefix}SourcePositions` as keyof ParticleConfig;
+  const parentsKey = `${prefix}SourceParents` as keyof ParticleConfig;
+  const parents = (config[parentsKey] as number[] | undefined) ?? [];
   const countKey = `${prefix}SourceCount` as keyof ParticleConfig;
   const spreadKey = `${prefix}SourceSpread` as keyof ParticleConfig;
   const positions = (config[positionsKey] as { x: number; y: number; z: number }[] | undefined) ?? [];
@@ -690,11 +693,18 @@ export const SourceEditorSection: React.FC<{
   const validSelected = Math.min(selected, count - 1);
 
   const offsetAt = (index: number) => positions[index] ?? { x: 0, y: 0, z: 0 };
-  const effectiveAt = (index: number) => effectivePosition(offsetAt(index), index, count, spread);
+  const effectiveAt = (index: number) => effectivePositionWithParents(positions, parents, index, count, spread);
 
   const moveSelectedTo = (index: number, worldX: number, worldZ: number) => {
     const current = offsetAt(index);
-    const nextOffset = offsetFromEffective({ x: worldX, y: current.y, z: worldZ }, index, count, spread);
+    // With a parent, the drag target is the effective position, so
+    // the parent's contribution is subtracted back out before the
+    // ring conversion (parent contribution = effective - base).
+    const base = effectivePosition(current, index, count, spread);
+    const eff = effectiveAt(index);
+    const parentX = eff.x - base.x;
+    const parentZ = eff.z - base.z;
+    const nextOffset = offsetFromEffective({ x: worldX - parentX, y: current.y, z: worldZ - parentZ }, index, count, spread);
     write(positionsKey, withPosition(positions, count, index, nextOffset));
   };
 
@@ -809,6 +819,25 @@ export const SourceEditorSection: React.FC<{
               write(positionsKey, withPosition(positions, count, validSelected, { ...selectedOffset, y }));
             }}
             className="w-full accent-white"
+          />
+        </label>
+        <label className="block">
+          <span className="block text-[10px] uppercase tracking-widest text-white/40 mb-1">
+            発生源 {validSelected + 1} の親（-1＝根／親なし、0以上＝その番号の発生源の実配置を加える）
+          </span>
+          <input
+            type="number"
+            min={-1}
+            max={count - 1}
+            step={1}
+            value={parents[validSelected] ?? -1}
+            onChange={(event) => {
+              const next = [...parents];
+              while (next.length < count) next.push(-1);
+              next[validSelected] = Math.round(Number(event.target.value) || -1);
+              write(parentsKey, next);
+            }}
+            className="w-full bg-white/5 border border-white/10 rounded px-2 py-2 text-xs outline-none focus:border-white/40"
           />
         </label>
         <label className="block">

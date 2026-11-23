@@ -6,6 +6,9 @@ import { getInterLayerContactAmount } from '../lib/appState';
 import { toggleFullscreen } from '../lib/platformFeatures';
 import { buildFullAppUrl } from '../lib/embedMode';
 import { handleEmbedControlMessage, type EmbedControlHandlers } from '../lib/embedControl';
+import { UserParametersPublicSurface } from './controlPanelUserParameters';
+import { useUserParameters } from '../lib/userParameters';
+import type { UpdateConfig } from './controlPanelTabsShared';
 import type { ParticleConfig } from '../types';
 import type { PointCloudCaptureState } from '../lib/pointCloudExport';
 import type { AudioLevels } from '../lib/audioControllerTypes';
@@ -61,6 +64,9 @@ export const AppEmbedPlayer: React.FC<AppEmbedPlayerProps> = ({
   // re-registering the listener per render.
   const embedHandlersRef = React.useRef(embedControl);
   embedHandlersRef.current = embedControl;
+  // Phase 18 stage 5: bundled declarations (session overlay) drive
+  // the read-only generated surface; empty = nothing rendered.
+  const userParameterDeclarations = useUserParameters();
   React.useEffect(() => {
     if (!embedHandlersRef.current) return;
     const onMessage = (event: MessageEvent) => {
@@ -120,6 +126,15 @@ export const AppEmbedPlayer: React.FC<AppEmbedPlayerProps> = ({
           pointCloudCaptureRef={pointCloudCaptureRef}
         />
       </div>
+      {embedControl && userParameterDeclarations.length > 0 && (
+        <div className="absolute left-3 top-3 z-[90] max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-white/10 bg-black/55 p-1 backdrop-blur-md [&>div]:mt-0">
+          <UserParametersPublicSurface
+            config={config}
+            updateConfig={((key: keyof ParticleConfig, value: ParticleConfig[typeof key]) =>
+              embedControl.applyValue(key, value as number | boolean | string)) as UpdateConfig}
+          />
+        </div>
+      )}
       <div className="absolute bottom-3 right-3 z-[90] flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-1.5 py-1 backdrop-blur-md">
         <button
           type="button"

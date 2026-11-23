@@ -15,7 +15,8 @@ import {
 } from '../lib/gpgpuCustomForceControls';
 import { VEL_FRAG_PREAMBLE } from './gpgpuShaderSimulationVelocityPreamble';
 import { VEL_FRAG_HELPERS } from './gpgpuShaderSimulationVelocityHelpers';
-import { VEL_FRAG_MAIN_FORCES } from './gpgpuShaderSimulationVelocityMainForces';
+import { VEL_FRAG_MAIN_FORCES, buildMainForcesFragment } from './gpgpuShaderSimulationVelocityMainForces';
+import { isDefaultGpgpuForceOrder } from '../lib/gpgpuForceOrder';
 import { VEL_FRAG_MAIN_SPH_GRAINS } from './gpgpuShaderSimulationVelocityMainSphGrains';
 import { VEL_FRAG_MAIN_TAIL } from './gpgpuShaderSimulationVelocityMainTail';
 
@@ -39,13 +40,23 @@ export const SIM_VEL_FRAG =
 // injected right after the preamble's precision line. A snippet
 // without declarations takes the historical path only, so the
 // output stays byte-identical to the pre-KCB1 builder.
-export function buildVelocityFragment(customCode: string): string {
+export function buildVelocityFragment(customCode: string, forceOrder?: string): string {
   const snippet = customCode.trim();
-  if (!snippet) return SIM_VEL_FRAG;
+  // Phase 18 stage 2: a non-default force order rebuilds the
+  // main-forces chunk in that order. The default order ('' /
+  // unset) takes the historical path only, so the output stays
+  // byte-identical to SIM_VEL_FRAG. The custom-force placeholder
+  // lives in the main tail chunk, so ordering never competes
+  // with the snippet injection below.
+  const base = !forceOrder || isDefaultGpgpuForceOrder(forceOrder)
+    ? SIM_VEL_FRAG
+    : VEL_FRAG_PREAMBLE + VEL_FRAG_HELPERS + buildMainForcesFragment(forceOrder)
+      + VEL_FRAG_MAIN_SPH_GRAINS + VEL_FRAG_MAIN_TAIL;
+  if (!snippet) return base;
   const extraction = extractCustomForceControls(snippet);
   const decls = extraction.ok ? extraction.decls : [];
   const body = applyCtrlDeclarations(snippet, decls);
-  const injected = SIM_VEL_FRAG.replace(
+  const injected = base.replace(
     '    // __CUSTOM_FORCE__',
     `    { // custom force (user GLSL)\n${body}\n    }`,
   );

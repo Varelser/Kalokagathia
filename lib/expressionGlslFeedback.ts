@@ -1,12 +1,23 @@
 import {
+  astReferencesVariable,
   compileExpression,
-  type ExpressionCompileResult,
 } from './expression';
-import { astToGlsl, type GlslVarResolver } from './expressionGlsl';
 import {
+  astToGlsl,
+  astUsesSimVar,
+  simVarToGlsl,
+  ATTR_EXT_MAIN_LINES,
+  ATTR_EXT_UNIFORM_LINES,
+  ATTR_SIM_MAIN_LINES,
+  ATTR_SIM_UNIFORM_LINES,
+  type GlslVarResolver,
+} from './expressionGlsl';
+import {
+  ATTR_SIM_VAR_NAMES,
   ATTR_SLOT_COUNT,
   normalizeAttrExprs,
   normalizeAttrNames,
+  normalizeAttrNames2,
 } from './gpgpuAttributes';
 
 /**
@@ -64,70 +75,79 @@ import {
  * (phasebu-work/project-copy/lib/expressionGlslFeedback.ts);
  * the only changes are this header and the module's place in
  * the production tree.
+ *
+ * Phase 18 stage 1: the sim variables (vel / age / rad) and
+ * the ext slot inputs (w0..w3) join under the same conditional
+ * emission as the BO builder — a fragment using neither is
+ * byte-identical to the Phase BV output.
  */
 
-type AstNode = Extract<ExpressionCompileResult, { ok: true }>['ast'];
-
 const CHANNELS = ['r', 'g', 'b', 'a'] as const;
-
-/** Does this AST read the variable `name` anywhere? */
-function astReferencesVar(node: AstNode, name: string): boolean {
-  switch (node.type) {
-    case 'var':
-      return node.name === name;
-    case 'unary':
-      return astReferencesVar(node.arg, name);
-    case 'binary':
-      return astReferencesVar(node.left, name) || astReferencesVar(node.right, name);
-    case 'ternary':
-      return (
-        astReferencesVar(node.cond, name)
-        || astReferencesVar(node.then, name)
-        || astReferencesVar(node.else, name)
-      );
-    case 'call':
-      return node.args.some((arg) => astReferencesVar(arg, name));
-    default:
-      return false;
-  }
-}
 
 export function buildAttrFeedbackFragment(
   exprsInput: readonly string[] | unknown,
   namesInput: readonly string[] | unknown,
+  extNamesInput?: readonly string[] | unknown,
 ): string | null {
   const exprs = normalizeAttrExprs(exprsInput);
   const names = normalizeAttrNames(namesInput);
   if (!exprs.some((expr) => expr.trim().length > 0)) return null;
   const lowerNames = names.map((name) => name.toLowerCase());
-  const extraVars = [...lowerNames, 'p'];
   // Slot-name → first slot carrying it. 'p' is reserved here in
   // addition to the BO reserved set (which astToGlsl's caller
   // discipline already applies via expressionGlsl's own table —
   // this generator resolves names itself, so it must skip 'p'
   // explicitly or a slot named 'p' would hijack the variable).
+  // Phase 18 stage 1: the sim names are reserved the same way.
   const slotByName = new Map<string, number>();
   for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
     const key = lowerNames[slot];
     if (key === 'p') continue;
+    if ((ATTR_SIM_VAR_NAMES as readonly string[]).includes(key)) continue;
     if (!slotByName.has(key)) slotByName.set(key, slot);
   }
+  // Ext slots (Phase 18 stage 1): read-only inputs w0..w3 from
+  // the ext bake texture, under the same conditional-emission
+  // discipline as the BO builder (see expressionGlsl.ts).
+  const extSlotByName = new Map<string, number>();
+  if (extNamesInput !== undefined) {
+    const lowerExtNames = normalizeAttrNames2(extNamesInput).map((name) => name.toLowerCase());
+    for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
+      const key = lowerExtNames[slot];
+      if (key === 'p') continue;
+      if ((ATTR_SIM_VAR_NAMES as readonly string[]).includes(key)) continue;
+      if (slotByName.has(key) || extSlotByName.has(key)) continue;
+      extSlotByName.set(key, slot);
+    }
+  }
+  const extraVars = [
+    ...lowerNames,
+    ...[...extSlotByName.keys()],
+    ...ATTR_SIM_VAR_NAMES,
+    'p',
+  ];
 
   const blocks: string[] = [];
   let feedbackSlots = 0;
+  let usesSim = false;
+  let usesExt = false;
   for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
     const expr = exprs[slot];
     if (expr.trim().length === 0) continue;
     const compiled = compileExpression(expr, extraVars);
     if (!compiled.ok) continue;
-    const usesP = astReferencesVar(compiled.ast, 'p');
+    const usesP = astReferencesVariable(compiled.ast, 'p');
     const chan = CHANNELS[slot];
     const resolveVar: GlslVarResolver = (name) => {
       if (name === 'x') return `src.${chan}`;
       if (name === 't') return 'uTime';
       if (name === 'p') return `prev.${chan}`;
+      const sim = simVarToGlsl(name);
+      if (sim !== null) return sim;
       const target = slotByName.get(name);
-      return target === undefined ? null : `v${target}`;
+      if (target !== undefined) return `v${target}`;
+      const extTarget = extSlotByName.get(name);
+      return extTarget === undefined ? null : `w${extTarget}`;
     };
     const glsl = astToGlsl(compiled.ast, resolveVar);
     if (glsl === null) {
@@ -138,6 +158,13 @@ export function buildAttrFeedbackFragment(
       continue;
     }
     if (usesP) feedbackSlots++;
+    if (astUsesSimVar(compiled.ast)) usesSim = true;
+    for (const key of extSlotByName.keys()) {
+      if (astReferencesVariable(compiled.ast, key)) {
+        usesExt = true;
+        break;
+      }
+    }
     const fallback = usesP ? `prev.${chan}` : `src.${chan}`;
     blocks.push(
       `  {\n`
@@ -153,10 +180,14 @@ export function buildAttrFeedbackFragment(
     'varying vec2 vUv;',
     'uniform sampler2D uSrc;',
     'uniform sampler2D uPrev;',
+    ...(usesExt ? ATTR_EXT_UNIFORM_LINES : []),
+    ...(usesSim ? ATTR_SIM_UNIFORM_LINES : []),
     'uniform float uTime;',
     'void main() {',
     '  vec4 src = texture2D(uSrc, vUv);',
     '  vec4 prev = texture2D(uPrev, vUv);',
+    ...(usesExt ? ATTR_EXT_MAIN_LINES : []),
+    ...(usesSim ? ATTR_SIM_MAIN_LINES : []),
     '  float v0 = src.r;',
     '  float v1 = src.g;',
     '  float v2 = src.b;',

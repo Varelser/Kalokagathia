@@ -12,6 +12,7 @@ export const APP_STATE_DEFAULT_LAYER_3: Partial<ParticleConfig> = {
   layer3SourceCount: 1,
   layer3SourceSpread: 200,
   layer3SourcePositions: [],
+  layer3SourceParents: [],
   layer3Type: 'flow',
   layer3MediaLumaMap: [],
   layer3MediaMapWidth: 0,

@@ -4,7 +4,21 @@
 // of the original SIM_VEL_FRAG template literal. The shell
 // module concatenates all five chunks in order; the assembled
 // string is pinned byte-for-byte by phaseav_test.mjs.
-export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
+//
+// Phase 18 stage 2: the force blocks after the fixed head are
+// split into named chunk constants so their application order
+// can be rearranged by the gpgpuForceOrder key. Every block is
+// a single scoped `if { ... }` statement whose declarations do
+// not leak (verified against the source: block-local variables
+// stay inside their block; the shared inputs — vel, pos,
+// pyroTemp, curlTime, grp* scales, phaseState — are declared
+// in the fixed head or, for phaseState, only mutated by the
+// kuramoto block). The default-order concatenation of head +
+// chunks is byte-identical to the pre-split VEL_FRAG_MAIN_FORCES
+// (pinned by scripts/phase18-shader-hash.mjs and
+// scripts/phase18-emitter-force-order.test.mjs).
+import { normalizeGpgpuForceOrder } from '../lib/gpgpuForceOrder';
+export const VEL_FRAG_MAIN_FORCES_HEAD = /* glsl */ `  void main() {
     vec4 posData = texture2D(uPosTex, vUv);
     vec4 velData = texture2D(uVelTex, vUv);
     vec3 pos = posData.xyz;
@@ -127,7 +141,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
     float curlTime = replicaTime * 0.15 * uCurlSpeed;
 
     vel.y -= uGravity * uDelta * 9.8 * grpGravity;
-
+`;
+export const VEL_FRAG_FORCE_PYRO_BUOYANCY = /* glsl */ `
     // Pyro buoyancy (Phase AS): hot particles rise against a
     // gravity that stays downward — the gain is a separate term
     // in gravity units (the AQ discipline: a new interaction
@@ -138,19 +153,22 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
     if (uPyroEnabled) {
       vel.y += pyroTemp * uPyroBuoyancy * uDelta * 9.8;
     }
-
+`;
+export const VEL_FRAG_FORCE_TURBULENCE = /* glsl */ `
     if (uTurbulence > 0.001) {
       float t = replicaTime * 0.25;
       vec3 np = pos * 0.007 + replicaSeed;
       vel += vec3(vnoise(np+vec3(t,0,0)),vnoise(np+vec3(0,t+13.7,0)),vnoise(np+vec3(0,0,t+27.4)))
              * uTurbulence * 18.0 * uDelta * grpTurbulence;
     }
-
+`;
+export const VEL_FRAG_FORCE_AUDIO_BLAST = /* glsl */ `
     if (uAudioBlast > 0.001) {
       vec3 dir = length(pos) > 0.001 ? normalize(pos) : vec3(0,1,0);
       vel += dir * uAudioBlast * 14.0 * uDelta;
     }
-
+`;
+export const VEL_FRAG_FORCE_NBODY = /* glsl */ `
     // N-Body gravity/repulsion
     if (uNBodyEnabled) {
       vec3 acc = vec3(0.0);
@@ -174,7 +192,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       }
       vel += acc * uNBodyStrength * uDelta * 500.0;
     }
-
+`;
+export const VEL_FRAG_FORCE_CURL = /* glsl */ `
     // Curl Noise (with optional field symmetry, B1b; symmetry 0 keeps
     // the exact legacy sampling expression). The B3 flavours/octaves
     // route through curlField; mode 'curl' with 1 octave keeps the
@@ -192,7 +211,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       float pyroCurlMul = uPyroEnabled ? 1.0 + pyroTemp * uPyroDisturbanceHeat : 1.0;
       vel += curl * uCurlStrength * 20.0 * uDelta * grpCurl * pyroCurlMul;
     }
-
+`;
+export const VEL_FRAG_FORCE_PYRO_DISTURBANCE = /* glsl */ `
     // Pyro disturbance (Phase AS): Pyro's own stirring term, so
     // hot particles churn even with the curl block off. It
     // samples the same divergence-free curl field at a different
@@ -204,7 +224,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       vec3 pyroCurl = curlNoise(pos * uCurlScale * 2.3 + vec3(19.7, 7.3, 11.9) + vec3(curlTime * 1.31) + replicaSeed);
       vel += pyroCurl * pyroTemp * uPyroDisturbance * 20.0 * uDelta;
     }
-
+`;
+export const VEL_FRAG_FORCE_BOIDS = /* glsl */ `
     // Boids
     if (uBoidsEnabled) {
       vec3 sepForce = vec3(0.0);
@@ -230,7 +251,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
         vel += normalize(cohPos * inv - pos + vec3(0.0001)) * uBoidsCohesion * uDelta * 60.0;
       }
     }
-
+`;
+export const VEL_FRAG_FORCE_KURAMOTO = /* glsl */ `
     // Kuramoto phase synchronization: the phase lives in vel.w and is
     // coupled to sampled neighbours within a radius (sampled mean-field):
     // dPhase = omega_i + K * mean(sin(phase_j - phase_i)).
@@ -249,7 +271,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       float dPhase = omega + uKuramotoCoupling * (sumSin / 64.0) * 3.0;
       phaseState = mod(phaseState + dPhase * uDelta, 6.2831853);
     }
-
+`;
+export const VEL_FRAG_FORCE_PARTICLE_LIFE = /* glsl */ `
     // Particle Life: species-matrix forces over 64 stochastic neighbours.
     // Classic force law with beta = 0.3: universal short-range repulsion
     // for r < beta, and a triangular matrix-weighted band for beta <= r < 1
@@ -348,7 +371,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
         if (spd2 > uParticleLifeMaxSpeed) vel *= uParticleLifeMaxSpeed / spd2;
       }
     }
-
+`;
+export const VEL_FRAG_FORCE_ATTRACTOR = /* glsl */ `
     // Strange Attractor
     if (uAttractorEnabled) {
       vec3 ap = pos / max(0.1, uAttractorScale);
@@ -435,7 +459,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
         vel = fv * uAttractorScale * 0.015 * uAttractorStrength;
       }
     }
-
+`;
+export const VEL_FRAG_FORCE_LEVY = /* glsl */ `
     // Lévy flight: rare heavy-tailed impulses. The gate is quantised by tick
     // (floor(uTime * rate)) so jump frequency is frame-rate independent; the
     // magnitude follows a power law in the hash (clamped for stability).
@@ -451,7 +476,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
         }
       }
     }
-
+`;
+export const VEL_FRAG_FORCE_VORTEX = /* glsl */ `
     // Vortex
     if (uVortexEnabled) {
       vec3 axis = normalize(vec3(sin(uVortexTilt), cos(uVortexTilt), 0.0));
@@ -459,7 +485,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       float tLen = length(tangent);
       if (tLen > 0.001) vel += (tangent / tLen) * uVortexStrength * uDelta * 80.0;
     }
-
+`;
+export const VEL_FRAG_FORCE_WIND = /* glsl */ `
     // Wind
     if (uWindEnabled) {
       vec3 gust = vec3(
@@ -469,7 +496,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       ) * uWindGust;
       vel += (normalize(vec3(uWindX, uWindY, uWindZ) + vec3(0.0001)) * uWindStrength + gust) * uDelta * 30.0 * grpWind;
     }
-
+`;
+export const VEL_FRAG_FORCE_WIND_VOLUME = /* glsl */ `
     // Wind volume (Phase AL): the same wind field, localised to a
     // placed sphere. The weight is the light falloff (1-(d/R)^2)^2
     // times the volume strength — at the centre with strength 1
@@ -494,7 +522,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
           * (wvFall * uWindVolumeStrength) * uDelta * 30.0 * grpWind;
       }
     }
-
+`;
+export const VEL_FRAG_FORCE_SLOPE = /* glsl */ `
     // Terrain slope flow (Phase AE): run downhill along the
     // terrain gradient, proportional to the local slope. The
     // field is the XZ plane over [-uSlopeExtent, +uSlopeExtent];
@@ -506,7 +535,8 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
       vec2 downhill = slopeSample.rg * 2.0 - 1.0;
       vel += vec3(downhill.x, 0.0, downhill.y) * (slopeSample.b * uSlopeForceStrength) * uDelta * 30.0;
     }
-
+`;
+export const VEL_FRAG_FORCE_WELL = /* glsl */ `
     // Gravity Well(s). Count 1 keeps the exact legacy single well at
     // the origin; counts 2-4 (B3) place the wells on a slowly rotating
     // ring of radius uWellSpread, each with the same force law.
@@ -530,18 +560,21 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
         }
       }
     }
-
+`;
+export const VEL_FRAG_FORCE_ELASTIC = /* glsl */ `
     // Elastic Spring
     if (uElasticEnabled) {
       vel -= pos * uElasticStrength * uDelta * 2.0;
     }
-
+`;
+export const VEL_FRAG_FORCE_MAGNETIC = /* glsl */ `
     // Magnetic / Lorentz
     if (uMagneticEnabled) {
       vec3 B = normalize(vec3(uMagneticBX, uMagneticBY, uMagneticBZ) + vec3(0.0001));
       vel += cross(vel, B) * uMagneticStrength * uDelta * 0.8;
     }
-
+`;
+export const VEL_FRAG_FORCE_STEER_AVOID = /* glsl */ `
     // General steering avoidance (Phase 15, Houdini §3): the
     // Particle Life avoidance law generalised to every particle,
     // independent of the Life switch — a push along the SDF
@@ -561,3 +594,37 @@ export const VEL_FRAG_MAIN_FORCES = /* glsl */ `  void main() {
     }
 
 `;
+export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
+  'pyro-buoyancy': VEL_FRAG_FORCE_PYRO_BUOYANCY,
+  'turbulence': VEL_FRAG_FORCE_TURBULENCE,
+  'audio-blast': VEL_FRAG_FORCE_AUDIO_BLAST,
+  'nbody': VEL_FRAG_FORCE_NBODY,
+  'curl': VEL_FRAG_FORCE_CURL,
+  'pyro-disturbance': VEL_FRAG_FORCE_PYRO_DISTURBANCE,
+  'boids': VEL_FRAG_FORCE_BOIDS,
+  'kuramoto': VEL_FRAG_FORCE_KURAMOTO,
+  'particle-life': VEL_FRAG_FORCE_PARTICLE_LIFE,
+  'attractor': VEL_FRAG_FORCE_ATTRACTOR,
+  'levy': VEL_FRAG_FORCE_LEVY,
+  'vortex': VEL_FRAG_FORCE_VORTEX,
+  'wind': VEL_FRAG_FORCE_WIND,
+  'wind-volume': VEL_FRAG_FORCE_WIND_VOLUME,
+  'slope': VEL_FRAG_FORCE_SLOPE,
+  'well': VEL_FRAG_FORCE_WELL,
+  'elastic': VEL_FRAG_FORCE_ELASTIC,
+  'magnetic': VEL_FRAG_FORCE_MAGNETIC,
+  'steer-avoid': VEL_FRAG_FORCE_STEER_AVOID,
+};
+/** Assemble head + force chunks in the given order (names are
+ * normalised by lib/gpgpuForceOrder: unknown / duplicate names
+ * dropped, missing chunks appended in default order). With no
+ * order (or the default order) the result is byte-identical to
+ * the historical VEL_FRAG_MAIN_FORCES. */
+export function buildMainForcesFragment(order?: string | readonly string[]): string {
+  const names = normalizeGpgpuForceOrder(order);
+  let out = VEL_FRAG_MAIN_FORCES_HEAD;
+  for (const name of names) out += VEL_FRAG_FORCE_CHUNKS[name];
+  return out;
+}
+
+export const VEL_FRAG_MAIN_FORCES = buildMainForcesFragment();

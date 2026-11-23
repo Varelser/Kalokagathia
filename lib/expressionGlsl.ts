@@ -1,11 +1,14 @@
 import {
+  astReferencesVariable,
   compileExpression,
   type ExpressionCompileResult,
 } from './expression';
 import {
+  ATTR_SIM_VAR_NAMES,
   ATTR_SLOT_COUNT,
   normalizeAttrExprs,
   normalizeAttrNames,
+  normalizeAttrNames2,
 } from './gpgpuAttributes';
 
 /**
@@ -85,9 +88,68 @@ const RESERVED_NAMES: ReadonlySet<string> = new Set([
   'clamp',
   'lerp',
   'smoothstep',
+  // Sim quantities (Phase 18 stage 1): reserved like x / t —
+  // a slot carrying one of these names can never shadow the
+  // sim variable (the bake applies the same rule).
+  ...ATTR_SIM_VAR_NAMES,
 ]);
 
 const CHANNELS = ['r', 'g', 'b', 'a'] as const;
+
+/**
+ * Sim-quantity support shared by the attribute fragment
+ * builders (Phase 18 stage 1). When — and only when — a
+ * compiled expression reads vel / age / rad, the fragment
+ * gains the position / velocity uniforms and the sampling
+ * lines below; the GLSL definitions match attrSimValues in
+ * lib/gpgpuAttributes.ts (the denominators arrive as uniforms
+ * already max'ed with 0.001 by the wiring). Fragments whose
+ * expressions never mention the sim names are byte-identical
+ * to the pre-Phase-18 output.
+ */
+export function astUsesSimVar(node: AstNode): boolean {
+  return ATTR_SIM_VAR_NAMES.some((name) => astReferencesVariable(node, name));
+}
+
+export function simVarToGlsl(name: string): string | null {
+  if (name === 'vel') return 'simVelMag';
+  if (name === 'age') return 'simAgeN';
+  if (name === 'rad') return 'simRadN';
+  return null;
+}
+
+export const ATTR_SIM_UNIFORM_LINES: readonly string[] = [
+  'uniform sampler2D uPosTex;',
+  'uniform sampler2D uVelTex;',
+  'uniform float uAgeDenom;',
+  'uniform float uRadiusDenom;',
+];
+
+export const ATTR_SIM_MAIN_LINES: readonly string[] = [
+  '  vec4 simPos = texture2D(uPosTex, vUv);',
+  '  vec4 simVel = texture2D(uVelTex, vUv);',
+  '  float simVelMag = length(simVel.xyz);',
+  '  float simAgeN = clamp(simPos.w / uAgeDenom, 0.0, 1.0);',
+  '  float simRadN = clamp(length(simPos.xyz) / uRadiusDenom, 0.0, 1.0);',
+];
+
+/**
+ * Ext-texture support, same conditional-emission discipline:
+ * the uSrc2 sampling lines appear only when an expression
+ * reads an ext slot name; the w0..w3 locals hold slots 4..7
+ * of the ext bake texture.
+ */
+export const ATTR_EXT_UNIFORM_LINES: readonly string[] = [
+  'uniform sampler2D uSrc2;',
+];
+
+export const ATTR_EXT_MAIN_LINES: readonly string[] = [
+  '  vec4 src2 = texture2D(uSrc2, vUv);',
+  '  float w0 = src2.r;',
+  '  float w1 = src2.g;',
+  '  float w2 = src2.b;',
+  '  float w3 = src2.a;',
+];
 
 /** GLSL float literal: always a decimal point or an exponent. */
 function formatGlslNumber(value: number): string {
@@ -256,10 +318,21 @@ function astCallToGlsl(name: string, args: string[]): string | null {
  * names resolve to the first matching slot, as in the bake.
  * Each re-evaluated result is clamped to [0, 1]; a non-finite
  * result falls back to the bake channel for that slot only.
+ *
+ * Phase 18 stage 1 additions, both under conditional emission
+ * (a fragment that uses neither is byte-identical to before):
+ * the reserved sim variables vel / age / rad read the current
+ * position / velocity textures (the wiring binds the previous
+ * frame's sim state — the pass runs before this frame's sim
+ * passes — and the initial textures on the first frame, which
+ * is exactly the bake-time fallback values), and when the
+ * caller supplies the ext slot names, slots 4..7 of the ext
+ * bake texture are readable as read-only inputs (w0..w3).
  */
 export function buildAttrDynFragment(
   exprsInput: readonly string[] | unknown,
   namesInput: readonly string[] | unknown,
+  extNamesInput?: readonly string[] | unknown,
 ): string | null {
   const exprs = normalizeAttrExprs(exprsInput);
   const names = normalizeAttrNames(namesInput);
@@ -272,22 +345,71 @@ export function buildAttrDynFragment(
     if (RESERVED_NAMES.has(key)) continue;
     if (!slotByName.has(key)) slotByName.set(key, slot);
   }
+  // Ext slots (Phase 18 stage 1): when the caller supplies the
+  // ext names, an expression may also read slots 4..7 (locals
+  // w0..w3 from the ext bake texture). A name already claimed
+  // by a first-set slot resolves there (first match wins, the
+  // bake's rule across both sets).
+  const extSlotByName = new Map<string, number>();
+  if (extNamesInput !== undefined) {
+    const lowerExtNames = normalizeAttrNames2(extNamesInput).map((name) => name.toLowerCase());
+    for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
+      const key = lowerExtNames[slot];
+      if (RESERVED_NAMES.has(key)) continue;
+      if (slotByName.has(key) || extSlotByName.has(key)) continue;
+      extSlotByName.set(key, slot);
+    }
+  }
+  const extraVars = [
+    ...lowerNames,
+    ...[...extSlotByName.keys()],
+    ...ATTR_SIM_VAR_NAMES,
+  ];
+
+  // Compile everything first: whether the fragment needs the
+  // sim / ext sampling lines is a property of the whole set,
+  // and those lines must precede the per-slot blocks.
+  const compiledBySlot: (AstNode | null)[] = [];
+  let usesSim = false;
+  let usesExt = false;
+  for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
+    const expr = exprs[slot];
+    if (expr.trim().length === 0) {
+      compiledBySlot.push(null);
+      continue;
+    }
+    const compiled = compileExpression(expr, extraVars);
+    if (!compiled.ok) {
+      compiledBySlot.push(null);
+      continue;
+    }
+    compiledBySlot.push(compiled.ast);
+    if (astUsesSimVar(compiled.ast)) usesSim = true;
+    for (const key of extSlotByName.keys()) {
+      if (astReferencesVariable(compiled.ast, key)) {
+        usesExt = true;
+        break;
+      }
+    }
+  }
 
   const blocks: string[] = [];
   let activeSlots = 0;
   for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
-    const expr = exprs[slot];
-    if (expr.trim().length === 0) continue;
-    const compiled = compileExpression(expr, lowerNames);
-    if (!compiled.ok) continue;
+    const ast = compiledBySlot[slot];
+    if (!ast) continue;
     const chan = CHANNELS[slot];
     const resolveVar: GlslVarResolver = (name) => {
       if (name === 'x') return `src.${chan}`;
       if (name === 't') return 'uTime';
+      const sim = simVarToGlsl(name);
+      if (sim !== null) return sim;
       const target = slotByName.get(name);
-      return target === undefined ? null : `v${target}`;
+      if (target !== undefined) return `v${target}`;
+      const extTarget = extSlotByName.get(name);
+      return extTarget === undefined ? null : `w${extTarget}`;
     };
-    const glsl = astToGlsl(compiled.ast, resolveVar);
+    const glsl = astToGlsl(ast, resolveVar);
     if (glsl === null) return null;
     activeSlots++;
     blocks.push(
@@ -303,9 +425,13 @@ export function buildAttrDynFragment(
     'precision highp float;',
     'varying vec2 vUv;',
     'uniform sampler2D uSrc;',
+    ...(usesExt ? ATTR_EXT_UNIFORM_LINES : []),
+    ...(usesSim ? ATTR_SIM_UNIFORM_LINES : []),
     'uniform float uTime;',
     'void main() {',
     '  vec4 src = texture2D(uSrc, vUv);',
+    ...(usesExt ? ATTR_EXT_MAIN_LINES : []),
+    ...(usesSim ? ATTR_SIM_MAIN_LINES : []),
     '  float v0 = src.r;',
     '  float v1 = src.g;',
     '  float v2 = src.b;',

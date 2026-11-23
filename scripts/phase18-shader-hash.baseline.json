@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "parts": {
+    "SIM_VEL_FRAG": {
+      "length": 85344,
+      "sha256": "f55fe995582251261a963657d510a8735dc7ead7395428bacb2b802219cc30a4"
+    },
+    "VEL_FRAG_PREAMBLE": {
+      "length": 14685,
+      "sha256": "295c890dfc26f6da8523547acac2bafec69136d4d216705b6952470fd9671bfd"
+    },
+    "VEL_FRAG_HELPERS": {
+      "length": 16205,
+      "sha256": "2f369819be25e22fe7b6c2ab77c2d8c85177f6055febe16225027d2ee31dad87"
+    },
+    "VEL_FRAG_MAIN_FORCES": {
+      "length": 26526,
+      "sha256": "840e33524e74e5385bb4d71ed5913d6db32f23dcbc80267ec4c954ec7bd0b402"
+    },
+    "VEL_FRAG_MAIN_SPH_GRAINS": {
+      "length": 10218,
+      "sha256": "d6ca5aff6e24c4c7781f06f20112b58705a96de29b7aae59c11b9b755475e466"
+    },
+    "VEL_FRAG_MAIN_TAIL": {
+      "length": 17710,
+      "sha256": "643cf4434508e31acee1b805ed08a0e81875f9fef7ce96c249428e5bf11c22a1"
+    },
+    "SIM_POS_FRAG": {
+      "length": 26372,
+      "sha256": "ad63f0793b7f37c0be282765e47a9fad7060a0821db223aa1b19e5d8aeae81af"
+    },
+    "buildVelocityFragment(empty)": {
+      "length": 85344,
+      "sha256": "f55fe995582251261a963657d510a8735dc7ead7395428bacb2b802219cc30a4"
+    }
+  }
+}

@@ -857,11 +857,24 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   useEffect(() => {
     const enabled = config.gpgpuCustomForceEnabled;
     const code = enabled ? config.gpgpuCustomForceCode : '';
+    // Phase 18 stage 2: the force order key rides the same swap
+    // path. The applied-key ref tracks code + order together.
+    const order = config.gpgpuForceOrder ?? '';
+    const appliedKey = `${code}\n${order}`;
     if (!code.trim()) {
-      if (appliedForceCodeRef.current !== null) {
-        velSimMat.fragmentShader = SIM_VEL_FRAG;
+      if (!order.trim()) {
+        if (appliedForceCodeRef.current !== null) {
+          velSimMat.fragmentShader = SIM_VEL_FRAG;
+          velSimMat.needsUpdate = true;
+          appliedForceCodeRef.current = null;
+        }
+      } else if (appliedForceCodeRef.current !== appliedKey) {
+        // Order-only change: the chunks are built-in GLSL, so the
+        // rearranged fragment swaps in directly (the default
+        // order never reaches this branch and stays SIM_VEL_FRAG).
+        velSimMat.fragmentShader = buildVelocityFragment('', order);
         velSimMat.needsUpdate = true;
-        appliedForceCodeRef.current = null;
+        appliedForceCodeRef.current = appliedKey;
       }
       setCustomForceStatus({ state: 'inactive' });
       return;
@@ -869,13 +882,13 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     // KCB1: keep ctrl() uniform values in sync even when only values changed
     // (no shader rebuild). Runs before the applied-code early return.
     syncCtrlUniforms(velSimMat.uniforms as Record<string, { value: unknown }>, extractCustomForceControls(code).decls, config.gpgpuCustomForceCtrlValues);
-    if (appliedForceCodeRef.current === code) return;
+    if (appliedForceCodeRef.current === appliedKey) return;
     const validation = validateCustomForceCode(code);
     if (!validation.ok) {
       setCustomForceStatus({ state: 'error', message: validation.error ?? 'invalid code' });
       return;
     }
-    const built = buildVelocityFragment(code);
+    const built = buildVelocityFragment(code, order);
     const check = compileCheckShader(gl.getContext() as WebGL2RenderingContext, SIM_VERT, buildCustomForceHarness(code));
     if (!check.ok) {
       setCustomForceStatus({ state: 'error', message: check.error ?? 'compile failed' });
@@ -883,9 +896,9 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     }
     velSimMat.fragmentShader = built;
     velSimMat.needsUpdate = true;
-    appliedForceCodeRef.current = code;
+    appliedForceCodeRef.current = appliedKey;
     setCustomForceStatus({ state: 'active' });
-  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, gl, velSimMat]);
+  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, gl, velSimMat]);
 
   return {
     simMeshRef,

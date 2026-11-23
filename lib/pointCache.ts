@@ -41,7 +41,12 @@ import type { DataTable } from './dataTable';
 export const POINT_CACHE_FORMAT = 'pointcache-manifest-v2';
 export const POINT_CACHE_MAX_POINTS = 8192;
 export const POINT_CACHE_MAX_FRAMES = 240;
-export const POINT_CACHE_MAX_ATTRIBUTE_COLUMNS = 4;
+// Phase 18 stage 1: the cap rises 4 → 8 so a cache can carry
+// the columns the ext attribute slots (4..7) read by name —
+// the consumer side (the ext bake) exists now, which is the
+// condition this cap was waiting for. Caches with ≤ 4 columns
+// load exactly as before.
+export const POINT_CACHE_MAX_ATTRIBUTE_COLUMNS = 8;
 
 export interface PointCacheAttributeDecl {
   name: string;
@@ -595,7 +600,7 @@ export function buildBundledSamplePointCache(): PointCacheData {
   const blobCount = 384;
   const blobOffset = new Float32Array(blobCount * 3);
   for (let i = 0; i < blobCount; i++) {
-    const theta = i * 2.39996322972865332;
+    const theta = i * 2.3999632297286535;
     const z = 2 * ((i * 0.7548776662466927) % 1) - 1;
     const radius = 0.2 * Math.cbrt((i * 0.6180339887498949) % 1);
     const xy = Math.sqrt(Math.max(0, 1 - z * z));

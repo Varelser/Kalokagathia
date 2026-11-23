@@ -6,6 +6,8 @@ export interface ParticleConfigLayer1 {
   layer1SourceCount: number;
   layer1SourceSpread: number;
   layer1SourcePositions: Position3D[];
+  // Emitter hierarchy (Phase 18 stage 2): parent emitter index per source (-1 / missing = root).
+  layer1SourceParents: number[];
 
   layer1Counts: number[];
   layer1Radii: number[];

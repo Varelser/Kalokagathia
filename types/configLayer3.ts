@@ -11,6 +11,7 @@ export interface ParticleConfigLayer3 {
   layer3SourceCount: number;
   layer3SourceSpread: number;
   layer3SourcePositions: Position3D[];
+  layer3SourceParents: number[];
   layer3Type: Layer2Type;
   layer3MediaLumaMap: number[];
   layer3MediaMapWidth: number;

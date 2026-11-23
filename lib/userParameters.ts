@@ -188,8 +188,36 @@ function ensureDeclarations(): UserParameterDeclaration[] {
   return currentDeclarations;
 }
 
-export function getUserParameters(): UserParameterDeclaration[] {
+/* -------- session overlay (Phase 18 stage 5: shared-link declarations) --------
+ * Declarations bundled into a #c= share link live ONLY here: in-memory,
+ * never written to localStorage. While an overlay is present it wins
+ * over the visitor's own saved declarations; clearing it (leaving
+ * shared view) restores the saved set untouched. */
+let sessionDeclarations: UserParameterDeclaration[] | null = null;
+
+export function setSessionUserParameters(raw: unknown): UserParameterDeclaration[] {
+  sessionDeclarations = sanitizeUserParameters(raw);
+  declarationListeners.forEach((listener) => listener());
+  return sessionDeclarations;
+}
+
+export function clearSessionUserParameters(): void {
+  if (sessionDeclarations === null) return;
+  sessionDeclarations = null;
+  declarationListeners.forEach((listener) => listener());
+}
+
+export function getSessionUserParameters(): UserParameterDeclaration[] | null {
+  return sessionDeclarations;
+}
+
+/** The visitor's own saved declarations, ignoring any session overlay. */
+export function getSavedUserParameters(): UserParameterDeclaration[] {
   return ensureDeclarations();
+}
+
+export function getUserParameters(): UserParameterDeclaration[] {
+  return sessionDeclarations ?? ensureDeclarations();
 }
 
 export function setUserParameters(next: UserParameterDeclaration[]): void {

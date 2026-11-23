@@ -49,6 +49,7 @@ import { useProjectTransfer } from './lib/useProjectTransfer';
 import { useSequenceController } from './lib/useSequenceController';
 import { usePointCachePlayback } from './lib/usePointCachePlayback';
 import { decodeConfigPayload, enterSharedView, fetchCatalogPreset, parseShareHash } from './lib/shareLink';
+import { setSessionUserParameters } from './lib/userParameters';
 import { maybeWarnHeavyPreset } from './lib/gpuTierWarnings';
 import { initGpuTier } from './lib/gpuTier';
 import { requestPersistentStorageOnce } from './lib/platformFeatures';
@@ -178,6 +179,10 @@ const AppBody: React.FC = () => {
     if (parsed.kind === 'config') {
       decodeConfigPayload(parsed.payload).then((data) => {
         if (data?.config) applyConfigMorph(data.config as unknown as ParticleConfig, presetBlendDuration, null);
+        // Phase 18 stage 5: bundled declarations become the
+        // session-only overlay (never localStorage); exitSharedView
+        // discards them.
+        if (data?.userParameters && data.userParameters.length > 0) setSessionUserParameters(data.userParameters);
       }).catch(() => { /* malformed payload: keep the default scene */ });
       return;
     }

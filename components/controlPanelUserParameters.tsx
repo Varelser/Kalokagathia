@@ -15,6 +15,7 @@ import {
   validateUserParameterValue,
   type UserParameterDeclaration,
 } from '../lib/userParameters';
+import { isSharedView, subscribeSharedView } from '../lib/shareLink';
 
 /**
  * User Parameters (Phase AO): the declaration editor + public
@@ -27,11 +28,117 @@ import {
  * declarations the section is just the (empty) declaration
  * editor: no surface, no writes.
  */
+/**
+ * Read-only public surface (Phase 18 stage 5): the generated
+ * controls for the effective declarations — in shared / embed view
+ * those are the declarations bundled with the link (session
+ * overlay). No declaration editing (no add / remove / rename):
+ * values change only, through the normal config update path and
+ * the same validation the author surface uses. The Slider /
+ * Toggle parts are shared with the author surface above.
+ * Renders nothing when there are no declarations.
+ */
+export const UserParametersPublicSurface: React.FC<{
+  config: ParticleConfig;
+  updateConfig: UpdateConfig;
+}> = ({ config, updateConfig }) => {
+  const declarations = useUserParameters();
+  if (declarations.length === 0) return null;
+
+  const groups: { group: string; items: UserParameterDeclaration[] }[] = [];
+  for (const declaration of declarations) {
+    const bucket = groups.find((g) => g.group === declaration.group);
+    if (bucket) bucket.items.push(declaration);
+    else groups.push({ group: declaration.group, items: [declaration] });
+  }
+
+  const writeValue = (declaration: UserParameterDeclaration, value: unknown) => {
+    const target = resolveUserParameterTarget(declaration.key as string);
+    if (!target) return;
+    const validated = validateUserParameterValue(target, value);
+    if (validated === null) return;
+    updateConfig(declaration.key, validated as ParticleConfig[typeof declaration.key]);
+  };
+
+  return (
+    <div data-testid="user-parameters-public-surface" className="mt-4 rounded border border-white/10 bg-white/5 p-3">
+      <div className="mb-3 flex items-center gap-2 text-[10px] uppercase font-bold tracking-widest text-white/70">
+        <SlidersHorizontal size={12} /> User Parameters
+      </div>
+      {groups.map(({ group, items }) => (
+        <div key={group || '__ungrouped'} className="mb-3">
+          {group && (
+            <div className="mb-1 text-[9px] uppercase tracking-widest text-white/50">{group}</div>
+          )}
+          {items.map((declaration) => {
+            const target = resolveUserParameterTarget(declaration.key as string);
+            if (!target) return null;
+            const current = config[declaration.key] as unknown;
+            return (
+              <div key={declaration.id} className="mb-2 rounded border border-white/10 bg-black/20 p-2">
+                {target.kind === 'number' && (
+                  <Slider
+                    label={declaration.label}
+                    value={typeof current === 'number' ? current : 0}
+                    min={target.min ?? 0}
+                    max={target.max ?? 1}
+                    step={target.step ?? 0.01}
+                    onChange={(v) => writeValue(declaration, v)}
+                  />
+                )}
+                {target.kind === 'boolean' && (
+                  <Toggle
+                    label={declaration.label}
+                    value={current === true}
+                    options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+                    onChange={(v) => writeValue(declaration, v)}
+                  />
+                )}
+                {target.kind === 'enum' && (
+                  <>
+                    <div className="mb-1 text-[11px] text-white/80">{declaration.label}</div>
+                    <select
+                      value={typeof current === 'string' ? current : ''}
+                      onChange={(e) => writeValue(declaration, e.target.value)}
+                      className="mb-1 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+                      aria-label={declaration.label}
+                    >
+                      {(target.values ?? []).map((v) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
+                <div className="mt-1 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => writeValue(declaration, declaration.defaultValue)}
+                    className="flex items-center gap-1 rounded-full border border-white/15 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+                    title="宣言した既定値に戻す"
+                  >
+                    <RotateCcw size={10} /> Reset
+                  </button>
+                  <span className="text-[9px] text-white/35">{declaration.key}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export const UserParametersSection: React.FC<{
   config: ParticleConfig;
   isPublicLibrary: boolean;
   updateConfig: UpdateConfig;
 }> = ({ config, isPublicLibrary, updateConfig }) => {
+  // Phase 18 stage 5: in shared view the visitor gets the
+  // read-only generated surface for the bundled declarations —
+  // never the declaration editor.
+  const [sharedView, setSharedView] = React.useState(isSharedView());
+  React.useEffect(() => subscribeSharedView(() => setSharedView(isSharedView())), []);
   const declarations = useUserParameters();
   const [addKey, setAddKey] = React.useState<string>('');
 
@@ -53,6 +160,12 @@ export const UserParametersSection: React.FC<{
     if (validated === null) return;
     updateConfig(declaration.key, validated as ParticleConfig[typeof declaration.key]);
   };
+
+  // In shared view the visitor gets the read-only generated
+  // surface for the bundled declarations — never the editor.
+  if (sharedView) {
+    return <UserParametersPublicSurface config={config} updateConfig={updateConfig} />;
+  }
 
   return (
     <div className="mt-4 rounded border border-white/10 bg-white/5 p-3">

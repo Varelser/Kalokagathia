@@ -180,7 +180,7 @@ export function buildParticleGeometryKey(
     isAux,
     layerIndex === 1 ? [
       config.layer1Count, config.layer1SourceCount, config.layer1SourceSpread,
-      config.layer1SourcePositions, config.layer1Counts, config.layer1Radii, config.layer1Sizes,
+      config.layer1SourcePositions, config.layer1SourceParents, config.layer1Counts, config.layer1Radii, config.layer1Sizes,
       config.layer1Volume, config.layer1Volumes,
       config.layer1PulseSpeeds, config.layer1PulseAmps, config.layer1Jitters,
     ] : layerIndex === 2 ? (() => {
@@ -191,7 +191,7 @@ export function buildParticleGeometryKey(
       const shapeLayout = shapeRoute ? getLayerRuntimeSourceLayoutSnapshot(config, shapeRoute, shapeRuntime.route) : layout;
       return [
         runtime.count, shapeLayout.sourceCount, shapeLayout.sourceSpread,
-        shapeRuntime.source, shapeLayout.sourcePositions, runtime.mode,
+        shapeRuntime.source, shapeLayout.sourcePositions, shapeLayout.sourceParents, runtime.mode,
         layout.motionMix, layout.motions, shapeLayout.counts, layout.radiusScales,
         layout.sizes, layout.flowSpeeds, layout.flowAmps, layout.flowFreqs,
         runtime.auxCount, runtime.auxDiffusion, runtime.sparkCount, runtime.sparkDiffusion, auxMode,
@@ -204,7 +204,7 @@ export function buildParticleGeometryKey(
       const shapeLayout = shapeRoute ? getLayerRuntimeSourceLayoutSnapshot(config, shapeRoute, shapeRuntime.route) : layout;
       return [
         runtime.count, shapeLayout.sourceCount, shapeLayout.sourceSpread,
-        shapeRuntime.source, shapeLayout.sourcePositions, runtime.mode,
+        shapeRuntime.source, shapeLayout.sourcePositions, shapeLayout.sourceParents, runtime.mode,
         layout.motionMix, layout.motions, shapeLayout.counts, layout.radiusScales,
         layout.sizes, layout.flowSpeeds, layout.flowAmps, layout.flowFreqs,
         runtime.auxCount, runtime.auxDiffusion, runtime.sparkCount, runtime.sparkDiffusion, auxMode,

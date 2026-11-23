@@ -88,6 +88,7 @@ export interface LayerRuntimeSourceLayoutSnapshot extends LayerRuntimeConfigSnap
   motionChainEnabled: ParticleConfig['layer2MotionChainEnabled'];
   motionChain: ParticleConfig['layer2MotionChain'];
   sourcePositions: ParticleConfig['layer2SourcePositions'];
+  sourceParents: ParticleConfig['layer2SourceParents'];
   mediaMapWidth: number;
   mediaMapHeight: number;
   mediaThreshold: number;

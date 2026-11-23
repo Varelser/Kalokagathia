@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { effectivePositionWithParents } from './sourceHierarchy';
 import type { ParticleConfig } from '../types';
 
 type LayerColliderSummary = {
@@ -15,35 +16,23 @@ type LayerCollider = {
 export const MAX_INTER_LAYER_COLLIDERS = 8;
 
 function getConfiguredSourceOffset(config: ParticleConfig, layerIndex: 1 | 2 | 3, srcId: number) {
-  let manual: { x: number; y: number; z: number } | null;
-  let sourceCount: number;
-  let spread: number;
-
+  // Phase 18 stage 2: parents (when any valid entry exists) add the
+  // parent's effective position recursively via the shared helper;
+  // with the default empty parent arrays the helper returns the
+  // base effective position (manual + ring) untouched.
   if (layerIndex === 1) {
-    manual = config.layer1SourcePositions?.[srcId] ?? null;
-    sourceCount = config.layer1SourceCount || 1;
-    spread = config.layer1SourceSpread || 0;
-  } else if (layerIndex === 2) {
-    manual = config.layer2SourcePositions?.[srcId] ?? null;
-    sourceCount = config.layer2SourceCount || 1;
-    spread = config.layer2SourceSpread || 0;
-  } else {
-    manual = config.layer3SourcePositions?.[srcId] ?? null;
-    sourceCount = config.layer3SourceCount || 1;
-    spread = config.layer3SourceSpread || 0;
+    const count = config.layer1SourceCount || 1;
+    const eff = effectivePositionWithParents(config.layer1SourcePositions, config.layer1SourceParents, srcId, count, config.layer1SourceSpread || 0);
+    return new THREE.Vector3(eff.x, eff.y, eff.z);
   }
-
-  let x = manual?.x ?? 0;
-  const y = manual?.y ?? 0;
-  let z = manual?.z ?? 0;
-
-  if (spread > 0 && sourceCount > 1) {
-    const angle = (srcId / sourceCount) * Math.PI * 2;
-    x += Math.cos(angle) * spread;
-    z += Math.sin(angle) * spread;
+  if (layerIndex === 2) {
+    const count = config.layer2SourceCount || 1;
+    const eff = effectivePositionWithParents(config.layer2SourcePositions, config.layer2SourceParents, srcId, count, config.layer2SourceSpread || 0);
+    return new THREE.Vector3(eff.x, eff.y, eff.z);
   }
-
-  return new THREE.Vector3(x, y, z);
+  const count = config.layer3SourceCount || 1;
+  const eff = effectivePositionWithParents(config.layer3SourcePositions, config.layer3SourceParents, srcId, count, config.layer3SourceSpread || 0);
+  return new THREE.Vector3(eff.x, eff.y, eff.z);
 }
 
 function getLayerSourceColliders(config: ParticleConfig, layerIndex: 1 | 2 | 3): LayerCollider[] {

@@ -3,6 +3,7 @@ import { getLayerRuntimeParticleFieldSnapshot, getLayerRuntimeSourceLayoutSnapsh
 import { MOTION_MAP } from './sceneShaders';
 import { resolveSourceRoute } from '../lib/motionRoute';
 import { maskAcceptsAt, maskLumaAt, resolveActiveMask } from '../lib/layerMask';
+import { hasSourceParents, resolveEffectivePositionsWithParents } from '../lib/sourceHierarchy';
 
 export type ParticleData = {
   pos: Float32Array;
@@ -121,6 +122,18 @@ export const generateParticleData = (config: ParticleConfig, layerIndex: 1|2|3|4
   const sourceShape = layerIndex === 1 ? 'sphere' : shapeRuntime ? (shapeRuntime.source || 'random') : 'random';
   const sourceCounts = layerIndex === 1 ? config.layer1Counts : shapeLayout?.counts ?? [];
   const sourceBudgets = getSourceBudgets(isAux ? parentCount : count, sourceCount, sourceCounts);
+  // Emitter hierarchy (Phase 18 stage 2): precompute parent-resolved
+  // effective offsets once per bake. Null while no valid parent is
+  // configured, in which case the per-particle legacy path below runs
+  // untouched (bit-identical). Layer 2/3 positions/parents arrive via
+  // the (possibly source-routed) shape layout snapshot.
+  const sourceParentsForLayer = layerIndex === 1 ? config.layer1SourceParents : layerIndex === 4 ? undefined : shapeLayout?.sourceParents;
+  const sourceSpreadForLayer = layerIndex === 1 ? (config.layer1SourceSpread || 0) : shapeLayout ? (shapeLayout.sourceSpread || 0) : (config.ambientSpread || 0);
+  const sourceEffectiveOffsets = layerIndex < 4 && hasSourceParents(sourceParentsForLayer, sourceCount)
+    ? resolveEffectivePositionsWithParents(
+      Array.from({ length: sourceCount }, (_, idx) => (layerIndex === 1 ? config.layer1SourcePositions?.[idx] : shapeLayout?.sourcePositions?.[idx]) ?? { x: 0, y: 0, z: 0 }),
+      sourceCount, sourceSpreadForLayer, sourceParentsForLayer)
+    : null;
   const mediaMap = shapeRuntime?.mediaLumaMap ?? [];
   const mediaMapWidth = shapeLayout?.mediaMapWidth ?? 0;
   const mediaMapHeight = shapeLayout?.mediaMapHeight ?? 0;
@@ -263,7 +276,10 @@ export const generateParticleData = (config: ParticleConfig, layerIndex: 1|2|3|4
 
     let ox = manual?.x ?? 0, oy = manual?.y ?? 0, oz = manual?.z ?? 0;
     const spread = layerIndex === 1 ? (config.layer1SourceSpread || 0) : shapeLayout ? (shapeLayout.sourceSpread || 0) : (config.ambientSpread || 0);
-    if (layerIndex < 4 && spread > 0 && sourceCount > 1) {
+    if (sourceEffectiveOffsets) {
+      const eff = sourceEffectiveOffsets[srcId] ?? { x: 0, y: 0, z: 0 };
+      ox = eff.x; oy = eff.y; oz = eff.z;
+    } else if (layerIndex < 4 && spread > 0 && sourceCount > 1) {
       const a = (srcId / sourceCount) * Math.PI * 2; ox += Math.cos(a) * spread; oz += Math.sin(a) * spread;
     } else if (layerIndex === 4) {
       ox = (hash(pSeed + 5) * 2 - 1) * spread;

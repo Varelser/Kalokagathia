@@ -12,6 +12,8 @@ export interface ParticleConfigGpgpu {
   // snippet (id -> value). Empty record = every control sits at its
   // declared default, i.e. no behaviour change for existing data.
   gpgpuCustomForceCtrlValues: Record<string, number>;
+  // Force application order (Phase 18 stage 2): comma-separated chunk names; '' = default order (bit-identical).
+  gpgpuForceOrder: string;
   gpgpuSize: number;
   gpgpuSpeed: number;
   gpgpuColor: string;
@@ -179,6 +181,28 @@ export interface ParticleConfigGpgpu {
   // referencing p, the feedback pass is never built and the
   // stage-2 / bake behaviour is bit-identical.
   gpgpuAttrFeedbackEnabled: boolean;
+  // Extended attribute slots (Phase 18 stage 1): slots 4..7
+  // with their own names / sources / bake-time expressions,
+  // baked into a SECOND attribute texture that is built only
+  // while an enabled pass (dynamic / feedback / chain) reads
+  // an ext slot name. The first texture's layout and every
+  // slots-0..3 consumer are untouched; the drive selectors
+  // below stay 0..3 in this stage.
+  gpgpuAttrNames2: string[];
+  gpgpuAttrSources2: string[];
+  gpgpuAttrExprs2: string[];
+  // Attribute chain stage (Phase 18 stage 1): a second
+  // expression stage whose input is the stage-1 output texture
+  // (the dynamic / feedback result when present, else the
+  // bake). Its expressions see x = the slot's stage-1 value,
+  // the slot names (sequential, same rule as the bake), the
+  // ext slot names, the sim quantities (vel / age / rad) and
+  // t. Disabled (the default), or with every expression empty,
+  // the chain pass is never built and consumers read the
+  // stage-1 texture verbatim. Shares the gpgpuAttrDynInterval
+  // cadence with the stage-1 re-evaluation.
+  gpgpuAttrChainEnabled: boolean;
+  gpgpuAttrChainExprs: string[];
   gpgpuAttrSizeSlot: number;
   gpgpuAttrSizeAmount: number;
   gpgpuAttrBrightSlot: number;
@@ -598,6 +622,12 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphScatterScaleRandom: number;
   gpgpuMorphScatterRotRandom: number;
   gpgpuMorphScatterBend: number;
+  // PCG rule graph (Phase 18 stage 3, lib/pcgGraph.ts): opens the
+  // scatter pipeline's fixed order as a node list. Enabled false
+  // (default) = the legacy scatter path verbatim; data '' = the
+  // default graph, which evaluates bit-identically to legacy.
+  gpgpuPcgGraphEnabled: boolean;
+  gpgpuPcgGraphData: string;
   // Terrain collider (Phase AI): particles bounce / rest on the
   // height field itself (velocity reflection with restitution +
   // tangential friction in the velocity pass, surface push-out in

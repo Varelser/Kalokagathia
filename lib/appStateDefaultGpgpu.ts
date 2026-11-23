@@ -12,6 +12,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuCustomForceEnabled: false,
   gpgpuCustomForceCode: '',
   gpgpuCustomForceCtrlValues: {},
+  gpgpuForceOrder: '',
   gpgpuSize: 1.5,
   gpgpuSpeed: 1.0,
   gpgpuColor: '#88aaff',
@@ -100,6 +101,18 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // never built and the stage-2 / bake behaviour is bit-for-bit
   // the legacy one.
   gpgpuAttrFeedbackEnabled: false,
+  // Extended attribute slots (Phase 18 stage 1): names /
+  // sources mirror the first set's defaults; while no enabled
+  // pass reads an ext slot name the second texture is never
+  // built, so these keys are inert at the defaults.
+  gpgpuAttrNames2: ['i', 'j', 'k', 'l'],
+  gpgpuAttrSources2: ['hash', 'species', 'radius', 'height'],
+  gpgpuAttrExprs2: ['', '', '', ''],
+  // Attribute chain stage (Phase 18 stage 1): disabled and all
+  // expressions empty — the chain pass is never built and the
+  // stage-1 texture reaches consumers verbatim.
+  gpgpuAttrChainEnabled: false,
+  gpgpuAttrChainExprs: ['', '', '', ''],
   gpgpuAttrSizeSlot: -1,
   gpgpuAttrSizeAmount: 1,
   gpgpuAttrBrightSlot: -1,
@@ -677,6 +690,9 @@ f 8 1 105`,
   gpgpuMorphScatterScaleRandom: 0,
   gpgpuMorphScatterRotRandom: 0,
   gpgpuMorphScatterBend: 0,
+  // PCG rule graph (Phase 18 stage 3): off and default graph.
+  gpgpuPcgGraphEnabled: false,
+  gpgpuPcgGraphData: '',
   // Terrain collider (Phase AI): off by default = legacy path.
   gpgpuTerrainColliderEnabled: false,
   gpgpuTerrainColliderBounce: 0.5,

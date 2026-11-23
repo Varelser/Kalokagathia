@@ -19,6 +19,7 @@ import { ControlPanelProps } from './controlPanelTypes';
 import { useControlPanelState } from './useControlPanelState';
 import { toggleFullscreen } from '../lib/platformFeatures';
 import { encodeConfigPayload } from '../lib/shareLink';
+import { getUserParameters } from '../lib/userParameters';
 import { filterGpgpuGroupsForLink, parseGpgpuGroups, serializeGpgpuGroups } from '../lib/gpgpuGroups';
 import { buildEmbedSnippet } from '../lib/embedMode';
 import { buildStreamUrl } from '../lib/streamMode';
@@ -359,7 +360,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = (props) => {
         };
       }
     }
-    const payload = await encodeConfigPayload('Monosphere scene', shareConfig);
+    const payload = await encodeConfigPayload('Monosphere scene', shareConfig, getUserParameters());
     if (payload) return { hash: `#c=${payload}`, catalogClean: false };
     return null;
   };

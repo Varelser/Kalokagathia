@@ -1,6 +1,7 @@
 import type { ParticleConfig } from '../types';
 import { sampleAttrColumn, sampleAttrColumnRaw, type AttrPointCloud } from './attrPointCloud';
 import {
+  astReferencesVariable,
   compileExpression,
   evaluateCompiledExpressionWithVars,
   EXPRESSION_MAX_LENGTH,
@@ -46,6 +47,77 @@ import {
  */
 
 export const ATTR_SLOT_COUNT = 4;
+
+/**
+ * Extended slots (Phase 18 stage 1): slots 4..7 live in a
+ * SECOND RGBA texture (the ext bake below), so the first
+ * texture's layout — and every existing consumer of slots
+ * 0..3 — is untouched. The ext texture is built only while a
+ * consumer actually reads it (resolveAttrExtConsumers): the
+ * dynamic / feedback / chain passes can reference the ext
+ * slot names as read-only inputs, and their results flow into
+ * slots 0..3, which is how ext values reach the existing
+ * drives. The GLSL drive selectors stay 0..3 in this stage
+ * (the points / velocity shaders keep their single-texture
+ * channel picker); widening them is recorded as a remaining
+ * constraint in PHASE18_STAGE1_RECORD.md.
+ */
+export const ATTR_EXT_SLOT_OFFSET = 4;
+export const ATTR_SLOT_COUNT_TOTAL = 8;
+/** Ext slot default names. NOT e/f/g/h: 'e' is the expression
+ *  language's Euler constant and 'p' is the feedback variable,
+ *  so both spellings are inert as slot names (built-in wins);
+ *  i/j/k/l collide with nothing. */
+export const DEFAULT_ATTR_NAMES2: readonly string[] = ['i', 'j', 'k', 'l'];
+
+/**
+ * Sim-quantity variables (Phase 18 stage 1): the expression
+ * language gains three reserved names that read the CURRENT
+ * simulation state instead of bake-time data —
+ *   vel — speed, length of the velocity texture's xyz (raw
+ *         world units per second, NOT clamped);
+ *   age — the particle's age, position texture w normalised
+ *         by ageMax and clamped to [0, 1];
+ *   rad — distance from the origin, position xyz length
+ *         normalised by the bounce radius, clamped to [0, 1].
+ * The names are reserved exactly like x / t: a slot carrying
+ * one of these names can never shadow the sim quantity (the
+ * built-in wins, the Phase BI discipline). At bake time (CPU)
+ * the same names read the INITIAL state — vel from the seeded
+ * initial velocities, age / rad from the seeded positions —
+ * which is the frame-0 value of the GPU definition, so one
+ * expression keeps one meaning across the bake and the passes.
+ * Density is deliberately NOT among them (a second step: its
+ * supply texture belongs to another subsystem).
+ */
+export const ATTR_SIM_VAR_NAMES: readonly string[] = ['vel', 'age', 'rad'];
+
+export interface AttrSimValues {
+  vel: number;
+  age: number;
+  rad: number;
+}
+
+/** The CPU twin of the passes' sim-variable sampling. */
+export function attrSimValues(
+  px: number,
+  py: number,
+  pz: number,
+  ageRaw: number,
+  vx: number,
+  vy: number,
+  vz: number,
+  ageMax: number,
+  bounceRadius: number,
+): AttrSimValues {
+  const ageDenom = Math.max(ageMax, 0.001);
+  const radiusDenom = Math.max(bounceRadius, 0.001);
+  return {
+    vel: Math.sqrt(vx * vx + vy * vy + vz * vz),
+    age: clamp01(ageRaw / ageDenom),
+    rad: clamp01(Math.sqrt(px * px + py * py + pz * pz) / radiusDenom),
+  };
+}
 
 /**
  * Colour drive (Phase CL): when all three colour names are
@@ -117,6 +189,111 @@ export function normalizeAttrNames(input: unknown): string[] {
     names.push(name || DEFAULT_ATTR_NAMES[slot]);
   }
   return names;
+}
+
+/** Coerce arbitrary input into the ext slots' 4 names (slots 4..7). */
+export function normalizeAttrNames2(input: unknown): string[] {
+  const raw = Array.isArray(input) ? input : [];
+  const names: string[] = [];
+  for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
+    const value = raw[slot];
+    const name = typeof value === 'string' ? value.trim().slice(0, 24) : '';
+    names.push(name || DEFAULT_ATTR_NAMES2[slot]);
+  }
+  return names;
+}
+
+/**
+ * Names an attribute expression can never use for a slot: the
+ * expression language's own built-ins (mirrors the
+ * normalizeExtraVars discipline in lib/expression.ts), the
+ * feedback variable p, and the sim-quantity names. A slot
+ * carrying one of these names is inert as a variable.
+ */
+const ATTR_EXPR_RESERVED_NAMES: ReadonlySet<string> = new Set([
+  'x', 't', 'pi', 'tau', 'e',
+  'abs', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+  'sqrt', 'pow', 'exp', 'log', 'floor', 'ceil', 'round', 'sign',
+  'fract', 'mod', 'min', 'max', 'clamp', 'lerp', 'smoothstep',
+  'p',
+  ...ATTR_SIM_VAR_NAMES,
+]);
+
+/**
+ * Resolve an expression variable name to a slot index 0..7
+ * across both name sets (first match wins, the bake's
+ * duplicate-name rule extended), or -1 when the name is
+ * reserved or unassigned.
+ */
+export function resolveAttrNameSlot(
+  name: string,
+  names: readonly string[],
+  names2: readonly string[],
+): number {
+  const key = name.trim().toLowerCase();
+  if (!key || ATTR_EXPR_RESERVED_NAMES.has(key)) return -1;
+  const all = [...normalizeAttrNames(names), ...normalizeAttrNames2(names2)];
+  for (let slot = 0; slot < ATTR_SLOT_COUNT_TOTAL; slot++) {
+    if (all[slot].toLowerCase() === key) return slot;
+  }
+  return -1;
+}
+
+function compileAttrExprForScan(expr: string, lowerNames8: string[]): ExpressionCompileResult {
+  return compileExpression(expr, [...lowerNames8, ...ATTR_SIM_VAR_NAMES, 'p']);
+}
+
+/** Do any of these expressions read an ext slot (4..7) by name? */
+export function attrExprsReferenceExtSlot(
+  exprsInput: readonly string[] | unknown,
+  names: readonly string[],
+  names2: readonly string[],
+): boolean {
+  const exprs = normalizeAttrExprs(exprsInput);
+  const lowerNames8 = [
+    ...normalizeAttrNames(names).map((n) => n.toLowerCase()),
+    ...normalizeAttrNames2(names2).map((n) => n.toLowerCase()),
+  ];
+  // Candidate variable names: the ext names that actually
+  // resolve to slots 4..7 (an ext name shadowed by an earlier
+  // first-set name of the same spelling resolves there instead).
+  const candidates = new Set<string>();
+  for (let slot = ATTR_EXT_SLOT_OFFSET; slot < ATTR_SLOT_COUNT_TOTAL; slot++) {
+    const key = lowerNames8[slot];
+    if (resolveAttrNameSlot(key, names, names2) === slot) candidates.add(key);
+  }
+  if (candidates.size === 0) return false;
+  for (const expr of exprs) {
+    if (expr.trim().length === 0) continue;
+    const compiled = compileAttrExprForScan(expr, lowerNames8);
+    if (!compiled.ok) continue;
+    for (const candidate of candidates) {
+      if (astReferencesVariable(compiled.ast, candidate)) return true;
+    }
+  }
+  return false;
+}
+
+/** Do any of these expressions read a sim-quantity variable? */
+export function attrExprsReferenceSimVar(
+  exprsInput: readonly string[] | unknown,
+  names: readonly string[],
+  names2: readonly string[] = [],
+): boolean {
+  const exprs = normalizeAttrExprs(exprsInput);
+  const lowerNames8 = [
+    ...normalizeAttrNames(names).map((n) => n.toLowerCase()),
+    ...normalizeAttrNames2(names2).map((n) => n.toLowerCase()),
+  ];
+  for (const expr of exprs) {
+    if (expr.trim().length === 0) continue;
+    const compiled = compileAttrExprForScan(expr, lowerNames8);
+    if (!compiled.ok) continue;
+    for (const simName of ATTR_SIM_VAR_NAMES) {
+      if (astReferencesVariable(compiled.ast, simName)) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -229,6 +406,12 @@ export interface BuildAttributeDataArgs {
   texSize: number;
   /** Seeded initial positions (xyz + age), from buildGpgpuInitialData. */
   posData: Float32Array;
+  /**
+   * Seeded initial velocities (xyz + phase), from the same
+   * build (Phase 18 stage 1): the bake-time value of the sim
+   * variable vel. Absent = velocities read as 0.
+   */
+  velData?: Float32Array | null;
   ageMax: number;
   bounceRadius: number;
   /** Particle Life species count (for the 'species' source). */
@@ -287,9 +470,14 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
   const exprs = normalizeAttrExprs(args.exprs);
   const hasExprs = exprs.some((expr) => expr.trim().length > 0);
   const lowerNames = hasExprs ? names.map((name) => name.toLowerCase()) : [];
+  // Phase 18 stage 1: the sim-quantity names join the extra
+  // variables, so a bake expression may read vel / age / rad
+  // (the initial state — see ATTR_SIM_VAR_NAMES). Expressions
+  // that never mention them evaluate exactly as before.
   const compiledExprs: (ExpressionCompileResult | null)[] = hasExprs
-    ? exprs.map((expr) => (expr.trim().length > 0 ? compileExpression(expr, lowerNames) : null))
+    ? exprs.map((expr) => (expr.trim().length > 0 ? compileExpression(expr, [...lowerNames, ...ATTR_SIM_VAR_NAMES]) : null))
     : [];
+  const velData = args.velData ?? null;
   for (let i = 0; i < count; i++) {
     const px = posData[i * 4] ?? 0;
     const py = posData[i * 4 + 1] ?? 0;
@@ -354,6 +542,19 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
           const key = lowerNames[s];
           if (!(key in vars)) vars[key] = values[s];
         }
+        // Sim quantities (Phase 18 stage 1): assigned AFTER the
+        // slot names so the reserved names win over a slot that
+        // happens to carry the same spelling (built-in wins).
+        const sim = attrSimValues(
+          px, py, pz, posData[i * 4 + 3] ?? 0,
+          velData ? (velData[i * 4] ?? 0) : 0,
+          velData ? (velData[i * 4 + 1] ?? 0) : 0,
+          velData ? (velData[i * 4 + 2] ?? 0) : 0,
+          ageMax, bounceRadius,
+        );
+        vars.vel = sim.vel;
+        vars.age = sim.age;
+        vars.rad = sim.rad;
         const result = evaluateCompiledExpressionWithVars(compiled.ast, vars);
         values[slot] = Number.isFinite(result) ? clamp01(result) : sourceValue;
       }
@@ -363,6 +564,178 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
     }
   }
   return out;
+}
+
+export interface BuildAttributeDataExtArgs {
+  texSize: number;
+  posData: Float32Array;
+  velData?: Float32Array | null;
+  ageMax: number;
+  bounceRadius: number;
+  speciesCount: number;
+  morphData?: Float32Array | null;
+  morphWorldScale?: number;
+  cloud?: AttrPointCloud | null;
+  /** The stage-1 bake output (slots 0..3) from buildAttributeData. */
+  firstBake: Float32Array;
+  names: string[];
+  names2: string[];
+  sources2: AttrSource[];
+  /** Bake-time arithmetic for slots 4..7 (config gpgpuAttrExprs2). */
+  exprs2?: readonly string[];
+}
+
+/**
+ * Bake the ext slots 4..7 (Phase 18 stage 1) into their own
+ * RGBA array (the second attribute texture's data). The source
+ * switch is a twin of buildAttributeData's — same sources, same
+ * values — reading the ext names / sources; the arithmetic
+ * stage then evaluates the ext expressions in slot order
+ * 4 → 7 against an environment of ALL eight slot names (slots
+ * 0..3 hold their finished bake values from firstBake, slots
+ * 4..7 their current values) plus x / t = 0 and the sim
+ * quantities, with the same fallback discipline (failed compile
+ * or non-finite result keeps the source value; finite results
+ * clamp to [0, 1]). Pure like the stage-1 bake.
+ */
+export function buildAttributeDataExt(args: BuildAttributeDataExtArgs): Float32Array {
+  const { texSize, posData, ageMax, bounceRadius, speciesCount } = args;
+  const names = normalizeAttrNames(args.names);
+  const names2 = normalizeAttrNames2(args.names2);
+  const sources2 = normalizeAttrSources(args.sources2);
+  const count = texSize * texSize;
+  const out = new Float32Array(count * ATTR_SLOT_COUNT);
+  const radiusDenom = Math.max(bounceRadius, 0.001);
+  const ageDenom = Math.max(ageMax, 0.001);
+  const morphData = args.morphData ?? null;
+  const morphScale = Math.max(args.morphWorldScale ?? 0, 0.001);
+  const cloud = args.cloud ?? null;
+  const velData = args.velData ?? null;
+  const firstBake = args.firstBake;
+  const exprs2 = normalizeAttrExprs(args.exprs2);
+  const hasExprs = exprs2.some((expr) => expr.trim().length > 0);
+  const lowerNames8 = hasExprs
+    ? [...names.map((n) => n.toLowerCase()), ...names2.map((n) => n.toLowerCase())]
+    : [];
+  const compiledExprs: (ExpressionCompileResult | null)[] = hasExprs
+    ? exprs2.map((expr) => (expr.trim().length > 0 ? compileExpression(expr, [...lowerNames8, ...ATTR_SIM_VAR_NAMES]) : null))
+    : [];
+  for (let i = 0; i < count; i++) {
+    const px = posData[i * 4] ?? 0;
+    const py = posData[i * 4 + 1] ?? 0;
+    const pz = posData[i * 4 + 2] ?? 0;
+    const radius = clamp01(Math.sqrt(px * px + py * py + pz * pz) / radiusDenom);
+    const values: number[] = [
+      firstBake[i * 4] ?? 0,
+      firstBake[i * 4 + 1] ?? 0,
+      firstBake[i * 4 + 2] ?? 0,
+      firstBake[i * 4 + 3] ?? 0,
+      0, 0, 0, 0,
+    ];
+    for (let s = 0; s < ATTR_SLOT_COUNT; s++) {
+      const slot = ATTR_EXT_SLOT_OFFSET + s;
+      let value = 0;
+      switch (sources2[s]) {
+        case 'hash':
+          value = attrHash(i);
+          break;
+        case 'index':
+          value = count > 1 ? i / (count - 1) : 0;
+          break;
+        case 'species':
+          value = attrSpeciesValue(i, speciesCount);
+          break;
+        case 'radius':
+          value = radius;
+          break;
+        case 'height':
+          value = clamp01(py / radiusDenom * 0.5 + 0.5);
+          break;
+        case 'age':
+          value = clamp01((posData[i * 4 + 3] ?? 0) / ageDenom);
+          break;
+        case 'target': {
+          if (morphData) {
+            const tx = morphData[i * 4] ?? 0;
+            const ty = morphData[i * 4 + 1] ?? 0;
+            const tz = morphData[i * 4 + 2] ?? 0;
+            value = clamp01(Math.sqrt(tx * tx + ty * ty + tz * tz) / morphScale);
+          }
+          break;
+        }
+        case 'data':
+          value = sampleAttrColumn(cloud, names2[s], i);
+          break;
+      }
+      values[slot] = value;
+    }
+    if (hasExprs) {
+      for (let s = 0; s < ATTR_SLOT_COUNT; s++) {
+        const slot = ATTR_EXT_SLOT_OFFSET + s;
+        const compiled = compiledExprs[s];
+        if (!compiled || !compiled.ok) continue;
+        const sourceValue = values[slot];
+        const vars: Record<string, number> = { x: sourceValue, t: 0 };
+        for (let k = 0; k < ATTR_SLOT_COUNT_TOTAL; k++) {
+          const key = lowerNames8[k];
+          if (!(key in vars)) vars[key] = values[k];
+        }
+        const sim = attrSimValues(
+          px, py, pz, posData[i * 4 + 3] ?? 0,
+          velData ? (velData[i * 4] ?? 0) : 0,
+          velData ? (velData[i * 4 + 1] ?? 0) : 0,
+          velData ? (velData[i * 4 + 2] ?? 0) : 0,
+          ageMax, bounceRadius,
+        );
+        vars.vel = sim.vel;
+        vars.age = sim.age;
+        vars.rad = sim.rad;
+        const result = evaluateCompiledExpressionWithVars(compiled.ast, vars);
+        values[slot] = Number.isFinite(result) ? clamp01(result) : sourceValue;
+      }
+    }
+    for (let s = 0; s < ATTR_SLOT_COUNT; s++) {
+      out[i * ATTR_SLOT_COUNT + s] = values[ATTR_EXT_SLOT_OFFSET + s];
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether the ext attribute texture (slots 4..7) has any
+ * reader at all: an enabled GPU pass (dynamic / feedback /
+ * chain) whose expressions reference an ext slot name. While
+ * this is false the runtime never builds the second texture,
+ * so an untouched config pays nothing (the build-only-while-
+ * consumed discipline of the first texture, extended).
+ */
+export function resolveAttrExtConsumers(
+  config: Pick<
+    ParticleConfig,
+    | 'gpgpuAttrDynEnabled'
+    | 'gpgpuAttrFeedbackEnabled'
+    | 'gpgpuAttrChainEnabled'
+    | 'gpgpuAttrExprs'
+    | 'gpgpuAttrChainExprs'
+    | 'gpgpuAttrNames'
+    | 'gpgpuAttrNames2'
+  >,
+): boolean {
+  const names = normalizeAttrNames(config.gpgpuAttrNames);
+  const names2 = normalizeAttrNames2(config.gpgpuAttrNames2);
+  if (
+    (config.gpgpuAttrDynEnabled || config.gpgpuAttrFeedbackEnabled)
+    && attrExprsReferenceExtSlot(config.gpgpuAttrExprs, names, names2)
+  ) {
+    return true;
+  }
+  if (
+    config.gpgpuAttrChainEnabled
+    && attrExprsReferenceExtSlot(config.gpgpuAttrChainExprs, names, names2)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export interface AttrConsumers {

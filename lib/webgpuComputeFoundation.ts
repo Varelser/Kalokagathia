@@ -1,4 +1,9 @@
 import type { ParticleConfig } from '../types';
+import {
+  attrExprsReferenceSimVar,
+  normalizeAttrExprs,
+  resolveAttrExtConsumers,
+} from './gpgpuAttributes';
 
 export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   'particles',
@@ -175,6 +180,38 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   if (config.gpgpuAttrFeedbackEnabled
     && ((config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) || groupConsumerActive)) {
     features.push('attr-feedback');
+  }
+  // Phase 18 stage 1 declarations (same discipline: the draw
+  // side works on every path, the SIM-side consumption is
+  // WebGL-only, so a WebGPU-preference config using them with
+  // a sim-side consumer routes to WebGL instead of silently
+  // keeping the bake):
+  // - 'attr-chain': the chain stage's output reaches the force
+  //   drive / group gate on the WebGL route only.
+  // - 'attr-sim-vars': the vel / age / rad variables sample the
+  //   WebGL sim targets; on the WebGPU route they would keep
+  //   reading the initial state.
+  // - 'attr-ext-slots': the ext attribute texture (slots 4..7)
+  //   is a WebGL-route supply; its pass outputs reach sim-side
+  //   consumers on that route only.
+  const attrSimConsumerActive = (config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0)
+    || groupConsumerActive;
+  if (config.gpgpuAttrChainEnabled
+    && normalizeAttrExprs(config.gpgpuAttrChainExprs).some((expr) => expr.trim().length > 0)
+    && attrSimConsumerActive) {
+    features.push('attr-chain');
+  }
+  const attrSimVarUsed = (
+    ((config.gpgpuAttrDynEnabled || config.gpgpuAttrFeedbackEnabled)
+      && attrExprsReferenceSimVar(config.gpgpuAttrExprs, config.gpgpuAttrNames, config.gpgpuAttrNames2))
+    || (config.gpgpuAttrChainEnabled
+      && attrExprsReferenceSimVar(config.gpgpuAttrChainExprs, config.gpgpuAttrNames, config.gpgpuAttrNames2))
+  );
+  if (attrSimVarUsed && attrSimConsumerActive) {
+    features.push('attr-sim-vars');
+  }
+  if (resolveAttrExtConsumers(config) && attrSimConsumerActive) {
+    features.push('attr-ext-slots');
   }
   // Attractor space modes (Phase DO): the velocity-matching /
   // rotated sampling lives in the WebGL velocity pass only —

@@ -28,6 +28,22 @@ void main() {
 }
 `;
 
+/**
+ * Optional extra bindings (Phase 18 stage 1): the ext bake
+ * texture (uSrc2) and the sim state (uPosTex / uVelTex with
+ * the age / radius denominators) that the generated fragment
+ * samples only when an expression actually reads an ext slot
+ * or a sim variable. Fragments that declare neither simply
+ * never sample these uniforms.
+ */
+export interface GpgpuAttrPassExtraBindings {
+  src2Tex?: THREE.Texture | null;
+  posTex?: THREE.Texture | null;
+  velTex?: THREE.Texture | null;
+  ageDenom?: number;
+  radiusDenom?: number;
+}
+
 export class GpgpuAttrDynPass {
   private rt: THREE.WebGLRenderTarget;
   private mat: THREE.ShaderMaterial;
@@ -47,6 +63,11 @@ export class GpgpuAttrDynPass {
     this.mat = new THREE.ShaderMaterial({
       uniforms: {
         uSrc: { value: null as THREE.Texture | null },
+        uSrc2: { value: null as THREE.Texture | null },
+        uPosTex: { value: null as THREE.Texture | null },
+        uVelTex: { value: null as THREE.Texture | null },
+        uAgeDenom: { value: 1 },
+        uRadiusDenom: { value: 1 },
         uTime: { value: 0 },
       },
       vertexShader: ATTR_DYN_VERT,
@@ -62,9 +83,23 @@ export class GpgpuAttrDynPass {
 
   /** Re-evaluate against the bake texture at sim time `time`
    *  and return the output texture (stable across calls — the
-   *  wiring holds it between interval frames). */
-  run(gl: THREE.WebGLRenderer, src: THREE.Texture, time: number): THREE.Texture {
+   *  wiring holds it between interval frames). The chain stage
+   *  (Phase 18 stage 1) reuses this class with src = the
+   *  stage-1 output texture. */
+  run(
+    gl: THREE.WebGLRenderer,
+    src: THREE.Texture,
+    time: number,
+    extra?: GpgpuAttrPassExtraBindings,
+  ): THREE.Texture {
     this.mat.uniforms.uSrc.value = src;
+    if (extra) {
+      this.mat.uniforms.uSrc2.value = extra.src2Tex ?? null;
+      this.mat.uniforms.uPosTex.value = extra.posTex ?? null;
+      this.mat.uniforms.uVelTex.value = extra.velTex ?? null;
+      if (typeof extra.ageDenom === 'number') this.mat.uniforms.uAgeDenom.value = extra.ageDenom;
+      if (typeof extra.radiusDenom === 'number') this.mat.uniforms.uRadiusDenom.value = extra.radiusDenom;
+    }
     this.mat.uniforms.uTime.value = time;
     const prev = gl.getRenderTarget();
     gl.setRenderTarget(this.rt);

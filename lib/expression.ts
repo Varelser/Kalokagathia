@@ -531,6 +531,34 @@ export function evaluateCompiledExpressionWithVars(ast: AstNode, vars: Record<st
   return evaluateNodeWithVars(ast, vars);
 }
 
+/**
+ * Does this AST read the variable `name` anywhere? (Phase 18
+ * stage 1: the attribute passes use it to decide — before
+ * emitting any GLSL — whether an expression set references the
+ * sim-quantity variables or an extended slot, so the extra
+ * uniforms / textures are only bound when actually read.)
+ */
+export function astReferencesVariable(ast: AstNode, name: string): boolean {
+  switch (ast.type) {
+    case 'var':
+      return ast.name === name;
+    case 'unary':
+      return astReferencesVariable(ast.arg, name);
+    case 'binary':
+      return astReferencesVariable(ast.left, name) || astReferencesVariable(ast.right, name);
+    case 'ternary':
+      return (
+        astReferencesVariable(ast.cond, name)
+        || astReferencesVariable(ast.then, name)
+        || astReferencesVariable(ast.else, name)
+      );
+    case 'call':
+      return ast.args.some((arg) => astReferencesVariable(arg, name));
+    default:
+      return false;
+  }
+}
+
 const compileCache = new Map<string, ExpressionCompileResult>();
 const COMPILE_CACHE_LIMIT = 64;
 

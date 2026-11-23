@@ -53,9 +53,11 @@ import { GpgpuAttrDynPass } from './gpgpuAttrDynPass';
 import { buildAttrDynFragment } from '../lib/expressionGlsl';
 import { GpgpuAttrFeedbackPass } from './gpgpuAttrFeedbackPass';
 import { buildAttrFeedbackFragment } from '../lib/expressionGlslFeedback';
+import { buildAttrChainFragment } from '../lib/expressionGlslChain';
 import {
   normalizeAttrExprs,
   normalizeAttrNames,
+  normalizeAttrNames2,
   resolveAttrDynInterval,
 } from '../lib/gpgpuAttributes';
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
@@ -520,10 +522,10 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     config.gpgpuGroupRef ?? '',
   ).kind === 'baked';
   const attrFeedbackFragment = !groupGateBaked && config.gpgpuAttrFeedbackEnabled
-    ? buildAttrFeedbackFragment(config.gpgpuAttrExprs, config.gpgpuAttrNames)
+    ? buildAttrFeedbackFragment(config.gpgpuAttrExprs, config.gpgpuAttrNames, config.gpgpuAttrNames2)
     : null;
   const attrFeedbackSignature = attrFeedbackFragment
-    ? `fb|${JSON.stringify(normalizeAttrExprs(config.gpgpuAttrExprs))}|${normalizeAttrNames(config.gpgpuAttrNames).join(',')}|${resolveAttrDynInterval(config.gpgpuAttrDynInterval)}|${texSize}`
+    ? `fb|${JSON.stringify(normalizeAttrExprs(config.gpgpuAttrExprs))}|${normalizeAttrNames(config.gpgpuAttrNames).join(',')}|${normalizeAttrNames2(config.gpgpuAttrNames2).join(',')}|${resolveAttrDynInterval(config.gpgpuAttrDynInterval)}|${texSize}`
     : '';
   const attrFeedbackPassRef = useRef<GpgpuAttrFeedbackPass | null>(null);
   const attrFeedbackSignatureRef = useRef('');
@@ -538,22 +540,44 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   // signature covers everything the pass depends on, so the
   // useFrame below rebuilds it only when one of them changes.
   const attrDynFragment = !groupGateBaked && !attrFeedbackFragment && config.gpgpuAttrDynEnabled
-    ? buildAttrDynFragment(config.gpgpuAttrExprs, config.gpgpuAttrNames)
+    ? buildAttrDynFragment(config.gpgpuAttrExprs, config.gpgpuAttrNames, config.gpgpuAttrNames2)
     : null;
   const attrDynInterval = resolveAttrDynInterval(config.gpgpuAttrDynInterval);
   const attrDynSignature = attrDynFragment
-    ? `${JSON.stringify(normalizeAttrExprs(config.gpgpuAttrExprs))}|${normalizeAttrNames(config.gpgpuAttrNames).join(',')}|${attrDynInterval}|${texSize}`
+    ? `${JSON.stringify(normalizeAttrExprs(config.gpgpuAttrExprs))}|${normalizeAttrNames(config.gpgpuAttrNames).join(',')}|${normalizeAttrNames2(config.gpgpuAttrNames2).join(',')}|${attrDynInterval}|${texSize}`
     : '';
   const attrDynPassRef = useRef<GpgpuAttrDynPass | null>(null);
   const attrDynSignatureRef = useRef('');
   const attrDynTextureRef = useRef<THREE.Texture | null>(null);
   const attrDynFrameRef = useRef(0);
 
+  // Phase 18 stage 1: the attribute chain stage. A second
+  // expression stage whose input is the stage-1 output (the
+  // feedback / dyn texture when present, else the bake) — see
+  // lib/expressionGlslChain.ts. Null fragment (disabled, all
+  // expressions empty, or a baked group gate standing the
+  // re-evaluation passes down) means the pass is never built
+  // and consumers read the stage-1 texture verbatim. It shares
+  // the dyn interval cadence and reuses the dyn pass class
+  // (stateless single-target, like BO).
+  const attrChainFragment = !groupGateBaked && config.gpgpuAttrChainEnabled
+    ? buildAttrChainFragment(config.gpgpuAttrChainExprs, config.gpgpuAttrNames, config.gpgpuAttrNames2)
+    : null;
+  const attrChainSignature = attrChainFragment
+    ? `chain|${JSON.stringify(normalizeAttrExprs(config.gpgpuAttrChainExprs))}|${normalizeAttrNames(config.gpgpuAttrNames).join(',')}|${normalizeAttrNames2(config.gpgpuAttrNames2).join(',')}|${attrDynInterval}|${texSize}`
+    : '';
+  const attrChainPassRef = useRef<GpgpuAttrDynPass | null>(null);
+  const attrChainSignatureRef = useRef('');
+  const attrChainTextureRef = useRef<THREE.Texture | null>(null);
+  const attrChainFrameRef = useRef(0);
+
   useEffect(() => () => {
     attrDynPassRef.current?.dispose();
     attrDynPassRef.current = null;
     attrFeedbackPassRef.current?.dispose();
     attrFeedbackPassRef.current = null;
+    attrChainPassRef.current?.dispose();
+    attrChainPassRef.current = null;
   }, []);
 
   const runtime = useGpgpuRuntime({ gl, texSize, config });
@@ -566,6 +590,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     morphTexRef,
     morphNormalTexRef,
     attrTexRef,
+    attrTex2Ref,
     fluidRTARef,
     fluidRTBRef,
     fluidPingIsA,
@@ -767,6 +792,24 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // the state is a function of the evaluation count, not of
     // the frame count (brief J3). A bake texture change resets
     // the state inside the pass (p restarts from the bake).
+    // Phase 18 stage 1: the extra bindings every attribute
+    // pass may sample — the ext bake texture and the sim state
+    // for the vel / age / rad variables. The sim textures are
+    // the ping-pong READ side, i.e. the state as of the end of
+    // the previous frame (the passes run before this frame's
+    // sim passes); on the first frame they hold the seeded
+    // initial data, which is exactly the bake-time fallback.
+    // On the WebGPU route these WebGL targets are not advanced
+    // by the sim, so the variables keep reading the initial
+    // state there — the capability registry declares the
+    // sim-side gap (attr-sim-vars) instead of hiding it.
+    const attrPassExtra = {
+      src2Tex: attrTex2Ref.current,
+      posTex: posIn.texture,
+      velTex: velIn.texture,
+      ageDenom: Math.max(config.gpgpuAgeMax, 0.001),
+      radiusDenom: Math.max(config.gpgpuBounceRadius, 0.001),
+    };
     let attrDynTexture: THREE.Texture | null = null;
     if (attrFeedbackFragment) {
       if (attrFeedbackSignatureRef.current !== attrFeedbackSignature || !attrFeedbackPassRef.current) {
@@ -780,7 +823,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       const bakeAttrTex = attrTexRef.current;
       if (attrFeedbackPass && bakeAttrTex) {
         if (attrFeedbackFrameRef.current % attrDynInterval === 0) {
-          attrFeedbackTextureRef.current = attrFeedbackPass.run(glCtx, bakeAttrTex, timeRef.current);
+          attrFeedbackTextureRef.current = attrFeedbackPass.run(glCtx, bakeAttrTex, timeRef.current, attrPassExtra);
         }
         attrDynTexture = attrFeedbackTextureRef.current;
       }
@@ -804,7 +847,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       const bakeAttrTex = attrTexRef.current;
       if (attrDynPass && bakeAttrTex) {
         if (attrDynFrameRef.current % attrDynInterval === 0) {
-          attrDynTextureRef.current = attrDynPass.run(glCtx, bakeAttrTex, timeRef.current);
+          attrDynTextureRef.current = attrDynPass.run(glCtx, bakeAttrTex, timeRef.current, attrPassExtra);
         }
         attrDynTexture = attrDynTextureRef.current;
       }
@@ -816,6 +859,38 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       attrDynSignatureRef.current = '';
       attrDynFrameRef.current = 0;
     }
+    // Phase 18 stage 1: the chain stage runs after the stage-1
+    // passes, on the same interval cadence, with the stage-1
+    // output (feedback / dyn texture when present, else the
+    // bake) as its input. Its output is the texture every
+    // consumer below reads. With no chain fragment the pass is
+    // disposed and the stage-1 texture flows verbatim.
+    let attrChainTexture: THREE.Texture | null = null;
+    if (attrChainFragment) {
+      if (attrChainSignatureRef.current !== attrChainSignature || !attrChainPassRef.current) {
+        attrChainSignatureRef.current = attrChainSignature;
+        attrChainPassRef.current?.dispose();
+        attrChainPassRef.current = new GpgpuAttrDynPass(texSize, attrChainFragment);
+        attrChainTextureRef.current = null;
+        attrChainFrameRef.current = 0;
+      }
+      const attrChainPass = attrChainPassRef.current;
+      const stage1AttrTex = attrDynTexture ?? attrTexRef.current;
+      if (attrChainPass && stage1AttrTex) {
+        if (attrChainFrameRef.current % attrDynInterval === 0) {
+          attrChainTextureRef.current = attrChainPass.run(glCtx, stage1AttrTex, timeRef.current, attrPassExtra);
+        }
+        attrChainTexture = attrChainTextureRef.current;
+      }
+      attrChainFrameRef.current += 1;
+    } else if (attrChainPassRef.current) {
+      attrChainPassRef.current.dispose();
+      attrChainPassRef.current = null;
+      attrChainTextureRef.current = null;
+      attrChainSignatureRef.current = '';
+      attrChainFrameRef.current = 0;
+    }
+    const attrFinalTexture = attrChainTexture ?? attrDynTexture;
     // Sim-side consumers (the force drive / the group gate) read
     // the re-evaluated texture on the WebGL route only; on the
     // WebGPU route they keep the bake (declared gap, Phase BO
@@ -823,7 +898,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // declares it in the capability registry). The draw readout
     // (syncVisualUniforms below) always reads the re-evaluated
     // texture.
-    const simAttrTex = !routing.useWebGPU && attrDynTexture ? attrDynTexture : attrTexRef.current;
+    const simAttrTex = !routing.useWebGPU && attrFinalTexture ? attrFinalTexture : attrTexRef.current;
 
     if (stacksActive) {
       runReplicaStackPasses({
@@ -1255,7 +1330,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       posTexture: routing.outputPosTexture,
       velTexture: velOut.texture,
       finalSortTex,
-      attrTexture: attrDynTexture ?? attrTexRef.current,
+      attrTexture: attrFinalTexture ?? attrTexRef.current,
       texSize,
       time: timeRef.current,
       viewportSizePx: { x: gl.domElement.width, y: gl.domElement.height },

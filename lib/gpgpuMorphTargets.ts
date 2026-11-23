@@ -42,6 +42,7 @@
 
 import type { ParticleConfig } from '../types';
 import { createSeededRng } from './seededRng';
+import { evaluatePcgGraph, pcgAcceptance, pcgStepStrength, resolvePcgGraph, type PcgPlan } from './pcgGraph';
 import { pathJitterOffset } from './pathJitter';
 import { applyVoronoiFracture, buildFractureCellData, type FractureCellData } from './voronoiFracture';
 import {
@@ -239,6 +240,16 @@ export interface GpgpuMorphTerrainScatterOptions {
    *  companion normal (rotation around Y by up to ±r·π, same
    *  hash family). 0 = off; inert without alignment / bend. */
   rotRandom?: number;
+  /** PCG rule graph (Phase 18 stage 3, lib/pcgGraph.ts): while
+   *  pcgGraphEnabled is true, the scatter pipeline below runs
+   *  through the graph evaluator (node order / enabled flags /
+   *  params from pcgGraphData, '' = the default graph). Absent /
+   *  false = the legacy fixed-order code path verbatim, consuming
+   *  exactly the historical RNG draws. The default graph evaluated
+   *  through the plan is bit-identical to the legacy path (proven
+   *  by scripts/phase18-pcg-graph.test.mjs). */
+  pcgGraphEnabled?: boolean;
+  pcgGraphData?: string;
   /** Scatter finishing (Phase AX): posture bend — the companion
    *  normal leans toward downhill by up to 0.6·bend of the way
    *  to the horizontal downhill direction; at alignment 0 the
@@ -1469,6 +1480,12 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   // bite; the reference grid costs ~48² gradient evaluations,
   // negligible next to the bake itself.
   const terrainScatter = target === 'terrain' ? resolveTerrainScatter(scatter) : null;
+  // PCG rule graph (Phase 18 stage 3): the evaluated plan, only
+  // while the scatter grammar is live AND the graph is enabled.
+  // Null = the legacy scatter code path below, untouched.
+  const pcgPlan: PcgPlan | null = terrainScatter && scatter?.pcgGraphEnabled
+    ? evaluatePcgGraph(resolvePcgGraph(scatter.pcgGraphData))
+    : null;
   // Terrain erosion (Phase AP): the eroded field for this bake,
   // resolved once. Null (grammar off / both strengths 0) keeps
   // every terrain sample below on the analytic path verbatim.
@@ -2049,7 +2066,13 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
             let accT = 0.5;
             let bestP = -1;
             let placed = false;
-            for (let attempt = 0; attempt < TERRAIN_SCATTER_ATTEMPTS && !placed; attempt++) {
+            // PCG plan: a disabled sampler places the particle's
+            // own cell directly (1 attempt, no acceptance draw);
+            // otherwise the sampler node's attempts apply.
+            const scatterAttempts = pcgPlan
+              ? (pcgPlan.samplerEnabled ? pcgPlan.attempts : 1)
+              : TERRAIN_SCATTER_ATTEMPTS;
+            for (let attempt = 0; attempt < scatterAttempts && !placed; attempt++) {
               let cx: number;
               let cz: number;
               if (attempt === 0) {
@@ -2078,7 +2101,9 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
                 gz = g.gz;
                 slopeNorm = Math.min(1, Math.hypot(gx, gz) / terrainScatterGradRef);
               }
-              const p = terrainScatterAcceptance(terrainScatter, t, slopeNorm);
+              const p = pcgPlan
+                ? (pcgPlan.samplerEnabled ? pcgAcceptance(pcgPlan, terrainScatter, t, slopeNorm) : 1)
+                : terrainScatterAcceptance(terrainScatter, t, slopeNorm);
               if (p > bestP) {
                 bestP = p;
                 accX = cx; accY = h; accZ = cz; accGx = gx; accGz = gz; accT = t;
@@ -2094,29 +2119,64 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
             tx = accX;
             ty = accY;
             tz = accZ;
-            // Species channel (Phase 16 stage 5): the placed
-            // candidate's zone, from the same accT the species
-            // class below is computed from.
-            if (terrainScatter.species > 1) {
-              speciesData[i] = terrainScatterSpeciesZone(terrainScatter, accT);
-            }
-            // Posture (法線整列): the companion normal becomes the
-            // terrain normal, its magnitude carrying the species
-            // class of the particle's height zone. With alignment
-            // 0 the normals stay zero, exactly like the legacy
-            // terrain bake.
-            if (terrainScatter.alignNormal > 0 || (terrainScatter.bend ?? 0) > 0) {
-              // Phase AX: the finishing (scale / rotation
-              // randomisation + bend) wraps the Phase AI aligned
-              // normal; at its defaults the helper returns the
-              // Phase AI statement verbatim.
-              const fin = terrainScatterFinishNormal(
-                terrainScatter, accGx, accGz, accT,
-                terrainScatterHash01(i, 11.31), terrainScatterHash01(i, 47.97),
-              );
-              nnx = fin.x;
-              nny = fin.y;
-              nnz = fin.z;
+            if (pcgPlan) {
+              // PCG transformers run in graph order over a shared
+              // register: 'species' sets the zone + magnitude class
+              // register, 'align-normal' writes the companion
+              // normal using the class register AS IT STANDS — so
+              // align before species (or species disabled) writes
+              // the class-1 normal, exactly the preceding-register
+              // semantics. With the default order this reproduces
+              // the legacy statements below verbatim.
+              let speciesApplied = false;
+              for (const op of pcgPlan.transformerOps) {
+                if (op === 'species') {
+                  if (terrainScatter.species > 1) {
+                    speciesData[i] = terrainScatterSpeciesZone(terrainScatter, accT);
+                  }
+                  speciesApplied = true;
+                } else if (op === 'align-normal') {
+                  const strength = pcgStepStrength(pcgPlan, 'align-normal');
+                  const baseScatter = speciesApplied ? terrainScatter : { ...terrainScatter, species: 1 };
+                  const effScatter = strength >= 1
+                    ? baseScatter
+                    : { ...baseScatter, alignNormal: baseScatter.alignNormal * strength, bend: (baseScatter.bend ?? 0) * strength };
+                  if (effScatter.alignNormal > 0 || (effScatter.bend ?? 0) > 0) {
+                    const fin = terrainScatterFinishNormal(
+                      effScatter, accGx, accGz, accT,
+                      terrainScatterHash01(i, 11.31), terrainScatterHash01(i, 47.97),
+                    );
+                    nnx = fin.x;
+                    nny = fin.y;
+                    nnz = fin.z;
+                  }
+                }
+              }
+            } else {
+              // Species channel (Phase 16 stage 5): the placed
+              // candidate's zone, from the same accT the species
+              // class below is computed from.
+              if (terrainScatter.species > 1) {
+                speciesData[i] = terrainScatterSpeciesZone(terrainScatter, accT);
+              }
+              // Posture (法線整列): the companion normal becomes the
+              // terrain normal, its magnitude carrying the species
+              // class of the particle's height zone. With alignment
+              // 0 the normals stay zero, exactly like the legacy
+              // terrain bake.
+              if (terrainScatter.alignNormal > 0 || (terrainScatter.bend ?? 0) > 0) {
+                // Phase AX: the finishing (scale / rotation
+                // randomisation + bend) wraps the Phase AI aligned
+                // normal; at its defaults the helper returns the
+                // Phase AI statement verbatim.
+                const fin = terrainScatterFinishNormal(
+                  terrainScatter, accGx, accGz, accT,
+                  terrainScatterHash01(i, 11.31), terrainScatterHash01(i, 47.97),
+                );
+                nnx = fin.x;
+                nny = fin.y;
+                nnz = fin.z;
+              }
             }
           } else {
             tx = (((cellX + s) / texSize) * 2 - 1) * extent;

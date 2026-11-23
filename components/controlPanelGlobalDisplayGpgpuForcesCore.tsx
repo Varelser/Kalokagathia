@@ -16,6 +16,7 @@ import {
   ATTR_SOURCE_LABELS,
   normalizeAttrExprs,
   normalizeAttrNames,
+  normalizeAttrNames2,
   normalizeAttrSources,
 } from '../lib/gpgpuAttributes';
 import {
@@ -115,6 +116,10 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
   const names = normalizeAttrNames(config.gpgpuAttrNames);
   const sources = normalizeAttrSources(config.gpgpuAttrSources);
   const exprs = normalizeAttrExprs(config.gpgpuAttrExprs);
+  const names2 = normalizeAttrNames2(config.gpgpuAttrNames2);
+  const sources2 = normalizeAttrSources(config.gpgpuAttrSources2);
+  const exprs2 = normalizeAttrExprs(config.gpgpuAttrExprs2);
+  const chainExprs = normalizeAttrExprs(config.gpgpuAttrChainExprs);
   const slotOptions = [
     { label: 'OFF', val: '-1' },
     { label: `Slot 1（${names[0]}）`, val: '0' },
@@ -208,6 +213,26 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
     next[slot] = value;
     updateConfig('gpgpuAttrExprs', next);
   };
+  const setName2 = (slot: number, value: string) => {
+    const next = [...names2];
+    next[slot] = value;
+    updateConfig('gpgpuAttrNames2', next);
+  };
+  const setSource2 = (slot: number, value: string) => {
+    const next = [...sources2];
+    next[slot] = value as (typeof sources2)[number];
+    updateConfig('gpgpuAttrSources2', next);
+  };
+  const setExpr2 = (slot: number, value: string) => {
+    const next = [...exprs2];
+    next[slot] = value;
+    updateConfig('gpgpuAttrExprs2', next);
+  };
+  const setChainExpr = (slot: number, value: string) => {
+    const next = [...chainExprs];
+    next[slot] = value;
+    updateConfig('gpgpuAttrChainExprs', next);
+  };
   return (
     <div className="mt-4 border-t border-white/10 pt-4">
       <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Attributes — 名前付き属性とグループ（Phase AK）</div>
@@ -254,6 +279,61 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
       <Toggle label="Attribute Feedback（属性フィードバック — Phase BV）" value={config.gpgpuAttrFeedbackEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuAttrFeedbackEnabled', v)} />
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         フィードバック（Phase BV）: ON では式の予約変数 p で自スロットの前回の評価値を参照でき、p * 0.9 + drive * 0.1 のような蓄積・減衰が書けます。p の初期値はベイク値で、状態は再評価の実行回数だけ進みます（間隔を指定してもフレーム実数では進みません）。p を使わない式では従来の再評価／ベイクと同一です。WebGPU 経路では駆動・グループ判定側の消費はベイクのままです。
+      </div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        sim量（Phase 18 段階1）: ベイク式・再評価式・チェーン式では予約変数 vel（粒子の速さ、そのままの単位）／age（年齢を Age Max で割った 0..1）／rad（原点からの距離を Bounce Radius で割った 0..1）が使えます。ベイクでは初期状態の値、再評価とチェーンでは前フレーム終了時点の状態を読みます。vel／age／rad という名前のスロットは変数として使えなくなります（sim量が優先）。
+      </div>
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Extended Slots — 拡張属性スロット5〜8（Phase 18 段階1）</div>
+      {[0, 1, 2, 3].map((slot) => (
+        <div key={slot} className="mt-2 flex items-center gap-2">
+          <span className="w-10 shrink-0 text-[9px] uppercase tracking-widest opacity-60">Slot {slot + 5}</span>
+          <input
+            type="text"
+            value={names2[slot]}
+            onChange={(e) => setName2(slot, e.target.value)}
+            className="w-24 shrink-0 rounded border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/90 outline-none focus:border-white/40"
+            aria-label={`Extended attribute name slot ${slot + 5}`}
+          />
+          <div className="min-w-0 flex-1 [&_select]:mb-0">
+            <AttrSelect
+              value={sources2[slot]}
+              options={ATTR_SOURCES.map((source) => ({ label: ATTR_SOURCE_LABELS[source], val: source }))}
+              onChange={(v) => setSource2(slot, v)}
+            />
+          </div>
+          <input
+            type="text"
+            value={exprs2[slot]}
+            onChange={(e) => setExpr2(slot, e.target.value)}
+            placeholder="a * i"
+            className="min-w-0 flex-1 rounded border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/90 outline-none focus:border-white/40"
+            aria-label={`Extended attribute expression slot ${slot + 5}`}
+          />
+        </div>
+      ))}
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        拡張スロットは第2の属性テクスチャにベイクされ、再評価／フィードバック／チェーンの式から名前で読み取り専用の入力として参照できます（結果はスロット1〜4側へ流れて駆動に届きます）。式がどこからも参照していない間はテクスチャ自体が作られません。駆動のスロット選択（下の Size 等）は従来どおりスロット1〜4のみです。ベイク式では全8スロット名が使えます（スロット1〜4は確定値、5〜8は順に計算結果）。
+      </div>
+      <Toggle label="Attribute Chain（属性チェーン — 第2段の式、Phase 18 段階1）" value={config.gpgpuAttrChainEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuAttrChainEnabled', v)} />
+      {config.gpgpuAttrChainEnabled && (
+        <>
+          {[0, 1, 2, 3].map((slot) => (
+            <div key={slot} className="mt-2 flex items-center gap-2">
+              <span className="w-10 shrink-0 text-[9px] uppercase tracking-widest opacity-60">Slot {slot + 1}</span>
+              <input
+                type="text"
+                value={chainExprs[slot]}
+                onChange={(e) => setChainExpr(slot, e.target.value)}
+                placeholder="x * i"
+                className="min-w-0 flex-1 rounded border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/90 outline-none focus:border-white/40"
+                aria-label={`Attribute chain expression slot ${slot + 1}`}
+              />
+            </div>
+          ))}
+        </>
+      )}
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        チェーン: ON では段階1の出力（再評価／フィードバックの結果、無ければベイク）に対してもう一段の式を適用し、その結果が下の駆動とグループ判定に流れます。x は段階1の値、スロット名は順に計算結果、拡張スロット名・sim量・t も使えます。再評価と同じ間隔で実行されます。OFF または全て空欄なら段階1の出力そのままで、従来と完全同一です。
       </div>
       <AttrSelect label="Attr → Size（サイズ駆動）" value={String(config.gpgpuAttrSizeSlot)} options={slotOptions} onChange={(v) => updateConfig('gpgpuAttrSizeSlot', Number(v))} />
       {config.gpgpuAttrSizeSlot >= 0 && (

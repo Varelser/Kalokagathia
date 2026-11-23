@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { GpgpuAttrPassExtraBindings } from './gpgpuAttrDynPass';
 
 /**
  * Attribute feedback pass (Phase BV).
@@ -73,6 +74,13 @@ export class GpgpuAttrFeedbackPass {
       uniforms: {
         uSrc: { value: null as THREE.Texture | null },
         uPrev: { value: null as THREE.Texture | null },
+        // Phase 18 stage 1: ext / sim bindings, sampled only
+        // when the fragment declares them (see gpgpuAttrDynPass).
+        uSrc2: { value: null as THREE.Texture | null },
+        uPosTex: { value: null as THREE.Texture | null },
+        uVelTex: { value: null as THREE.Texture | null },
+        uAgeDenom: { value: 1 },
+        uRadiusDenom: { value: 1 },
         uTime: { value: 0 },
       },
       vertexShader: ATTR_FEEDBACK_VERT,
@@ -92,7 +100,12 @@ export class GpgpuAttrFeedbackPass {
    * bake texture; a different bake object than the previous
    * call resets the state (p restarts from the bake).
    */
-  run(gl: THREE.WebGLRenderer, bake: THREE.Texture, time: number): THREE.Texture {
+  run(
+    gl: THREE.WebGLRenderer,
+    bake: THREE.Texture,
+    time: number,
+    extra?: GpgpuAttrPassExtraBindings,
+  ): THREE.Texture {
     if (bake !== this.lastBake) {
       this.lastBake = bake;
       this.hasState = false;
@@ -101,6 +114,13 @@ export class GpgpuAttrFeedbackPass {
     const prevTex = this.hasState ? this.rts[this.readIdx].texture : bake;
     this.mat.uniforms.uSrc.value = bake;
     this.mat.uniforms.uPrev.value = prevTex;
+    if (extra) {
+      this.mat.uniforms.uSrc2.value = extra.src2Tex ?? null;
+      this.mat.uniforms.uPosTex.value = extra.posTex ?? null;
+      this.mat.uniforms.uVelTex.value = extra.velTex ?? null;
+      if (typeof extra.ageDenom === 'number') this.mat.uniforms.uAgeDenom.value = extra.ageDenom;
+      if (typeof extra.radiusDenom === 'number') this.mat.uniforms.uRadiusDenom.value = extra.radiusDenom;
+    }
     this.mat.uniforms.uTime.value = time;
     const prev = gl.getRenderTarget();
     gl.setRenderTarget(this.rts[writeIdx]);

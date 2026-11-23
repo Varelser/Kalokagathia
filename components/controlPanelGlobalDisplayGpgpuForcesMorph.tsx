@@ -17,6 +17,7 @@ import {
   type FragmentSignatureField,
 } from '../lib/fragmentCollection';
 import { clampFractureCells } from '../lib/voronoiFracture';
+import { PcgGraphEditorBlock } from './controlPanelPcgGraphEditor';
 
 // Mesh SDF bake status (Phase BY): the bake runs async on the
 // CPU; this line polls while it is in flight so the user can see
@@ -365,6 +366,7 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                   <div className="mt-1 text-[9px] leading-relaxed text-white/40">
                     候補点を最大5回抽選し、密度×高度帯×斜度の受理確率で残す散布文法です（Phase AI）。高度帯と斜度で生息域を作り、法線整列で表面の向きに沿わせ、種別は高度帯ゾーンとして放出キックの強さに効きます。全パラメータ既定（密度1・帯0..1・斜度1・整列0・種別1）のときは散布を有効にしても従来の配置と完全に同一です。仕上げ（Phase AX）: Scale/Rotation Random は粒子ごとに法線の大きさ・方位をばらつかせ、Bend は法線を斜面の下り方向へ倒します（点群の姿勢仕上げで、メッシュの曲げや種別ごとのメッシュ差し替えではありません）。全て 0 で従来同一です。
                   </div>
+                  <PcgGraphEditorBlock config={config} updateConfig={updateConfig} />
                 </>
               )}
             </>
