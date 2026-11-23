@@ -213,6 +213,20 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                   <Slider label="Slope Max （斜度上限）" value={config.gpgpuMorphScatterSlopeMax} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterSlopeMax', v)} />
                   <Slider label="Align Normal （法線整列）" value={config.gpgpuMorphScatterAlignNormal} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterAlignNormal', v)} />
                   <Slider label="Species （種別ゾーン数）" value={config.gpgpuMorphScatterSpecies} min={1} max={4} step={1} onChange={(v) => updateConfig('gpgpuMorphScatterSpecies', Math.round(v))} />
+                  {config.gpgpuMorphScatterSpecies >= 2 && (
+                    <>
+                      <Toggle label="Species 2 Geom （種別2の形状・Phase 16）" value={config.gpgpuGeomSpecies2Mode} options={[{ label: 'Follow', val: 'follow' as const }, { label: 'Point', val: 'point' as const }, { label: 'Cube', val: 'cube' as const }, { label: 'Tetra', val: 'tetra' as const }, { label: 'Octa', val: 'octa' as const }, { label: 'Icosa', val: 'icosa' as const }, { label: 'Torus', val: 'torus' as const }, { label: 'Cone', val: 'cone' as const }, { label: 'OBJ', val: 'obj' as const }]} onChange={(v) => updateConfig('gpgpuGeomSpecies2Mode', v)} />
+                      {config.gpgpuMorphScatterSpecies >= 3 && (
+                        <Toggle label="Species 3 Geom （種別3の形状・Phase 16）" value={config.gpgpuGeomSpecies3Mode} options={[{ label: 'Follow', val: 'follow' as const }, { label: 'Point', val: 'point' as const }, { label: 'Cube', val: 'cube' as const }, { label: 'Tetra', val: 'tetra' as const }, { label: 'Octa', val: 'octa' as const }, { label: 'Icosa', val: 'icosa' as const }, { label: 'Torus', val: 'torus' as const }, { label: 'Cone', val: 'cone' as const }, { label: 'OBJ', val: 'obj' as const }]} onChange={(v) => updateConfig('gpgpuGeomSpecies3Mode', v)} />
+                      )}
+                      {config.gpgpuMorphScatterSpecies >= 4 && (
+                        <Toggle label="Species 4 Geom （種別4の形状・Phase 16）" value={config.gpgpuGeomSpecies4Mode} options={[{ label: 'Follow', val: 'follow' as const }, { label: 'Point', val: 'point' as const }, { label: 'Cube', val: 'cube' as const }, { label: 'Tetra', val: 'tetra' as const }, { label: 'Octa', val: 'octa' as const }, { label: 'Icosa', val: 'icosa' as const }, { label: 'Torus', val: 'torus' as const }, { label: 'Cone', val: 'cone' as const }, { label: 'OBJ', val: 'obj' as const }]} onChange={(v) => updateConfig('gpgpuGeomSpecies4Mode', v)} />
+                      )}
+                      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                        種別ゾーンごとにジオメトリ形状を変えて描画を分割します（フォリッジ分割、Phase 16）。Follow は Geometry Mode に追従し、種別1は常に Geometry Mode です。Point を選んだ種別は立体を描きません（ポイント描画側で表示されます）。
+                      </div>
+                    </>
+                  )}
                   <Slider label="Scale Random （スケール無作為化）" value={config.gpgpuMorphScatterScaleRandom} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterScaleRandom', v)} />
                   <Slider label="Rotation Random （回転無作為化）" value={config.gpgpuMorphScatterRotRandom} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterRotRandom', v)} />
                   <Slider label="Bend （ベンド・下り方向への倒れ）" value={config.gpgpuMorphScatterBend} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphScatterBend', v)} />

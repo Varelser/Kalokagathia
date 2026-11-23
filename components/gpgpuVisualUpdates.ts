@@ -18,6 +18,7 @@ import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion
 import { normalizeAttrNames, normalizeAttrSlot, resolveAttrColorSlots, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { resolveIblEnvironment } from '../lib/iblEnvironment';
+import { allocateSpeciesCounts } from '../lib/speciesAllocation';
 import { horizonEquirectYawRadians } from '../lib/horizonBackground';
 import { clampNoiseMapAmount, clampNoiseMapEvolve, clampNoiseMapOctaves, clampNoiseMapScale, noiseMapKindIndex, normalizeNoiseMapKind } from '../lib/noiseFieldMap';
 
@@ -211,6 +212,8 @@ export function syncVisualUniforms(args: {
     streakMat,
     geomMat,
     instGeo,
+    speciesGeos,
+    speciesTotals,
     volumetricGeo,
     volumetricMat,
   } = assets;
@@ -557,6 +560,17 @@ export function syncVisualUniforms(args: {
     // mechanism-side cause. The simulation still runs on all
     // texels; only the draw is capped.
     if (instGeo) instGeo.instanceCount = activeCount;
+    // Foliage split (Phase 16 stage 5): the cap is distributed
+    // proportionally across the species subsets (largest-remainder,
+    // lib/speciesAllocation.ts) so the species ratio survives the
+    // cap; Σ counts = min(activeCount, pool). Inactive split =
+    // this block never runs and the legacy line above is all.
+    if (speciesGeos && speciesTotals) {
+      const counts = allocateSpeciesCounts(speciesTotals, activeCount);
+      speciesGeos.forEach((geo, i) => {
+        geo.instanceCount = counts[i] ?? 0;
+      });
+    }
     geomMat.uniforms.uPosTex.value = posTexture;
     geomMat.uniforms.uVelTex.value = velTexture;
     geomMat.uniforms.uColor.value.setStyle(config.gpgpuColor);
@@ -587,6 +601,8 @@ export function syncVisualUniforms(args: {
     }
     if (geomMat.uniforms.uMeshStretch) geomMat.uniforms.uMeshStretch.value = config.gpgpuGeomStretch;
     if (geomMat.uniforms.uEnvReflect) geomMat.uniforms.uEnvReflect.value = config.gpgpuGeomEnvReflect;
+    if (geomMat.uniforms.uMetalness) geomMat.uniforms.uMetalness.value = Math.max(0, Math.min(1, config.gpgpuGeomMetalness ?? 0));
+    if (geomMat.uniforms.uRoughness) geomMat.uniforms.uRoughness.value = Math.max(0, Math.min(1, config.gpgpuGeomRoughness ?? 1));
     // Image-based lighting (Phase AL): intensity 0 keeps the map
     // unbound and the fragment branch closed (legacy verbatim).
     if (geomMat.uniforms.uIblIntensity) {

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { applyCrystalMaterialStyle, getCrystalProfile, getCrystalSettings, type ClusterLayout } from './sceneCrystalAggregateSystemShared';
+import { applyCrystalProfilePbr } from '../lib/materialGrammar';
 
 const tempPos = new THREE.Vector3();
 const nextPos = new THREE.Vector3();
@@ -101,7 +102,9 @@ export function updateCrystalAggregateFrame({ audioRef, config, isPlaying, layer
   material.opacity = THREE.MathUtils.clamp(settings.opacity * style.opacity * profile.opacityMul + profile.opacityAdd, 0.04, 1.28);
   material.emissive.copy(style.emissive);
   material.color.copy(style.color);
-  material.roughness = profile.roughness + (settings.materialStyle === 'chrome' ? -0.12 : settings.materialStyle === 'glass' ? -0.08 : 0);
-  material.metalness = THREE.MathUtils.clamp(profile.metalness + (settings.materialStyle === 'chrome' ? 0.44 : settings.materialStyle === 'glass' ? 0.1 : 0), 0, 1);
+  const crystalPbr = applyCrystalProfilePbr(profile, settings.materialStyle);
+  material.roughness = crystalPbr.roughness;
+  material.metalness = crystalPbr.metalness;
+  material.envMapIntensity = crystalPbr.envMapIntensity;
   material.wireframe = settings.wireframe;
 }

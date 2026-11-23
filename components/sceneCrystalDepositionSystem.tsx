@@ -5,6 +5,7 @@ import type { ParticleConfig } from '../types';
 import { generateParticleData, type ParticleData } from './particleData';
 import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { getLayerParticleLayoutDeps, getLayerRuntimeCrystalDepositionSnapshot } from '../lib/sceneRenderRouting';
+import { getMaterialStylePbr, materialStyleToInt } from '../lib/materialGrammar';
 
 type HybridSettings = {
   opacity: number;
@@ -273,7 +274,7 @@ export const CrystalDepositionSystem: React.FC<{
     planeMat.uniforms.uPulse.value = pulse + bass * 0.25;
     planeMat.uniforms.uAudioReactive.value = settings.audioReactive;
     planeMat.uniforms.uTime.value = t;
-    planeMat.uniforms.uMaterialStyle.value = settings.materialStyle === 'glass' ? 1 : settings.materialStyle === 'hologram' ? 2 : settings.materialStyle === 'chrome' ? 3 : settings.materialStyle === 'halftone' ? 4 : 0;
+    planeMat.uniforms.uMaterialStyle.value = materialStyleToInt(settings.materialStyle);
     planeMat.uniforms.uRingEtch.value = surfaceProfile.ringEtch;
     planeMat.uniforms.uVein.value = surfaceProfile.vein;
     planeMat.uniforms.uTerrace.value = surfaceProfile.terrace;
@@ -315,8 +316,10 @@ export const CrystalDepositionSystem: React.FC<{
     crystalMat.opacity = settings.opacity * styled.opacityMul;
     crystalMat.color.copy(styled.color);
     crystalMat.emissive.copy(styled.emissive);
-    crystalMat.roughness = settings.materialStyle === 'chrome' ? 0.16 : settings.materialStyle === 'glass' ? 0.08 : 0.46;
-    crystalMat.metalness = settings.materialStyle === 'chrome' ? 0.92 : settings.materialStyle === 'glass' ? 0.24 : 0.12;
+    const depositionPbr = getMaterialStylePbr(settings.materialStyle);
+    crystalMat.roughness = depositionPbr.roughness;
+    crystalMat.metalness = depositionPbr.metalness;
+    crystalMat.envMapIntensity = depositionPbr.envMapIntensity;
     crystalMat.wireframe = settings.wireframe;
   });
 

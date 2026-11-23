@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { getLayerRuntimeConfigSnapshot, getLayerRuntimeMode } from '../lib/sceneRenderRouting';
 import { getHybridAudioDrive, getHybridSourceInfluence } from '../lib/hybridRuntimeShared';
+import { STANDARD_FIXED_PBR } from '../lib/materialGrammar';
 
 type Props = {
   config: ParticleConfig;
@@ -128,7 +129,7 @@ export const HybridGranularFieldSystem: React.FC<Props> = ({ config, layerIndex,
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, profile.count]} renderOrder={4}>
       <icosahedronGeometry args={[1, 0]} />
-      <meshStandardMaterial color={color} transparent opacity={0.82} roughness={0.62} metalness={0.08} />
+      <meshStandardMaterial color={color} transparent opacity={0.82} roughness={STANDARD_FIXED_PBR.hybridGranular.roughness} metalness={STANDARD_FIXED_PBR.hybridGranular.metalness} envMapIntensity={STANDARD_FIXED_PBR.hybridGranular.envMapIntensity} />
     </instancedMesh>
   );
 };

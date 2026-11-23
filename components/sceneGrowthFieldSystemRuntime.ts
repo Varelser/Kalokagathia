@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { estimateLayerPositionApprox } from './sceneMotionEstimator';
+import { materialStyleToInt } from '../lib/materialGrammar';
 import {
   getGrowthProfile,
   getLayerGrowthSettings,
@@ -225,7 +226,7 @@ export function useGrowthFieldRuntime({
     geometry.setDrawRange(0, strandIndex * 2);
     geometry.computeBoundingSphere();
 
-    const styleIndex = settings.materialStyle === 'glass' ? 1 : settings.materialStyle === 'hologram' ? 2 : settings.materialStyle === 'chrome' ? 3 : settings.materialStyle === 'halftone' ? 4 : 0;
+    const styleIndex = materialStyleToInt(settings.materialStyle);
     material.uniforms.uColor.value.set(settings.color);
     material.uniforms.uOpacity.value = settings.opacity;
     material.uniforms.uPulse.value = (pulse + bass * 0.25) * profile.pulseMul;

@@ -6,6 +6,7 @@ import {
   objMeshRepeatTransforms,
   objMeshWorldScale,
 } from '../lib/objMesh';
+import { STANDARD_FIXED_PBR } from '../lib/materialGrammar';
 
 // OBJ Mesh (Phase V, Mir-style mesh side of the OBJ import): the
 // polygon counterpart to the Phase J/O morph point cloud. The
@@ -90,8 +91,9 @@ export const ObjMesh: React.FC<{ config: ParticleConfig }> = ({ config }) => {
           <mesh key={i} geometry={geometry} position={position} rotation={[0, copyRotY, 0]} scale={copyScale}>
             <meshStandardMaterial
               color={color}
-              roughness={0.92}
-              metalness={0.0}
+              roughness={STANDARD_FIXED_PBR.obj.roughness}
+              metalness={STANDARD_FIXED_PBR.obj.metalness}
+              envMapIntensity={STANDARD_FIXED_PBR.obj.envMapIntensity}
               transparent={transparent}
               opacity={opacity}
               side={THREE.DoubleSide}

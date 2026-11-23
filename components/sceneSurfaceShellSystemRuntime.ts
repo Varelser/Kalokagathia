@@ -7,6 +7,7 @@ import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import type { HullLayout, ShellProfile, ShellSourceGeometryProfile } from './sceneSurfaceShellSystemShared';
 import { createConvexHullGeometry } from './sceneSurfaceShellSystemShared';
 import { getLayerRuntimeHullSnapshot } from '../lib/sceneRenderRouting';
+import { materialStyleToInt } from '../lib/materialGrammar';
 
 const tempPos = new THREE.Vector3();
 const scratchVec = new THREE.Vector3();
@@ -218,7 +219,7 @@ export function useSurfaceShellSystemRuntime({
     const wireframe = profile.wireframe ?? wireframeBase;
     const color = runtime.color;
     const materialStyle = runtime.materialStyle;
-    const materialStyleIndex = materialStyle === 'glass' ? 1 : materialStyle === 'hologram' ? 2 : materialStyle === 'chrome' ? 3 : materialStyle === 'halftone' ? 4 : 0;
+    const materialStyleIndex = materialStyleToInt(materialStyle);
     shellMaterial.uniforms.uColor.value.set(color);
     shellMaterial.uniforms.uOpacity.value = opacity;
     shellMaterial.uniforms.uPulse.value = pulse + bass * 0.3;

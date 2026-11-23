@@ -34,4 +34,6 @@ export {
   VOLUMETRIC_FRAG,
   GEOM_VERT,
   GEOM_FRAG,
+  buildGeomVert,
+  buildGeomFrag,
 } from "./gpgpuShaderVolumes";

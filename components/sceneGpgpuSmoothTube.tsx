@@ -9,6 +9,7 @@ import type { ParticleConfig } from '../types';
 import { smoothTubeRadiusAt, tubeRibbonScaleAt } from '../lib/smoothTubeProfile';
 import { normalizeFreeCurvePoints } from '../lib/freeCurve';
 import { buildTubeSection, tubeSectionPointCount } from '../lib/tubeSectionProfile';
+import { STANDARD_FIXED_PBR } from '../lib/materialGrammar';
 
 type Props = {
   config: ParticleConfig;
@@ -93,7 +94,7 @@ export const GpgpuSmoothTube: React.FC<Props> = React.memo(({ config, posReadbac
       geo.computeBoundingSphere();
       return geo;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [N, histLen, sides]);
 
   // Single shared material
@@ -103,8 +104,9 @@ export const GpgpuSmoothTube: React.FC<Props> = React.memo(({ config, posReadbac
     transparent: config.gpgpuSmoothTubeOpacity < 1,
     depthWrite: false,
     side: THREE.DoubleSide,
-    roughness: 0.4,
-    metalness: 0.2,
+    roughness: STANDARD_FIXED_PBR.smoothTube.roughness,
+    metalness: STANDARD_FIXED_PBR.smoothTube.metalness,
+    envMapIntensity: STANDARD_FIXED_PBR.smoothTube.envMapIntensity,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 

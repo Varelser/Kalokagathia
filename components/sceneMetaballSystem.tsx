@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { MarchingCubes } from 'three-stdlib';
 import type { ParticleConfig } from '../types';
 import { getMaxGpgpuTexSize } from './useGpgpuRuntime';
+import { resolveMetaballPbr } from '../lib/materialGrammar';
 
 type Props = {
   config: ParticleConfig;
@@ -37,8 +38,9 @@ export const MetaballSystem: React.FC<Props> = React.memo(
       opacity: config.gpgpuMetaballOpacity,
       transparent: config.gpgpuMetaballOpacity < 1,
       side: THREE.DoubleSide,
-      metalness: config.gpgpuMetaballMetalness,
-      roughness: config.gpgpuMetaballRoughness,
+      metalness: resolveMetaballPbr(config.gpgpuMetaballMetalness, config.gpgpuMetaballRoughness).metalness,
+      roughness: resolveMetaballPbr(config.gpgpuMetaballMetalness, config.gpgpuMetaballRoughness).roughness,
+      envMapIntensity: resolveMetaballPbr(config.gpgpuMetaballMetalness, config.gpgpuMetaballRoughness).envMapIntensity,
       depthWrite: config.gpgpuMetaballOpacity >= 0.99,
     });
     matRef.current = mat;
@@ -74,8 +76,10 @@ export const MetaballSystem: React.FC<Props> = React.memo(
     mat.transparent = config.gpgpuMetaballOpacity < 0.99;
     mat.depthWrite = config.gpgpuMetaballOpacity >= 0.99;
     mat.wireframe = config.gpgpuMetaballWireframe;
-    mat.metalness = config.gpgpuMetaballMetalness;
-    mat.roughness = config.gpgpuMetaballRoughness;
+    const metaballPbr = resolveMetaballPbr(config.gpgpuMetaballMetalness, config.gpgpuMetaballRoughness);
+    mat.metalness = metaballPbr.metalness;
+    mat.roughness = metaballPbr.roughness;
+    mat.envMapIntensity = metaballPbr.envMapIntensity;
 
     obj.isolation = config.gpgpuMetaballIsoLevel;
     obj.scale.setScalar(config.gpgpuBounceRadius);

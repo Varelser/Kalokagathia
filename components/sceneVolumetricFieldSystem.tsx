@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { getLayerRuntimeConfigSnapshot, getLayerRuntimeSource } from '../lib/sceneRenderRouting';
+import { materialStyleToInt } from '../lib/materialGrammar';
 
 type Props = {
   config: ParticleConfig;
@@ -261,7 +262,7 @@ export const VolumetricFieldSystem: React.FC<Props> = ({ config, layerIndex, aud
   const meshRef = React.useRef<THREE.Mesh | null>(null);
   const color = React.useMemo(() => new THREE.Color(settings.color), [settings.color]);
   const tint = React.useMemo(() => new THREE.Color(profile.tint), [profile.tint]);
-  const materialStyleIndex = settings.materialStyle === 'glass' ? 1 : settings.materialStyle === 'hologram' ? 2 : settings.materialStyle === 'chrome' ? 3 : settings.materialStyle === 'halftone' ? 4 : 0;
+  const materialStyleIndex = materialStyleToInt(settings.materialStyle);
   const scaleBase = config.sphereRadius * settings.radiusScale * (0.9 + settings.scale * 0.6);
   const depthScale = scaleBase * (0.78 + settings.depth * 0.42);
 

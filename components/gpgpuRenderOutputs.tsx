@@ -29,6 +29,7 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
     drawGeo,
     drawMat,
     geomMeshObj,
+    speciesMeshes,
     trailMats,
     ribbonGeo,
     ribbonMats,
@@ -64,9 +65,13 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
       {config.gpgpuWhitewaterEnabled && config.gpgpuFluidEnabled && config.gpgpuFlipEnabled && (
         <points geometry={wwDrawGeo} material={wwDrawMat} />
       )}
-      {plan.instancedSolids && geomMeshObj && (
-        <primitive object={geomMeshObj} />
-      )}
+      {plan.instancedSolids && speciesMeshes
+        ? speciesMeshes.map((mesh, i) => (
+          <primitive key={`species-${i}`} object={mesh} />
+        ))
+        : plan.instancedSolids && geomMeshObj && (
+          <primitive object={geomMeshObj} />
+        )}
       {plan.trailPoints && trailMats.slice(0, visibleTrailPoints(config)).map((mat, i) => (
         <points key={i} geometry={drawGeo} material={mat} />
       ))}

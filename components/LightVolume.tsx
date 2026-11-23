@@ -1,6 +1,7 @@
 import React from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
+import { SCENE_DEPTH_GLSL, getSceneDepthSource, useSceneDepthSource } from '../lib/sceneDepth';
 import type { ParticleConfig } from '../types';
 import { normalizeLightDir } from '../lib/gpgpuLight';
 import {
@@ -84,6 +85,18 @@ const VOLUME_FRAGMENT = /* glsl */ `
   uniform float uShadowExtent;
   uniform float uShadowStrength;
   varying vec3 vScene;
+  // Scene depth occlusion (Phase 16 stage 1): the shared scene
+  // depth capture (lib/sceneDepth.ts). uDepthReady 0 (no texture
+  // bound — always the case while gpgpuDepthOcclusion is 0, when
+  // the capture never mounts) skips this block entirely and the
+  // accumulation below is the legacy formula verbatim.
+  uniform sampler2D uSceneDepth;
+  uniform float uDepthReady;
+  uniform float uDepthOcclusion;
+  uniform float uCamNear;
+  uniform float uCamFar;
+  uniform vec2 uResolution;
+  ${SCENE_DEPTH_GLSL}
 
   float edgeExp() { return mix(0.8, 2.2, uSoftness); }
 
@@ -123,6 +136,17 @@ const VOLUME_FRAGMENT = /* glsl */ `
       vec2 suv = clamp(vScene.xz / (2.0 * uShadowExtent) + 0.5, 0.0, 1.0);
       float occ = texture2D(uShadowMap, suv).r;
       a *= 1.0 - uShadowStrength * occ * 0.8;
+    }
+    if (uDepthReady > 0.5 && uDepthOcclusion > 0.0) {
+      // Cut / fade the volume where an opaque surface sits in
+      // front of this fragment: the scene depth at this pixel vs
+      // this fragment's own view depth, softened over 5% of the
+      // fragment depth (min 1 world unit).
+      vec2 duv = gl_FragCoord.xy / max(uResolution, vec2(1.0));
+      float sceneDepth = kaloViewDepthFromBuffer(texture2D(uSceneDepth, duv).x, uCamNear, uCamFar);
+      float fragDepth = -(viewMatrix * vec4(vWorld, 1.0)).z;
+      float fade = kaloDepthFadeFactor(sceneDepth, fragDepth, max(fragDepth * 0.05, 1.0));
+      a *= mix(1.0, fade, clamp(uDepthOcclusion, 0.0, 1.0));
     }
     if (a <= 0.001) discard;
     gl_FragColor = vec4(vec3(1.0), a);
@@ -178,7 +202,7 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
     geo.setIndex(new THREE.BufferAttribute(ribbon.indices, 1));
     return geo;
     // historyVersion is the rebuild trigger for the ref's contents.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [trailEnabled, historyVersion, config.gpgpuLightTrailWidth, config.gpgpuLightTrailFade]);
 
   React.useEffect(() => {
@@ -246,6 +270,15 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
         uShadowReady: { value: shadowBake ? 1 : 0 },
         uShadowExtent: { value: shadowBake ? shadowBake.extent : 1 },
         uShadowStrength: { value: config.gpgpuShadowStrength },
+        // Scene depth occlusion (Phase 16 stage 1): inert defaults;
+        // the useFrame sync below binds the captured depth only
+        // while gpgpuDepthOcclusion > 0 and a capture exists.
+        uSceneDepth: { value: null },
+        uDepthReady: { value: 0 },
+        uDepthOcclusion: { value: 0 },
+        uCamNear: { value: 0.1 },
+        uCamFar: { value: 10000 },
+        uResolution: { value: new THREE.Vector2(1, 1) },
       },
       transparent: true,
       blending: THREE.AdditiveBlending,
@@ -259,6 +292,34 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
       volumeMaterial?.dispose();
     };
   }, [volumeMaterial]);
+
+  // Scene depth occlusion sync (Phase 16 stage 1): subscribing to
+  // the depth store keeps this component in step with the capture;
+  // the uniforms are (re)bound per frame from the live store so a
+  // camera near/far change or a capture resize is followed. While
+  // the strength is 0 the binding is explicitly cleared, keeping
+  // uDepthReady at 0 and the fragment on its legacy path.
+  const depthSource = useSceneDepthSource();
+  const gl = useThree((state) => state.gl);
+  const depthOcclusion = config.gpgpuDepthOcclusion;
+  useFrame(() => {
+    if (!volumeMaterial) return;
+    const u = volumeMaterial.uniforms;
+    const source = depthOcclusion > 0 ? (depthSource ?? getSceneDepthSource()) : null;
+    if (source) {
+      u.uSceneDepth.value = source.texture;
+      u.uDepthReady.value = 1;
+      u.uDepthOcclusion.value = Math.min(1, Math.max(0, depthOcclusion));
+      u.uCamNear.value = source.near;
+      u.uCamFar.value = source.far;
+      const size = gl.getDrawingBufferSize(new THREE.Vector2());
+      (u.uResolution.value as THREE.Vector2).set(Math.max(1, size.x), Math.max(1, size.y));
+    } else {
+      u.uSceneDepth.value = null;
+      u.uDepthReady.value = 0;
+      u.uDepthOcclusion.value = 0;
+    }
+  });
 
   if (!volumeDraws && !trailEnabled) return null;
 

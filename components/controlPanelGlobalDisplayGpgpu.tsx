@@ -193,6 +193,10 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
                   <Slider label="Volume Softness" value={config.gpgpuLightVolumeSoftness} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuLightVolumeSoftness', v)} />
                 </>
               )}
+              <Slider label="Depth Occlusion （深度遮蔽・Phase 16）" value={config.gpgpuDepthOcclusion} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuDepthOcclusion', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                シーン深度で体積光と PostFx の Lux コーンを減衰させます（深度を書く不透明メッシュの背後に漏れません）。0 では深度キャプチャ自体を行わず従来と同一です。深度を書かない描画（粒子・加算パス等）は遮蔽しません。
+              </div>
               <Toggle
                 label="Light Trail (ライト軌跡リボン)"
                 value={config.gpgpuLightTrailEnabled}

@@ -8,6 +8,7 @@ import type { FiberLayout, FiberProfile } from './sceneFiberFieldSystemTypes';
 import { getLayerFiberSettings, getLayerMode } from './sceneFiberFieldSystemTypes';
 import { getFiberProfile } from './sceneFiberFieldSystemProfiles';
 import { getLayerParticleLayoutDeps, getLayerRuntimeFiberSnapshot } from '../lib/sceneRenderRoutingRuntimeSnapshots';
+import { materialStyleToInt } from '../lib/materialGrammar';
 
 const tempPos = new THREE.Vector3();
 const nextPos = new THREE.Vector3();
@@ -210,7 +211,7 @@ export function updateFiberMaterial(
   pulse: number,
   bass: number,
 ) {
-  const styleIndex = settings.materialStyle === 'glass' ? 1 : settings.materialStyle === 'hologram' ? 2 : settings.materialStyle === 'chrome' ? 3 : settings.materialStyle === 'halftone' ? 4 : 0;
+  const styleIndex = materialStyleToInt(settings.materialStyle);
   material.uniforms.uColor.value.set(settings.color);
   material.uniforms.uOpacity.value = settings.opacity;
   material.uniforms.uPulse.value = pulse + bass * 0.2;

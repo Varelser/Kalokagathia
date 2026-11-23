@@ -30,7 +30,7 @@ const BenchProbe: React.FC = () => {
   });
   return null;
 };
-import { CameraImpulseRig, getAdaptiveDprRange, SceneBackgroundSync, shouldUseAntialias } from './AppSceneCameraRig';
+import { CameraImpulseRig, getAdaptiveDprRange, SceneBackgroundSync, SceneEnvironmentSync, shouldUseAntialias } from './AppSceneCameraRig';
 import { HorizonBackground } from './HorizonBackground';
 import { TerrainMesh } from './TerrainMesh';
 import { ObjMesh } from './ObjMesh';
@@ -38,6 +38,7 @@ import { isHorizonActive, isHorizonSuppressed } from '../lib/horizonBackground';
 import { AppSceneLayerContent } from './AppSceneLayerContent';
 import { EMPTY_PYRO_GRID_FOG_FEED, type PyroGridFogFeed } from '../lib/pyroGrid';
 import { AppScenePostFx } from './AppScenePostFx';
+import { SceneDepthCapture } from './SceneDepthCapture';
 import { DynResController } from './DynResController';
 import { useAppSceneTemporalConfig } from './useAppSceneTemporalConfig';
 import type { AppSceneProps } from './AppSceneTypes';
@@ -147,6 +148,11 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
       }}
     >
       <BenchProbe />
+      <SceneEnvironmentSync config={effectiveConfig} />
+      {/* Scene depth base (Phase 16 stage 1): mounted only while
+          the depth occlusion strength is positive; at the default
+          0 nothing is captured and the render is unchanged. */}
+      {effectiveConfig.gpgpuDepthOcclusion > 0 && <SceneDepthCapture />}
       <SceneBackgroundSync
         backgroundColor={effectiveConfig.backgroundColor}
         transparentBackground={transparentBackground}

@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { estimateLayerPositionApprox } from './sceneMotionEstimator';
+import { materialStyleToInt } from '../lib/materialGrammar';
 import type { PatchLayout, PatchProfile, PatchSourceProfile } from './sceneSurfacePatchSystemShared';
 import { getLayerPatchSettings } from './sceneSurfacePatchSystemShared';
 
@@ -182,7 +183,7 @@ export function useSurfacePatchRuntime({
     normalAttr.needsUpdate = true;
     geometry.computeBoundingSphere();
 
-    const materialStyleIndex = settings.materialStyle === 'glass' ? 1 : settings.materialStyle === 'hologram' ? 2 : settings.materialStyle === 'chrome' ? 3 : settings.materialStyle === 'halftone' ? 4 : 0;
+    const materialStyleIndex = materialStyleToInt(settings.materialStyle);
     material.uniforms.uColor.value.set(settings.color);
     material.uniforms.uOpacity.value = Math.min(1.3, Math.max(0.04, settings.opacity * profile.opacityMul + profile.opacityAdd));
     material.uniforms.uPulse.value = pulse + bass * 0.25;

@@ -1,3 +1,8 @@
+import {
+  validateGeomCustomFragmentGlslCode,
+  validateGeomCustomVertexGlslCode,
+} from "../lib/geomCustomGlsl";
+
 // ── Volumetric sphere sprite vertex ──
 export const VOLUMETRIC_VERT = /* glsl */ `
   precision highp float;
@@ -259,6 +264,12 @@ export const GEOM_FRAG = /* glsl */ `
   uniform sampler2D uIblMap;
   uniform float uIblIntensity;
   uniform float uIblYaw;
+  // PBR grammar (Phase 16 stage 2): F0 / specular width only.
+  // Defaults uMetalness 0 / uRoughness 1 take the legacy fallback
+  // branch below and reproduce pow(ndh, 24) * 0.35 exactly.
+  // TS twin: geomSpecular in lib/materialGrammar.ts.
+  uniform float uMetalness;
+  uniform float uRoughness;
   varying vec3 vNormal;
   varying vec3 vWorldNormal;
   varying vec3 vWorldPos;
@@ -281,8 +292,19 @@ export const GEOM_FRAG = /* glsl */ `
     float diff = max(0.0, dot(N, L)) * 0.7 + 0.3;
     vec3 V = vec3(0.0, 0.0, 1.0);
     vec3 H = normalize(L + V);
-    float spec = pow(max(0.0, dot(N, H)), 24.0) * 0.35;
-    vec3 col = uColor * diff + spec;
+    float ndh = max(0.0, dot(N, H));
+    vec3 col;
+    if (uMetalness <= 0.001 && uRoughness >= 0.999) {
+      // Legacy fallback (defaults): bit-identical v1.97.0 specular.
+      float spec = pow(ndh, 24.0) * 0.35;
+      col = uColor * diff + spec;
+    } else {
+      vec3 F0 = mix(vec3(0.04), uColor, clamp(uMetalness, 0.0, 1.0));
+      float r = clamp(uRoughness, 0.05, 1.0);
+      float specExp = min(24.0 / (r * r), 256.0);
+      vec3 specCol = pow(ndh, specExp) * 0.35 * (F0 / 0.04);
+      col = uColor * diff + specCol;
+    }
     // Procedural environment reflection (Kinetix integration B1b):
     // approximates the PMREM environment that gives Kinetix's
     // 'crystal' geometry its look — a vertical gradient environment
@@ -311,4 +333,47 @@ export const GEOM_FRAG = /* glsl */ `
     gl_FragColor = vec4(col, uOpacity * vDensityMul);
   }
 `;
+
+// ── GEOM custom GLSL builders (Phase 16 stage 4) ──
+//
+// buildGeomVert / buildGeomFrag splice a validated user snippet
+// into the stock GEOM shaders at their seams (vertex: right
+// after the world position is determined; fragment: right after
+// the lighting sum, before the final write). The identity rule
+// is byte-level: an empty, whitespace-only or statically invalid
+// snippet returns the stock string object unchanged, so the
+// default render is bit-identical. (The compile check against a
+// live GL context happens in useGpgpuMeshAssets before a valid
+// snippet ever reaches these builders; the validate re-check
+// here is the last line of defence.)
+
+const GEOM_VERT_SEAM_ANCHOR = '    vWorldPos = instancePos + local;\n';
+const GEOM_FRAG_SEAM_ANCHOR = '    gl_FragColor = vec4(col, uOpacity * vDensityMul);';
+
+export function buildGeomVert(customVertCode: string): string {
+  const code = customVertCode ?? '';
+  if (!code.trim()) return GEOM_VERT;
+  if (!validateGeomCustomVertexGlslCode(code).ok) return GEOM_VERT;
+  const block = `    { // geom vertex (user GLSL)
+    vec3 worldPos = vWorldPos;
+    vec3 normal = vWorldNormal;
+    vec3 disp = vec3(0.0);
+${code}
+    local += disp;
+    vWorldPos += disp;
+    }
+`;
+  return GEOM_VERT.replace(GEOM_VERT_SEAM_ANCHOR, GEOM_VERT_SEAM_ANCHOR + block);
+}
+
+export function buildGeomFrag(customFragCode: string): string {
+  const code = customFragCode ?? '';
+  if (!code.trim()) return GEOM_FRAG;
+  if (!validateGeomCustomFragmentGlslCode(code).ok) return GEOM_FRAG;
+  const block = `    { // geom fragment (user GLSL)
+${code}
+    }
+`;
+  return GEOM_FRAG.replace(GEOM_FRAG_SEAM_ANCHOR, block + GEOM_FRAG_SEAM_ANCHOR);
+}
 

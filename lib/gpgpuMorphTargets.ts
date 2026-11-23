@@ -244,8 +244,8 @@ export interface GpgpuMorphTerrainScatterOptions {
    *  to the horizontal downhill direction; at alignment 0 the
    *  bend alone writes a leaning normal of magnitude 0.6·bend.
    *  This is an orientation finish on a point cloud, NOT a mesh
-   *  bend, and there is no per-species mesh swap (the pool draws
-   *  a single geometry mode). 0 = off. */
+   *  bend. (Per-species mesh swap arrived later, in Phase 16
+   *  stage 5, via the speciesData channel below.) 0 = off. */
   bend?: number;
 }
 
@@ -805,12 +805,26 @@ export function terrainScatterAcceptance(
  * the class scale runs 0.55 (lowest zone) to 1.0 (highest), and a
  * single species is always exactly 1.
  */
+/**
+ * Species zone index of a normalised height (Phase 16 stage 5):
+ * the single assignment the bake uses both for the normal-
+ * magnitude class below and for the speciesData channel, so the
+ * two can never drift apart. Species <= 1 is always zone 0.
+ */
+export function terrainScatterSpeciesZone(
+  scatter: GpgpuMorphTerrainScatterOptions,
+  t: number,
+): number {
+  if (scatter.species <= 1) return 0;
+  return Math.min(scatter.species - 1, Math.max(0, Math.floor(t * scatter.species)));
+}
+
 export function terrainScatterSpeciesScale(
   scatter: GpgpuMorphTerrainScatterOptions,
   t: number,
 ): number {
   if (scatter.species <= 1) return 1;
-  const zone = Math.min(scatter.species - 1, Math.max(0, Math.floor(t * scatter.species)));
+  const zone = terrainScatterSpeciesZone(scatter, t);
   return 0.55 + 0.45 * (zone / (scatter.species - 1));
 }
 
@@ -1393,6 +1407,11 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   data: Float32Array;
   normalData: Float32Array;
   fractureCells: FractureCellData | null;
+  /** Species zone per texel (Phase 16 stage 5): the same zone
+   *  assignment that drives the normal-magnitude class, kept as
+   *  its own channel so the draw can split per species. All 0
+   *  when the scatter grammar is inactive or species is 1. */
+  speciesData: Uint8Array;
 } {
   const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, rigidFracture, scatter, contourGeometry, polygonSides, pathJitter } = options;
   const formActive = isFormDeformationActive(form);
@@ -1406,6 +1425,10 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   const DEG_TO_RAD = Math.PI / 180;
   const data = new Float32Array(count * 4);
   const normalData = new Float32Array(count * 4);
+  // Species channel (Phase 16 stage 5): zero-filled, so every
+  // non-scatter path (and scatter at species 1) yields all-zero —
+  // the identity the draw side checks before splitting.
+  const speciesData = new Uint8Array(count);
   const targetIndex = GPGPU_MORPH_TARGETS.indexOf(target);
   const rng = createSeededRng(((seed * 1000003 + targetIndex * 7919 + 12345) >>> 0) || 1);
   const isMedia = target === 'text' || target === 'image';
@@ -2038,6 +2061,12 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
             tx = accX;
             ty = accY;
             tz = accZ;
+            // Species channel (Phase 16 stage 5): the placed
+            // candidate's zone, from the same accT the species
+            // class below is computed from.
+            if (terrainScatter.species > 1) {
+              speciesData[i] = terrainScatterSpeciesZone(terrainScatter, accT);
+            }
             // Posture (法線整列): the companion normal becomes the
             // terrain normal, its magnitude carrying the species
             // class of the particle's height zone. With alignment
@@ -2213,5 +2242,5 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   if (fracture) {
     applyVoronoiFracture(data, count, fracture);
   }
-  return { data, normalData, fractureCells };
+  return { data, normalData, fractureCells, speciesData };
 }

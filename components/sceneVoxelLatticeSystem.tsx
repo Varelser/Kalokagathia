@@ -5,6 +5,7 @@ import type { ParticleConfig } from '../types';
 import { generateParticleData, type ParticleData } from './particleData';
 import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { getLayerParticleLayoutDeps, getLayerRuntimeVoxelSnapshot } from '../lib/sceneRenderRouting';
+import { applyVoxelProfilePbr } from '../lib/materialGrammar';
 
 type VoxelSettings = {
   opacity: number;
@@ -333,8 +334,10 @@ export const VoxelLatticeSystem: React.FC<{ config: ParticleConfig; layerIndex: 
     material.opacity = THREE.MathUtils.clamp(settings.opacity * style.opacity * profile.opacityMul + profile.opacityAdd, 0.04, 1.24);
     material.emissive.copy(style.emissive);
     material.color.copy(style.color);
-    material.roughness = THREE.MathUtils.clamp(profile.roughness + (settings.materialStyle === 'chrome' ? -0.08 : settings.materialStyle === 'glass' ? -0.06 : 0), 0.04, 1);
-    material.metalness = THREE.MathUtils.clamp(profile.metalness + (settings.materialStyle === 'chrome' ? 0.42 : settings.materialStyle === 'glass' ? 0.12 : 0), 0, 1);
+    const voxelPbr = applyVoxelProfilePbr(profile, settings.materialStyle);
+    material.roughness = voxelPbr.roughness;
+    material.metalness = voxelPbr.metalness;
+    material.envMapIntensity = voxelPbr.envMapIntensity;
     material.wireframe = profile.forceWireframe ?? settings.wireframe;
   });
 

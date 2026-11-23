@@ -6,6 +6,7 @@ import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
 import { buildSpawnDistanceValues } from '../lib/gpgpuLifecycle';
 import { buildVellumBakeData, vellumStatePoolActive } from '../lib/gpgpuVellum';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
+import { setBakedSpeciesData } from '../lib/speciesAllocation';
 import { splitTextOnPathGlyphs, type TextGlyphRaster } from '../lib/gpgpuTextOnPath';
 import { traceContourGeometry } from '../lib/contourTrace';
 import { fractureOptionFromConfig } from '../lib/voronoiFracture';
@@ -656,7 +657,7 @@ export function buildMorphBakeData(
     || (config.gpgpuMorphTarget === 'svg' && config.gpgpuMorphPathMode === 'stamp' && config.gpgpuMorphStampShape === 'obj')
     ? sampleObjPointCloudWithNormals(config.gpgpuMorphObjSource, config.gpgpuMorphObjSampleMode)
     : null;
-  return buildGpgpuMorphTargetDataWithNormals({
+  const baked = buildGpgpuMorphTargetDataWithNormals({
     texSize,
     target: config.gpgpuMorphTarget,
     worldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,
@@ -749,6 +750,17 @@ export function buildMorphBakeData(
       ? getAttrPointCloud()?.unitPositions ?? null
       : null,
   });
+  // Species channel (Phase 16 stage 5): publish the bake's
+  // per-texel species zones on the shared slot the mesh assets
+  // read for the foliage split (lib/speciesAllocation.ts).
+  setBakedSpeciesData(
+    baked.speciesData,
+    texSize,
+    config.gpgpuMorphScatterEnabled
+      ? Math.max(1, Math.min(4, Math.floor(config.gpgpuMorphScatterSpecies) || 1))
+      : 1,
+  );
+  return baked;
 }
 
 export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): GpgpuRuntimeRefs {
@@ -1497,7 +1509,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       ? sampleObjPointCloudWithNormals(morphObjSource, morphObjSampleMode) : null;
     const objPoints = objSample ? objSample.points : null;
     const objNormals = objSample ? objSample.normals : null;
-    const { data, normalData, fractureCells } = buildGpgpuMorphTargetDataWithNormals({
+    const { data, normalData, fractureCells, speciesData } = buildGpgpuMorphTargetDataWithNormals({
       texSize,
       target: morphTarget,
       worldScale: morphScale * morphBounceRadius * 0.48,
@@ -1608,6 +1620,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         ? getAttrPointCloud()?.unitPositions ?? null
         : null,
     });
+    // Species channel (Phase 16 stage 5): same publish as the
+    // shared builder — the foliage split reads this bake.
+    setBakedSpeciesData(
+      speciesData,
+      texSize,
+      morphScatterEnabled
+        ? Math.max(1, Math.min(4, Math.floor(morphScatterSpecies) || 1))
+        : 1,
+    );
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
     morphTexRef.current = tex;

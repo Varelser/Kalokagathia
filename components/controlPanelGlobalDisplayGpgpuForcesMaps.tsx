@@ -8,6 +8,7 @@ import { CustomForceBlock, SimpleLfoBlock } from './controlPanelGlobalDisplayGpg
 import { ParticleVertexGlslBlock } from './controlPanelGlobalDisplayParticleVertexCustom';
 import { ParticleFragmentGlslBlock } from './controlPanelGlobalDisplayParticleFragmentCustom';
 import { VolumeFogGlslBlock } from './controlPanelGlobalDisplayVolumeFogCustom';
+import { GeomCustomFragmentGlslBlock, GeomCustomVertexGlslBlock } from './controlPanelGlobalDisplayGpgpuGeomCustom';
 
 export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
@@ -248,6 +249,10 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
 
     {/* Volume Fog Fragment GLSL (Phase CE) */}
     <VolumeFogGlslBlock config={config} updateConfig={updateConfig} />
+
+    {/* GEOM Custom GLSL (Phase 16 stage 4) */}
+    <GeomCustomVertexGlslBlock config={config} updateConfig={updateConfig} />
+    <GeomCustomFragmentGlslBlock config={config} updateConfig={updateConfig} />
 
     {/* Simple LFO (B3, Kinetix-style single-target view of the modulation engine) */}
     <SimpleLfoBlock />

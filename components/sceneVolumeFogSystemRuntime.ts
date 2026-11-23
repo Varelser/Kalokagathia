@@ -14,6 +14,7 @@ import {
   validateVolumeFogGlslCode,
 } from '../lib/volumeFogGlsl';
 import { getLayerRuntimeFogSnapshot } from '../lib/sceneRenderRouting';
+import { materialStyleToInt } from '../lib/materialGrammar';
 import type { VolumeFogSystemProps } from './sceneVolumeFogSystemTypes';
 
 export type VolumeFogRuntimeState = {
@@ -64,7 +65,7 @@ export function useVolumeFogRuntime({ config, layerIndex, audioRef, isPlaying, p
   const fogAnisotropy = fogRuntime.anisotropy;
   const fogAudioReactive = fogRuntime.audioReactive;
   const materialStyle = fogRuntime.materialStyle;
-  const materialStyleIndex = materialStyle === 'glass' ? 1 : materialStyle === 'hologram' ? 2 : materialStyle === 'chrome' ? 3 : materialStyle === 'halftone' ? 4 : 0;
+  const materialStyleIndex = materialStyleToInt(materialStyle);
   const layerSource = fogRuntime.source;
   const profile = React.useMemo(
     () => withCrossFamilyFogProfile(withSourceAwareFogProfile(getFogProfile(layerMode), layerSource), layerMode, layerSource),
@@ -122,6 +123,7 @@ export function useVolumeFogRuntime({ config, layerIndex, audioRef, isPlaying, p
       setVolumeFogGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 検証・コンパイル済みのシェーダ差し替えは描画側がこの state 経由で受け取る設計のため、effect 内で同期する
     setFogFragmentShader(buildVolumeFogShader(code));
     appliedFogCodeRef.current = code;
     setVolumeFogGlslStatus({ state: 'active' });

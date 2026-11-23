@@ -29,6 +29,18 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGeomEnvReflect: 0.0,
   // Image-based lighting (Phase AL): 0 = legacy fragment path.
   gpgpuGeomIblIntensity: 0.0,
+  gpgpuGeomMetalness: 0.0,
+  gpgpuGeomRoughness: 1.0,
+  gpgpuSceneEnvIntensity: 0.0,
+  // GEOM custom GLSL (Phase 16 stage 4): off / empty = stock shaders.
+  gpgpuGeomCustomVertexEnabled: false,
+  gpgpuGeomCustomVertexCode: '',
+  gpgpuGeomCustomFragmentEnabled: false,
+  gpgpuGeomCustomFragmentCode: '',
+  // Foliage split (Phase 16 stage 5): 'follow' = gpgpuGeomMode.
+  gpgpuGeomSpecies2Mode: 'follow' as const,
+  gpgpuGeomSpecies3Mode: 'follow' as const,
+  gpgpuGeomSpecies4Mode: 'follow' as const,
   gpgpuGeomSpinSpeed: 0.0,
   gpgpuGeomSpinRandom: 0,
   gpgpuGeomStretch: 0.0,
@@ -847,6 +859,8 @@ f 8 1 105`,
   gpgpuLightVolumeAngle: 28,
   gpgpuLightVolumeSteps: 12,
   gpgpuLightVolumeSoftness: 0.5,
+  // Scene depth occlusion (Phase 16 stage 1): 0 = no depth capture.
+  gpgpuDepthOcclusion: 0,
   gpgpuLightTrailEnabled: false,
   gpgpuLightTrailWidth: 6,
   gpgpuLightTrailFade: 1.5,

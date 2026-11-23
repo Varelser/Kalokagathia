@@ -6,6 +6,7 @@ import { generateParticleData } from './particleData';
 import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { withCrossFamilyDepositionProfile, withSourceAwareDepositionProfile } from '../lib/sourceAwareShaping';
 import { getLayerRuntimeDepositionSnapshot } from '../lib/sceneRenderRouting';
+import { materialStyleToInt } from '../lib/materialGrammar';
 
 type DepositionMode = ParticleConfig['layer2Type'];
 
@@ -288,7 +289,7 @@ export const DepositionFieldSystem: React.FC<{
     material.uniforms.uPulse.value = pulse + bass * 0.25;
     material.uniforms.uAudioReactive.value = settings.audioReactive;
     material.uniforms.uTime.value = t;
-    material.uniforms.uMaterialStyle.value = settings.materialStyle === 'glass' ? 1 : settings.materialStyle === 'hologram' ? 2 : settings.materialStyle === 'chrome' ? 3 : settings.materialStyle === 'halftone' ? 4 : 0;
+    material.uniforms.uMaterialStyle.value = materialStyleToInt(settings.materialStyle);
     material.uniforms.uDotField.value = dotField;
     material.uniforms.uDotScale.value = profile.dotScale;
     material.uniforms.uDotSoftness.value = profile.dotSoftness;

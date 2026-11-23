@@ -9,6 +9,7 @@ import {
   tunnelScrollOffset,
 } from '../lib/terrainMesh';
 import { buildShadowScene, occlusionAtPoint } from '../lib/shadowOcclusion';
+import { STANDARD_FIXED_PBR } from '../lib/materialGrammar';
 
 // Terrain Mesh (Phase P, Mir-style): a polygon counterpart to the
 // Phase L point terrain. A 128x128 grid is displaced by the shared
@@ -138,6 +139,7 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
   const [imageTexture, setImageTexture] = React.useState<THREE.Texture | null>(null);
   React.useEffect(() => {
     if (!enabled || textureKind !== 'image' || !imageSource) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 画像種別でなくなった時点でテクスチャを即座に外すための意図的なリセット（保持すると前の画像が残ってしまう）
       setImageTexture(null);
       return undefined;
     }
@@ -228,8 +230,9 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
             key={`${map ? 'with-map' : 'no-map'}-${shadowActive ? 'shadow' : 'plain'}`}
             color={color}
             vertexColors={shadowActive}
-            roughness={0.92}
-            metalness={0.0}
+            roughness={STANDARD_FIXED_PBR.terrain.roughness}
+            metalness={STANDARD_FIXED_PBR.terrain.metalness}
+            envMapIntensity={STANDARD_FIXED_PBR.terrain.envMapIntensity}
             map={map ?? undefined}
             transparent={transparent}
             opacity={opacity}

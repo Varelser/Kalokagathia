@@ -174,7 +174,9 @@ export type GlslInjectionStage =
   | 'post-fragment'
   | 'particle-vertex'
   | 'particle-fragment'
-  | 'volume-fragment';
+  | 'volume-fragment'
+  | 'geom-vertex'
+  | 'geom-fragment';
 
 export type GlslInjectionBackend = 'webgl' | 'webgpu' | 'cpu';
 

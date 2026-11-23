@@ -1,8 +1,8 @@
 {
   "version": 1,
   "algorithm": "sha256(sorted keys joined by newline)",
-  "fingerprint": "3879142690157a705b81a01c848f683f1e2ea18974a288dcc93ea82776e69535",
-  "keyCount": 1392,
+  "fingerprint": "4567588b2953bd41b7b5d4b2cce020ecde460659adf44b38c21e89217a4f3123",
+  "keyCount": 1403,
   "keys": [
     "ambientBaseSize",
     "ambientColor",
@@ -177,6 +177,7 @@
     "gpgpuCustomForceEnabled",
     "gpgpuDensityCompEnabled",
     "gpgpuDensityCompTarget",
+    "gpgpuDepthOcclusion",
     "gpgpuDrag",
     "gpgpuElasticEnabled",
     "gpgpuElasticStrength",
@@ -207,10 +208,19 @@
     "gpgpuFogSelfShadow",
     "gpgpuFogShadowSteps",
     "gpgpuFreeCurvePoints",
+    "gpgpuGeomCustomFragmentCode",
+    "gpgpuGeomCustomFragmentEnabled",
+    "gpgpuGeomCustomVertexCode",
+    "gpgpuGeomCustomVertexEnabled",
     "gpgpuGeomEnvReflect",
     "gpgpuGeomIblIntensity",
+    "gpgpuGeomMetalness",
     "gpgpuGeomMode",
+    "gpgpuGeomRoughness",
     "gpgpuGeomScale",
+    "gpgpuGeomSpecies2Mode",
+    "gpgpuGeomSpecies3Mode",
+    "gpgpuGeomSpecies4Mode",
     "gpgpuGeomSpinRandom",
     "gpgpuGeomSpinSpeed",
     "gpgpuGeomStretch",
@@ -480,6 +490,7 @@
     "gpgpuRigidGlueStrength",
     "gpgpuRigidRestitution",
     "gpgpuRigidStartSleeping",
+    "gpgpuSceneEnvIntensity",
     "gpgpuSdfBounce",
     "gpgpuSdfEnabled",
     "gpgpuSdfShape",
@@ -1397,5 +1408,5 @@
     "volumeFogGlslCode",
     "volumeFogGlslEnabled"
   ],
-  "recordedAt": "2026-11-23T01:48:51.495Z"
+  "recordedAt": "2026-11-23T04:20:45.258Z"
 }

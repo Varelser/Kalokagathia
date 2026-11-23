@@ -1,4 +1,5 @@
 import type { ParticleConfig } from '../types';
+import { materialStyleToInt } from '../lib/materialGrammar';
 import type { BrushMode, BrushProfile, BrushSettings, BrushSourceProfile } from './sceneBrushSurfaceSystemTypes';
 
 const DEFAULT_BRUSH_SOURCE_PROFILE: BrushSourceProfile = {
@@ -259,5 +260,5 @@ export function withSourceAwareBrushProfile(profile: BrushProfile, source: Parti
 }
 
 export function getBrushMaterialStyleValue(materialStyle: BrushSettings['materialStyle']) {
-  return materialStyle === 'glass' ? 1 : materialStyle === 'hologram' ? 2 : materialStyle === 'chrome' ? 3 : materialStyle === 'halftone' ? 4 : 0;
+  return materialStyleToInt(materialStyle);
 }

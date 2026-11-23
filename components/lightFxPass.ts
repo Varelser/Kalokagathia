@@ -49,6 +49,7 @@
 
 import { Pass } from 'postprocessing';
 import * as THREE from 'three';
+import { SCENE_DEPTH_GLSL, getSceneDepthSource } from '../lib/sceneDepth';
 
 // Matches postprocessing's shared fullscreen vertex shader convention
 // (see feedbackPass.ts): vUv is derived from clip-space position.
@@ -81,7 +82,18 @@ uniform float uLuxSize;
 uniform float uLuxConeLength;
 uniform float uLuxConeAngle;
 uniform float uLuxConeSpread;
+// Scene depth occlusion (Phase 16 stage 1): uDepthReady stays 0
+// unless the shared scene depth capture is bound (only while
+// gpgpuDepthOcclusion > 0), in which case the Lux cone alone is
+// attenuated by the scene depth — the glow disc, Shine and
+// Starglow are untouched. Unbound = legacy formula verbatim.
+uniform sampler2D uSceneDepth;
+uniform float uDepthReady;
+uniform float uDepthOcclusion;
+uniform float uCamNear;
+uniform float uCamFar;
 varying vec2 vUv;
+${SCENE_DEPTH_GLSL}
 
 // Deterministic 2D hash for the shimmer phase field (position ->
 // pseudo-random phase in [0,1)); pure function of the UV cell, so
@@ -197,7 +209,22 @@ void main() {
         float ang = degrees(acos(cosAng));
         float aFade = smoothstep(uLuxConeSpread, uLuxConeSpread * 0.35, ang);
         float dFade = exp(-axial / coneLen * 1.8) * smoothstep(coneLen * 1.15, coneLen * 0.5, d);
-        add += vec3(1.0) * aFade * dFade * uLuxIntensity * 0.7;
+        float coneAdd = aFade * dFade * uLuxIntensity * 0.7;
+        if (uDepthReady > 0.5 && uDepthOcclusion > 0.0) {
+          // Depth attenuation (Phase 16 stage 1): the cone is
+          // treated as lying on the depth plane of the surface at
+          // the light position (its anchor). Pixels whose own
+          // surface is nearer than that plane occlude the cone;
+          // surfaces at or behind it leave the cone untouched.
+          // This is the documented screen-space approximation of
+          // the stage — the Lux position is a manual 2D UV, so no
+          // true 3D cone depth exists to compare against.
+          float anchorDepth = kaloViewDepthFromBuffer(texture2D(uSceneDepth, clamp(uLightPos, 0.001, 0.999)).x, uCamNear, uCamFar);
+          float sceneDepth = kaloViewDepthFromBuffer(texture2D(uSceneDepth, vUv).x, uCamNear, uCamFar);
+          float fade = kaloDepthFadeFactor(sceneDepth, anchorDepth, max(anchorDepth * 0.05, 1.0));
+          coneAdd *= mix(1.0, fade, clamp(uDepthOcclusion, 0.0, 1.0));
+        }
+        add += vec3(1.0) * coneAdd;
       }
     }
   }
@@ -247,6 +274,10 @@ export class LightFxPass extends Pass {
 
   luxConeSpread = 32;
 
+  // Scene depth occlusion strength (Phase 16 stage 1): 0 (default)
+  // leaves the depth texture unbound and the cone legacy-exact.
+  depthOcclusion = 0;
+
   private material: THREE.ShaderMaterial;
 
   constructor() {
@@ -275,6 +306,11 @@ export class LightFxPass extends Pass {
         uLuxConeLength: { value: 0 },
         uLuxConeAngle: { value: 270 },
         uLuxConeSpread: { value: 32 },
+        uSceneDepth: { value: null },
+        uDepthReady: { value: 0 },
+        uDepthOcclusion: { value: 0 },
+        uCamNear: { value: 0.1 },
+        uCamFar: { value: 10000 },
       },
       depthTest: false,
       depthWrite: false,
@@ -314,6 +350,23 @@ export class LightFxPass extends Pass {
     u.uLuxConeLength.value = this.luxConeLength;
     u.uLuxConeAngle.value = this.luxConeAngle;
     u.uLuxConeSpread.value = this.luxConeSpread;
+    // Scene depth binding (Phase 16 stage 1): read the shared
+    // capture store directly (this pass is not a React tree). The
+    // texture is bound only while the strength is positive AND a
+    // capture exists; otherwise uDepthReady stays 0 and the cone
+    // branch never samples depth.
+    const depthSource = this.depthOcclusion > 0 ? getSceneDepthSource() : null;
+    if (depthSource) {
+      u.uSceneDepth.value = depthSource.texture;
+      u.uDepthReady.value = 1;
+      u.uDepthOcclusion.value = Math.min(1, Math.max(0, this.depthOcclusion));
+      u.uCamNear.value = depthSource.near;
+      u.uCamFar.value = depthSource.far;
+    } else {
+      u.uSceneDepth.value = null;
+      u.uDepthReady.value = 0;
+      u.uDepthOcclusion.value = 0;
+    }
     renderer.setRenderTarget(this.renderToScreen ? null : outputBuffer);
     renderer.render(this.scene, this.camera);
   }

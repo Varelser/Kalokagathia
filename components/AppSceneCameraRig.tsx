@@ -6,6 +6,7 @@ import type { ParticleConfig } from '../types';
 import { getConfigPerformanceScore } from '../lib/performanceHints';
 import { isCameraDeterminismLocked } from '../lib/cameraDeterminism';
 import { getBurstDriveEnergy } from './sceneBurstDrive';
+import { applySceneEnvIntensityToMaterials, createPmremEnvironmentFromEquirect, resolveIblEnvironment, shouldApplySceneEnvironment } from '../lib/iblEnvironment';
 import type { SceneAudioRef } from './AppSceneTypes';
 
 function getQualityDprRange(quality: ParticleConfig['renderQuality']) {
@@ -64,6 +65,53 @@ export const SceneBackgroundSync: React.FC<{
       scene.background = color;
     }
   }, [backgroundColor, backgroundOverrideColor, gl, horizonActive, scene, transparentBackground]);
+
+  return null;
+};
+
+export const SceneEnvironmentSync: React.FC<{ config: ParticleConfig }> = ({ config }) => {
+  const { gl, scene } = useThree();
+  const handleRef = React.useRef<ReturnType<typeof createPmremEnvironmentFromEquirect>>(null);
+  const sourceRef = React.useRef<unknown>(null);
+  const intensity = config.gpgpuSceneEnvIntensity ?? 0;
+
+  React.useEffect(() => {
+    // Intensity 0 (default): never wire scene.environment — the
+    // v1.97.0 state. Any previously created PMREM target is freed.
+    if (!shouldApplySceneEnvironment(intensity)) {
+      handleRef.current?.dispose();
+      handleRef.current = null;
+      sourceRef.current = null;
+      if (scene.environment) scene.environment = null;
+      return;
+    }
+    const env = resolveIblEnvironment(config);
+    if (!env.texture) return;
+    if (sourceRef.current !== env.texture || !handleRef.current) {
+      handleRef.current?.dispose();
+      handleRef.current = createPmremEnvironmentFromEquirect(gl, env.texture);
+      sourceRef.current = env.texture;
+    }
+    if (handleRef.current) {
+      scene.environment = handleRef.current.texture;
+      applySceneEnvIntensityToMaterials(scene, intensity);
+    }
+  }, [config, gl, intensity, scene]);
+
+  // Materials mount after the effect above; re-apply the intensity
+  // periodically while active so late-mounted Standard materials
+  // pick it up. Inert (early return) at intensity 0.
+  const frameRef = React.useRef(0);
+  useFrame(() => {
+    if (!shouldApplySceneEnvironment(intensity)) return;
+    frameRef.current += 1;
+    if (frameRef.current % 30 === 0) applySceneEnvIntensityToMaterials(scene, intensity);
+  });
+
+  React.useEffect(() => () => {
+    handleRef.current?.dispose();
+    handleRef.current = null;
+  }, []);
 
   return null;
 };

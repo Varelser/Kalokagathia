@@ -95,6 +95,9 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   lightFxPass.luxConeLength = config.postLuxConeLength;
   lightFxPass.luxConeAngle = config.postLuxConeAngle;
   lightFxPass.luxConeSpread = config.postLuxConeSpread;
+  // Scene depth occlusion (Phase 16 stage 1): the pass binds the
+  // shared depth capture itself while this is positive.
+  lightFxPass.depthOcclusion = config.gpgpuDepthOcclusion;
   // Chroma key (Phase 15, TD §6): final delivery stage; exists
   // only while enabled in the stack order.
   const chromaKeyPass = React.useMemo(() => new ChromaKeyPass(), []);

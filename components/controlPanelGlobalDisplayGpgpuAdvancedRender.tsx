@@ -50,6 +50,8 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
           <Toggle label="Velocity Align" value={config.gpgpuGeomVelocityAlign} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGeomVelocityAlign', v)} />
           <Slider label="Env Reflect (Crystal)" value={config.gpgpuGeomEnvReflect} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGeomEnvReflect', v)} />
           <Slider label="IBL Intensity （環境光・Phase AL）" value={config.gpgpuGeomIblIntensity} min={0} max={2} step={0.01} onChange={(v) => updateConfig('gpgpuGeomIblIntensity', v)} />
+          <Slider label="Geom Metalness （金属度・Phase 16）" value={config.gpgpuGeomMetalness} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGeomMetalness', v)} />
+          <Slider label="Geom Roughness （粗さ・Phase 16）" value={config.gpgpuGeomRoughness} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuGeomRoughness', v)} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             背景（画像は equirect、グラデーションは環境ベイク）を照明としてサンプルし、拡散＋反射でジオメトリへ足します。0 の間は従来の見た目のままです。
           </div>
@@ -58,6 +60,10 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
           <Slider label="Mesh Stretch" value={config.gpgpuGeomStretch} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuGeomStretch', v)} />
         </>
       )}
+      <Slider label="Scene Env Intensity （Standard系IBL・Phase 16）" value={config.gpgpuSceneEnvIntensity} min={0} max={2} step={0.01} onChange={(v) => updateConfig('gpgpuSceneEnvIntensity', v)} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        背景を PMREM 環境として Standard 系マテリアル全体へ配ります。0 の間は scene.environment を設定せず、従来の見た目のままです。
+      </div>
     </div>
 
     {/* Metaballs (Marching Cubes isosurface) */}

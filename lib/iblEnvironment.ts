@@ -128,3 +128,87 @@ export function resolveIblEnvironment(config: ParticleConfig): IblEnvironmentSta
 /** Re-exported so the geometry material updater can keep the flat
  *  horizon gradient path untouched (documentation anchor). */
 export { getHorizonGradientTexture };
+
+// ---------------------------------------------------------------------------
+// Phase 16 stage 3 — PMREM scene environment (Standard family IBL, step 1)
+//
+// Step 1 only: the resolved equirect environment is converted with
+// THREE.PMREMGenerator and assigned to scene.environment, and ONLY
+// while the shared intensity key (gpgpuSceneEnvIntensity) is > 0.
+// At intensity 0 the caller must not call the converter at all and
+// must leave scene.environment null — the v1.97.0 state, verified by
+// scripts/phase16-pbr-ibl.test.mjs via shouldApplySceneEnvironment
+// (re-exported from lib/materialGrammar.ts, where the pure gate
+// lives so tests can reach it without a renderer).
+//
+// Step 2 (porting the GEOM IBL triplet to the layer particles' 3D
+// shape modes) is intentionally NOT done here: 第2段は対象を絞って残置.
+// The GEOM shader's own uIblIntensity path is unchanged.
+
+export { shouldApplySceneEnvironment } from './materialGrammar';
+
+export interface PmremEnvironmentHandle {
+  texture: THREE.Texture;
+  dispose: () => void;
+}
+
+/**
+ * Convert an equirect texture to a PMREM environment render target.
+ * The caller owns the returned handle and MUST call dispose() when
+ * the source changes or the consumer unmounts (the render target is
+ * GPU memory; leaking it per background swap was the recorded risk).
+ * Returns null when there is no renderer texture to convert.
+ */
+export function createPmremEnvironmentFromEquirect(
+  renderer: THREE.WebGLRenderer,
+  equirect: THREE.Texture | null | undefined,
+): PmremEnvironmentHandle | null {
+  if (!renderer || !equirect) return null;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  try {
+    pmrem.compileEquirectangularShader();
+    const renderTarget = pmrem.fromEquirectangular(equirect);
+    let disposed = false;
+    return {
+      texture: renderTarget.texture,
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        renderTarget.dispose();
+      },
+    };
+  } finally {
+    pmrem.dispose();
+  }
+}
+
+/**
+ * Apply the shared scene-environment intensity to every
+ * MeshStandardMaterial in the scene graph. Materials created through
+ * the shared PBR grammar carry envMapIntensity 1 (the three.js
+ * default), so assigning the intensity directly is the scale the
+ * grammar describes. ShaderMaterials are untouched (scene.environment
+ * does not affect them automatically).
+ */
+export function applySceneEnvIntensityToMaterials(
+  scene: THREE.Object3D,
+  intensity: number,
+): number {
+  let count = 0;
+  scene.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    const material = (mesh as { material?: unknown }).material as
+      | THREE.Material
+      | THREE.Material[]
+      | undefined;
+    if (!material) return;
+    const list = Array.isArray(material) ? material : [material];
+    for (const mat of list) {
+      if ((mat as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
+        (mat as THREE.MeshStandardMaterial).envMapIntensity = intensity;
+        count += 1;
+      }
+    }
+  });
+  return count;
+}

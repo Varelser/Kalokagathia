@@ -37,6 +37,27 @@ export interface ParticleConfigGpgpu {
   // equirect) as diffuse + reflection light on the instanced
   // geometry. 0 (default) = the legacy fragment path verbatim.
   gpgpuGeomIblIntensity: number;
+  // PBR grammar (Phase 16 stage 2): GEOM fragment F0 / specular.
+  // Defaults metalness 0 / roughness 1 = legacy spec pow24*0.35 exactly.
+  gpgpuGeomMetalness: number;
+  gpgpuGeomRoughness: number;
+  // Scene IBL (Phase 16 stage 3): PMREM scene.environment for the
+  // Standard family. 0 (default) = scene.environment never set.
+  gpgpuSceneEnvIntensity: number;
+  // GEOM custom GLSL (Phase 16 stage 4): user snippets spliced into
+  // GEOM_VERT / GEOM_FRAG (lib/geomCustomGlsl.ts). Disabled / empty
+  // (defaults) = the stock shader strings verbatim.
+  gpgpuGeomCustomVertexEnabled: boolean;
+  gpgpuGeomCustomVertexCode: string;
+  gpgpuGeomCustomFragmentEnabled: boolean;
+  gpgpuGeomCustomFragmentCode: string;
+  // Foliage split (Phase 16 stage 5): per-species geometry modes for
+  // scatter species zones 2..4. 'follow' (default) resolves to
+  // gpgpuGeomMode, so species 1 (gpgpuGeomMode) stays the canonical
+  // shape and old presets are unchanged.
+  gpgpuGeomSpecies2Mode: 'point' | 'cube' | 'tetra' | 'octa' | 'icosa' | 'torus' | 'cone' | 'obj' | 'follow';
+  gpgpuGeomSpecies3Mode: 'point' | 'cube' | 'tetra' | 'octa' | 'icosa' | 'torus' | 'cone' | 'obj' | 'follow';
+  gpgpuGeomSpecies4Mode: 'point' | 'cube' | 'tetra' | 'octa' | 'icosa' | 'torus' | 'cone' | 'obj' | 'follow';
   gpgpuGeomSpinSpeed: number;
   // Spin random range (Phase AH): per-particle multiplier spread
   // around the spin speed. 0 = every instance at exactly the base
@@ -564,9 +585,10 @@ export interface ParticleConfigGpgpu {
   // random spins the normal's azimuth by up to ±r·π; bend leans
   // the normal toward downhill (and writes a leaning normal even
   // at alignment 0). All 0 (defaults) = the Phase AI bake verbatim.
-  // NOTE: this is an orientation/posture finish on a point cloud —
-  // there is no per-species mesh swap (the pool draws one geometry
-  // mode) and no mesh deformation.
+  // NOTE: this is an orientation/posture finish on a point cloud,
+  // not a mesh deformation. (Per-species mesh swap arrived in
+  // Phase 16 stage 5 via the bake's speciesData channel and the
+  // gpgpuGeomSpecies{2,3,4}Mode keys.)
   gpgpuMorphScatterScaleRandom: number;
   gpgpuMorphScatterRotRandom: number;
   gpgpuMorphScatterBend: number;
@@ -976,6 +998,12 @@ export interface ParticleConfigGpgpu {
   gpgpuLightVolumeSteps: number;
   /** Edge softness 0..1 (depth-fade substitute; no depth test). */
   gpgpuLightVolumeSoftness: number;
+  // Scene depth occlusion (Phase 16 stage 1): strength of the
+  // depth-based fade applied to LightVolume and the Lux cone from
+  // the shared scene depth capture (lib/sceneDepth.ts). 0 (default)
+  // = the capture never mounts and both consumers run their legacy
+  // formulas verbatim.
+  gpgpuDepthOcclusion: number;
   gpgpuLightTrailEnabled: boolean;
   /** Trail ribbon full width in world units. */
   gpgpuLightTrailWidth: number;
