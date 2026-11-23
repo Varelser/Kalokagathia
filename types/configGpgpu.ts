@@ -391,6 +391,9 @@ export interface ParticleConfigGpgpu {
   gpgpuCsgSizeA: number;
   gpgpuCsgSizeB: number;
   gpgpuCsgSegments: number;
+  gpgpuCsgOffsetAX: number;
+  gpgpuCsgOffsetAY: number;
+  gpgpuCsgOffsetAZ: number;
   gpgpuCsgOffsetBX: number;
   gpgpuCsgOffsetBY: number;
   gpgpuCsgOffsetBZ: number;
@@ -401,8 +404,11 @@ export interface ParticleConfigGpgpu {
   gpgpuCsgExtrudeDivisions: number;
   gpgpuCsgExtrudeCustomText: string;
   gpgpuCsgMeshObjText: string;
+  gpgpuCsgMeshObjTextB: string;
   gpgpuCsgFinish: 'none' | 'hull' | 'refine';
   gpgpuCsgRefineDivisions: number;
+  gpgpuCsgMorphBackupObjText: string;
+  gpgpuCsgHistoryJson: string;
   // Vector Field
   gpgpuVFieldEnabled: boolean;
   gpgpuVFieldType: 'dipole' | 'saddle' | 'spiral' | 'source' | 'abc' | 'gyre' | 'worley';
@@ -647,6 +653,12 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphTextOnPathGlyphScale: number;
   gpgpuMorphTextOnPathGlyphRotate: number;
   gpgpuMorphTextOnPathGlyphFade: number;
+  // Vertical text on path (Phase 17, lib/gpgpuTextOnPath.ts):
+  // the string is planned as vertical columns by the shared
+  // TextMap layout and laid along the path in column reading
+  // order, each glyph upright against the path's progression.
+  // Default OFF = the AF2 single-line layout bit-identical.
+  gpgpuMorphTextOnPathVertical: boolean;
   // Contour target (Phase AM, lib/contourTrace.ts): the
   // 'contour' morph target traces the outline of a luma source
   // (marching squares) into paths and places particles along
@@ -671,6 +683,14 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphFractureCells: number;
   gpgpuMorphFractureSeed: number;
   gpgpuMorphFractureGap: number;
+  // Fragment collection (Phase 17 stage 4, lib/fragmentCollection.ts):
+  // one saved fracture division as a named asset — JSON string
+  // holding the bake signature, the per-particle cell assignment
+  // (RLE + base64) and the glue-bond clusters. Empty = nothing
+  // saved, which keeps every routing bit-identical; the stored
+  // form is only ever compared against the current bake
+  // conditions, never silently applied.
+  gpgpuFragmentCollectionJson: string;
   // Morph-surface fibers (Phase AG, lib/morphFiber.ts): strands
   // grown from the morph bake's surface points along their
   // normals (radial fallback), drawn by an independent overlay
@@ -1203,6 +1223,25 @@ export interface ParticleConfigGpgpu {
   gpgpuMaskBoolOperandMap: number[];
   gpgpuMaskBoolOperandWidth: number;
   gpgpuMaskBoolOperandHeight: number;
+  // Vector Boolean composition (Phase 17 stage 2): the geometric
+  // counterpart of the raster Boolean above. A is the morph SVG
+  // source (gpgpuMorphSvgSource, reused), B is the SVG text
+  // below; the composition runs in the CSG worker over
+  // manifold-3d CrossSection only when the UI button is pressed,
+  // and the resulting SVG is stored as a derived key. Nothing
+  // consumes these keys per frame.
+  gpgpuVectorBoolOp: import('../lib/vectorBoolean').VectorBoolOp;
+  gpgpuVectorBoolSourceB: string;
+  gpgpuVectorBoolResultSvg: string;
+  // Text extrusion (Phase 17 stage 3): the string set in an
+  // uploaded font (TTF/OTF, held in session memory only — the
+  // font bytes are NOT a config key) is extruded through the
+  // CrossSection path when the UI button is pressed and the
+  // result is taken into the morph path. Nothing consumes
+  // these keys per frame.
+  gpgpuTextExtrudeText: string;
+  gpgpuTextExtrudeDepth: number;
+  gpgpuTextExtrudeFlatness: number;
   // Path raster supply stroke width (Phase AF2): the stroke
   // radius of the 'path-raster' internal supply, in normalised
   // cloud units. 0.045 is the Phase AF fixed convention, so the

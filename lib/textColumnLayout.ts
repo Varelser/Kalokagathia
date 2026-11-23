@@ -71,6 +71,17 @@ export interface TextLayoutOptions {
   tatechuyoko: boolean;
   /** Phase BP: ruby markup parsing and placement (see header). */
   ruby: boolean;
+  /** Text pages (Phase 17, lib/textPageLayout.ts): page the
+   *  columns that do not fit one raster into further pages and
+   *  draw only the selected page. Omitted / false keeps the
+   *  legacy single-raster layout bit-identical. */
+  pageEnabled?: boolean;
+  /** Text pages (Phase 17): rebalance column lengths before
+   *  paging (only consulted while pageEnabled). */
+  columnBalance?: boolean;
+  /** Text pages (Phase 17): selected page, 0-based (clamped to
+   *  the last page). Only consulted while pageEnabled. */
+  pageIndex?: number;
 }
 
 /** The subset of the config the layout options are read from
@@ -84,6 +95,9 @@ export interface TextMapLayoutSource {
   layer2TextMapYakumono: boolean;
   layer2TextMapTateChuYoko: boolean;
   layer2TextMapRuby: boolean;
+  layer2TextMapPageEnabled: boolean;
+  layer2TextMapColumnBalance: boolean;
+  layer2TextMapPageIndex: number;
 }
 
 export function textLayoutOptionsFromTextMap(source: TextMapLayoutSource): TextLayoutOptions {
@@ -96,6 +110,9 @@ export function textLayoutOptionsFromTextMap(source: TextMapLayoutSource): TextL
     yakumono: source.layer2TextMapYakumono,
     tatechuyoko: source.layer2TextMapTateChuYoko,
     ruby: source.layer2TextMapRuby,
+    pageEnabled: source.layer2TextMapPageEnabled,
+    columnBalance: source.layer2TextMapColumnBalance,
+    pageIndex: source.layer2TextMapPageIndex,
   };
 }
 
@@ -272,7 +289,7 @@ export function parseRubyMarkup(segment: string): RubyParseResult {
  * glyph of a ruby parent group (groupId links the group; ruby
  * is set on the group's first token only).
  */
-interface LayoutToken {
+export interface LayoutToken {
   text: string;
   scale?: number;
   groupId?: number;
@@ -287,7 +304,7 @@ interface LayoutToken {
  * glyph stays a plain glyph token, a leftover of 2–4 becomes a
  * run (5 → run 4 + plain 1, 6 → run 4 + run 2, …).
  */
-function tokenizeSegment(glyphs: string[], annotations: RubyAnnotation[], tatechuyoko: boolean): LayoutToken[] {
+export function tokenizeSegment(glyphs: string[], annotations: RubyAnnotation[], tatechuyoko: boolean): LayoutToken[] {
   const groupOf = new Map<number, number>();
   annotations.forEach((annotation, groupId) => {
     for (let k = 0; k < annotation.length; k++) groupOf.set(annotation.start + k, groupId);
@@ -401,7 +418,7 @@ function wrapSegmentTokens(tokens: LayoutToken[], limit: number, kinsoku: boolea
  * itself. Newlines break columns exactly as in the glyph
  * layout; an empty segment yields an empty column.
  */
-function layoutTextColumnsTokenized(text: string, columnLength: number, adjustments?: TextColumnAdjustments): LayoutToken[][] {
+export function layoutTextColumnsTokenized(text: string, columnLength: number, adjustments?: TextColumnAdjustments): LayoutToken[][] {
   const limit = normalizeColumnLength(columnLength);
   const tatechuyoko = adjustments?.tatechuyoko === true;
   const ruby = adjustments?.ruby === true;
@@ -609,6 +626,25 @@ export function verticalGlyphPlacements(
     return placements;
   }
   const tokenColumns = layoutTextColumnsTokenized(text, columnLength, adjustments);
+  return verticalGlyphPlacementsFromTokenColumns(tokenColumns, metrics, adjustments);
+}
+
+/**
+ * Placements of an already-split token column list (Phase BP
+ * placement rules, shared with lib/textPageLayout.ts): column 0
+ * is the rightmost column, tokens run top → bottom, a
+ * tate-chu-yoko run is one placement carrying its font scale,
+ * and ruby glyphs are extra placements along the parent's right
+ * side. `verticalGlyphPlacements` builds its token path on this
+ * exact function, so a caller that supplies the unmodified
+ * layout columns gets bit-identical placements.
+ */
+export function verticalGlyphPlacementsFromTokenColumns(
+  tokenColumns: LayoutToken[][],
+  metrics: VerticalTextMetrics,
+  adjustments?: TextColumnAdjustments,
+): VerticalGlyphPlacement[] {
+  const yakumono = adjustments?.yakumono === true;
   const placements: VerticalGlyphPlacement[] = [];
   tokenColumns.forEach((tokens, columnIndex) => {
     const x = verticalColumnCenterX(columnIndex, tokenColumns.length, metrics);

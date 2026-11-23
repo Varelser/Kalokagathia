@@ -11,7 +11,17 @@ import { buildObjFromGrid, buildStlFromGrid, countMeshExport, extractGridPositio
 import { buildSvgPointCloud, type SvgPlane } from '../lib/svgExport';
 import { PlayDagSection } from './controlPanelDagEditor';
 import { Slider, Toggle } from './controlPanelParts';
-import { getLastCsgRun, runCsgOperation } from '../lib/csg';
+import { getLastCsgRun, runCsgOperation, runCrossSectionExtrude } from '../lib/csg';
+import {
+  clearTextExtrudeSessionFont,
+  getTextExtrudeSessionFont,
+  isTextExtrudeFontFileName,
+  layoutTextExtrudeContours,
+  parseTextExtrudeFont,
+  setTextExtrudeSessionFont,
+  type TextExtrudeSessionFont,
+} from '../lib/textExtrude';
+import { validateContours } from '../lib/vectorBoolean';
 import {
   buildIndexedObjText,
   CsgError,
@@ -20,6 +30,14 @@ import {
   type CsgResultData,
 } from '../lib/csgCore';
 import { parseFreeformText } from '../lib/csgFreeform';
+import {
+  buildResultChainOperandText,
+  buildSceneObjMeshOperandText,
+  planMorphRestore,
+  planMorphTakeIn,
+  resolveCsgMeshTextB,
+} from '../lib/csgSceneImport';
+import { appendCsgHistory, buildCsgHistoryEntry, parseCsgHistory, type CsgHistoryEntry } from '../lib/csgHistory';
 import { buildMeshOperandFromObj, parseCsgMeshText } from '../lib/csgMeshOperand';
 import { importMeshFileToObjText, MESH_OBJ_TEXT_MAX_CHARS } from '../lib/csgMeshImport';
 import { checkWatertightGate } from '../lib/csgGate';
@@ -896,6 +914,25 @@ export const CsgSection: React.FC<{
   const [result, setResult] = React.useState<CsgResultData | null>(() => getLastCsgRun()?.result ?? null);
   const [fromCache, setFromCache] = React.useState(false);
   const [meshImportNote, setMeshImportNote] = React.useState<string | null>(null);
+  const [morphBackupTaken, setMorphBackupTaken] = React.useState(false);
+  // Text extrusion (Phase 17 stage 3): the font lives in the
+  // session holder of lib/textExtrude.ts; this state is only
+  // the panel's view of it (label / status / last result).
+  const formatTextFontLabel = (s: TextExtrudeSessionFont): string =>
+    `${s.fileName}${s.info.familyName ? ` — ${s.info.familyName}${s.info.styleName ? ' ' + s.info.styleName : ''}` : ''}（${s.info.unitsPerEm} units/em）`;
+  const [textFontLabel, setTextFontLabel] = React.useState<string>(() => {
+    const s = getTextExtrudeSessionFont();
+    return s ? formatTextFontLabel(s) : '';
+  });
+  const [textBusy, setTextBusy] = React.useState(false);
+  const [textStatus, setTextStatus] = React.useState('');
+  const [textResult, setTextResult] = React.useState<{ volume: number; triangles: number; area: number } | null>(null);
+
+  const historyEntries = React.useMemo(
+    () => parseCsgHistory(config.gpgpuCsgHistoryJson),
+    [config.gpgpuCsgHistoryJson],
+  );
+  const effectiveMeshTextB = resolveCsgMeshTextB(config.gpgpuCsgMeshObjText, config.gpgpuCsgMeshObjTextB);
 
   const customParseUi = React.useMemo(
     () => (config.gpgpuCsgExtrudeProfile === 'custom'
@@ -917,6 +954,19 @@ export const CsgSection: React.FC<{
       triangleCount: mesh.triangleCount,
     } as const;
   }, [usesMeshUi, config.gpgpuCsgMeshObjText]);
+
+  const meshParseUiB = React.useMemo(() => {
+    if (config.gpgpuCsgPrimitiveB !== 'mesh') return null;
+    const mesh = parseCsgMeshText(effectiveMeshTextB);
+    if (!mesh) return { ok: false, reason: 'OBJとして読み取れませんでした。' } as const;
+    const gate = checkWatertightGate(mesh.positions, mesh.indices);
+    return {
+      ok: gate.ok || gate.skipped,
+      gate,
+      vertexCount: mesh.vertexCount,
+      triangleCount: mesh.triangleCount,
+    } as const;
+  }, [config.gpgpuCsgPrimitiveB, effectiveMeshTextB]);
 
   const buildOperand = (
     kind: CsgOperandKindUi,
@@ -972,16 +1022,21 @@ export const CsgSection: React.FC<{
       setBusy(false);
       return;
     }
+    const aOffset: readonly [number, number, number] = [
+      config.gpgpuCsgOffsetAX,
+      config.gpgpuCsgOffsetAY,
+      config.gpgpuCsgOffsetAZ,
+    ];
     const bOffset: readonly [number, number, number] = [
       config.gpgpuCsgOffsetBX,
       config.gpgpuCsgOffsetBY,
       config.gpgpuCsgOffsetBZ,
     ];
     const meshA = config.gpgpuCsgPrimitiveA === 'mesh'
-      ? buildMeshOperandFromObj(config.gpgpuCsgMeshObjText, [0, 0, 0])
+      ? buildMeshOperandFromObj(config.gpgpuCsgMeshObjText, aOffset)
       : null;
     const meshB = config.gpgpuCsgPrimitiveB === 'mesh'
-      ? buildMeshOperandFromObj(config.gpgpuCsgMeshObjText, bOffset)
+      ? buildMeshOperandFromObj(effectiveMeshTextB, bOffset)
       : null;
     const meshFail = (meshA && !meshA.ok ? meshA : null) ?? (meshB && !meshB.ok ? meshB : null);
     if (meshFail) {
@@ -989,7 +1044,7 @@ export const CsgSection: React.FC<{
       setBusy(false);
       return;
     }
-    const a: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveA, config.gpgpuCsgSizeA, [0, 0, 0], customParse?.polygons,
+    const a: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveA, config.gpgpuCsgSizeA, aOffset, customParse?.polygons,
       meshA && meshA.ok ? meshA.operand : null);
     const b: CsgOperand = buildOperand(config.gpgpuCsgPrimitiveB, config.gpgpuCsgSizeB, bOffset, customParse?.polygons,
       meshB && meshB.ok ? meshB.operand : null);
@@ -998,6 +1053,14 @@ export const CsgSection: React.FC<{
       const cached = getLastCsgRun()?.fromCache ?? false;
       setResult(out);
       setFromCache(cached);
+      const opLabel = config.gpgpuCsgOperation === 'union' ? '和 A∪B' : config.gpgpuCsgOperation === 'difference' ? '差 A−B' : '積 A∩B';
+      updateConfig(
+        'gpgpuCsgHistoryJson',
+        appendCsgHistory(
+          config.gpgpuCsgHistoryJson,
+          buildCsgHistoryEntry(out, config.gpgpuCsgOperation, `${opLabel} · ${new Date().toLocaleString('ja-JP')}`),
+        ),
+      );
       setStatus(
         `完了: 体積 ${out.volume.toFixed(4)} / ${out.triangles.toLocaleString()} 三角形` +
           `（出力再検査: 閉・オイラー標数 ${out.gate.euler}・成分 ${out.gate.components}・種数 ${out.gate.genus}）` +
@@ -1020,12 +1083,141 @@ export const CsgSection: React.FC<{
   const takeIntoMorph = () => {
     if (!result) return;
     const text = buildIndexedObjText(result.positions, result.indices, 'csg-result');
-    updateConfig('gpgpuMorphObjSource', text);
+    const plan = planMorphTakeIn(config.gpgpuMorphObjSource, text);
+    updateConfig('gpgpuCsgMorphBackupObjText', plan.backupObjText);
+    updateConfig('gpgpuMorphObjSource', plan.morphObjSource);
     updateConfig('gpgpuObjMeshEnabled', true);
+    setMorphBackupTaken(true);
     setStatus(
       'CSG 結果をモーフ経路へ取り込みました（OBJ メッシュ描画も ON）。' +
+        '取り込み前のモーフ OBJ ソースは退避しました（「取り込みを戻す」で復元できます）。' +
         '注意: 中空の結果はメッシュ SDF では中身詰まりとして扱われます。薄い結果は SDF の解像度を 96³ に上げてください。',
     );
+  };
+
+  const restoreMorphBackup = () => {
+    const plan = planMorphRestore(config.gpgpuCsgMorphBackupObjText);
+    updateConfig('gpgpuMorphObjSource', plan.morphObjSource);
+    setStatus('モーフ経路の OBJ ソースを、CSG 取り込み前の退避値に戻しました。');
+  };
+
+  const handleTextFontFile = (f: File | undefined) => {
+    if (!f) return;
+    if (!isTextExtrudeFontFileName(f.name)) {
+      clearTextExtrudeSessionFont();
+      setTextFontLabel('');
+      setTextStatus(`「${f.name}」は対応形式ではありません。TTF / OTF ファイルを選んでください。`);
+      return;
+    }
+    void (async () => {
+      const parsed = parseTextExtrudeFont(await f.arrayBuffer());
+      if (!parsed.ok) {
+        clearTextExtrudeSessionFont();
+        setTextFontLabel('');
+        setTextStatus(parsed.reason);
+        return;
+      }
+      const entry: TextExtrudeSessionFont = { font: parsed.font, info: parsed.info, fileName: f.name };
+      setTextExtrudeSessionFont(entry);
+      setTextFontLabel(formatTextFontLabel(entry));
+      setTextStatus('フォントを読み込みました。テキストを入れて「押し出してモーフへ取り込む」を押してください。');
+    })();
+  };
+
+  const runTextExtrude = async () => {
+    if (textBusy) return;
+    const session = getTextExtrudeSessionFont();
+    if (!session) {
+      setTextStatus('フォントが読み込まれていません。先に TTF / OTF ファイルを読み込んでください。');
+      return;
+    }
+    const layoutRes = layoutTextExtrudeContours(
+      session.font,
+      config.gpgpuTextExtrudeText,
+      config.gpgpuTextExtrudeFlatness,
+    );
+    if (!layoutRes.ok) {
+      setTextStatus(layoutRes.reason);
+      return;
+    }
+    const v = validateContours(layoutRes.layout.contours, '文字');
+    if (!v.ok) {
+      setTextStatus(v.reason);
+      return;
+    }
+    if (!(config.gpgpuTextExtrudeDepth > 0)) {
+      setTextStatus('押し出しの深さは正の値にしてください。');
+      return;
+    }
+    setTextBusy(true);
+    setTextStatus('フォント押し出しを計算しています…（初回は WASM の読み込みを含みます）');
+    try {
+      const out = await runCrossSectionExtrude({
+        contours: layoutRes.layout.contours,
+        height: config.gpgpuTextExtrudeDepth,
+        divisions: 0,
+        twistDegrees: 0,
+        scaleTop: 1,
+      });
+      const text = buildIndexedObjText(out.positions, out.indices, 'text-extrude');
+      const plan = planMorphTakeIn(config.gpgpuMorphObjSource, text);
+      updateConfig('gpgpuCsgMorphBackupObjText', plan.backupObjText);
+      updateConfig('gpgpuMorphObjSource', plan.morphObjSource);
+      updateConfig('gpgpuObjMeshEnabled', true);
+      setMorphBackupTaken(true);
+      setTextResult({ volume: out.volume, triangles: out.triangles, area: out.area });
+      setTextStatus(
+        `押し出してモーフ経路へ取り込みました（OBJ メッシュ描画も ON）。` +
+          `輪郭: 島 ${layoutRes.layout.islandCount}・穴 ${layoutRes.layout.holeCount}、正味面積 ${out.area.toFixed(4)}。` +
+          '取り込み前のモーフ OBJ ソースは退避しました（「取り込みを戻す」で復元できます）。',
+      );
+    } catch (e) {
+      setTextResult(null);
+      setTextStatus(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTextBusy(false);
+    }
+  };
+
+  const importSceneObjMesh = () => {
+    const res = buildSceneObjMeshOperandText(config.gpgpuMorphObjSource);
+    if (!res.ok) {
+      setStatus(`OBJ メッシュを取り込めません: ${res.reason}`);
+      return;
+    }
+    if (res.objText.length > MESH_OBJ_TEXT_MAX_CHARS) {
+      setStatus('OBJ メッシュを取り込めません: 変換後のテキストが上限（' + MESH_OBJ_TEXT_MAX_CHARS.toLocaleString() + ' 文字）を超えました。面の少ない OBJ で取り込んでください。');
+      return;
+    }
+    updateConfig('gpgpuCsgMeshObjText', res.objText);
+    updateConfig('gpgpuCsgPrimitiveA', 'mesh');
+    setStatus(
+      `表示中の OBJ メッシュを被演算子 A（メッシュ）に取り込みました（頂点 ${res.vertexCount.toLocaleString()}・三角形 ${res.triangleCount.toLocaleString()}・体積 ${res.volume.toFixed(4)}）。` +
+        '座標は OBJ メッシュ表示側の正規化（中心が原点・外接球の半径が 1）が掛かった表示座標で、モーフ OBJ ソースの生座標ではありません。',
+    );
+  };
+
+  const chainResultToA = () => {
+    if (!result) return;
+    const text = buildResultChainOperandText(result);
+    if (text.length > MESH_OBJ_TEXT_MAX_CHARS) {
+      setStatus('結果を A にできません: 変換後のテキストが上限（' + MESH_OBJ_TEXT_MAX_CHARS.toLocaleString() + ' 文字）を超えました。');
+      return;
+    }
+    updateConfig('gpgpuCsgMeshObjText', text);
+    updateConfig('gpgpuCsgPrimitiveA', 'mesh');
+    setStatus('CSG 結果を被演算子 A（メッシュ）にしました。演算や B を変えて再実行すると連鎖できます。過去の結果は下の履歴からも A／B に戻せます。');
+  };
+
+  const setHistoryEntryAsOperand = (entry: CsgHistoryEntry, side: 'A' | 'B') => {
+    if (side === 'A') {
+      updateConfig('gpgpuCsgMeshObjText', entry.objText);
+      updateConfig('gpgpuCsgPrimitiveA', 'mesh');
+    } else {
+      updateConfig('gpgpuCsgMeshObjTextB', entry.objText);
+      updateConfig('gpgpuCsgPrimitiveB', 'mesh');
+    }
+    setStatus(`履歴「${entry.label}」を被演算子 ${side}（メッシュ）にしました（体積 ${entry.volume.toFixed(4)}・${entry.triangles.toLocaleString()} 三角形）。`);
   };
 
   const exportResult = async (format: 'glb' | '3mf' | 'stl') => {
@@ -1133,6 +1325,9 @@ export const CsgSection: React.FC<{
             <Slider label="細分化の分割数" value={config.gpgpuCsgRefineDivisions} min={2} max={3} step={1} onChange={(v) => updateConfig('gpgpuCsgRefineDivisions', v)} />
           )}
           <Slider label="A のサイズ" value={config.gpgpuCsgSizeA} min={0.2} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCsgSizeA', v)} />
+          <Slider label="A オフセット X" value={config.gpgpuCsgOffsetAX} min={-3} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuCsgOffsetAX', v)} />
+          <Slider label="A オフセット Y" value={config.gpgpuCsgOffsetAY} min={-3} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuCsgOffsetAY', v)} />
+          <Slider label="A オフセット Z" value={config.gpgpuCsgOffsetAZ} min={-3} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuCsgOffsetAZ', v)} />
           <Slider label="B のサイズ" value={config.gpgpuCsgSizeB} min={0.2} max={4} step={0.05} onChange={(v) => updateConfig('gpgpuCsgSizeB', v)} />
           <Slider label="円分割数" value={config.gpgpuCsgSegments} min={4} max={128} step={4} onChange={(v) => updateConfig('gpgpuCsgSegments', v)} />
           <Slider label="B オフセット X" value={config.gpgpuCsgOffsetBX} min={-3} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuCsgOffsetBX', v)} />
@@ -1270,12 +1465,48 @@ export const CsgSection: React.FC<{
                 <p className="text-[11px] leading-relaxed text-white/60 mt-1">{meshImportNote}</p>
               )}
               <p className="text-[11px] leading-relaxed text-white/45 mt-1">
-                メッシュは A・B 共通のテキストです。座標はそのまま世界単位で、サイズは適用されません（配置は B のオフセットだけが効きます）。
+                メッシュの共通テキストは A が使い、B は下の B 専用テキストが空のときに使います。座標はそのまま世界単位で、サイズは適用されません（配置は A・B それぞれのオフセットが効きます）。
                 頂点は 1e-6 で重なりを同一視してから判定します。開いたメッシュや自己交差するメッシュは、理由を表示して弾きます（自動修復はしません）。
                 STL／glTF は読み込み時に OBJ テキストへ変換されます（glTF はノードの変形を座標に焼き付け、最初のメッシュだけを使います。外部ファイルを参照する .gltf は .glb で読み込んでください）。
               </p>
+              {config.gpgpuCsgPrimitiveB === 'mesh' && (
+                <div className="mt-3">
+                  <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">B 専用メッシュ（OBJ）</span>
+                  <textarea
+                    value={config.gpgpuCsgMeshObjTextB}
+                    onChange={(event) => updateConfig('gpgpuCsgMeshObjTextB', event.target.value.slice(0, MESH_OBJ_TEXT_MAX_CHARS))}
+                    spellCheck={false}
+                    rows={5}
+                    className="w-full rounded border border-white/15 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40"
+                    placeholder={'B 専用の OBJテキスト。空のときは上の共通テキストを B にも使います'}
+                  />
+                  <span className="text-[10px] text-white/50">
+                    {config.gpgpuCsgMeshObjTextB === ''
+                      ? 'B 専用テキストは空のため、共通テキストを B に使います。'
+                      : meshParseUiB
+                        ? 'reason' in meshParseUiB
+                          ? `読めません: ${meshParseUiB.reason}`
+                          : meshParseUiB.gate.skipped
+                            ? `頂点 ${meshParseUiB.vertexCount}・三角形 ${meshParseUiB.triangleCount}（面が多すぎるため閉検査は省略され、Worker 側で判定されます）`
+                            : meshParseUiB.ok
+                              ? `頂点 ${meshParseUiB.vertexCount}・三角形 ${meshParseUiB.triangleCount}（閉じたメッシュ・種数 ${meshParseUiB.gate.genus}）`
+                              : `閉じたメッシュではありません: ${meshParseUiB.gate.reason}`
+                        : ''}
+                  </span>
+                </div>
+              )}
             </div>
           )}
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <button
+              onClick={importSceneObjMesh}
+              disabled={busy}
+              className="px-4 py-2 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+            >
+              表示中のOBJメッシュをAに取り込む
+            </button>
+            <span className="text-[10px] text-white/40">座標は表示側の正規化（中心＝原点・外接球半径 1）が掛かった表示座標です</span>
+          </div>
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <button
               onClick={run}
@@ -1290,6 +1521,20 @@ export const CsgSection: React.FC<{
               className="px-4 py-2 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
             >
               結果をモーフへ取り込む
+            </button>
+            <button
+              onClick={chainResultToA}
+              disabled={!result || busy}
+              className="px-4 py-2 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+            >
+              結果をAにする
+            </button>
+            <button
+              onClick={restoreMorphBackup}
+              disabled={busy || (!morphBackupTaken && config.gpgpuCsgMorphBackupObjText === '')}
+              className="px-4 py-2 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+            >
+              取り込みを戻す
             </button>
             <button
               onClick={() => void exportResult('glb')}
@@ -1317,6 +1562,82 @@ export const CsgSection: React.FC<{
           <p className="text-[11px] leading-relaxed text-white/45 mt-1">
             書き出し: GLB は m・Y-up（EXT_mesh_manifold つき）、3MF はスライサ用に mm・Z-up へ変換して書き出します。STL は互換用です。
           </p>
+          {historyEntries.length > 0 && (
+            <div className="mt-3">
+              <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">結果の履歴（新しい順・最大8件）</span>
+              <ul className="space-y-1.5">
+                {historyEntries.map((entry, i) => (
+                  <li key={`${entry.label}-${i}`} className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+                    <span className="min-w-0 flex-1 truncate" title={entry.label}>
+                      {entry.label} — 体積 {entry.volume.toFixed(4)}・{entry.triangles.toLocaleString()} 三角形
+                    </span>
+                    <button
+                      onClick={() => setHistoryEntryAsOperand(entry, 'A')}
+                      disabled={busy}
+                      className="px-3 py-1 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+                    >
+                      Aにする
+                    </button>
+                    <button
+                      onClick={() => setHistoryEntryAsOperand(entry, 'B')}
+                      disabled={busy}
+                      className="px-3 py-1 rounded-full border border-white/25 text-white/80 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors disabled:opacity-40"
+                    >
+                      Bにする
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="mt-4 rounded border border-white/10 bg-white/5 p-3">
+            <span className="block mb-1.5 text-[10px] uppercase tracking-widest font-medium text-white/65">フォント押し出し（Text Extrude）</span>
+            <p className="text-[11px] leading-relaxed text-white/45 mb-2">
+              読み込んだフォントの字形輪郭を押し出して立体にし、モーフ経路へ取り込みます。穴のある字（O や あ 等）は穴が貫通します。ベベルはありません。
+              フォントはこのセッション内だけに保持され、プリセットには保存されません — 同じ形を再現するには、同じフォントファイルの再読み込みが必要です。
+              実行するまで Worker も WASM も読み込まれません。
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <label className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 cursor-pointer">
+                フォント（TTF/OTF）を読み込む
+                <input
+                  type="file"
+                  accept=".ttf,.otf"
+                  className="hidden"
+                  onChange={(e) => {
+                    handleTextFontFile(e.target.files?.[0]);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              <span className="text-[10px] text-white/50">{textFontLabel || 'フォント未読込'}</span>
+            </div>
+            <textarea
+              value={config.gpgpuTextExtrudeText}
+              onChange={(event) => updateConfig('gpgpuTextExtrudeText', event.target.value.slice(0, 2_000))}
+              spellCheck={false}
+              rows={3}
+              className="w-full rounded border border-white/15 bg-black/40 p-2 font-mono text-[11px] leading-relaxed text-white/85 outline-none focus:border-white/40"
+              placeholder={'押し出すテキスト（改行で複数行）'}
+            />
+            <Slider label="押し出しの深さ" value={config.gpgpuTextExtrudeDepth} min={0.05} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuTextExtrudeDepth', v)} />
+            <Slider label="平坦化公差（em）" value={config.gpgpuTextExtrudeFlatness} min={0.0005} max={0.05} step={0.0005} onChange={(v) => updateConfig('gpgpuTextExtrudeFlatness', v)} />
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <button
+                onClick={() => void runTextExtrude()}
+                disabled={textBusy || busy}
+                className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest hover:bg-gray-200 transition-colors disabled:opacity-40"
+              >
+                {textBusy ? '計算中…' : '押し出してモーフへ取り込む'}
+              </button>
+              {textResult && (
+                <span className="text-[10px] text-white/50">
+                  体積 {textResult.volume.toFixed(4)} / {textResult.triangles.toLocaleString()} 三角形（正味面積 {textResult.area.toFixed(4)}）
+                </span>
+              )}
+            </div>
+            {textStatus && <p className="text-[11px] text-white/55 mt-2">{textStatus}</p>}
+          </div>
         </div>
       )}
       {status && <p className="text-[11px] text-white/55 mt-3">{status}</p>}

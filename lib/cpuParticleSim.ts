@@ -406,6 +406,12 @@ export function cpuShapeSignature(config: ParticleConfig): string {
       || config.layer2TextMapTateChuYoko || config.layer2TextMapRuby) {
       sig += `|vtextAdj:${config.layer2TextMapKinsoku ? 1 : 0},${config.layer2TextMapYakumono ? 1 : 0},${config.layer2TextMapTateChuYoko ? 1 : 0},${config.layer2TextMapRuby ? 1 : 0}`;
     }
+    // Text pages (Phase 17): the page settings change the bake
+    // while paging is on, so they join the signature — only
+    // then, keeping the BG/BK/BP strings untouched otherwise.
+    if (config.layer2TextMapPageEnabled) {
+      sig += `|vpage:${config.layer2TextMapColumnBalance ? 1 : 0},${config.layer2TextMapPageIndex}`;
+    }
   }
   return sig;
 }

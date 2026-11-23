@@ -31,11 +31,19 @@ import {
   type CsgOperationKind,
   type CsgResultData,
 } from './csgCore';
+import {
+  validateContours,
+  type CrossSectionExtrudeRequest,
+  type CrossSectionExtrudeResultData,
+  type VectorBoolOp,
+  type VectorBooleanResultData,
+  type VectorContour,
+} from './vectorBoolean';
 
 interface WorkerReply {
   id: number;
   ok: boolean;
-  result?: CsgResultData | 'pong';
+  result?: CsgResultData | VectorBooleanResultData | CrossSectionExtrudeResultData | 'pong';
   code?: CsgErrorCode;
   message?: string;
   fatal?: boolean;
@@ -97,7 +105,12 @@ function destroyWorker() {
   }
 }
 
-function postRequest(message: { kind: 'op' | 'ping'; a?: CsgOperand; b?: CsgOperand; op?: CsgOperationKind; finish?: CsgFinishKind; refineDivisions?: number }): Promise<WorkerReply> {
+type WorkerRequestMessage =
+  | { kind: 'op' | 'ping'; a?: CsgOperand; b?: CsgOperand; op?: CsgOperationKind; finish?: CsgFinishKind; refineDivisions?: number }
+  | { kind: 'vectorBoolean'; aContours: VectorContour[]; bContours: VectorContour[]; op: VectorBoolOp }
+  | ({ kind: 'crossSectionExtrude' } & CrossSectionExtrudeRequest);
+
+function postRequest(message: WorkerRequestMessage): Promise<WorkerReply> {
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<WorkerReply>((resolve) => {
@@ -173,4 +186,74 @@ export function runCsgOperation(
 export function clearCsgCache() {
   cache.clear();
   lastRun = null;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 17 stage 2: vector Boolean + CrossSection extrusion.
+// Same worker, same serial queue and timeout discipline as the
+// CSG ops above; nothing is cached (2D results are small and the
+// composition is an explicit, button-driven capture). The worker
+// is still created lazily on the first explicit execution only,
+// so with the feature unused nothing is fetched or compiled.
+// ---------------------------------------------------------------------------
+
+/** Run one 2D vector Boolean over CrossSection in the worker.
+ *  Operands are validated on this thread first (the gate (a)
+ *  discipline): a self-intersecting or empty operand is refused
+ *  here with its reason and the worker is never touched. An
+ *  empty boolean outcome (e.g. a disjoint intersection) is a
+ *  normal result with zero contours, not an error. */
+export function runVectorBoolean(
+  aContours: VectorContour[],
+  bContours: VectorContour[],
+  op: VectorBoolOp,
+): Promise<VectorBooleanResultData> {
+  const run = async (): Promise<VectorBooleanResultData> => {
+    const va = validateContours(aContours, 'A');
+    if (!va.ok) throw new CsgError('NOT_MANIFOLD', va.reason);
+    const vb = validateContours(bContours, 'B');
+    if (!vb.ok) throw new CsgError('NOT_MANIFOLD', vb.reason);
+    const reply = await postRequest({ kind: 'vectorBoolean', aContours, bContours, op });
+    if (!reply.ok) {
+      throw new CsgError(reply.code ?? 'UNKNOWN', reply.message ?? 'ベクタ合成に失敗しました。');
+    }
+    return reply.result as VectorBooleanResultData;
+  };
+  const result = queue.then(run, run);
+  queue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+/** Extrude a (possibly holed) contour set through CrossSection
+ *  in the worker — the dedicated holed-shape path of the
+ *  stage-0 spike 2. The existing Manifold.extrude path and its
+ *  simple-polygon validation are untouched. The worker
+ *  re-verifies the spike's acceptance conditions (area match,
+ *  NoError status, volume = area × height in the untwisted /
+ *  unscaled case) and refuses with a reason instead of
+ *  returning a partial shape. */
+export function runCrossSectionExtrude(
+  request: CrossSectionExtrudeRequest,
+): Promise<CrossSectionExtrudeResultData> {
+  const run = async (): Promise<CrossSectionExtrudeResultData> => {
+    const v = validateContours(request.contours, '断面');
+    if (!v.ok) throw new CsgError('NOT_MANIFOLD', v.reason);
+    if (!(request.height > 0)) {
+      throw new CsgError('NOT_MANIFOLD', '押し出しの高さは正の値にしてください。');
+    }
+    const reply = await postRequest({ kind: 'crossSectionExtrude', ...request });
+    if (!reply.ok) {
+      throw new CsgError(reply.code ?? 'UNKNOWN', reply.message ?? '押し出しに失敗しました。');
+    }
+    return reply.result as CrossSectionExtrudeResultData;
+  };
+  const result = queue.then(run, run);
+  queue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 }

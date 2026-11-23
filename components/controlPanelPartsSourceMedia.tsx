@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Slider, Toggle } from './controlPanelPartsCore';
 import { MEDIA_SAMPLE_SIZE, extractLumaMap, extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
+import { textPageCount } from '../lib/textPageLayout';
 
 export type MediaSourceSettingsProps = {
   mode: 'image' | 'video' | 'text';
@@ -53,6 +54,14 @@ export type MediaSourceSettingsProps = {
   onTextTateChuYokoChange?: (value: boolean) => void;
   textRuby?: boolean;
   onTextRubyChange?: (value: boolean) => void;
+  // Text pages (Phase 17): same optional-prop convention as the
+  // BP fields above.
+  textPageEnabled?: boolean;
+  onTextPageEnabledChange?: (value: boolean) => void;
+  textColumnBalance?: boolean;
+  onTextColumnBalanceChange?: (value: boolean) => void;
+  textPageIndex?: number;
+  onTextPageIndexChange?: (value: number) => void;
 };
 
 export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
@@ -99,6 +108,12 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
   onTextTateChuYokoChange,
   textRuby,
   onTextRubyChange,
+  textPageEnabled,
+  onTextPageEnabledChange,
+  textColumnBalance,
+  onTextColumnBalanceChange,
+  textPageIndex,
+  onTextPageIndexChange,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -190,12 +205,15 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
         yakumono: textYakumono || false,
         tatechuyoko: textTateChuYoko || false,
         ruby: textRuby || false,
+        pageEnabled: textPageEnabled || false,
+        columnBalance: textColumnBalance || false,
+        pageIndex: textPageIndex || 0,
       },
     );
     onMapChange(map, sampleSize.width, sampleSize.height);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the status line reports the rasterization this effect just performed; it is an effect result, not derived render state.
     setStatus(`Text rasterized (${sampleSize.width}×${sampleSize.height})`);
-  }, [mode, textValue, textFontFamily, textWeight, textSize, textPadding, textInvert, textVertical, textColumnLength, textColumnGap, textLetterSpacing, textKinsoku, textYakumono, textTateChuYoko, textRuby, onMapChange, sampleSize]);
+  }, [mode, textValue, textFontFamily, textWeight, textSize, textPadding, textInvert, textVertical, textColumnLength, textColumnGap, textLetterSpacing, textKinsoku, textYakumono, textTateChuYoko, textRuby, textPageEnabled, textColumnBalance, textPageIndex, onMapChange, sampleSize]);
 
   const handleLoadedImage = (file: File) => {
     const image = new window.Image();
@@ -291,6 +309,32 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
     setStatus('Video playing');
   };
 
+  // Text pages (Phase 17): the total page count at the supply
+  // texture's metrics (256px, the same clamping the rasteriser
+  // applies), shown next to the page selector. The count is a
+  // pure function of the text and the layout settings.
+  const clampedPageSize = Math.max(0.2, Math.min(1.4, textSize || 0.76));
+  const clampedPagePadding = Math.max(0, Math.min(0.35, textPadding || 0.1));
+  const totalTextPages = textPageCount(
+    textValue || 'TEXT',
+    textColumnLength || 0,
+    {
+      width: 256,
+      height: 256,
+      padding: clampedPagePadding,
+      pxSize: Math.max(12, Math.floor(clampedPageSize * 256)),
+      columnGap: textColumnGap ?? 0.4,
+      letterSpacing: textLetterSpacing || 0,
+    },
+    {
+      kinsoku: textKinsoku || false,
+      yakumono: textYakumono || false,
+      tatechuyoko: textTateChuYoko || false,
+      ruby: textRuby || false,
+    },
+    textColumnBalance || false,
+  );
+
   return (
     <div className="mb-5 p-3 bg-white/5 rounded border border-white/10">
       <div className="mb-2 text-[10px] uppercase tracking-widest font-medium opacity-70">
@@ -385,6 +429,27 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
               )}
               {onTextRubyChange && (
                 <Toggle label="Ruby (ルビ)" value={textRuby ?? false} options={[{ label: 'Off', val: false }, { label: 'On', val: true }]} onChange={(value) => onTextRubyChange(value)} />
+              )}
+              {onTextPageEnabledChange && (
+                <Toggle label="Text Pages (ページ送り)" value={textPageEnabled ?? false} options={[{ label: 'Off', val: false }, { label: 'On', val: true }]} onChange={(value) => onTextPageEnabledChange(value)} />
+              )}
+              {onTextPageEnabledChange && textPageEnabled && (
+                <>
+                  <div className="mb-3 rounded border border-white/10 bg-white/5 p-2 text-[10px] text-white/55">
+                    1ラスタに収まる段数を超えた段を次ページへ送り、選択中のページだけを描きます。段バランスは段の並び順を保ったまま段の長さを均します。
+                  </div>
+                  {onTextColumnBalanceChange && (
+                    <Toggle label="Column Balance (段バランス)" value={textColumnBalance ?? false} options={[{ label: 'Off', val: false }, { label: 'On', val: true }]} onChange={(value) => onTextColumnBalanceChange(value)} />
+                  )}
+                  {onTextPageIndexChange && (
+                    <>
+                      <Slider label="Page (ページ)" value={Math.min(textPageIndex ?? 0, Math.max(0, totalTextPages - 1))} min={0} max={Math.max(0, totalTextPages - 1)} step={1} onChange={(value) => onTextPageIndexChange(Math.round(value))} />
+                      <div className="mb-3 text-[10px] text-white/55">
+                        全{totalTextPages}ページ（256pxテクスチャ基準の段の収まりで計算）
+                      </div>
+                    </>
+                  )}
+                </>
               )}
             </>
           )}

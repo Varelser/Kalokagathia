@@ -41,6 +41,13 @@ export interface ParticleConfigLayer2 {
   // folding and ruby annotations. Both default OFF.
   layer2TextMapTateChuYoko: boolean;
   layer2TextMapRuby: boolean;
+  // Text pages (Phase 17, lib/textPageLayout.ts): page the
+  // columns that do not fit one raster into further pages,
+  // optionally balancing column lengths first. All default
+  // OFF / 0 — the legacy single-raster layout bit-identically.
+  layer2TextMapPageEnabled: boolean;
+  layer2TextMapColumnBalance: boolean;
+  layer2TextMapPageIndex: number;
 
   layer2MotionMix: boolean;
   layer2Motions: Layer2Type[];

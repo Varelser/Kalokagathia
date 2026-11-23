@@ -1,4 +1,5 @@
 import { verticalGlyphPlacements, type TextLayoutOptions } from '../lib/textColumnLayout';
+import { pagedVerticalGlyphPlacements } from '../lib/textPageLayout';
 
 export const MEDIA_SAMPLE_SIZE = 64;
 
@@ -64,14 +65,25 @@ export function extractTextLumaMap(
     // the shared pure layout (lib/textColumnLayout.ts) — columns
     // right → left, glyphs top → bottom, all upright. Draws
     // identically to rasterizeTextCanvas' vertical branch.
-    const placements = verticalGlyphPlacements(text || 'TEXT', layout.columnLength, {
+    const textMetrics = {
       width,
       height,
       padding: clampedPadding,
       pxSize,
       columnGap: layout.columnGap,
       letterSpacing: layout.letterSpacing,
-    }, { kinsoku: layout.kinsoku, yakumono: layout.yakumono, tatechuyoko: layout.tatechuyoko, ruby: layout.ruby });
+    };
+    const textAdjustments = { kinsoku: layout.kinsoku, yakumono: layout.yakumono, tatechuyoko: layout.tatechuyoko, ruby: layout.ruby };
+    // Text pages (Phase 17): same page branch as
+    // rasterizeTextCanvas — only the selected page's columns,
+    // resolving to the legacy placements when one page suffices.
+    const placements = layout.pageEnabled
+      ? pagedVerticalGlyphPlacements(text || 'TEXT', layout.columnLength, textMetrics, textAdjustments, {
+        enabled: true,
+        balance: layout.columnBalance,
+        pageIndex: layout.pageIndex,
+      })
+      : verticalGlyphPlacements(text || 'TEXT', layout.columnLength, textMetrics, textAdjustments);
     // Phase BP: same per-placement font swap as
     // rasterizeTextCanvas (lib/mapSourceSupply.ts) — a placement
     // with a font scale swaps the font for its own draw and

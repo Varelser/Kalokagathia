@@ -7,9 +7,11 @@ import { buildSpawnDistanceValues } from '../lib/gpgpuLifecycle';
 import { buildVellumBakeData, vellumStatePoolActive } from '../lib/gpgpuVellum';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
 import { setBakedSpeciesData } from '../lib/speciesAllocation';
-import { splitTextOnPathGlyphs, type TextGlyphRaster } from '../lib/gpgpuTextOnPath';
+import { planVerticalTextOnPath, splitTextOnPathGlyphs, type TextGlyphRaster } from '../lib/gpgpuTextOnPath';
+import type { TextColumnAdjustments } from '../lib/textColumnLayout';
 import { traceContourGeometry } from '../lib/contourTrace';
 import { fractureOptionFromConfig } from '../lib/voronoiFracture';
+import { publishFragmentBake } from '../lib/fragmentCollection';
 import {
   createRigidSolver,
   resolveRigid,
@@ -513,10 +515,22 @@ export function buildTextOnPathOption(args: {
   glyphScale: number;
   glyphRotate: number;
   glyphFade: number;
-}): { glyphs: TextGlyphRaster[]; delay: number; size: number; deform: { scaleVar: number; rotateDeg: number; fadeVar: number } | null } | null {
+  // Vertical text on path (Phase 17): while on, the string is
+  // planned as vertical columns by the shared TextMap layout
+  // (columnLength + adjustments are its settings) and the cells
+  // — glyphs and tate-chu-yoko runs — are rasterised in plan
+  // order. Omitted / false resolves to the AF2 single-line
+  // glyph set verbatim.
+  vertical?: boolean;
+  columnLength?: number;
+  adjustments?: TextColumnAdjustments;
+}): { glyphs: TextGlyphRaster[]; delay: number; size: number; deform: { scaleVar: number; rotateDeg: number; fadeVar: number } | null; vertical: boolean } | null {
   if (args.target !== 'svg' || !args.enabled) return null;
   if (args.pathMode !== 'along' && args.pathMode !== 'writeOn') return null;
-  const chars = splitTextOnPathGlyphs(args.text || 'TEXT');
+  const vertical = args.vertical === true;
+  const chars = vertical
+    ? planVerticalTextOnPath(args.text || 'TEXT', args.columnLength ?? 0, args.adjustments).units.map((unit) => unit.text)
+    : splitTextOnPathGlyphs(args.text || 'TEXT');
   if (chars.length === 0) return null;
   const glyphs = chars.map((ch) => ({
     map: extractTextLumaMap(
@@ -534,7 +548,7 @@ export function buildTextOnPathOption(args: {
   const deform = args.glyphScale > 0 || args.glyphRotate > 0 || args.glyphFade > 0
     ? { scaleVar: args.glyphScale, rotateDeg: args.glyphRotate, fadeVar: args.glyphFade }
     : null;
-  return { glyphs, delay: args.delay, size: args.glyphSize, deform };
+  return { glyphs, delay: args.delay, size: args.glyphSize, deform, vertical };
 }
 
 /**
@@ -647,6 +661,15 @@ export function buildMorphBakeData(
     glyphScale: config.gpgpuMorphTextOnPathGlyphScale,
     glyphRotate: config.gpgpuMorphTextOnPathGlyphRotate,
     glyphFade: config.gpgpuMorphTextOnPathGlyphFade,
+    // Vertical text on path (Phase 17): the plan reuses the
+    // TextMap vertical settings (column length + token grammar).
+    vertical: config.gpgpuMorphTextOnPathVertical,
+    columnLength: config.layer2TextMapColumnLength,
+    adjustments: {
+      kinsoku: config.layer2TextMapKinsoku,
+      tatechuyoko: config.layer2TextMapTateChuYoko,
+      ruby: config.layer2TextMapRuby,
+    },
   });
   // Contour target (Phase AM): shared builder — see
   // buildContourGeometryOption above.
@@ -1343,6 +1366,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // fields above — toggling either re-bakes the 'text' target.
   const morphTextTateChuYoko = config.layer2TextMapTateChuYoko;
   const morphTextRuby = config.layer2TextMapRuby;
+  // Text pages (Phase 17): bake inputs like the BP fields above —
+  // changing the page re-bakes the 'text' target.
+  const morphTextPageEnabled = config.layer2TextMapPageEnabled;
+  const morphTextColumnBalance = config.layer2TextMapColumnBalance;
+  const morphTextPageIndex = config.layer2TextMapPageIndex;
   const morphNoiseMapEnabled = config.gpgpuMorphNoiseMapEnabled;
   // The bake reads the noise field's static slice while the
   // supply is on, so the field settings join the rebake deps
@@ -1396,6 +1424,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphTextOnPathEnabled = config.gpgpuMorphTextOnPathEnabled;
   const morphTextOnPathDelay = config.gpgpuMorphTextOnPathDelay;
   const morphTextOnPathSize = config.gpgpuMorphTextOnPathSize;
+  // Vertical text on path (Phase 17): a bake input like the
+  // switches above — toggling it re-bakes the path text.
+  const morphTextOnPathVertical = config.gpgpuMorphTextOnPathVertical;
   const morphPathWriteOnStart = config.gpgpuMorphPathWriteOnStart;
   const morphPathWriteOnEnd = config.gpgpuMorphPathWriteOnEnd;
   const morphPathTaper = config.gpgpuMorphPathTaper;
@@ -1455,6 +1486,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
           yakumono: morphTextYakumono,
           tatechuyoko: morphTextTateChuYoko,
           ruby: morphTextRuby,
+          pageEnabled: morphTextPageEnabled,
+          columnBalance: morphTextColumnBalance,
+          pageIndex: morphTextPageIndex,
         },
       );
       mediaMap = { map, width: 128, height: 128 };
@@ -1492,6 +1526,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       glyphScale: morphGlyphScale,
       glyphRotate: morphGlyphRotate,
       glyphFade: morphGlyphFade,
+      // Vertical text on path (Phase 17): same shared builder
+      // inputs as the WebGPU path above.
+      vertical: morphTextOnPathVertical,
+      columnLength: morphTextColumnLength,
+      adjustments: {
+        kinsoku: morphTextKinsoku,
+        tatechuyoko: morphTextTateChuYoko,
+        ruby: morphTextRuby,
+      },
     });
     // Contour target (Phase AM): the shared builder reads the
     // live config; the captured contour source / threshold are
@@ -1620,6 +1663,24 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         ? getAttrPointCloud()?.unitPositions ?? null
         : null,
     });
+    // Fragment collection (Phase 17 stage 4): publish this bake's
+    // cell table so the panel can save the current division as a
+    // named asset. Write-only metadata — nothing in the bake, the
+    // solver or the renderer reads it back, so an unsaved /
+    // unused collection leaves every routing untouched.
+    if (fractureCells) {
+      const rf = rigidFractureOptionFromConfig(config);
+      publishFragmentBake({
+        cellData: fractureCells,
+        signature: {
+          sourceTarget: morphTarget,
+          particleCount: texSize * texSize,
+          cells: rf.cells,
+          fractureSeed: rf.seed,
+          gap: rf.gap,
+        },
+      });
+    }
     // Species channel (Phase 16 stage 5): same publish as the
     // shared builder — the foliage split reads this bake.
     setBakedSpeciesData(
@@ -1715,6 +1776,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTextYakumono,
     morphTextTateChuYoko,
     morphTextRuby,
+    morphTextPageEnabled,
+    morphTextColumnBalance,
+    morphTextPageIndex,
     morphMediaMap,
     morphMediaWidth,
     morphMediaHeight,
@@ -1757,6 +1821,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTextOnPathEnabled,
     morphTextOnPathDelay,
     morphTextOnPathSize,
+    morphTextOnPathVertical,
     morphPathWriteOnStart,
     morphPathWriteOnEnd,
     morphPathTaper,

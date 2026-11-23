@@ -7,6 +7,16 @@ import { Slider, Toggle } from './controlPanelParts';
 import { MorphObjImportBlock, MorphSvgImportBlock, ObjMeshBlock, TerrainTextureImageBlock } from './controlPanelGlobalDisplayGpgpuForcesImportBlocks';
 import { TerrainDerivedMapsBlock } from './controlPanelGlobalDisplayGpgpuForcesMapBlocks';
 import { getMeshSdfBakeStatus } from '../lib/meshSdfCollider';
+import {
+  buildFragmentCollection,
+  fragmentSignatureDiffs,
+  getPublishedFragmentBake,
+  parseFragmentCollection,
+  serializeFragmentCollection,
+  type FragmentCollectionSignature,
+  type FragmentSignatureField,
+} from '../lib/fragmentCollection';
+import { clampFractureCells } from '../lib/voronoiFracture';
 
 // Mesh SDF bake status (Phase BY): the bake runs async on the
 // CPU; this line polls while it is in flight so the user can see
@@ -40,6 +50,122 @@ const MeshSdfBakeStatusLine: React.FC<{ config: ParticleConfig }> = ({ config })
   }
   if (!text) return null;
   return <div className="mt-1 text-[9px] leading-relaxed text-white/40">{text}</div>;
+};
+
+const FRAGMENT_SIGNATURE_FIELD_LABELS: Record<FragmentSignatureField, string> = {
+  sourceTarget: 'モーフ目標',
+  particleCount: '粒子数',
+  cells: 'セル数',
+  fractureSeed: '分割シード',
+  gap: '分離量',
+};
+
+// Fragment collection (Phase 17 stage 4): save the CURRENT bake's
+// fracture division as a named asset in the config key, and show
+// how a saved collection compares with the current conditions.
+// The bake's cell table reaches the panel only through the
+// runtime's publication (lib/fragmentCollection.ts) — it exists
+// while the rigid solver path produced cell data. A saved
+// collection is compared, never silently applied: restoration of
+// the assignment into a bake is not wired in this stage, so what
+// is stored is the asset (signature + assignment + clusters) and
+// the explicit match / mismatch report below.
+const FragmentCollectionBlock: React.FC<{ config: ParticleConfig; updateConfig: GlobalDisplayEffectsSharedProps['updateConfig'] }> = ({ config, updateConfig }) => {
+  const [, setTick] = React.useState(0);
+  const [notice, setNotice] = React.useState('');
+  // The published bake changes outside React; poll lightly so the
+  // availability / match lines follow re-bakes.
+  React.useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const savedJson = config.gpgpuFragmentCollectionJson;
+  const saved = parseFragmentCollection(savedJson);
+  const bake = getPublishedFragmentBake();
+  // Conditions derivable from config alone (particle count is not
+  // one of them — it comes from the published bake's signature).
+  const configSignature: FragmentCollectionSignature = {
+    sourceTarget: config.gpgpuMorphTarget,
+    particleCount: bake?.signature.particleCount ?? 0,
+    cells: clampFractureCells(config.gpgpuMorphFractureCells),
+    fractureSeed: Number.isFinite(config.gpgpuMorphFractureSeed) ? Math.round(config.gpgpuMorphFractureSeed) : 1,
+    gap: config.gpgpuMorphFractureEnabled ? config.gpgpuMorphFractureGap : 0,
+  };
+  let matchLine = '';
+  if (saved) {
+    if (bake) {
+      const diffs = fragmentSignatureDiffs(saved.signature, bake.signature);
+      matchLine = diffs.length === 0
+        ? '現在のベイク条件と一致しています。'
+        : `現在のベイク条件と一致しません（${diffs.map((d) => FRAGMENT_SIGNATURE_FIELD_LABELS[d]).join('・')}）。保存済みの分割は適用されません。`;
+    } else {
+      const partial = fragmentSignatureDiffs(saved.signature, configSignature)
+        .filter((d) => d !== 'particleCount');
+      matchLine = partial.length === 0
+        ? '設定値（目標・セル数・シード・分離量）とは一致しています。粒子数はベイク未取得のため未照合です。'
+        : `設定値と一致しません（${partial.map((d) => FRAGMENT_SIGNATURE_FIELD_LABELS[d]).join('・')}）。保存済みの分割は適用されません。`;
+    }
+  }
+  const handleSave = () => {
+    const current = getPublishedFragmentBake();
+    if (!current) {
+      setNotice('現在のベイクのセル表がまだありません。剛体ソルバ（Rigid Bodies）を On にしてベイクが走ると、その分割を保存できます。');
+      return;
+    }
+    const collection = buildFragmentCollection(current.cellData, {
+      name: `破片 ${current.signature.sourceTarget} ${current.signature.particleCount}点 ${current.cellData.bodyCount}片`,
+      signature: current.signature,
+    });
+    const text = serializeFragmentCollection(collection);
+    if (!text) {
+      setNotice('コレクションが大きすぎて保存できませんでした。');
+      return;
+    }
+    updateConfig('gpgpuFragmentCollectionJson', text);
+    setNotice(`保存しました（${collection.bodyCount} 破片・${collection.clusters.length} クラスタ・${text.length.toLocaleString()} 文字）。`);
+  };
+  return (
+    <>
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Fragment Collection （破片コレクション）</div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={handleSave}
+          className="rounded-full border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10"
+        >
+          現在の分割を保存
+        </button>
+        {savedJson && (
+          <button
+            onClick={() => { updateConfig('gpgpuFragmentCollectionJson', ''); setNotice('保存済みコレクションを消去しました。'); }}
+            className="rounded-full border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10"
+          >
+            消去
+          </button>
+        )}
+      </div>
+      {saved && (
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          保存済み: {saved.name} — {saved.bodyCount} 破片・{saved.clusters.length} クラスタ・{saved.signature.particleCount.toLocaleString()} 点・{(savedJson.length / 1024).toFixed(1)} KB。{matchLine}
+        </div>
+      )}
+      {!saved && savedJson && (
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          保存済みコレクションを読み取れませんでした（データが壊れている可能性があります）。分割は適用されません。
+        </div>
+      )}
+      {!saved && !savedJson && (
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          {bake
+            ? `現在のベイクの分割（${bake.cellData.bodyCount} 破片）を資産として保存できます。`
+            : '剛体ソルバ（Rigid Bodies）が On のベイクでセル表が作られると、その分割を資産として保存できます。'}
+        </div>
+      )}
+      {notice && <div className="mt-1 text-[9px] leading-relaxed text-white/60">{notice}</div>}
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        保存されるのは分割そのもの（署名・セル割当・接着クラスタ）で、剛体の落下後の状態は含みません。保存済み分割のベイクへの復元適用は本段階では行わず、条件の照合までです。
+      </div>
+    </>
+  );
 };
 
 export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
@@ -158,6 +284,12 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                           <Slider label="Glyph Scale Var （文字ごとの拡大ばらつき・Phase AM）" value={config.gpgpuMorphTextOnPathGlyphScale} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTextOnPathGlyphScale', v)} />
                           <Slider label="Glyph Rotate Var （文字ごとの回転ばらつき・度・Phase AM）" value={config.gpgpuMorphTextOnPathGlyphRotate} min={0} max={180} step={1} onChange={(v) => updateConfig('gpgpuMorphTextOnPathGlyphRotate', Math.round(v))} />
                           <Slider label="Glyph Fade Var （文字ごとのフェードばらつき・Phase AM）" value={config.gpgpuMorphTextOnPathGlyphFade} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTextOnPathGlyphFade', v)} />
+                          <Toggle label="Vertical Text （縦書き・Phase 17）" value={config.gpgpuMorphTextOnPathVertical} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphTextOnPathVertical', v)} />
+                          {config.gpgpuMorphTextOnPathVertical && (
+                            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                              文字列を TextMap 縦書きと同じ段組み（Column Length・禁則・縦中横・ルビのトークン化を共有）で計画し、段（右→左）→段内（上→下）の読み順でパスに並べます。各字は縦軸をパスの接線に合わせ、字の上を進行方向の逆へ向けます。ルビは計画に含まれますが、パス上では親文字のセルだけを配置します。
+                            </div>
+                          )}
                           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
                             文字単位の変形は文字 index の決定的ハッシュで引くため、同じ設定では常に同じ崩れ方になります。Fade は透明化ではなく密度（その文字の粒子の一部が通常のパス配置へ落ちる）で表します。全て 0 で従来同一です。
                           </div>
@@ -269,6 +401,7 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                 <div className="mt-1 text-[9px] leading-relaxed text-white/40">
                   ベイクした点群をシード付きボロノイセルで割り、破片ごとに引き離します。サイトは点群自身から抽選されるので形に沿って割れます。同じシードでは常に同じ分割になります。全モーフ目標（Text／Image／SVG／OBJ／地形ほか）に効きます。
                 </div>
+                <FragmentCollectionBlock config={config} updateConfig={updateConfig} />
               </>
             )}
           </>

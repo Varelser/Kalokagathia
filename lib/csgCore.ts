@@ -164,6 +164,27 @@ export function meshVolume(positions: ArrayLike<number>, indices: ArrayLike<numb
   return volume;
 }
 
+/** Shortest decimal that reproduces a float32 coordinate
+ *  bit-exactly when the text is parsed back (Number() ->
+ *  Float32Array). String() of the fround-ed value is the
+ *  shortest round-trip decimal for that double, and since
+ *  the double IS a float32 value, the same string also
+ *  round-trips the float32. Deterministic: the same input
+ *  always yields the same string.
+ *
+ *  This precision is a correctness contract, not cosmetics:
+ *  the OBJ text is the hand-off format for result chaining
+ *  and the result history (lib/csgSceneImport.ts,
+ *  lib/csgHistory.ts). The previous fixed 6-decimal format
+ *  (1e-6 rounding — the weld tolerance's own scale) turned
+ *  exactly coincident faces into slivers the extraction
+ *  weld could not rescue, and a chained union with the
+ *  coincident sphere failed gate (c) with badEdges=413
+ *  (Phase 17 E1b re-gate, 2026-11-23). */
+export function formatObjCoordinate(v: number): string {
+  return String(Math.fround(v));
+}
+
 /** Indexed OBJ text for the morph path. Indexed on purpose: the
  *  CSG / SDF coexistence check (#3, round 9) requires the indexed
  *  form so the morph sampler's vertex normals stay smooth (a
@@ -178,7 +199,7 @@ export function buildIndexedObjText(
   const vCount = Math.floor(positions.length / 3);
   for (let i = 0; i < vCount; i++) {
     lines.push(
-      `v ${positions[i * 3].toFixed(6)} ${positions[i * 3 + 1].toFixed(6)} ${positions[i * 3 + 2].toFixed(6)}`,
+      `v ${formatObjCoordinate(positions[i * 3])} ${formatObjCoordinate(positions[i * 3 + 1])} ${formatObjCoordinate(positions[i * 3 + 2])}`,
     );
   }
   for (let f = 0; f + 2 < indices.length; f += 3) {

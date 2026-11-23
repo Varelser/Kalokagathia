@@ -327,6 +327,17 @@ export interface GpgpuMorphTargetBuildOptions {
     delay: number;
     size: number;
     /**
+     * Vertical text on path (Phase 17, lib/gpgpuTextOnPath.ts):
+     * the glyphs are the cells of the vertical column plan, in
+     * column reading order. While true, a sampled glyph point
+     * maps its vertical fraction onto the path parameter and its
+     * horizontal fraction onto the normal offset (the glyph's
+     * vertical axis along the tangent, its top against the
+     * direction of travel). Absent / false = the AF2 mapping
+     * verbatim.
+     */
+    vertical?: boolean;
+    /**
      * Per-glyph deformation (Phase AM): scale / rotation /
      * fade variation amounts. Absent / null = the AF2 placement
      * verbatim (the shared builder only sets this while at
@@ -1514,6 +1525,9 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   // Per-glyph deformation (Phase AM): present only while the
   // shared builder resolved a non-zero variation set.
   const topDeform = textOnPathActive && textOnPath ? (textOnPath.deform ?? null) : null;
+  // Vertical text on path (Phase 17): resolved once, like the
+  // deform set above; false keeps the AF2 mapping verbatim.
+  const topVertical = textOnPathActive && textOnPath ? textOnPath.vertical === true : false;
   // Contour target (Phase AM): the traced outline geometry,
   // placed with the same no-draw ordered parameter as the path
   // branch.
@@ -1706,14 +1720,33 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
       }
       if (hit.glyph >= 0 && glyphPoint) {
         const pt = deformPt ?? glyphPoint;
-        const sRaw = textOnPathGlyphS(hit.glyph, pt.lx, topGlyphCount, topDelay);
-        const s01 = pathMode === 'writeOn' ? pathWinStart + (pathWinEnd - pathWinStart) * sRaw : sRaw;
-        const resolved = resolvePathPoint(pathGeom!, s01, pathSubpathMode);
         const cellH = (pathGeom!.totalLength / topGlyphCount) * topSize;
-        const off = (0.5 - pt.ly) * cellH;
-        tx = resolved.x + -resolved.tangentY * off;
-        ty = resolved.y + resolved.tangentX * off;
-        tz = 0;
+        if (topVertical) {
+          // Vertical text on path (Phase 17): the glyph's
+          // vertical axis lies along the path tangent — the
+          // sampled vertical fraction (ly, 0 = the glyph's top)
+          // drives the path parameter, so the top sits at the
+          // slot's start (against the direction of travel) and
+          // the bottom at its end; the horizontal fraction (lx)
+          // drives the normal offset, the glyph's right edge
+          // toward +normal. The slot layout, RNG draws and
+          // deform handling above are the AF2 ones unchanged.
+          const sRaw = textOnPathGlyphS(hit.glyph, pt.ly, topGlyphCount, topDelay);
+          const s01 = pathMode === 'writeOn' ? pathWinStart + (pathWinEnd - pathWinStart) * sRaw : sRaw;
+          const resolved = resolvePathPoint(pathGeom!, s01, pathSubpathMode);
+          const off = (pt.lx - 0.5) * cellH;
+          tx = resolved.x + -resolved.tangentY * off;
+          ty = resolved.y + resolved.tangentX * off;
+          tz = 0;
+        } else {
+          const sRaw = textOnPathGlyphS(hit.glyph, pt.lx, topGlyphCount, topDelay);
+          const s01 = pathMode === 'writeOn' ? pathWinStart + (pathWinEnd - pathWinStart) * sRaw : sRaw;
+          const resolved = resolvePathPoint(pathGeom!, s01, pathSubpathMode);
+          const off = (0.5 - pt.ly) * cellH;
+          tx = resolved.x + -resolved.tangentY * off;
+          ty = resolved.y + resolved.tangentX * off;
+          tz = 0;
+        }
       } else {
         const s01 = pathMode === 'writeOn' ? pathWinStart + (pathWinEnd - pathWinStart) * p : p;
         const resolved = resolvePathPoint(pathGeom!, s01, pathSubpathMode);

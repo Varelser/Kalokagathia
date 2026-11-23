@@ -65,6 +65,7 @@ import { parseSvgPathGeometry, type PathGeometry } from './pathGeometry';
 import type { MapImageTextureState } from './mapImageTexture';
 import type { ParticleConfig } from '../types';
 import { verticalGlyphPlacements } from './textColumnLayout';
+import { pagedVerticalGlyphPlacements } from './textPageLayout';
 import {
   clampNoiseFieldSupplyTime,
   clampNoiseMapEvolve,
@@ -198,6 +199,13 @@ export interface TextRasterSettings {
   // bit-identical.
   tatechuyoko: boolean;
   ruby: boolean;
+  // Text pages (Phase 17, lib/textPageLayout.ts): page the
+  // columns that do not fit this raster into further pages and
+  // draw only the selected page. All default OFF / 0 keep the
+  // Phase BP raster bit-identical.
+  pageEnabled: boolean;
+  columnBalance: boolean;
+  pageIndex: number;
 }
 
 /** The layer-2 TextMap settings: the same source the 'text'
@@ -218,6 +226,9 @@ export function textRasterSettingsFromConfig(config: ParticleConfig): TextRaster
     yakumono: config.layer2TextMapYakumono,
     tatechuyoko: config.layer2TextMapTateChuYoko,
     ruby: config.layer2TextMapRuby,
+    pageEnabled: config.layer2TextMapPageEnabled,
+    columnBalance: config.layer2TextMapColumnBalance,
+    pageIndex: config.layer2TextMapPageIndex,
   };
 }
 
@@ -226,6 +237,7 @@ export function textRasterCacheKey(settings: TextRasterSettings): string {
     settings.text, settings.fontFamily, settings.fontWeight, settings.size, settings.padding, settings.invert,
     settings.vertical, settings.columnLength, settings.columnGap, settings.letterSpacing,
     settings.kinsoku, settings.yakumono, settings.tatechuyoko, settings.ruby,
+    settings.pageEnabled, settings.columnBalance, settings.pageIndex,
   ].join('|');
 }
 
@@ -260,14 +272,26 @@ export function rasterizeTextCanvas(settings: TextRasterSettings, size: number):
     // the shared pure layout (lib/textColumnLayout.ts) — columns
     // right → left, glyphs top → bottom, all upright. Draws
     // identically to extractTextLumaMap's vertical branch.
-    const placements = verticalGlyphPlacements(settings.text || 'TEXT', settings.columnLength, {
+    const textMetrics = {
       width,
       height,
       padding: clampedPadding,
       pxSize,
       columnGap: settings.columnGap,
       letterSpacing: settings.letterSpacing,
-    }, { kinsoku: settings.kinsoku, yakumono: settings.yakumono, tatechuyoko: settings.tatechuyoko, ruby: settings.ruby });
+    };
+    const textAdjustments = { kinsoku: settings.kinsoku, yakumono: settings.yakumono, tatechuyoko: settings.tatechuyoko, ruby: settings.ruby };
+    // Text pages (Phase 17): while paging is on, only the
+    // selected page's columns are drawn (the page layer resolves
+    // to the legacy placements verbatim when everything fits on
+    // one page). Off, this is the Phase BG call unchanged.
+    const placements = settings.pageEnabled
+      ? pagedVerticalGlyphPlacements(settings.text || 'TEXT', settings.columnLength, textMetrics, textAdjustments, {
+        enabled: true,
+        balance: settings.columnBalance,
+        pageIndex: settings.pageIndex,
+      })
+      : verticalGlyphPlacements(settings.text || 'TEXT', settings.columnLength, textMetrics, textAdjustments);
     // Phase BP: a placement with a font scale (a tate-chu-yoko
     // run or a ruby glyph) swaps the font for its own draw and
     // restores it; scale-free placements draw exactly as before.

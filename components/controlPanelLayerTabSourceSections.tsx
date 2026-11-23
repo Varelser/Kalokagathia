@@ -144,6 +144,14 @@ export const SharedLayerTabSourceSections: React.FC<SharedLayerSourceSectionsPro
               onTextTateChuYokoChange: (v: boolean) => write('TextMapTateChuYoko', v),
               textRuby: read('TextMapRuby') as boolean,
               onTextRubyChange: (v: boolean) => write('TextMapRuby', v),
+              // Text pages (Phase 17): same layer-2 only
+              // convention as the BP fields above.
+              textPageEnabled: read('TextMapPageEnabled') as boolean,
+              onTextPageEnabledChange: (v: boolean) => write('TextMapPageEnabled', v),
+              textColumnBalance: read('TextMapColumnBalance') as boolean,
+              onTextColumnBalanceChange: (v: boolean) => write('TextMapColumnBalance', v),
+              textPageIndex: read('TextMapPageIndex') as number,
+              onTextPageIndexChange: (v: number) => write('TextMapPageIndex', v),
             }
           : {})}
       />

@@ -230,6 +230,9 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuCsgSizeA: 2,
   gpgpuCsgSizeB: 2,
   gpgpuCsgSegments: 32,
+  gpgpuCsgOffsetAX: 0,
+  gpgpuCsgOffsetAY: 0,
+  gpgpuCsgOffsetAZ: 0,
   gpgpuCsgOffsetBX: 1,
   gpgpuCsgOffsetBY: 0,
   gpgpuCsgOffsetBZ: 0,
@@ -577,6 +580,9 @@ f 8 1 105`,
   gpgpuCsgExtrudeCustomText: '0, 1.1\n-0.2939, 0.4045\n-1.0462, 0.3399\n-0.4755, -0.1545\n-0.6466, -0.8899\n0, -0.5\n0.6466, -0.8899\n0.4755, -0.1545\n1.0462, 0.3399\n0.2939, 0.4045',
   gpgpuCsgFinish: 'none' as const,
   gpgpuCsgRefineDivisions: 2,
+  gpgpuCsgMeshObjTextB: '',
+  gpgpuCsgMorphBackupObjText: '',
+  gpgpuCsgHistoryJson: '',
   // Vector Field
   gpgpuVFieldEnabled: false,
   gpgpuVFieldType: 'spiral' as const,
@@ -692,6 +698,8 @@ f 8 1 105`,
   gpgpuMorphTextOnPathGlyphScale: 0,
   gpgpuMorphTextOnPathGlyphRotate: 0,
   gpgpuMorphTextOnPathGlyphFade: 0,
+  // Vertical text on path (Phase 17): OFF = AF2 single-line layout.
+  gpgpuMorphTextOnPathVertical: false,
   // Contour target (Phase AM): trace the TextMap raster at the
   // media threshold by default.
   gpgpuMorphContourSource: 'text' as const,
@@ -702,6 +710,8 @@ f 8 1 105`,
   gpgpuMorphFractureCells: 12,
   gpgpuMorphFractureSeed: 1,
   gpgpuMorphFractureGap: 0.25,
+  // Fragment collection (Phase 17 stage 4): '' = no saved division.
+  gpgpuFragmentCollectionJson: '',
   // Morph-surface fibers (Phase AG): off = nothing drawn.
   gpgpuMorphFiberEnabled: false,
   gpgpuMorphFiberCount: 600,
@@ -973,6 +983,21 @@ f 8 1 105`,
   gpgpuMaskBoolOperandMap: [],
   gpgpuMaskBoolOperandWidth: 0,
   gpgpuMaskBoolOperandHeight: 0,
+  // Vector Boolean (Phase 17 stage 2): derived keys only — the
+  // composition runs in the CSG worker on the UI button press
+  // and stores its result SVG here; the defaults (no B, no
+  // result) keep every existing render bit-identical.
+  gpgpuVectorBoolOp: 'union' as const,
+  gpgpuVectorBoolSourceB: '',
+  gpgpuVectorBoolResultSvg: '',
+  // Text extrusion (Phase 17 stage 3): input keys only — the
+  // extrusion runs on the UI button press; the defaults (empty
+  // text) keep every existing render bit-identical. Flatness
+  // 0.001 is PATH_ARC_EPSILON (lib/pathGeometry.ts), read in
+  // glyph (em) units by lib/textExtrude.ts.
+  gpgpuTextExtrudeText: '',
+  gpgpuTextExtrudeDepth: 0.4,
+  gpgpuTextExtrudeFlatness: 0.001,
   gpgpuPathRasterStrokeWidth: 0.045,
   // Mouse Force
   gpgpuMouseEnabled: false,

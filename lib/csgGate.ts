@@ -33,6 +33,22 @@
 // per the brief. The gate never repairs: no hole filling, no
 // merge() (merge welds, which would silently "fix" unwelded
 // input that (b) is supposed to reject).
+//
+// The one place welding IS applied is the extraction of a
+// Manifold boolean result (weldMeshVertices below, used by
+// lib/csgPrimitive.ts manifoldToResultData): Manifold's own
+// getMesh() output for chained booleans (a previous result fed
+// back as a mesh operand) contains triangles whose corners are
+// the same geometric point under different vertex indices —
+// split by one float32 ulp (~3e-8) or exactly coincident —
+// plus sliver triangles that collapse under this gate's own
+// 1e-6 weld. The solid is intact (status NoError, volume
+// exact); only the triangulation is unmerged. Materialising
+// the weld at extraction gives every consumer (gate (c), the
+// morph/OBJ display path, the next chained operation) the
+// topology this gate already measures. This does not weaken
+// the gate: the census and verdict below are unchanged, and a
+// crack wider than the weld tolerance still fails.
 
 export interface CsgGateReport {
   /** True only when the mesh passed every structural test. */
@@ -62,6 +78,139 @@ export interface CsgGateReport {
 export const CSG_GATE_FACE_LIMIT = 100_000;
 
 const WELD_SCALE = 1e6;
+
+/** Weld tolerance of weldMeshVertices: two vertices closer
+ *  than this are the same vertex. Identical to the gate's own
+ *  weld grid pitch (1 / WELD_SCALE), so the materialised
+ *  topology is the one the gate census already assumes. */
+export const CSG_WELD_TOLERANCE = 1 / WELD_SCALE;
+
+export interface CsgWeldResult {
+  positions: Float32Array;
+  indices: Uint32Array;
+  /** Vertices removed because another vertex within the weld
+   *  tolerance already represented the same point. */
+  mergedVertices: number;
+  /** Triangles dropped because welding made two of their
+   *  corners the same vertex (zero-area slivers). */
+  droppedTriangles: number;
+}
+
+/**
+ * Materialise the gate's 1e-6 weld on an indexed mesh:
+ * vertices within CSG_WELD_TOLERANCE of each other are merged
+ * onto the lowest-index representative (its coordinates are
+ * kept verbatim — no averaging), and triangles left with a
+ * repeated corner are dropped. Deterministic: pairs are
+ * unioned in vertex-index order and the output preserves the
+ * input vertex order, so a mesh with nothing to merge comes
+ * back as the *same arrays* (byte-identical), which keeps
+ * every currently-passing extraction unchanged.
+ */
+export function weldMeshVertices(
+  positions: Float32Array,
+  indices: Uint32Array,
+): CsgWeldResult {
+  const vertCount = Math.floor(positions.length / 3);
+  const tol = CSG_WELD_TOLERANCE;
+
+  // Union-find; the root of a class is always its smallest
+  // vertex index, so representatives are stable.
+  const parent: number[] = Array.from({ length: vertCount }, (_, i) => i);
+  const find = (a: number): number => {
+    let root = a;
+    while (parent[root] !== root) root = parent[root];
+    let cur = a;
+    while (parent[cur] !== root) {
+      const next = parent[cur];
+      parent[cur] = root;
+      cur = next;
+    }
+    return root;
+  };
+
+  // Spatial hash on tolerance-sized cells; any pair within
+  // tolerance lies in the same or a neighbouring cell.
+  const buckets = new Map<string, number[]>();
+  const cellOf = (v: number) =>
+    Math.floor(v / tol);
+  for (let i = 0; i < vertCount; i++) {
+    const key =
+      cellOf(positions[i * 3]) + ',' + cellOf(positions[i * 3 + 1]) + ',' + cellOf(positions[i * 3 + 2]);
+    const list = buckets.get(key);
+    if (list) list.push(i);
+    else buckets.set(key, [i]);
+  }
+  for (let i = 0; i < vertCount; i++) {
+    const x = positions[i * 3];
+    const y = positions[i * 3 + 1];
+    const z = positions[i * 3 + 2];
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    const cx = cellOf(x);
+    const cy = cellOf(y);
+    const cz = cellOf(z);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const list = buckets.get((cx + dx) + ',' + (cy + dy) + ',' + (cz + dz));
+          if (!list) continue;
+          for (const j of list) {
+            if (j <= i) continue;
+            const ddx = positions[j * 3] - x;
+            const ddy = positions[j * 3 + 1] - y;
+            const ddz = positions[j * 3 + 2] - z;
+            if (ddx * ddx + ddy * ddy + ddz * ddz <= tol * tol) {
+              const ra = find(i);
+              const rb = find(j);
+              if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Assign output ids in input vertex order; the first vertex
+  // of each class (its smallest index = its root) supplies the
+  // coordinates.
+  const idOfRoot = new Map<number, number>();
+  const remap = new Uint32Array(vertCount);
+  const outPositions: number[] = [];
+  for (let i = 0; i < vertCount; i++) {
+    const root = find(i);
+    let id = idOfRoot.get(root);
+    if (id === undefined) {
+      id = outPositions.length / 3;
+      idOfRoot.set(root, id);
+      outPositions.push(positions[root * 3], positions[root * 3 + 1], positions[root * 3 + 2]);
+    }
+    remap[i] = id;
+  }
+  const mergedVertices = vertCount - idOfRoot.size;
+
+  const outIndices: number[] = [];
+  let droppedTriangles = 0;
+  for (let base = 0; base + 2 < indices.length; base += 3) {
+    const a = remap[indices[base]];
+    const b = remap[indices[base + 1]];
+    const c = remap[indices[base + 2]];
+    if (a === b || b === c || a === c) {
+      droppedTriangles++;
+      continue;
+    }
+    outIndices.push(a, b, c);
+  }
+
+  if (mergedVertices === 0 && droppedTriangles === 0) {
+    return { positions, indices, mergedVertices: 0, droppedTriangles: 0 };
+  }
+  return {
+    positions: new Float32Array(outPositions),
+    indices: new Uint32Array(outIndices),
+    mergedVertices,
+    droppedTriangles,
+  };
+}
 
 function weldKey(x: number, y: number, z: number): string {
   return (

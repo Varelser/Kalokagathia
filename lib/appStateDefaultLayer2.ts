@@ -41,6 +41,11 @@ export const APP_STATE_DEFAULT_LAYER_2: Partial<ParticleConfig> = {
   // BK split and placements bit-identical.
   layer2TextMapTateChuYoko: false,
   layer2TextMapRuby: false,
+  // Text pages (Phase 17): all OFF / 0 keep the Phase BP
+  // single-raster layout bit-identical.
+  layer2TextMapPageEnabled: false,
+  layer2TextMapColumnBalance: false,
+  layer2TextMapPageIndex: 0,
   layer2MotionMix: false,
   layer2Motions: [],
   layer2MotionChainEnabled: false,

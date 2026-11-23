@@ -24,6 +24,11 @@
 // 'text' morph target uses — each character is centred in its own
 // cell, so advance widths are uniform (a monospace-style layout).
 
+import {
+  layoutTextColumnsTokenized,
+  type TextColumnAdjustments,
+} from './textColumnLayout';
+
 /** One character's luma raster: square grid, row 0 = top. */
 export interface TextGlyphRaster {
   map: ArrayLike<number>;
@@ -94,6 +99,77 @@ export function textOnPathGlyphS(
 
 /** Luma threshold of the media grammar (sampleMediaPoint). */
 export const TEXT_GLYPH_LUMA_THRESHOLD = 0.3;
+
+// ── Vertical text on path (Phase 17) ───────────────────────────
+// The vertical counterpart of the single-line layout above: the
+// string is planned as COLUMNS by the shared vertical layout
+// (lib/textColumnLayout.ts — the same tokeniser the TextMap
+// raster uses, so tate-chu-yoko runs fold into one cell and ruby
+// markup parses exactly as there; the meaning is not
+// re-implemented here). Reading order along the path is column
+// by column — column 0 first (the rightmost column of the page
+// layout, holding the head of the text), inside a column top →
+// bottom. A newline in the source starts a new column, exactly
+// as in the page layout.
+//
+// In the bake, a vertical glyph's LOCAL axes map differently
+// from the horizontal layout: the glyph's vertical axis lies
+// along the path tangent with the glyph's top toward the START
+// of the path (against the direction of travel), so the sampled
+// vertical fraction (ly) drives the path parameter and the
+// horizontal fraction (lx) drives the normal offset — the glyph
+// stands upright relative to the path's progression instead of
+// lying across it.
+
+/** One cell of the vertical plan: a single glyph, a whole
+ *  tate-chu-yoko run (one cell), or one glyph of a ruby parent
+ *  group (its `ruby` annotation rides on the group's first
+ *  unit). Ruby glyphs themselves are not separate units — the
+ *  annotation is carried in the plan, shared with the TextMap
+ *  layout, but the path bake places the parent cells only. */
+export interface TextOnPathVerticalUnit {
+  /** The cell's text (a run's whole string for tate-chu-yoko). */
+  text: string;
+  /** Font scale of the cell (tate-chu-yoko runs), if any. */
+  scale?: number;
+  /** Ruby annotation of this unit's parent group, if any. */
+  ruby?: string;
+  /** Column (段) index, 0 = the head column (rightmost on a page). */
+  column: number;
+  /** Cell index inside the column, 0 = top. */
+  index: number;
+}
+
+export interface TextOnPathVerticalPlan {
+  units: TextOnPathVerticalUnit[];
+  columnCount: number;
+}
+
+/**
+ * Plan a string for vertical text on a path: tokenise and split
+ * it into columns with the shared vertical layout, then flatten
+ * the columns in reading order (column 0 first, top → bottom
+ * inside a column). `columnLength` and `adjustments` are the
+ * TextMap vertical settings (kinsoku adjusts wrap boundaries,
+ * tatechuyoko / ruby switch the token grammar on).
+ */
+export function planVerticalTextOnPath(
+  text: string,
+  columnLength: number,
+  adjustments?: TextColumnAdjustments,
+): TextOnPathVerticalPlan {
+  const columns = layoutTextColumnsTokenized(text || '', columnLength, adjustments);
+  const units: TextOnPathVerticalUnit[] = [];
+  columns.forEach((tokens, column) => {
+    tokens.forEach((token, index) => {
+      const unit: TextOnPathVerticalUnit = { text: token.text, column, index };
+      if (token.scale !== undefined) unit.scale = token.scale;
+      if (token.ruby !== undefined) unit.ruby = token.ruby;
+      units.push(unit);
+    });
+  });
+  return { units, columnCount: columns.length };
+}
 
 // ── Per-glyph deformation (Phase AM) ───────────────────────────
 // The per-character transform grammar the 2D audit §2 row asked

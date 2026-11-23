@@ -11,6 +11,8 @@ import {
   isAfMapSource,
   parseAfMapSource,
   parsePathRasterFillMode,
+  pathRasterStrokeRadius,
+  rasterizePathGeometryLuma,
   PATH_RASTER_FILL_EVENODD_SOURCE,
   PATH_RASTER_FILL_NONZERO_SOURCE,
   type AfMapSourceKind,
@@ -25,6 +27,14 @@ import {
   type TerrainDerivedMapKind,
 } from '../lib/terrainDerivedMaps';
 import { combineLumaMaps, normalizeMaskBoolOp } from '../lib/shapeBoolean';
+import {
+  contoursToPathGeometry,
+  contoursToSvgText,
+  normalizeVectorBoolOp,
+  svgTextToContours,
+  validateContours,
+} from '../lib/vectorBoolean';
+import { runVectorBoolean } from '../lib/csg';
 import { saveBlobFile } from '../lib/platformFeatures';
 import type { ParticleConfig } from '../types';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
@@ -375,6 +385,10 @@ export const MapSourceBlock: React.FC<{
 
 export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
   const source = config.gpgpuMaskSource;
+  // Vector Boolean (Phase 17 stage 2): transient run state only;
+  // the durable outputs live in the gpgpuVectorBool* keys.
+  const [vectorBusy, setVectorBusy] = React.useState(false);
+  const [vectorStatus, setVectorStatus] = React.useState('');
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
     try {
@@ -549,6 +563,76 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
     updateConfig('gpgpuMaskMap', Array.from(combined));
     updateConfig('gpgpuMaskSource', lumaMapDataUrl(combined, config.gpgpuMaskMapWidth, config.gpgpuMaskMapHeight));
   };
+  // Vector Boolean composition (Phase 17 stage 2): the geometric
+  // counterpart of the raster Boolean above. A is the morph SVG
+  // source, B is the vector-B SVG text; both are parsed into
+  // contours in the same normalised frame, validated on this
+  // thread, and composed in the CSG worker (CrossSection) only
+  // on this button press. A result that fails validation is
+  // reported and never written to the result key.
+  const applyVectorBool = async () => {
+    if (vectorBusy) return;
+    const aContours = svgTextToContours(config.gpgpuMorphSvgSource);
+    if (!aContours) {
+      setVectorStatus('A（モーフ SVG ソース）に閉じた図形がありません。先に SVG を設定してください。');
+      return;
+    }
+    const bContours = svgTextToContours(config.gpgpuVectorBoolSourceB);
+    if (!bContours) {
+      setVectorStatus('B の SVG テキストに閉じた図形がありません。');
+      return;
+    }
+    const va = validateContours(aContours, 'A');
+    if (!va.ok) {
+      setVectorStatus(va.reason);
+      return;
+    }
+    const vb = validateContours(bContours, 'B');
+    if (!vb.ok) {
+      setVectorStatus(vb.reason);
+      return;
+    }
+    setVectorBusy(true);
+    setVectorStatus('合成中…');
+    try {
+      const result = await runVectorBoolean(aContours, bContours, normalizeVectorBoolOp(config.gpgpuVectorBoolOp));
+      if (result.contours.length === 0) {
+        updateConfig('gpgpuVectorBoolResultSvg', '');
+        setVectorStatus('合成結果は空です（面積 0）。結果 SVG はクリアしました。');
+        return;
+      }
+      updateConfig('gpgpuVectorBoolResultSvg', contoursToSvgText(result.contours));
+      setVectorStatus(
+        `合成しました: 面積 ${result.area.toFixed(4)}、島 ${result.islandCount}、穴 ${result.holeCount}、輪郭 ${result.contours.length}。`,
+      );
+    } catch (e) {
+      setVectorStatus(e instanceof Error ? e.message : 'ベクタ合成に失敗しました。');
+    } finally {
+      setVectorBusy(false);
+    }
+  };
+  // Take the stored vector result into the mask: the result
+  // contours become a PathGeometry and are rasterised with the
+  // even-odd fill (holes stay holes) through the same supply
+  // function the path fill uses, then stored like applyBool.
+  const takeVectorResultIntoMask = () => {
+    const contours = svgTextToContours(config.gpgpuVectorBoolResultSvg);
+    if (!contours) {
+      setVectorStatus('取り込めるベクタ合成結果がありません。先に合成してください。');
+      return;
+    }
+    const geom = contoursToPathGeometry(contours);
+    if (!geom) {
+      setVectorStatus('ベクタ合成結果をパスへ変換できませんでした。');
+      return;
+    }
+    const luma = rasterizePathGeometryLuma(geom, 128, pathRasterStrokeRadius(config), 'evenodd');
+    updateConfig('gpgpuMaskMap', Array.from(luma));
+    updateConfig('gpgpuMaskMapWidth', 128);
+    updateConfig('gpgpuMaskMapHeight', 128);
+    updateConfig('gpgpuMaskSource', lumaMapDataUrl(luma, 128, 128));
+    setVectorStatus('ベクタ合成結果をマスクに取り込みました（128×128、偶奇ルールで塗り）。');
+  };
   return (
     <div className="mb-2 mt-2 rounded border border-white/10 bg-white/5 p-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -686,6 +770,56 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
             + (config.gpgpuMaskBoolOperandMap.length > 0
               ? ` B は ${config.gpgpuMaskBoolOperandWidth}×${config.gpgpuMaskBoolOperandHeight} を取り込み済み。`
               : ' B は未取り込みのため空集合として合成します（union / difference / xor は A のまま、intersection は全域 0）。')}
+        </div>
+      </div>
+      {/* Vector Boolean composition (Phase 17 stage 2): closed
+          vector shapes composed geometrically (CrossSection in
+          the CSG worker), not on a luminance grid — contours
+          stay smooth and holes stay holes. A is the morph SVG
+          source; B is the SVG text below. */}
+      <div className="mt-3 border-t border-white/10 pt-2">
+        <div className="mb-1 text-[9px] font-bold uppercase tracking-widest text-white/50">ベクタ合成（閉図形同士の Boolean — Phase 17）</div>
+        <div className="text-[9px] leading-relaxed text-white/40">
+          {`A はモーフ SVG ソース（${config.gpgpuMorphSvgSource ? '設定済み' : '未設定'}）。A・B とも閉じた図形だけが対象で、それぞれ自身の枠で正規化されてから合成されます。`}
+        </div>
+        <textarea
+          value={config.gpgpuVectorBoolSourceB}
+          onChange={(e) => updateConfig('gpgpuVectorBoolSourceB', e.target.value)}
+          placeholder="B の SVG テキスト（<svg>…</svg> または path の d 文字列）"
+          rows={3}
+          className="mt-2 w-full rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[10px] leading-relaxed text-white/90 outline-none focus:border-white/40"
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select
+            value={config.gpgpuVectorBoolOp}
+            onChange={(e) => updateConfig('gpgpuVectorBoolOp', normalizeVectorBoolOp(e.target.value))}
+            className="cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="union">Union（和）</option>
+            <option value="difference">Difference（差 A−B）</option>
+            <option value="intersection">Intersection（積）</option>
+            <option value="xor">XOR（排他）</option>
+          </select>
+          <button
+            onClick={() => void applyVectorBool()}
+            disabled={vectorBusy}
+            className="rounded-full border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ベクタ合成する
+          </button>
+          <button
+            onClick={takeVectorResultIntoMask}
+            disabled={vectorBusy || !config.gpgpuVectorBoolResultSvg}
+            className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            結果をマスクに取り込む
+          </button>
+        </div>
+        {vectorStatus && (
+          <div className="mt-1 text-[9px] leading-relaxed text-white/50">{vectorStatus}</div>
+        )}
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          合成はボタン押下時のみ CSG ワーカーで実行され、結果は SVG として保持されます（未使用時はワーカーも WASM も読みません）。検証（自己交差・面積）を通らない結果は理由を表示し、結果 SVG には書きません。
         </div>
       </div>
     </div>
