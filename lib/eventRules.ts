@@ -31,13 +31,15 @@ export type EventRuleEventType =
   | 'beat'
   | 'midi-note'
   | 'predicate'
-  | 'pattern-boundary';
+  | 'pattern-boundary'
+  | 'rigid-contact';
 
 export const EVENT_RULE_EVENT_TYPES: readonly EventRuleEventType[] = [
   'beat',
   'midi-note',
   'predicate',
   'pattern-boundary',
+  'rigid-contact',
 ];
 
 export interface SynthNoteAction {
@@ -292,4 +294,94 @@ export function dispatchEventRuleActions(
   for (const action of actions) {
     if (action.type === 'synth-note') handlers.synthNote?.(action);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 21 stage 2 — live wiring for the two event types stage 4
+// defined but never fired: 'midi-note' (external, arrives whenever a
+// MIDI note-on lands) and 'predicate' (a condition polled at the
+// sequencer step boundary, fired on its rising edge only).
+
+/**
+ * Rising-edge evaluation for predicate rules. A predicate rule's
+ * "event" is its condition becoming true: it fires once when the
+ * condition turns true and not again until it has been false in
+ * between. Pure: pass the previous truth map in, get the actions
+ * and the next truth map out. Rules that are absent, disabled or
+ * non-predicate are pruned from the next map, so a rule edited or
+ * deleted between polls can never wedge in the "true" state.
+ */
+export function evaluatePredicateTransitions(
+  rules: readonly EventRule[],
+  ctx: EventRuleContext,
+  previous: ReadonlyMap<string, boolean>,
+): { actions: EventRuleAction[]; next: Map<string, boolean> } {
+  const actions: EventRuleAction[] = [];
+  const next = new Map<string, boolean>();
+  for (const rule of rules) {
+    if (rule.event !== 'predicate' || rule.enabled === false) continue;
+    const nowTrue = eventRuleMatches(rule, { type: 'predicate' }, ctx);
+    next.set(rule.id, nowTrue);
+    if (nowTrue && previous.get(rule.id) !== true) actions.push(...rule.actions);
+  }
+  return { actions, next };
+}
+
+/**
+ * Live action performer: the one registered sink for actions from
+ * events that occur outside the synth sequencer (MIDI note-ons,
+ * rigid-body contacts). The audio controller registers a performer
+ * that plays synth-note actions on the live engine; with no
+ * performer registered (audio never started, standalone window),
+ * live events are evaluated and dropped — never queued.
+ */
+export type EventRuleActionPerformer = (actions: readonly EventRuleAction[]) => void;
+
+let livePerformer: EventRuleActionPerformer | null = null;
+
+export function setEventRuleActionPerformer(performer: EventRuleActionPerformer | null): void {
+  livePerformer = performer;
+}
+
+export function getEventRuleActionPerformer(): EventRuleActionPerformer | null {
+  return livePerformer;
+}
+
+/**
+ * Evaluate the stored rules for one live event occurrence and hand
+ * the resulting actions to the registered performer. Returns the
+ * number of actions fired (0 when there are no rules, no matches,
+ * or no performer). Never throws: a storage or evaluation failure
+ * must not break the caller's own event handling.
+ */
+export function fireEventRulesLive(event: EventRuleEvent, ctx: EventRuleContext = {}): number {
+  try {
+    if (!livePerformer) return 0;
+    const rules = loadEventRules(typeof window !== 'undefined' ? window.localStorage : undefined);
+    if (rules.length === 0) return 0;
+    const actions = evaluateEventRules(rules, event, ctx);
+    if (actions.length === 0) return 0;
+    livePerformer(actions);
+    return actions.length;
+  } catch {
+    return 0;
+  }
+}
+
+/* ---------------- editor helpers (Phase 21 stage 2 UI) ---------------- */
+
+let eventRuleIdCounter = 0;
+export function createEventRuleId(): string {
+  eventRuleIdCounter += 1;
+  return `rule-${Date.now().toString(36)}-${eventRuleIdCounter.toString(36)}`;
+}
+
+/** A fresh, valid rule with one default synth-note action. */
+export function createEventRule(event: EventRuleEventType = 'midi-note'): EventRule {
+  return {
+    id: createEventRuleId(),
+    event,
+    enabled: true,
+    actions: [{ type: 'synth-note' }],
+  };
 }

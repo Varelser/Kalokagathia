@@ -10,6 +10,7 @@ import { resolveVellum } from '../lib/gpgpuVellum';
 import { XPBD_JACOBI_RELAXATION } from '../lib/xpbdConstraints';
 import { effectiveGrainsFriction, grainsCellGrid, grainsCellSortActive, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsProjection, type GrainsCellGrid } from '../lib/gpgpuGrains';
 import { resolveRigid } from '../lib/rigidBodies';
+import { resolveSteeringSeek } from '../lib/steering';
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
@@ -690,6 +691,10 @@ export function runSimulationPasses(args: {
         replicaAgeBase: 0,
         emitLightEnabled: config.gpgpuEmitShape === 'light',
         emitLightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ },
+        // Crowd steering (Phase 20 stage 2): the WGSL twin's
+        // params, from the same single resolution point as the
+        // WebGL uniforms below.
+        steeringSeek: resolveSteeringSeek(config),
       },
     );
     webgpuPingIsARef.current = !webgpuPingIsARef.current;
@@ -804,6 +809,28 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uParticleLifeAvoid) velSimMat.uniforms.uParticleLifeAvoid.value = Math.max(0, config.gpgpuParticleLifeAvoid || 0);
   if (velSimMat.uniforms.uSteerAvoid) velSimMat.uniforms.uSteerAvoid.value = Math.max(0, config.gpgpuSteerAvoid || 0);
   if (velSimMat.uniforms.uSteerAvoidRange) velSimMat.uniforms.uSteerAvoidRange.value = Math.max(0, config.gpgpuSteerAvoidRange || 0);
+  // Crowd steering (Phase 20 stage 2): the uniforms exist in the
+  // material from creation; the shader declares them only in
+  // the Phase 20 variant, which velocityVariantOptions selects
+  // from the same resolved active flag.
+  {
+    const steer = resolveSteeringSeek(config);
+    const u = velSimMat.uniforms;
+    if (u.uSteerSeekEnabled) u.uSteerSeekEnabled.value = steer.active;
+    if (u.uSteerSeekMode) u.uSteerSeekMode.value = steer.modeId;
+    if (u.uSteerSeekStrength) u.uSteerSeekStrength.value = steer.strength;
+    if (u.uSteerSeekMaxSpeed) u.uSteerSeekMaxSpeed.value = steer.maxSpeed;
+    if (u.uSteerSeekMaxForce) u.uSteerSeekMaxForce.value = steer.maxForce;
+    if (u.uSteerSeekTarget) (u.uSteerSeekTarget.value as THREE.Vector3).set(steer.target.x, steer.target.y, steer.target.z);
+    if (u.uSteerSeekTarget1) (u.uSteerSeekTarget1.value as THREE.Vector3).set(steer.target1.x, steer.target1.y, steer.target1.z);
+    if (u.uSteerSeekSlowingRadius) u.uSteerSeekSlowingRadius.value = steer.slowingRadius;
+    if (u.uSteerSeekStateSlot) u.uSteerSeekStateSlot.value = steer.stateSlot;
+    if (u.uSteerSeekStateThreshold) u.uSteerSeekStateThreshold.value = steer.stateThreshold;
+    if (u.uSteerSeekPath) (u.uSteerSeekPath.value as Float32Array).set(steer.pathPacked);
+    if (u.uSteerSeekPathCount) u.uSteerSeekPathCount.value = steer.path.length;
+    if (u.uSteerSeekPathLookAhead) u.uSteerSeekPathLookAhead.value = steer.pathLookAhead;
+    if (u.uSteerSeekPathRadius) u.uSteerSeekPathRadius.value = steer.pathRadius;
+  }
   // Lifecycle grammar (Phase AB): spawn gate + global drag / max
   // speed. The clamps mirror lib/gpgpuLifecycle.ts.
   if (velSimMat.uniforms.uSpawnRate) velSimMat.uniforms.uSpawnRate.value = Math.max(0.01, Math.min(1, config.gpgpuSpawnRate || 1));
@@ -913,7 +940,7 @@ export function runSimulationPasses(args: {
     const attrConsumers = resolveAttrConsumers(config);
     const attrTex = args.attrTex ?? null;
     if (velSimMat.uniforms.uAttrTex) velSimMat.uniforms.uAttrTex.value = attrTex;
-    if (velSimMat.uniforms.uAttrEnabled) velSimMat.uniforms.uAttrEnabled.value = !!attrTex && (attrConsumers.forceActive || attrConsumers.groupActive);
+    if (velSimMat.uniforms.uAttrEnabled) velSimMat.uniforms.uAttrEnabled.value = !!attrTex && (attrConsumers.forceActive || attrConsumers.groupActive || attrConsumers.steerStateActive);
     if (velSimMat.uniforms.uAttrForceEnabled) velSimMat.uniforms.uAttrForceEnabled.value = !!attrTex && attrConsumers.forceActive;
     if (velSimMat.uniforms.uAttrForceSlot) velSimMat.uniforms.uAttrForceSlot.value = normalizeAttrSlot(config.gpgpuAttrForceSlot);
     if (velSimMat.uniforms.uAttrForceAmount) velSimMat.uniforms.uAttrForceAmount.value = Math.max(0, Math.min(1, config.gpgpuAttrForceAmount ?? 1));
@@ -1591,6 +1618,18 @@ export function runAuxSimulationPasses(args: {
   velU.uGravity.value = config.gpgpuGravity;
   velU.uDelta.value = dt;
   velU.uTime.value = time;
+  // Phase 20 stage 4 (UE5 #22): the SDF collider set for the
+  // bounceSplash SDF contact source. The uniforms exist on the
+  // material in every configuration; only the PHASE20 variant
+  // shader declares them.
+  if (velU.uSdfEnabled) {
+    velU.uSdfEnabled.value = config.gpgpuSdfEnabled;
+    velU.uSdfShape.value = SDF_SHAPE_IDS[config.gpgpuSdfShape] ?? 0;
+    velU.uSdfX.value = config.gpgpuSdfX;
+    velU.uSdfY.value = config.gpgpuSdfY;
+    velU.uSdfZ.value = config.gpgpuSdfZ;
+    velU.uSdfSize.value = config.gpgpuSdfSize;
+  }
   simMesh.material = auxVelMat;
   gl.setRenderTarget(auxVelOut);
   gl.render(simScene, simCamera);
@@ -1613,6 +1652,16 @@ export function runAuxSimulationPasses(args: {
   posU.uBounceRadius.value = config.gpgpuBounceRadius;
   posU.uDelta.value = dt;
   posU.uTime.value = time;
+  // Phase 20 stage 4: same SDF set as the velocity pass — the
+  // position pass re-evaluates the identical event test.
+  if (posU.uSdfEnabled) {
+    posU.uSdfEnabled.value = config.gpgpuSdfEnabled;
+    posU.uSdfShape.value = SDF_SHAPE_IDS[config.gpgpuSdfShape] ?? 0;
+    posU.uSdfX.value = config.gpgpuSdfX;
+    posU.uSdfY.value = config.gpgpuSdfY;
+    posU.uSdfZ.value = config.gpgpuSdfZ;
+    posU.uSdfSize.value = config.gpgpuSdfSize;
+  }
   simMesh.material = auxPosMat;
   gl.setRenderTarget(auxPosOut);
   gl.render(simScene, simCamera);

@@ -140,6 +140,73 @@ export function assignFractureCells(
   return { assignment, centroids, cellCounts };
 }
 
+// ── Shared fracture tails ─────────────────────────────────────
+// The sites-derived path (applyVoronoiFracture /
+// buildFractureCellData) and the assignment-driven path (Phase
+// 20 stage 1: a saved fragment collection's assignment fed back
+// into the bake) share these tails, so a restored division goes
+// through the exact same arithmetic — in the same order, with
+// the same float32 roundings — as the division the bake computed
+// itself. When the supplied assignment IS the sites-derived one,
+// the assignment-driven results are byte-identical to the
+// sites-derived ones (pinned by the phase-20 test).
+
+/** Unpack the xyz triples of an xyzw-packed bake array. */
+function unpackFractureXyz(data: Float32Array, n: number): Float32Array {
+  const xyz = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    xyz[i * 3] = data[i * 4];
+    xyz[i * 3 + 1] = data[i * 4 + 1];
+    xyz[i * 3 + 2] = data[i * 4 + 2];
+  }
+  return xyz;
+}
+
+/** Mean position of the whole cloud (the shape centre). */
+function fractureCloudCentre(xyz: Float32Array, n: number): [number, number, number] {
+  let cx = 0; let cy = 0; let cz = 0;
+  for (let i = 0; i < n; i++) { cx += xyz[i * 3]; cy += xyz[i * 3 + 1]; cz += xyz[i * 3 + 2]; }
+  return [cx / n, cy / n, cz / n];
+}
+
+/**
+ * The fracture transform itself, over a per-point assignment
+ * into `centroids` (xyz-packed, one entry per assignment value):
+ *   p' = centroid + (p − centroid) · (1 − 0.3·gap)
+ *        + (centroid − shapeCentre) · gap
+ * `gap` must already be clamped and non-zero (callers own the
+ * gap-0 identity early-out).
+ */
+function applyFractureTransform(
+  data: Float32Array,
+  xyz: Float32Array,
+  n: number,
+  assignment: ArrayLike<number>,
+  centroids: Float32Array,
+  gap: number,
+): void {
+  const [cx, cy, cz] = fractureCloudCentre(xyz, n);
+  const shrink = 1 - 0.3 * gap;
+  for (let i = 0; i < n; i++) {
+    const c = assignment[i];
+    const mx = centroids[c * 3]; const my = centroids[c * 3 + 1]; const mz = centroids[c * 3 + 2];
+    const o = i * 4;
+    data[o] = mx + (xyz[i * 3] - mx) * shrink + (mx - cx) * gap;
+    data[o + 1] = my + (xyz[i * 3 + 1] - my) * shrink + (my - cy) * gap;
+    data[o + 2] = mz + (xyz[i * 3 + 2] - mz) * shrink + (mz - cz) * gap;
+  }
+}
+
+/** True when every entry is a non-negative integer index. */
+function isValidAssignment(assignment: ArrayLike<number>, n: number): boolean {
+  if (assignment.length !== n) return false;
+  for (let i = 0; i < n; i++) {
+    const v = assignment[i];
+    if (!Number.isInteger(v) || v < 0) return false;
+  }
+  return true;
+}
+
 /**
  * Apply the fracture transform in place to an xyzw-packed bake
  * array (4 floats per point, w untouched):
@@ -156,33 +223,75 @@ export function applyVoronoiFracture(
   const n = Math.max(0, Math.floor(count));
   if (n === 0 || data.length < n * 4) return { cells: 0, nonEmptyCells: 0 };
   // Unpack xyz once (sites/assignment work on 3-packed data).
-  const xyz = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    xyz[i * 3] = data[i * 4];
-    xyz[i * 3 + 1] = data[i * 4 + 1];
-    xyz[i * 3 + 2] = data[i * 4 + 2];
-  }
+  const xyz = unpackFractureXyz(data, n);
   const sites = buildFractureSites(xyz, n, options.cells, options.seed);
   const k = Math.floor(sites.length / 3);
   if (k === 0) return { cells: 0, nonEmptyCells: 0 };
   const { assignment, centroids, cellCounts } = assignFractureCells(xyz, n, sites);
-  let cx = 0; let cy = 0; let cz = 0;
-  for (let i = 0; i < n; i++) { cx += xyz[i * 3]; cy += xyz[i * 3 + 1]; cz += xyz[i * 3 + 2]; }
-  cx /= n; cy /= n; cz /= n;
   const gap = clampFractureGap(options.gap);
-  const shrink = 1 - 0.3 * gap;
   let nonEmpty = 0;
   for (let c = 0; c < k; c++) if (cellCounts[c] > 0) nonEmpty += 1;
   if (gap === 0) return { cells: k, nonEmptyCells: nonEmpty };
+  applyFractureTransform(data, xyz, n, assignment, centroids, gap);
+  return { cells: k, nonEmptyCells: nonEmpty };
+}
+
+/**
+ * The assignment-driven twin of applyVoronoiFracture (Phase 20
+ * stage 1, fragment restore): the division is GIVEN — a saved
+ * fragment collection's per-point body assignment, compacted
+ * over non-empty bodies — instead of derived from sites, and
+ * each body's centroid is recomputed as the mean of its members
+ * in the pre-transform cloud. Everything after that is the
+ * shared transform tail, so when the given assignment is the
+ * one the sites path would have produced (with the same gap),
+ * the transformed cloud is byte-identical to
+ * applyVoronoiFracture's output.
+ *
+ * A malformed assignment (wrong length, negative or
+ * non-integer entries) changes nothing and reports zero cells.
+ * With gap = 0 the array is bit-identical afterwards.
+ * Returns the assignment's index span as `cells` (max index + 1)
+ * and the number of bodies that actually hold points.
+ */
+export function applyVoronoiFractureWithAssignment(
+  data: Float32Array,
+  count: number,
+  assignment: ArrayLike<number>,
+  gapValue: number,
+): { cells: number; nonEmptyCells: number } {
+  const n = Math.max(0, Math.floor(count));
+  if (n === 0 || data.length < n * 4) return { cells: 0, nonEmptyCells: 0 };
+  if (!isValidAssignment(assignment, n)) return { cells: 0, nonEmptyCells: 0 };
+  const xyz = unpackFractureXyz(data, n);
+  let cells = 0;
+  for (let i = 0; i < n; i++) if (assignment[i] + 1 > cells) cells = assignment[i] + 1;
+  // Body centroids: member means, accumulated in float64 and
+  // stored through a Float32Array exactly like
+  // assignFractureCells, so the values round the same way.
+  const sums = new Float64Array(cells * 3);
+  const counts = new Int32Array(cells);
   for (let i = 0; i < n; i++) {
     const c = assignment[i];
-    const mx = centroids[c * 3]; const my = centroids[c * 3 + 1]; const mz = centroids[c * 3 + 2];
-    const o = i * 4;
-    data[o] = mx + (data[o] - mx) * shrink + (mx - cx) * gap;
-    data[o + 1] = my + (data[o + 1] - my) * shrink + (my - cy) * gap;
-    data[o + 2] = mz + (data[o + 2] - mz) * shrink + (mz - cz) * gap;
+    counts[c] += 1;
+    sums[c * 3] += xyz[i * 3];
+    sums[c * 3 + 1] += xyz[i * 3 + 1];
+    sums[c * 3 + 2] += xyz[i * 3 + 2];
   }
-  return { cells: k, nonEmptyCells: nonEmpty };
+  const centroids = new Float32Array(cells * 3);
+  let nonEmpty = 0;
+  for (let c = 0; c < cells; c++) {
+    if (counts[c] > 0) {
+      nonEmpty += 1;
+      centroids[c * 3] = sums[c * 3] / counts[c];
+      centroids[c * 3 + 1] = sums[c * 3 + 1] / counts[c];
+      centroids[c * 3 + 2] = sums[c * 3 + 2] / counts[c];
+    }
+  }
+  const gap = clampFractureGap(gapValue);
+  if (gap === 0) return { cells, nonEmptyCells: nonEmpty };
+  applyFractureTransform(data, xyz, n, assignment, centroids, gap);
+  return { cells, nonEmptyCells: nonEmpty };
 }
 
 // ── Rigid body cell data (Phase AU) ────────────────────────────
@@ -215,64 +324,60 @@ export interface FractureCellData {
   bodyCount: number;
 }
 
-export function buildFractureCellData(
-  data: Float32Array,
-  count: number,
-  options: VoronoiFractureOptions,
-): FractureCellData | null {
-  const n = Math.max(0, Math.floor(count));
-  if (n === 0 || data.length < n * 4) return null;
-  const xyz = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    xyz[i * 3] = data[i * 4];
-    xyz[i * 3 + 1] = data[i * 4 + 1];
-    xyz[i * 3 + 2] = data[i * 4 + 2];
-  }
-  const sites = buildFractureSites(xyz, n, options.cells, options.seed);
-  const k = Math.floor(sites.length / 3);
-  if (k === 0) return null;
-  const { assignment, centroids, cellCounts } = assignFractureCells(xyz, n, sites);
-  let cx = 0; let cy = 0; let cz = 0;
-  for (let i = 0; i < n; i++) { cx += xyz[i * 3]; cy += xyz[i * 3 + 1]; cz += xyz[i * 3 + 2]; }
-  cx /= n; cy /= n; cz /= n;
-  const gap = clampFractureGap(options.gap);
+/**
+ * The shared cell-data tail: given the pre-transform cloud and
+ * a COMPACTED assignment (indices 0..bodyCount-1, every body
+ * non-empty), recompute each body's centroid (member mean),
+ * transformed centroid, per-point local offsets and radii.
+ * Member sums accumulate in float64 in point order and the
+ * pre-transform centroids pass through a Float32Array, exactly
+ * as assignFractureCells produces them — so the sites path and
+ * the assignment path agree bit for bit on the same division.
+ * `gap` must already be clamped.
+ */
+function buildCellDataFromCompactAssignment(
+  xyz: Float32Array,
+  n: number,
+  assignment: Int32Array,
+  bodyCount: number,
+  gap: number,
+): FractureCellData {
+  const [cx, cy, cz] = fractureCloudCentre(xyz, n);
   const shrink = 1 - 0.3 * gap;
-  // Compact the non-empty cells into body indices.
-  const bodyOf = new Int32Array(k).fill(-1);
-  let bodyCount = 0;
-  for (let c = 0; c < k; c++) if (cellCounts[c] > 0) { bodyOf[c] = bodyCount; bodyCount += 1; }
-  if (bodyCount === 0) return null;
-  const outAssignment = new Int32Array(n);
-  const localOffsets = new Float32Array(n * 3);
-  const outCentroids = new Float32Array(bodyCount * 3);
-  const radii = new Float32Array(bodyCount);
-  const coreRadii = new Float32Array(bodyCount);
+  const sums = new Float64Array(bodyCount * 3);
   const outCounts = new Int32Array(bodyCount);
-  const sumSq = new Float64Array(bodyCount);
-  for (let c = 0; c < k; c++) {
-    const b = bodyOf[c];
-    if (b < 0) continue;
+  for (let i = 0; i < n; i++) {
+    const b = assignment[i];
+    outCounts[b] += 1;
+    sums[b * 3] += xyz[i * 3];
+    sums[b * 3 + 1] += xyz[i * 3 + 1];
+    sums[b * 3 + 2] += xyz[i * 3 + 2];
+  }
+  const centroids = new Float32Array(bodyCount * 3);
+  const outCentroids = new Float32Array(bodyCount * 3);
+  for (let b = 0; b < bodyCount; b++) {
+    centroids[b * 3] = sums[b * 3] / outCounts[b];
+    centroids[b * 3 + 1] = sums[b * 3 + 1] / outCounts[b];
+    centroids[b * 3 + 2] = sums[b * 3 + 2] / outCounts[b];
     // The transformed centroid: the shrink acts around the
     // centroid itself, so only the centre-push moves it.
-    outCentroids[b * 3] = centroids[c * 3] + (centroids[c * 3] - cx) * gap;
-    outCentroids[b * 3 + 1] = centroids[c * 3 + 1] + (centroids[c * 3 + 1] - cy) * gap;
-    outCentroids[b * 3 + 2] = centroids[c * 3 + 2] + (centroids[c * 3 + 2] - cz) * gap;
-    outCounts[b] = cellCounts[c];
+    outCentroids[b * 3] = centroids[b * 3] + (centroids[b * 3] - cx) * gap;
+    outCentroids[b * 3 + 1] = centroids[b * 3 + 1] + (centroids[b * 3 + 1] - cy) * gap;
+    outCentroids[b * 3 + 2] = centroids[b * 3 + 2] + (centroids[b * 3 + 2] - cz) * gap;
   }
+  const localOffsets = new Float32Array(n * 3);
+  const radii = new Float32Array(bodyCount);
+  const coreRadii = new Float32Array(bodyCount);
+  const sumSq = new Float64Array(bodyCount);
   for (let i = 0; i < n; i++) {
-    const c = assignment[i];
-    const b = bodyOf[c];
-    outAssignment[i] = b;
-    const mx = centroids[c * 3]; const my = centroids[c * 3 + 1]; const mz = centroids[c * 3 + 2];
+    const b = assignment[i];
+    const mx = centroids[b * 3]; const my = centroids[b * 3 + 1]; const mz = centroids[b * 3 + 2];
     const px = mx + (xyz[i * 3] - mx) * shrink + (mx - cx) * gap;
     const py = my + (xyz[i * 3 + 1] - my) * shrink + (my - cy) * gap;
     const pz = mz + (xyz[i * 3 + 2] - mz) * shrink + (mz - cz) * gap;
-    const lx = px - outCentroids[b * 3];
-    const ly = py - outCentroids[b * 3 + 1];
-    const lz = pz - outCentroids[b * 3 + 2];
-    localOffsets[i * 3] = lx;
-    localOffsets[i * 3 + 1] = ly;
-    localOffsets[i * 3 + 2] = lz;
+    localOffsets[i * 3] = px - outCentroids[b * 3];
+    localOffsets[i * 3 + 1] = py - outCentroids[b * 3 + 1];
+    localOffsets[i * 3 + 2] = pz - outCentroids[b * 3 + 2];
     // Measure the radii from the STORED (float32) offsets, so
     // the bounding radius covers exactly what consumers read.
     const sx = localOffsets[i * 3];
@@ -287,7 +392,7 @@ export function buildFractureCellData(
     coreRadii[b] = Math.sqrt(sumSq[b] / Math.max(1, outCounts[b]));
   }
   return {
-    assignment: outAssignment,
+    assignment,
     localOffsets,
     centroids: outCentroids,
     radii,
@@ -295,4 +400,62 @@ export function buildFractureCellData(
     cellCounts: outCounts,
     bodyCount,
   };
+}
+
+export function buildFractureCellData(
+  data: Float32Array,
+  count: number,
+  options: VoronoiFractureOptions,
+): FractureCellData | null {
+  const n = Math.max(0, Math.floor(count));
+  if (n === 0 || data.length < n * 4) return null;
+  const xyz = unpackFractureXyz(data, n);
+  const sites = buildFractureSites(xyz, n, options.cells, options.seed);
+  const k = Math.floor(sites.length / 3);
+  if (k === 0) return null;
+  const { assignment, cellCounts } = assignFractureCells(xyz, n, sites);
+  // Compact the non-empty cells into body indices.
+  const bodyOf = new Int32Array(k).fill(-1);
+  let bodyCount = 0;
+  for (let c = 0; c < k; c++) if (cellCounts[c] > 0) { bodyOf[c] = bodyCount; bodyCount += 1; }
+  if (bodyCount === 0) return null;
+  const compactAssignment = new Int32Array(n);
+  for (let i = 0; i < n; i++) compactAssignment[i] = bodyOf[assignment[i]];
+  return buildCellDataFromCompactAssignment(xyz, n, compactAssignment, bodyCount, clampFractureGap(options.gap));
+}
+
+/**
+ * The assignment-driven twin of buildFractureCellData (Phase
+ * 20 stage 1, fragment restore): rebuild the body table from a
+ * GIVEN division — a saved fragment collection's assignment —
+ * over the pre-transform cloud, with `gap` the effective gap
+ * the restored bake will use. Centroids, local offsets and
+ * radii are recomputed from the cloud through the same shared
+ * tail as the sites path, so when the given assignment is the
+ * sites-derived one for the same options, the result is
+ * byte-identical to buildFractureCellData's.
+ *
+ * The assignment must be compacted: length === count, every
+ * entry an integer in 0..bodyCount-1 and every body in that
+ * span non-empty (exactly the form parseFragmentCollection
+ * validates). Anything else returns null.
+ */
+export function buildFractureCellDataFromAssignment(
+  data: Float32Array,
+  count: number,
+  assignment: ArrayLike<number>,
+  gapValue: number,
+): FractureCellData | null {
+  const n = Math.max(0, Math.floor(count));
+  if (n === 0 || data.length < n * 4) return null;
+  if (!isValidAssignment(assignment, n)) return null;
+  let bodyCount = 0;
+  for (let i = 0; i < n; i++) if (assignment[i] + 1 > bodyCount) bodyCount = assignment[i] + 1;
+  if (bodyCount === 0) return null;
+  const compactAssignment = Int32Array.from(assignment as ArrayLike<number>);
+  const seen = new Int32Array(bodyCount);
+  for (let i = 0; i < n; i++) seen[compactAssignment[i]] += 1;
+  for (let b = 0; b < bodyCount; b++) if (seen[b] === 0) return null;
+  const xyz = unpackFractureXyz(data, n);
+  return buildCellDataFromCompactAssignment(xyz, n, compactAssignment, bodyCount, clampFractureGap(gapValue));
 }

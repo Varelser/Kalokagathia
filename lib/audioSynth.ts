@@ -4,6 +4,7 @@ import type { SynthEngine } from './audioControllerTypes';
 import {
   dispatchEventRuleActions,
   evaluateEventRules,
+  evaluatePredicateTransitions,
   loadEventRules,
   type SynthNoteAction,
 } from './eventRules';
@@ -123,6 +124,9 @@ export function performSynthNoteAction(
   });
 }
 
+/** Phase 21 stage 2: predicate rising-edge state, per rule id. */
+let predicateTruthState: Map<string, boolean> = new Map();
+
 function fireEventRulesAtStepBoundary(
   synth: SynthEngine,
   nextConfig: ParticleConfig,
@@ -145,6 +149,17 @@ function fireEventRulesAtStepBoundary(
     };
     fire('beat');
     if (stepIndex === 0) fire('pattern-boundary');
+    // Phase 21 stage 2: predicate rules are polled at the same step
+    // boundary and fire on the rising edge of their condition only.
+    // With no predicate rules the transition map stays empty and
+    // nothing fires — the legacy behaviour.
+    const transitions = evaluatePredicateTransitions(rules, ctx, predicateTruthState);
+    predicateTruthState = transitions.next;
+    if (transitions.actions.length > 0) {
+      dispatchEventRuleActions(transitions.actions, {
+        synthNote: (action) => { performSynthNoteAction(synth, nextConfig, action); },
+      });
+    }
   } catch {
     // Rules are an add-on: a storage / evaluation failure must
     // never break the sequencer's own step.

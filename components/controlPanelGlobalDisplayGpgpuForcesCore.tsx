@@ -697,6 +697,48 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       )}
     </div>
 
+    {/* Crowd Steering (Phase 20 stage 2): lib/steering.ts GPU wiring */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Steer Seek （群衆ステアリング）" value={config.gpgpuSteerSeekEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuSteerSeekEnabled', v)} />
+      {config.gpgpuSteerSeekEnabled && (
+        <>
+          <Toggle
+            label="Mode （方式）"
+            value={config.gpgpuSteerSeekMode}
+            options={[{ label: 'Seek', val: 'seek' as const }, { label: 'Arrive', val: 'arrive' as const }, { label: 'Path', val: 'path' as const }, { label: 'State', val: 'state' as const }]}
+            onChange={(v) => updateConfig('gpgpuSteerSeekMode', v)}
+          />
+          <Slider label="Strength （適用ゲイン）" value={config.gpgpuSteerSeekStrength} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuSteerSeekStrength', v)} />
+          <Slider label="Max Speed （目標速度）" value={config.gpgpuSteerSeekMaxSpeed} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuSteerSeekMaxSpeed', v)} />
+          <Slider label="Max Force （力の上限・0で無制限）" value={config.gpgpuSteerSeekMaxForce} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuSteerSeekMaxForce', v)} />
+          <Slider label="Target X （目標点）" value={config.gpgpuSteerSeekTargetX} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekTargetX', v)} />
+          <Slider label="Target Y （目標点）" value={config.gpgpuSteerSeekTargetY} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekTargetY', v)} />
+          <Slider label="Target Z （目標点）" value={config.gpgpuSteerSeekTargetZ} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekTargetZ', v)} />
+          {(config.gpgpuSteerSeekMode === 'arrive' || config.gpgpuSteerSeekMode === 'state') && (
+            <Slider label="Slowing Radius （減速半径）" value={config.gpgpuSteerSeekSlowingRadius} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekSlowingRadius', v)} />
+          )}
+          {config.gpgpuSteerSeekMode === 'state' && (
+            <>
+              <Slider label="Target1 X （状態1の目標）" value={config.gpgpuSteerSeekTarget1X} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekTarget1X', v)} />
+              <Slider label="Target1 Y （状態1の目標）" value={config.gpgpuSteerSeekTarget1Y} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekTarget1Y', v)} />
+              <Slider label="Target1 Z （状態1の目標）" value={config.gpgpuSteerSeekTarget1Z} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekTarget1Z', v)} />
+              <Slider label="State Slot （読む属性スロット）" value={config.gpgpuSteerSeekStateSlot} min={0} max={3} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekStateSlot', Math.round(v))} />
+              <Slider label="State Threshold （切替閾値）" value={config.gpgpuSteerSeekStateThreshold} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuSteerSeekStateThreshold', v)} />
+            </>
+          )}
+          {config.gpgpuSteerSeekMode === 'path' && (
+            <>
+              <Slider label="Path Look Ahead （先読み距離）" value={config.gpgpuSteerSeekPathLookAhead} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekPathLookAhead', v)} />
+              <Slider label="Path Radius （回廊半径・0で常時）" value={config.gpgpuSteerSeekPathRadius} min={0} max={100} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekPathRadius', v)} />
+            </>
+          )}
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            群衆ステアリングは lib/steering.ts の法則（目標速度−現在速度、上限でクランプ）のGPU配線です。Path の経路点列はキー gpgpuSteerSeekPath（&quot;x,y,z;x,y,z;…&quot;、最大8点）で指定します。State は属性スロットの値で状態0（目標へ Seek）／状態1（第2目標へ Arrive）を切り替えます。OFF の間は従来とバイト同一です。
+          </div>
+        </>
+      )}
+    </div>
+
     {/* Vortex */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Vortex Field" value={config.gpgpuVortexEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuVortexEnabled', v)} />

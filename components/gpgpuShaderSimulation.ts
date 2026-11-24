@@ -1,5 +1,5 @@
 export { SIM_VERT, BLIT_FRAG } from "./gpgpuShaderSimulationShared";
-export { SIM_VEL_FRAG, SIM_VEL_FRAG_PHASE19, buildVelocityFragment } from "./gpgpuShaderSimulationVelocity";
+export { SIM_VEL_FRAG, SIM_VEL_FRAG_PHASE19, SIM_VEL_FRAG_PHASE20, buildVelocityFragment } from "./gpgpuShaderSimulationVelocity";
 export type { VelocityFragmentVariantOptions } from "./gpgpuShaderSimulationVelocity";
 export { SIM_POS_FRAG, SIM_POS_FRAG_PHASE19, SIM_POS_FRAG_PHASE19_CELL, buildPositionFragment } from "./gpgpuShaderSimulationPosition";
 export type { PositionFragmentVariantOptions } from "./gpgpuShaderSimulationPosition";

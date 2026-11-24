@@ -757,6 +757,9 @@ export interface AttrConsumers {
    *  group referenced AND the colour drive itself active
    *  (Phase DG). The attribute colour applies to members only. */
   groupColorActive: boolean;
+  /** Velocity pass: crowd steering state mode (Phase 20 stage 2)
+   *  reads a slot to switch between its two targets. */
+  steerStateActive: boolean;
   /** Any consumer at all — the attribute texture is built only then. */
   anyActive: boolean;
 }
@@ -781,6 +784,8 @@ export function resolveAttrConsumers(
     | 'gpgpuGroupColorEnabled'
     | 'gpgpuAttrColorEnabled'
     | 'gpgpuAttrNames'
+    | 'gpgpuSteerSeekEnabled'
+    | 'gpgpuSteerSeekMode'
   >,
 ): AttrConsumers {
   const sizeActive = normalizeAttrSlot(config.gpgpuAttrSizeSlot) >= 0 && (config.gpgpuAttrSizeAmount || 0) !== 0;
@@ -800,6 +805,10 @@ export function resolveAttrConsumers(
   const hasGroupRef = typeof config.gpgpuGroupRef === 'string' && config.gpgpuGroupRef.length > 0;
   const groupKillActive = !!config.gpgpuGroupKillEnabled && hasGroupRef;
   const groupColorActive = !!config.gpgpuGroupColorEnabled && hasGroupRef && colorActive;
+  // Phase 20 stage 2: the steering state mode is a velocity-pass
+  // slot reader like the force drive — it needs the texture
+  // built and the velocity pass's uAttrEnabled raised.
+  const steerStateActive = !!config.gpgpuSteerSeekEnabled && config.gpgpuSteerSeekMode === 'state';
   return {
     sizeActive,
     brightActive,
@@ -808,6 +817,7 @@ export function resolveAttrConsumers(
     colorActive,
     groupKillActive,
     groupColorActive,
-    anyActive: sizeActive || brightActive || forceActive || groupActive || colorActive,
+    steerStateActive,
+    anyActive: sizeActive || brightActive || forceActive || groupActive || colorActive || steerStateActive,
   };
 }

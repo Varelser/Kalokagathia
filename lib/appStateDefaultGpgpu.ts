@@ -641,6 +641,24 @@ f 8 1 105`,
   // General steering avoidance (Phase 15): 0 = off.
   gpgpuSteerAvoid: 0,
   gpgpuSteerAvoidRange: 0,
+  // Crowd steering (Phase 20 stage 2): off = byte-identical.
+  gpgpuSteerSeekEnabled: false,
+  gpgpuSteerSeekMode: 'seek' as const,
+  gpgpuSteerSeekStrength: 1,
+  gpgpuSteerSeekMaxSpeed: 1,
+  gpgpuSteerSeekMaxForce: 0,
+  gpgpuSteerSeekTargetX: 0,
+  gpgpuSteerSeekTargetY: 0,
+  gpgpuSteerSeekTargetZ: 0,
+  gpgpuSteerSeekTarget1X: 0,
+  gpgpuSteerSeekTarget1Y: 0,
+  gpgpuSteerSeekTarget1Z: 0,
+  gpgpuSteerSeekSlowingRadius: 50,
+  gpgpuSteerSeekStateSlot: 0,
+  gpgpuSteerSeekStateThreshold: 0.5,
+  gpgpuSteerSeekPath: '',
+  gpgpuSteerSeekPathLookAhead: 20,
+  gpgpuSteerSeekPathRadius: 0,
   // Spring (to spawn pos)
   gpgpuSpringEnabled: false,
   gpgpuSpringStrength: 1.0,
@@ -686,6 +704,12 @@ f 8 1 105`,
   gpgpuMorphTerrainErosionTalus: 0.5,
   gpgpuMorphTerrainErosionThermalPasses: 24,
   gpgpuMorphTerrainErosionSeed: 0,
+  // Erosion mask (Phase 20 stage 3): off by default (identity).
+  gpgpuMorphTerrainErosionMaskMode: 'off' as const,
+  gpgpuMorphTerrainErosionMaskStrength: 1,
+  gpgpuMorphTerrainErosionMaskInvert: false,
+  gpgpuMorphTerrainErosionMaskLow: 0,
+  gpgpuMorphTerrainErosionMaskHigh: 1,
   // Terrain scatter grammar (Phase AI): off by default; the
   // sub-keys at these values resolve to the legacy tiling anyway.
   gpgpuMorphScatterEnabled: false,
@@ -737,6 +761,8 @@ f 8 1 105`,
   gpgpuMorphFractureGap: 0.25,
   // Fragment collection (Phase 17 stage 4): '' = no saved division.
   gpgpuFragmentCollectionJson: '',
+  // Fragment restore (Phase 20 stage 1): off = saved division never applied.
+  gpgpuFragmentCollectionRestoreEnabled: false,
   // Morph-surface fibers (Phase AG): off = nothing drawn.
   gpgpuMorphFiberEnabled: false,
   gpgpuMorphFiberCount: 600,
@@ -1080,6 +1106,16 @@ f 8 1 105`,
   gpgpuRigidGlueStrength: 45,
   gpgpuRigidStartSleeping: false,
   gpgpuRigidFloorTerrain: false,
+  // XPBD joints + stress breaking (Phase 20 stage 1): off by
+  // default — identity.
+  gpgpuRigidJointEnabled: false,
+  gpgpuRigidJointCompliance: 0,
+  gpgpuRigidJointBreakThreshold: 0,
+  gpgpuRigidStressBreakEnabled: false,
+  gpgpuRigidStressPropagation: 0.5,
+  gpgpuRigidConvexEnabled: false,
+  // Cluster colouring (Phase 20 stage 1): off = legacy draw.
+  gpgpuRigidClusterColorEnabled: false,
   // WebGPU Compute Backend
   gpgpuWebGPUEnabled: false,
   gpgpuExecutionPreference: 'auto',

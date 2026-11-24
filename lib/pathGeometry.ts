@@ -303,7 +303,7 @@ export function pathTangentAt(table: ArcLengthTable, s: number): PathPt {
   const n = Math.floor(table.points.length / 2);
   if (n <= 1 || table.length <= 0) return { x: 1, y: 0 };
   const target = Math.max(0, Math.min(table.length, s));
-  let k = tableSegmentIndex(table, target);
+  const k = tableSegmentIndex(table, target);
   const dirAt = (j: number): PathPt | null => {
     const dx = table.points[(j + 1) * 2] - table.points[j * 2];
     const dy = table.points[(j + 1) * 2 + 1] - table.points[j * 2 + 1];
@@ -1001,8 +1001,8 @@ export interface ResolvedPathPoint {
 export function resolvePathPoint(geom: PathGeometry, s01: number, subpathMode: MorphPathSubpathMode): ResolvedPathPoint {
   const subs = geom.subpaths;
   const s = Math.max(0, Math.min(1, s01));
-  let index = 0;
-  let local = 0;
+  let index: number;
+  let local: number;
   if (subpathMode === 'even' && subs.length > 1) {
     index = Math.min(subs.length - 1, Math.floor(s * subs.length));
     local = (s * subs.length - index) * subs[index].length;
@@ -1075,8 +1075,8 @@ export function offsetPolylinePoints(
     const next = closed ? (i + 1) % ring : Math.min(ring - 1, i + 1);
     const dIn = dirAt(prev, i);
     const dOut = dirAt(i, next);
-    let nx = -dIn.y + -dOut.y;
-    let ny = dIn.x + dOut.x;
+    const nx = -dIn.y + -dOut.y;
+    const ny = dIn.x + dOut.x;
     const nLen = Math.hypot(nx, ny);
     let mx: number;
     let my: number;

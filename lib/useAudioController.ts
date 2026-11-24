@@ -6,7 +6,8 @@ import {
   createAudioBridgeSessionId,
   isAudioBridgeHostMessage,
 } from './audioBridge';
-import { applySynthSettings, restartSynthSequencer } from './audioSynth';
+import { applySynthSettings, performSynthNoteAction, restartSynthSequencer } from './audioSynth';
+import { dispatchEventRuleActions, setEventRuleActionPerformer } from './eventRules';
 import { ZERO_AUDIO_LEVELS } from './audioControllerTypes';
 import type { AnalyzerLike, AudioLevels, Notice, SynthEngine } from './audioControllerTypes';
 import { startSelectedAudioSource, stopAudioResources } from './audioSourceManager';
@@ -44,6 +45,19 @@ export function useAudioController({ config, latestConfigRef, setConfig }: UseAu
   const dismissAudioNotice = useCallback(() => {
     setAudioNotice(null);
   }, []);
+
+  // Phase 21 stage 2: live event rules (MIDI note-ons, rigid-body
+  // contacts) perform their synth-note actions on this controller's
+  // engine with the latest config. performSynthNoteAction itself
+  // refuses while audio is off, so registration is unconditional.
+  useEffect(() => {
+    setEventRuleActionPerformer((actions) => {
+      dispatchEventRuleActions(actions, {
+        synthNote: (action) => { performSynthNoteAction(synthEngineRef.current, latestConfigRef.current, action); },
+      });
+    });
+    return () => setEventRuleActionPerformer(null);
+  }, [latestConfigRef]);
 
   const postToStandaloneSynthWindow = useCallback((message: unknown) => {
     if (typeof window === 'undefined') {

@@ -51,15 +51,16 @@ const recordPath = args[1] ? join(ROOT, args[1]) : DEFAULT_RECORD_PATH;
 await build({
   stdin: {
     contents: `
-      export { SIM_VEL_FRAG, SIM_VEL_FRAG_PHASE19, buildVelocityFragment } from './components/gpgpuShaderSimulationVelocity.ts';
-      export { VEL_FRAG_PREAMBLE, VEL_FRAG_PREAMBLE_PHASE19 } from './components/gpgpuShaderSimulationVelocityPreamble.ts';
+      export { SIM_VEL_FRAG, SIM_VEL_FRAG_PHASE19, SIM_VEL_FRAG_PHASE20, buildVelocityFragment } from './components/gpgpuShaderSimulationVelocity.ts';
+      export { VEL_FRAG_PREAMBLE, VEL_FRAG_PREAMBLE_PHASE19, VEL_FRAG_PREAMBLE_PHASE20 } from './components/gpgpuShaderSimulationVelocityPreamble.ts';
       export { VEL_FRAG_HELPERS } from './components/gpgpuShaderSimulationVelocityHelpers.ts';
       export { VEL_FRAG_MAIN_FORCES } from './components/gpgpuShaderSimulationVelocityMainForces.ts';
       export { VEL_FRAG_MAIN_SPH_GRAINS, VEL_FRAG_MAIN_SPH_GRAINS_PHASE19 } from './components/gpgpuShaderSimulationVelocityMainSphGrains.ts';
       export { VEL_FRAG_MAIN_TAIL, VEL_FRAG_MAIN_TAIL_PHASE19 } from './components/gpgpuShaderSimulationVelocityMainTail.ts';
       export { SIM_POS_FRAG, SIM_POS_FRAG_PHASE19, SIM_POS_FRAG_PHASE19_CELL, buildPositionFragment } from './components/gpgpuShaderSimulationPosition.ts';
-      export { DRAW_VERT, DRAW_VERT_PHASE19, DRAW_FRAG, DRAW_FRAG_PHASE19 } from './components/gpgpuShaderPoints.ts';
+      export { DRAW_VERT, DRAW_VERT_PHASE19, DRAW_VERT_PHASE20, DRAW_FRAG, DRAW_FRAG_PHASE19, DRAW_FRAG_PHASE20, buildDrawVert, buildDrawFrag } from './components/gpgpuShaderPoints.ts';
       export { GEOM_VERT, GEOM_VERT_PHASE19, GEOM_FRAG, GEOM_FRAG_PHASE19 } from './components/gpgpuShaderVolumes.ts';
+      export { AUX_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG_PHASE20, AUX_POS_FRAG_PHASE20, buildAuxVelFrag, buildAuxPosFrag } from './components/gpgpuShaderAux.ts';
     `,
     resolveDir: ROOT, loader: 'ts',
   },
@@ -96,13 +97,37 @@ const parts = {
   DRAW_VERT_PHASE19: lib.DRAW_VERT_PHASE19,
   DRAW_FRAG: lib.DRAW_FRAG,
   DRAW_FRAG_PHASE19: lib.DRAW_FRAG_PHASE19,
+  // Phase 20 stage 1 string variants: the cluster-colouring
+  // additions splice in only behind the clusterColor builder
+  // option; the defaults and Phase 19 variants above stay at
+  // their v2.00 / Phase 19 hashes.
+  DRAW_VERT_PHASE20: lib.DRAW_VERT_PHASE20,
+  DRAW_FRAG_PHASE20: lib.DRAW_FRAG_PHASE20,
+  'buildDrawVert(phase19+phase20)': lib.buildDrawVert({ vellumCrack: true, clusterColor: true }),
+  'buildDrawFrag(phase19+phase20)': lib.buildDrawFrag({ vellumCrack: true, clusterColor: true }),
   GEOM_VERT: lib.GEOM_VERT,
   GEOM_VERT_PHASE19: lib.GEOM_VERT_PHASE19,
   GEOM_FRAG: lib.GEOM_FRAG,
   GEOM_FRAG_PHASE19: lib.GEOM_FRAG_PHASE19,
   'buildVelocityFragment(phase19)': lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true }),
+  // Phase 20 stage 2 string variants: the crowd-steering
+  // additions (preamble uniform set + 'steer-seek' chunk) splice
+  // in only behind the steeringSeek builder option; every part
+  // above stays at its shipped hash.
+  VEL_FRAG_PREAMBLE_PHASE20: lib.VEL_FRAG_PREAMBLE_PHASE20,
+  SIM_VEL_FRAG_PHASE20: lib.SIM_VEL_FRAG_PHASE20,
+  'buildVelocityFragment(phase20)': lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true, steeringSeek: true }),
+  'buildVelocityFragment(steering-only)': lib.buildVelocityFragment('', '', { steeringSeek: true }),
   'buildPositionFragment(phase19)': lib.buildPositionFragment({ grainsProjection: true }),
   'buildPositionFragment(phase19-cell)': lib.buildPositionFragment({ grainsProjection: true, grainsCellSort: true }),
+  // Phase 20 stage 4 string variants: the Aux event pool pair.
+  // The defaults pin the v2.01.0 strings; the PHASE20 variants
+  // carry the bounceSplash SDF contact source (UE5 #22), spliced
+  // in only behind the sdfSplash builder option.
+  AUX_VEL_FRAG: lib.AUX_VEL_FRAG,
+  AUX_POS_FRAG: lib.AUX_POS_FRAG,
+  AUX_VEL_FRAG_PHASE20: lib.AUX_VEL_FRAG_PHASE20,
+  AUX_POS_FRAG_PHASE20: lib.AUX_POS_FRAG_PHASE20,
 };
 const report = { version: 1, parts: {} };
 for (const [name, s] of Object.entries(parts)) report.parts[name] = measure(s);
@@ -120,6 +145,11 @@ const invariants = {
   positionPhase19IsVariant: lib.buildPositionFragment({ grainsProjection: true }) === lib.SIM_POS_FRAG_PHASE19,
   positionCellIsVariant: lib.buildPositionFragment({ grainsProjection: true, grainsCellSort: true }) === lib.SIM_POS_FRAG_PHASE19_CELL,
   positionCellNeedsProjection: lib.buildPositionFragment({ grainsCellSort: true }) === lib.SIM_POS_FRAG,
+  phase20SnippetIsVariant: lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true, steeringSeek: true }) === lib.SIM_VEL_FRAG_PHASE20,
+  steeringOnlyDiffersFromStock: lib.buildVelocityFragment('', '', { steeringSeek: true }) !== lib.SIM_VEL_FRAG,
+  auxDefaultIsStock: lib.buildAuxVelFrag() === lib.AUX_VEL_FRAG && lib.buildAuxPosFrag() === lib.AUX_POS_FRAG,
+  auxPhase20IsVariant: lib.buildAuxVelFrag({ sdfSplash: true }) === lib.AUX_VEL_FRAG_PHASE20
+    && lib.buildAuxPosFrag({ sdfSplash: true }) === lib.AUX_POS_FRAG_PHASE20,
 };
 
 console.log('phase18-shader-hash: GPGPU simulation shader byte identity');
@@ -133,10 +163,16 @@ console.log(`  invariant buildPositionFragment() === SIM_POS_FRAG: ${invariants.
 console.log(`  invariant buildPositionFragment(phase19) === SIM_POS_FRAG_PHASE19: ${invariants.positionPhase19IsVariant}`);
 console.log(`  invariant buildPositionFragment(phase19-cell) === SIM_POS_FRAG_PHASE19_CELL: ${invariants.positionCellIsVariant}`);
 console.log(`  invariant buildPositionFragment(cell-only) === SIM_POS_FRAG: ${invariants.positionCellNeedsProjection}`);
+console.log(`  invariant buildVelocityFragment(phase20) === SIM_VEL_FRAG_PHASE20: ${invariants.phase20SnippetIsVariant}`);
+console.log(`  invariant buildVelocityFragment(steering-only) !== SIM_VEL_FRAG: ${invariants.steeringOnlyDiffersFromStock}`);
+console.log(`  invariant buildAuxVelFrag()/buildAuxPosFrag() === stock pair: ${invariants.auxDefaultIsStock}`);
+console.log(`  invariant buildAuxVelFrag(sdf)/buildAuxPosFrag(sdf) === PHASE20 pair: ${invariants.auxPhase20IsVariant}`);
 if (!invariants.concatenationMatches || !invariants.emptySnippetIsStock
   || !invariants.phase19SnippetIsVariant || !invariants.positionDefaultIsStock
   || !invariants.positionPhase19IsVariant || !invariants.positionCellIsVariant
-  || !invariants.positionCellNeedsProjection) {
+  || !invariants.positionCellNeedsProjection || !invariants.phase20SnippetIsVariant
+  || !invariants.steeringOnlyDiffersFromStock
+  || !invariants.auxDefaultIsStock || !invariants.auxPhase20IsVariant) {
   console.error('  result: FAIL — structural invariant broken');
   process.exit(1);
 }

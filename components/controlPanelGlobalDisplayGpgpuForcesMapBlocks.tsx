@@ -152,6 +152,10 @@ const DERIVED_KIND_LABELS: Record<TerrainDerivedMapKind, string> = {
   normal: '法線',
   slope: '勾配',
   curvature: '曲率',
+  flow: '流量',
+  deposit: '堆積',
+  erosion: '侵食量',
+  moisture: '湿り気',
 };
 
 const AF_SOURCE_KIND_LABELS: Record<AfMapSourceKind, string> = {
@@ -250,20 +254,25 @@ const DerivedSourceButtons: React.FC<{
  */
 
 export const TerrainDerivedMapsBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
-  const amp = config.gpgpuMorphTerrainAmplitude;
-  const freq = config.gpgpuMorphTerrainFrequency;
-  const octaves = config.gpgpuMorphTerrainOctaves;
-  const terrainSeed = config.gpgpuMorphTerrainSeed;
   const seed = config.gpgpuSeed;
+  // Phase 20 stage 3: the previews read the SAME terrain options
+  // as the PNG export (terrainOptionsFromConfig — generation
+  // recipe, terrace steps, erosion and its mask, the tunnel
+  // strip). Previously the preview built a bare
+  // {amplitude, frequency, octaves, seed} object, so it showed
+  // the un-eroded fbm field while the export showed the carved
+  // landscape — the two disagreed.
+  const terrainKey = JSON.stringify(terrainOptionsFromConfig(config));
   const previews = React.useMemo(() => {
-    const terrain = { amplitude: amp, frequency: freq, octaves, seed: terrainSeed };
+    const terrain = terrainOptionsFromConfig(config);
     const out = {} as Record<TerrainDerivedMapKind, string>;
     for (const kind of TERRAIN_DERIVED_KINDS) {
       const canvas = getTerrainDerivedMapCanvas(kind, terrain, seed);
       out[kind] = canvas ? canvas.toDataURL('image/png') : '';
     }
     return out;
-  }, [amp, freq, octaves, terrainSeed, seed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terrainKey, seed]);
   const exportPng = (kind: TerrainDerivedMapKind) => {
     const canvas = getTerrainDerivedMapCanvas(kind, terrainOptionsFromConfig(config), seed);
     if (!canvas) return;

@@ -65,7 +65,8 @@ import {
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
-import { resolveRigid, stepRigidBodies, writeRigidBodyTexture } from '../lib/rigidBodies';
+import { drainRigidContactEvents, resolveRigid, stepRigidBodies, writeRigidBodyTexture } from '../lib/rigidBodies';
+import { fireEventRulesLive, getEventRuleActionPerformer } from '../lib/eventRules';
 import { getTerrainHeightfield } from '../lib/terrainHeightfield';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { getDeterministicRotationFrame, isDeterministicJobActive } from '../lib/sceneRotationDeterminism';
@@ -647,6 +648,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     vellumComponentTexRef,
     vellumComponentsRef,
     rigidCellTexRef,
+    rigidClusterLutTexRef,
     rigidBodyTexRef,
     rigidBodyDataRef,
     rigidSolverRef,
@@ -1009,9 +1011,32 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           friction: rigid.friction,
           glueEnabled: rigid.glueEnabled,
           glueStrength: rigid.glueStrength,
+          // Stress breaking + OBB shapes (Phase 20 stage 1):
+          // step-time switches, resolved through the same
+          // resolveRigid call. Off/absent keeps the legacy
+          // break conditions and sphere paths verbatim; the
+          // joints themselves are build-time state (built in
+          // useGpgpuRuntime from the same resolution).
+          stressBreakEnabled: rigid.stressBreakEnabled,
+          stressPropagation: rigid.stressPropagation,
+          convexEnabled: rigid.convexEnabled,
         });
         writeRigidBodyTexture(rigidSolver, rigidBodyDataRef.current);
         rigidBodyTexRef.current.needsUpdate = true;
+        // Phase 21 stage 3: new rigid contacts fire rigid-contact
+        // event rules through the live performer. Draining always
+        // happens (the pending list is capped regardless); firing
+        // is capped per frame and skipped entirely with no
+        // performer registered, so rule-free scenes pay only the
+        // drain. vel carries the impact Δv for conditions.
+        const contactEvents = drainRigidContactEvents(rigidSolver);
+        if (contactEvents.length > 0 && getEventRuleActionPerformer()) {
+          const fireCap = Math.min(contactEvents.length, 4);
+          for (let e = 0; e < fireCap; e++) {
+            const ev = contactEvents[e];
+            fireEventRulesLive({ type: 'rigid-contact' }, { vel: ev.impact, x: ev.impact });
+          }
+        }
       }
       // Vellum (Phase AR): the tear state's ping-pong for this
       // frame (the pool exists only while a severing rule is
@@ -1497,6 +1522,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       vellumStateTexture: vellumStateRtRef.current
         ? (vellumStatePingIsA.current ? vellumStateRtRef.current.a.texture : vellumStateRtRef.current.b.texture)
         : null,
+      rigidCellTexture: rigidCellTexRef.current,
+      rigidClusterLutTexture: rigidClusterLutTexRef.current,
       texSize,
       time: timeRef.current,
       viewportSizePx: { x: gl.domElement.width, y: gl.domElement.height },

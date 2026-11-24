@@ -3,6 +3,7 @@ export {
   SIM_VERT,
   SIM_VEL_FRAG,
   SIM_VEL_FRAG_PHASE19,
+  SIM_VEL_FRAG_PHASE20,
   buildVelocityFragment,
   SIM_POS_FRAG,
   SIM_POS_FRAG_PHASE19,
@@ -22,7 +23,7 @@ export {
   FLIP_VORTICITY_FORCE_FRAG,
   FLIP_CLEAR_FRAG,
 } from "./gpgpuShaderSimulation";
-export { DRAW_VERT, DRAW_VERT_PHASE19, DRAW_FRAG, DRAW_FRAG_PHASE19, buildDrawVert, buildDrawFrag } from "./gpgpuShaderPoints";
+export { DRAW_VERT, DRAW_VERT_PHASE19, DRAW_VERT_PHASE20, DRAW_FRAG, DRAW_FRAG_PHASE19, DRAW_FRAG_PHASE20, buildDrawVert, buildDrawFrag } from "./gpgpuShaderPoints";
 export {
   TRAIL_VERT,
   TRAIL_FRAG,

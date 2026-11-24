@@ -11,8 +11,18 @@
 // steering form (desired velocity minus current velocity, clamped
 // to a max force), so a later GPU twin has an exact specification
 // to mirror, the same discipline lib/particleLifeBehavior.ts uses.
+//
+// Phase 20 stage 2: the GPU twin now exists — the 'steer-seek'
+// force chunk in the velocity pass (GLSL in
+// components/gpgpuShaderSimulationVelocityMainForces.ts, WGSL in
+// lib/webgpuCompute.ts), spliced in only by the Phase 20 shader
+// variant while gpgpuSteerSeekEnabled is on, so the OFF path is
+// still byte-identical. The pure functions above remain the exact
+// specification the twins mirror; resolveSteeringSeek below is
+// the single resolution point both passes read.
 
 import type { Vec3Like } from './particleLifeBehavior';
+import type { ParticleConfig } from '../types';
 
 export type { Vec3Like };
 
@@ -209,6 +219,100 @@ export interface SteeringStateTargets {
  * Steering force for the particle's current two-state reading:
  * pick the state's target and behaviour, then seek / arrive.
  */
+// ---------------------------------------------------------------------------
+// Phase 20 stage 2 — GPU wiring resolution (config -> uniform set)
+
+/** Max path points the GPU twins carry (uniform array size). */
+export const STEERING_PATH_MAX = 8;
+
+/** Mode ids shared by the GLSL / WGSL twins and the passes. */
+export const STEER_SEEK_MODE_IDS = { seek: 0, arrive: 1, path: 2, state: 3 } as const;
+
+/**
+ * Parse the gpgpuSteerSeekPath key: semicolon-separated "x,y,z"
+ * triples (y may be omitted, PathPt-style, defaulting z to 0 —
+ * a two-component entry reads as x,y with z = 0). Malformed
+ * entries are skipped, non-finite numbers reject the entry, and
+ * the result is capped at STEERING_PATH_MAX points.
+ */
+export function parseSteeringPath(text?: string | null): Vec3Like[] {
+  if (!text) return [];
+  const points: Vec3Like[] = [];
+  for (const entry of String(text).split(';')) {
+    const parts = entry.split(',').map((s) => Number(s.trim()));
+    if (parts.length < 2 || parts.length > 3) continue;
+    if (parts.some((n) => !Number.isFinite(n))) continue;
+    points.push(vec(parts[0], parts[1], parts.length === 3 ? parts[2] : 0));
+    if (points.length >= STEERING_PATH_MAX) break;
+  }
+  return points;
+}
+
+/** Pack path points into the uniform array layout (xyz per point). */
+export function packSteeringPath(points: readonly Vec3Like[]): Float32Array {
+  const out = new Float32Array(STEERING_PATH_MAX * 3);
+  const n = Math.min(points.length, STEERING_PATH_MAX);
+  for (let i = 0; i < n; i += 1) {
+    out[i * 3] = points[i].x;
+    out[i * 3 + 1] = points[i].y;
+    out[i * 3 + 2] = points[i].z;
+  }
+  return out;
+}
+
+export interface SteeringSeekResolved {
+  active: boolean;
+  modeId: number;
+  strength: number;
+  maxSpeed: number;
+  maxForce: number;
+  target: Vec3Like;
+  target1: Vec3Like;
+  slowingRadius: number;
+  stateSlot: number;
+  stateThreshold: number;
+  path: Vec3Like[];
+  pathPacked: Float32Array;
+  pathLookAhead: number;
+  pathRadius: number;
+}
+
+const clampNum = (v: number, lo: number, hi: number, fallback: number): number =>
+  (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback);
+
+/**
+ * The single resolution point for the steer-seek keys. Every
+ * consumer (variant selection, WebGL uniforms, WebGPU force
+ * params) reads through here so the clamps can never drift.
+ */
+export function resolveSteeringSeek(config: ParticleConfig): SteeringSeekResolved {
+  const path = parseSteeringPath(config.gpgpuSteerSeekPath);
+  return {
+    active: !!config.gpgpuSteerSeekEnabled,
+    modeId: STEER_SEEK_MODE_IDS[config.gpgpuSteerSeekMode] ?? 0,
+    strength: clampNum(config.gpgpuSteerSeekStrength, 0, 100, 0),
+    maxSpeed: clampNum(config.gpgpuSteerSeekMaxSpeed, 0, 1e6, 0),
+    maxForce: clampNum(config.gpgpuSteerSeekMaxForce, 0, 1e6, 0),
+    target: vec(
+      clampNum(config.gpgpuSteerSeekTargetX, -1e6, 1e6, 0),
+      clampNum(config.gpgpuSteerSeekTargetY, -1e6, 1e6, 0),
+      clampNum(config.gpgpuSteerSeekTargetZ, -1e6, 1e6, 0),
+    ),
+    target1: vec(
+      clampNum(config.gpgpuSteerSeekTarget1X, -1e6, 1e6, 0),
+      clampNum(config.gpgpuSteerSeekTarget1Y, -1e6, 1e6, 0),
+      clampNum(config.gpgpuSteerSeekTarget1Z, -1e6, 1e6, 0),
+    ),
+    slowingRadius: clampNum(config.gpgpuSteerSeekSlowingRadius, 0, 1e6, 0),
+    stateSlot: Math.round(clampNum(config.gpgpuSteerSeekStateSlot, 0, 3, 0)),
+    stateThreshold: clampNum(config.gpgpuSteerSeekStateThreshold, 0, 1, 0.5),
+    path,
+    pathPacked: packSteeringPath(path),
+    pathLookAhead: clampNum(config.gpgpuSteerSeekPathLookAhead, 0, 1e6, 0),
+    pathRadius: clampNum(config.gpgpuSteerSeekPathRadius, 0, 1e6, 0),
+  };
+}
+
 export function steeringForState(
   pos: Vec3Like,
   vel: Vec3Like,

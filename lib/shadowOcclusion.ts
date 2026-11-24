@@ -360,6 +360,12 @@ export interface ShadowSceneConfig {
   gpgpuMorphTerrainErosionTalus: number;
   gpgpuMorphTerrainErosionThermalPasses: number;
   gpgpuMorphTerrainErosionSeed: number;
+  // Erosion mask (Phase 20 stage 3).
+  gpgpuMorphTerrainErosionMaskMode: 'off' | 'height' | 'slope' | 'curvature';
+  gpgpuMorphTerrainErosionMaskStrength: number;
+  gpgpuMorphTerrainErosionMaskInvert: boolean;
+  gpgpuMorphTerrainErosionMaskLow: number;
+  gpgpuMorphTerrainErosionMaskHigh: number;
   gpgpuTerrainMeshTunnel: boolean;
   gpgpuSeed: number;
   gpgpuMorphScale: number;
@@ -437,6 +443,15 @@ export function buildShadowScene(config: ShadowSceneConfig): ShadowScene {
         talus: config.gpgpuMorphTerrainErosionTalus,
         thermalPasses: config.gpgpuMorphTerrainErosionThermalPasses,
         seed: config.gpgpuMorphTerrainErosionSeed,
+        // Erosion mask (Phase 20 stage 3): the occluder follows
+        // the masked field like every other consumer.
+        mask: {
+          mode: config.gpgpuMorphTerrainErosionMaskMode,
+          strength: config.gpgpuMorphTerrainErosionMaskStrength,
+          invert: config.gpgpuMorphTerrainErosionMaskInvert,
+          low: config.gpgpuMorphTerrainErosionMaskLow,
+          high: config.gpgpuMorphTerrainErosionMaskHigh,
+        },
       },
     },
     seed: config.gpgpuSeed,

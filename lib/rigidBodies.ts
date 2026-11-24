@@ -30,12 +30,28 @@
  * than the bounding spheres demand), which keeps the assembled
  * shape stable without an initial explosion. Inertia is the
  * isotropic sphere tensor. There are no convex / mesh shapes, no
- * constraint joints beyond the glue weld below, no friction
+ * constraint joints beyond the glue weld below and the opt-in
+ * centre-distance XPBD joints of Phase 20 stage 1, no friction
  * stacking solver. Glue is a position-level weld between bodies
  * that start adjacent; it breaks on impact (a collision changing
  * a body's velocity by more than the strength key) or on extreme
  * strain. Sleeping bodies wake on impact, on a bond breaking, or
  * when their whole contact component loses floor support.
+ *
+ * Phase 20 stage 1 additions (both strictly opt-in, defaults
+ * keep every legacy path verbatim): XPBD distance joints
+ * between adjacent body centres (the xpbdConstraints
+ * 'joint-distance' socket, CPU side only), and stress-based
+ * bond breaking with propagation — each bond carries an
+ * instantaneous stress and a break hands a fraction of it to
+ * its neighbours, processed as a queue in bond-index order so
+ * failures cascade stepwise instead of all at once. The third
+ * addition is OBB shape collision: while the Convex key is on,
+ * each body carries the OBB fitted to its cell points
+ * (lib/rigidObb.ts) and the pair narrow phase / floor test use
+ * the box instead of the bounding sphere; inertia stays the
+ * sphere tensor, and with the key off no shape is built and
+ * every legacy path runs verbatim.
  *
  * Terrain floor (Phase BA): while the Floor Terrain key is on
  * AND a published heightfield is supplied (the publication
@@ -54,6 +70,9 @@
 
 import type { ParticleConfig } from '../types';
 import type { FractureCellData } from './voronoiFracture';
+import { xpbdAlphaTilde, xpbdBreakExceeded, xpbdDeltaLambda } from './xpbdConstraints';
+import { buildObbsForCells, obbSatContact, obbSupportPoint, placeObb } from './rigidObb';
+import type { RigidObb } from './rigidObb';
 
 /** Hard body budget: the fracture clamp (Phase AG) caps cells at 64. */
 export const RIGID_BODY_MAX = 64;
@@ -93,6 +112,12 @@ export interface RigidBody {
   sleepTimer: number;
   /** Largest velocity change any collision dealt this body in the current substep. */
   impactDeltaV: number;
+  /** OBB collision shape (Phase 20 stage 1): the box fitted to
+   *  the body's cell points in the bake frame, present ONLY
+   *  when the solver was built with the Convex key on (null
+   *  for an empty cell). Absent/null keeps every collision on
+   *  the legacy bounding-sphere paths. */
+  shape?: RigidObb | null;
 }
 
 export interface RigidBond {
@@ -104,16 +129,84 @@ export interface RigidBond {
   restRelQuat: [number, number, number, number];
   restLength: number;
   alive: boolean;
+  /** Instantaneous stress (Phase 20 stage 1): strain plus the
+   *  endpoints' impact Δv normalised by the glue strength,
+   *  refreshed every substep ONLY while the stress-break key is
+   *  on; propagation adds onto it during the break processing.
+   *  While the key is off the field stays 0 and is never read —
+   *  the legacy two break conditions run verbatim. */
+  stress: number;
+}
+
+/**
+ * XPBD distance joint between two body centres (Phase 20
+ * stage 1 — the CPU-side realisation of the 'joint-distance'
+ * receiving socket in lib/xpbdConstraints.ts). Anchors are the
+ * body centres (the XpbdJointSpec anchor fields at [0,0,0]), so
+ * the constraint is C = |posB − posA| − restLength with unit
+ * gradients and the bodies' inverse masses as the weights;
+ * Δλ comes from the shared xpbdDeltaLambda and breaking follows
+ * xpbdBreakExceeded (threshold 0 = unbreakable, metric = the
+ * strain |C| / restLength). Joints exist only when built with
+ * the Joint Enabled key on — the array is empty otherwise and
+ * no code path reads it.
+ */
+export interface RigidJoint {
+  a: number;
+  b: number;
+  restLength: number;
+  /** XPBD compliance α (physical units, α = 0 is rigid). */
+  compliance: number;
+  /** xpbdBreakExceeded semantics: 0 = unbreakable. */
+  breakThreshold: number;
+  /** Accumulated λ of the current substep (reset per substep). */
+  lambda: number;
+  alive: boolean;
+}
+
+/**
+ * A NEW contact that began during stepping (Phase 21 stage 3).
+ * `b` is the other body's index, or -1 for the environment
+ * (floor / heightfield). `impact` is the largest impact Δv the
+ * involved bodies recorded in that substep. Events are pure
+ * bookkeeping: collecting them never alters a body's state.
+ */
+export interface RigidContactEvent {
+  a: number;
+  b: number;
+  impact: number;
 }
 
 export interface RigidSolverState {
   bodies: RigidBody[];
   bonds: RigidBond[];
+  /** XPBD joints (Phase 20 stage 1): empty unless built with
+   *  the Joint Enabled key on. */
+  joints: RigidJoint[];
   /** Per-pair rest distance (i·64+j): min(initial distance, ri + rj). */
   restDist: Float32Array;
   accumulator: number;
   /** Total simulated seconds since creation (diagnostics / tests). */
   time: number;
+  /** Contact keys (a·65+b, floor = a·65+64) touching at the end of
+   *  the last substep — the rising-edge memory for contact events
+   *  (Phase 21 stage 3). */
+  contactKeys: Set<number>;
+  /** New-contact events not yet drained by the caller. Capped;
+   *  see RIGID_CONTACT_EVENT_CAP. */
+  pendingContactEvents: RigidContactEvent[];
+}
+
+/** Cap on undrained contact events: a solver nobody drains (every
+ *  legacy caller) must not accumulate without bound. */
+export const RIGID_CONTACT_EVENT_CAP = 256;
+
+/** Drain the pending new-contact events (Phase 21 stage 3). */
+export function drainRigidContactEvents(state: RigidSolverState): RigidContactEvent[] {
+  if (!state.pendingContactEvents || state.pendingContactEvents.length === 0) return [];
+  const out = state.pendingContactEvents;
+  state.pendingContactEvents = [];
+  return out;
 }
 
 /**
@@ -190,6 +283,23 @@ export interface RigidStepOptions {
   glueEnabled: boolean;
   /** Impact Δv (world / s) above which a body's bonds break. */
   glueStrength: number;
+  /** Stress break (Phase 20 stage 1): while true, bond breaking
+   *  is decided by the per-bond stress (strain + normalised
+   *  impact) with propagation to neighbouring bonds, replacing
+   *  the legacy strain / impact conditions. Absent or false
+   *  keeps the legacy conditions verbatim. */
+  stressBreakEnabled?: boolean;
+  /** Fraction of a broken bond's stress added onto each
+   *  neighbouring bond (0..1, Phase 20 stage 1). Read only
+   *  while stressBreakEnabled is true. */
+  stressPropagation?: number;
+  /** OBB shape collision (Phase 20 stage 1): while true, pairs
+   *  where BOTH bodies carry a fitted shape resolve through
+   *  the SAT narrow phase and the floor test measures the
+   *  shape's support point; pairs with a missing shape, and
+   *  every pair while this is absent/false, run the legacy
+   *  sphere paths verbatim. */
+  convexEnabled?: boolean;
 }
 
 // ── Quaternion helpers (plain arrays, allocation-free in the hot loop) ──
@@ -243,10 +353,29 @@ export function quatRotate(
  */
 export function createRigidSolver(
   cells: FractureCellData,
-  options: { glueEnabled: boolean; startSleeping: boolean },
+  options: {
+    glueEnabled: boolean;
+    startSleeping: boolean;
+    /** XPBD joints (Phase 20 stage 1): while true, a joint is
+     *  built for every pair the glue adjacency rule joins,
+     *  independent of the glue switch itself. Absent/false
+     *  builds no joints at all (legacy state shape). */
+    jointEnabled?: boolean;
+    jointCompliance?: number;
+    jointBreakThreshold?: number;
+    /** OBB shapes (Phase 20 stage 1): while true, each body
+     *  carries the OBB fitted to its cell points. Absent/false
+     *  builds no shapes at all (legacy state shape). */
+    convexEnabled?: boolean;
+  },
 ): RigidSolverState {
   const n = Math.min(cells.bodyCount, RIGID_BODY_MAX);
   const bodies: RigidBody[] = [];
+  // OBB fits (Phase 20 stage 1): computed once here, only while
+  // the Convex key is on — the fit is a pure function of the
+  // cell table (lib/rigidObb.ts), so a rebuild reproduces the
+  // same shapes bit for bit.
+  const obbs = options.convexEnabled ? buildObbsForCells(cells) : null;
   for (let i = 0; i < n; i++) {
     const radius = Math.max(0.001, cells.radii[i] ?? 0.001);
     const mass = Math.max(1, cells.cellCounts[i] ?? 1);
@@ -263,6 +392,7 @@ export function createRigidSolver(
       sleeping: !!options.startSleeping,
       sleepTimer: 0,
       impactDeltaV: 0,
+      ...(obbs ? { shape: obbs[i] ?? null } : {}),
     });
   }
   const restDist = new Float32Array(RIGID_BODY_MAX * RIGID_BODY_MAX);
@@ -295,12 +425,40 @@ export function createRigidSolver(
             restRelQuat: [0, 0, 0, 1],
             restLength: Math.max(d, 0.001),
             alive: true,
+            stress: 0,
           });
         }
       }
     }
   }
-  return { bodies, bonds, restDist, accumulator: 0, time: 0 };
+  // XPBD joints (Phase 20 stage 1): the SAME adjacency rule as
+  // the glue bonds above (centroid distance within
+  // (coreI + coreJ) × GLUE_DISTANCE_FACTOR), built only while
+  // the Joint Enabled key is on. Centre anchors: the rest
+  // length is the centroid distance at build time.
+  const joints: RigidJoint[] = [];
+  if (options.jointEnabled) {
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const dx = bodies[j].pos[0] - bodies[i].pos[0];
+        const dy = bodies[j].pos[1] - bodies[i].pos[1];
+        const dz = bodies[j].pos[2] - bodies[i].pos[2];
+        const d = Math.hypot(dx, dy, dz);
+        if (d <= (bodies[i].coreRadius + bodies[j].coreRadius) * GLUE_DISTANCE_FACTOR) {
+          joints.push({
+            a: i,
+            b: j,
+            restLength: Math.max(d, 0.001),
+            compliance: Math.max(0, options.jointCompliance ?? 0),
+            breakThreshold: Math.max(0, options.jointBreakThreshold ?? 0),
+            lambda: 0,
+            alive: true,
+          });
+        }
+      }
+    }
+  }
+  return { bodies, bonds, joints, restDist, accumulator: 0, time: 0, contactKeys: new Set(), pendingContactEvents: [] };
 }
 
 // ── Stepping ──
@@ -322,6 +480,56 @@ function breakBondsOf(state: RigidSolverState, index: number): void {
       wakeBody(state, bond.b);
     }
   }
+}
+
+/**
+ * Stress-break processing (Phase 20 stage 1): break every live
+ * bond whose instantaneous stress exceeds the strain-break
+ * threshold, as a queue in bond-index order. Each break adds
+ * `propagationRate × (the broken bond's stress)` onto every
+ * still-live bond sharing an endpoint; a neighbour pushed over
+ * the threshold joins the queue, so a failure cascades stepwise
+ * along the bond graph instead of taking the whole component at
+ * once. A rate of 0 adds nothing and nothing spreads. Returns
+ * the number of bonds broken. Exported for the unit tests; the
+ * substep calls it after refreshing the stress field.
+ */
+export function propagateRigidBondBreaks(state: RigidSolverState, propagationRate: number): number {
+  const rate = Math.max(0, Math.min(1, propagationRate));
+  const queued = new Set<number>();
+  const queue: number[] = [];
+  const enqueue = (i: number) => {
+    if (!queued.has(i)) {
+      queued.add(i);
+      queue.push(i);
+    }
+  };
+  state.bonds.forEach((bond, i) => {
+    if (bond.alive && bond.stress > GLUE_STRAIN_BREAK) enqueue(i);
+  });
+  let broken = 0;
+  while (queue.length > 0) {
+    // Bond-index order: always take the smallest queued index.
+    let minPos = 0;
+    for (let k = 1; k < queue.length; k++) if (queue[k] < queue[minPos]) minPos = k;
+    const i = queue.splice(minPos, 1)[0];
+    const bond = state.bonds[i];
+    if (!bond.alive) continue;
+    bond.alive = false;
+    broken += 1;
+    wakeBody(state, bond.a);
+    wakeBody(state, bond.b);
+    if (rate > 0) {
+      state.bonds.forEach((other, j) => {
+        if (!other.alive || j === i) return;
+        if (other.a === bond.a || other.a === bond.b || other.b === bond.a || other.b === bond.b) {
+          other.stress += rate * bond.stress;
+          if (other.stress > GLUE_STRAIN_BREAK) enqueue(j);
+        }
+      });
+    }
+  }
+  return broken;
 }
 
 /**
@@ -353,6 +561,12 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
   const bodies = state.bodies;
   const n = bodies.length;
   for (const body of bodies) body.impactDeltaV = 0;
+  // Phase 21 stage 3: contacts touched during THIS substep, keyed
+  // a·(MAX+1)+b with b = MAX for the environment. Compared against
+  // the previous substep's set at the end to emit rising-edge
+  // contact events. Bookkeeping only — no physics reads this.
+  const touching = new Set<number>();
+  const CONTACT_STRIDE = RIGID_BODY_MAX + 1;
 
   // 1. Integrate forces + positions for awake bodies.
   for (const body of bodies) {
@@ -386,13 +600,37 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
       const groundY = hf
         ? sampleRigidHeightfield(hf, body.pos[0], body.pos[2])
         : options.floorY;
-      const floorDist = body.pos[1] - body.radius - groundY;
-      if (floorDist < 0) {
-        body.pos[1] -= floorDist;
+      if (options.convexEnabled && body.shape) {
+        // OBB floor (Phase 20 stage 1): penetration is measured
+        // at the shape's support point along the floor normal
+        // instead of centre − radius; the correction stays
+        // vertical (the legacy rule), and the contact point is
+        // the support point dropped onto the ground plane. The
+        // ground height is still sampled under the body's
+        // CENTRE (the Phase BA approximation), so a large body
+        // can intersect a steep slope beside its centre exactly
+        // like the sphere path.
         const normal: [number, number, number] = hf
           ? rigidHeightfieldNormal(hf, body.pos[0], body.pos[2])
           : [0, 1, 0];
-        applyContactImpulse(state, i, -1, normal, [body.pos[0], groundY, body.pos[2]], options);
+        const placed = placeObb(body.shape, body.pos, body.quat);
+        const support = obbSupportPoint(placed, [-normal[0], -normal[1], -normal[2]]);
+        const floorDist = support[1] - groundY;
+        if (floorDist < 0) {
+          body.pos[1] -= floorDist;
+          applyContactImpulse(state, i, -1, normal, [support[0], groundY, support[2]], options);
+          touching.add(i * CONTACT_STRIDE + RIGID_BODY_MAX);
+        }
+      } else {
+        const floorDist = body.pos[1] - body.radius - groundY;
+        if (floorDist < 0) {
+          body.pos[1] -= floorDist;
+          const normal: [number, number, number] = hf
+            ? rigidHeightfieldNormal(hf, body.pos[0], body.pos[2])
+            : [0, 1, 0];
+          applyContactImpulse(state, i, -1, normal, [body.pos[0], groundY, body.pos[2]], options);
+          touching.add(i * CONTACT_STRIDE + RIGID_BODY_MAX);
+        }
       }
     }
     const limit = Math.max(0, options.bounceRadius * 1.05 - body.radius);
@@ -423,6 +661,33 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
       const dz = b.pos[2] - a.pos[2];
       const target = state.restDist[i * RIGID_BODY_MAX + j];
       const d2 = dx * dx + dy * dy + dz * dz;
+      if (options.convexEnabled && a.shape && b.shape) {
+        // OBB narrow phase (Phase 20 stage 1): the legacy rest
+        // distance stays the broad phase — a pair that has not
+        // approached closer than it started is never pushed
+        // apart (the tiling stability rule). Inside it the SAT
+        // test decides: boxes whose bounding spheres overlap
+        // but which do not touch pass through untouched, and a
+        // hit corrects along the SAT normal by the SAT depth,
+        // split by inverse mass, through the same impulse call
+        // as the sphere path (friction / restitution / impact
+        // bookkeeping / waking all ride the existing code).
+        if (d2 >= target * target || d2 === 0) continue;
+        const contact = obbSatContact(
+          placeObb(a.shape, a.pos, a.quat),
+          placeObb(b.shape, b.pos, b.quat),
+        );
+        if (!contact.hit) continue;
+        const invSum = (a.sleeping ? 0 : a.invMass) + (b.sleeping ? 0 : b.invMass);
+        if (invSum <= 0) continue;
+        const corrA = a.sleeping ? 0 : (a.invMass / invSum) * contact.depth;
+        const corrB = b.sleeping ? 0 : (b.invMass / invSum) * contact.depth;
+        a.pos[0] -= contact.normal[0] * corrA; a.pos[1] -= contact.normal[1] * corrA; a.pos[2] -= contact.normal[2] * corrA;
+        b.pos[0] += contact.normal[0] * corrB; b.pos[1] += contact.normal[1] * corrB; b.pos[2] += contact.normal[2] * corrB;
+        applyPairImpulse(state, i, j, contact.normal, contact.point, options);
+        touching.add(i * CONTACT_STRIDE + j);
+        continue;
+      }
       if (d2 >= target * target || d2 === 0) continue;
       const d = Math.sqrt(d2);
       const nx = dx / d; const ny = dy / d; const nz = dz / d;
@@ -438,6 +703,7 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
       const py = (a.pos[1] + b.pos[1]) / 2;
       const pz = (a.pos[2] + b.pos[2]) / 2;
       applyPairImpulse(state, i, j, [nx, ny, nz], [px, py, pz], options);
+      touching.add(i * CONTACT_STRIDE + j);
     }
   }
 
@@ -449,26 +715,101 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
         solveBond(state, bond);
       }
     }
-    for (const bond of state.bonds) {
-      if (!bond.alive) continue;
-      const a = bodies[bond.a];
-      const b = bodies[bond.b];
-      const desired = quatRotate(a.quat, bond.restOffsetLocal);
-      const ex = (b.pos[0] - a.pos[0]) - desired[0];
-      const ey = (b.pos[1] - a.pos[1]) - desired[1];
-      const ez = (b.pos[2] - a.pos[2]) - desired[2];
-      const strain = Math.hypot(ex, ey, ez) / bond.restLength;
-      if (strain > GLUE_STRAIN_BREAK) {
-        bond.alive = false;
-        wakeBody(state, bond.a);
-        wakeBody(state, bond.b);
+    if (options.stressBreakEnabled) {
+      // Stress breaking (Phase 20 stage 1): refresh each live
+      // bond's instantaneous stress — the same strain the legacy
+      // check measures, plus the endpoints' impact Δv
+      // normalised by the glue strength (so an impact that
+      // would trip the legacy condition contributes stress > 1)
+      // — then let the breaks cascade through the propagation
+      // queue instead of firing the legacy conditions.
+      for (const bond of state.bonds) {
+        if (!bond.alive) continue;
+        const a = bodies[bond.a];
+        const b = bodies[bond.b];
+        const desired = quatRotate(a.quat, bond.restOffsetLocal);
+        const ex = (b.pos[0] - a.pos[0]) - desired[0];
+        const ey = (b.pos[1] - a.pos[1]) - desired[1];
+        const ez = (b.pos[2] - a.pos[2]) - desired[2];
+        const strain = Math.hypot(ex, ey, ez) / bond.restLength;
+        const impactNorm = options.glueStrength > 0
+          ? Math.max(a.impactDeltaV, b.impactDeltaV) / options.glueStrength
+          : 0;
+        bond.stress = strain + impactNorm;
+      }
+      propagateRigidBondBreaks(state, options.stressPropagation ?? 0.5);
+    } else {
+      for (const bond of state.bonds) {
+        if (!bond.alive) continue;
+        const a = bodies[bond.a];
+        const b = bodies[bond.b];
+        const desired = quatRotate(a.quat, bond.restOffsetLocal);
+        const ex = (b.pos[0] - a.pos[0]) - desired[0];
+        const ey = (b.pos[1] - a.pos[1]) - desired[1];
+        const ez = (b.pos[2] - a.pos[2]) - desired[2];
+        const strain = Math.hypot(ex, ey, ez) / bond.restLength;
+        if (strain > GLUE_STRAIN_BREAK) {
+          bond.alive = false;
+          wakeBody(state, bond.a);
+          wakeBody(state, bond.b);
+        }
+      }
+      // Impact breaking: a hard collision breaks the body's bonds.
+      for (let i = 0; i < n; i++) {
+        if (bodies[i].impactDeltaV > options.glueStrength) breakBondsOf(state, i);
       }
     }
-    // Impact breaking: a hard collision breaks the body's bonds.
-    for (let i = 0; i < n; i++) {
-      if (bodies[i].impactDeltaV > options.glueStrength) breakBondsOf(state, i);
+  }
+
+  // 4b. XPBD joints (Phase 20 stage 1): solved at the glue
+  // position of the substep, independent of the glue switch —
+  // the array is empty unless the solver was built with the
+  // Joint Enabled key on, so legacy states never enter here.
+  if (state.joints.length > 0) {
+    // Breaking is judged on the strain the joint actually
+    // carries this substep — measured BEFORE the solve, since
+    // a rigid (α = 0) solve would erase the strain it is meant
+    // to judge. Threshold 0 = unbreakable (xpbdBreakExceeded).
+    for (const joint of state.joints) {
+      if (!joint.alive) continue;
+      const a = bodies[joint.a];
+      const b = bodies[joint.b];
+      const d = Math.hypot(b.pos[0] - a.pos[0], b.pos[1] - a.pos[1], b.pos[2] - a.pos[2]);
+      const strain = Math.abs(d - joint.restLength) / joint.restLength;
+      if (xpbdBreakExceeded(strain, joint.breakThreshold)) {
+        joint.alive = false;
+        wakeBody(state, joint.a);
+        wakeBody(state, joint.b);
+      }
+    }
+    for (const joint of state.joints) joint.lambda = 0;
+    for (let iter = 0; iter < 2; iter++) {
+      for (const joint of state.joints) {
+        if (!joint.alive) continue;
+        solveJoint(state, joint, h);
+      }
     }
   }
+
+  // 4c. Contact events (Phase 21 stage 3): keys touched now that
+  // were not touching at the previous substep are NEW contacts.
+  // States built before this stage (no contactKeys field) start
+  // from an empty set. Events never feed back into the physics.
+  if (!state.contactKeys) state.contactKeys = new Set();
+  if (!state.pendingContactEvents) state.pendingContactEvents = [];
+  for (const key of touching) {
+    if (state.contactKeys.has(key)) continue;
+    const a = Math.floor(key / CONTACT_STRIDE);
+    const bRaw = key - a * CONTACT_STRIDE;
+    const b = bRaw >= RIGID_BODY_MAX ? -1 : bRaw;
+    const impact = b >= 0
+      ? Math.max(bodies[a]?.impactDeltaV ?? 0, bodies[b]?.impactDeltaV ?? 0)
+      : (bodies[a]?.impactDeltaV ?? 0);
+    if (state.pendingContactEvents.length < RIGID_CONTACT_EVENT_CAP) {
+      state.pendingContactEvents.push({ a, b, impact });
+    }
+  }
+  state.contactKeys = touching;
 
   // 5. Sleep bookkeeping + support-loss waking.
   updateSleep(state, h, options);
@@ -651,6 +992,37 @@ function solveBond(state: RigidSolverState, bond: RigidBond): void {
   }
 }
 
+/**
+ * One XPBD iteration for a centre-distance joint: C is the
+ * current centre distance minus the rest length, the gradients
+ * are the unit axis (a toward b), the weights are the bodies'
+ * inverse masses (a sleeping body counts as infinite mass, the
+ * solveBond rule), and Δλ comes from the shared xpbdDeltaLambda
+ * with α̃ from the joint's compliance. Position-level only,
+ * like the glue weld — velocities are not reconstructed.
+ */
+function solveJoint(state: RigidSolverState, joint: RigidJoint, h: number): void {
+  const a = state.bodies[joint.a];
+  const b = state.bodies[joint.b];
+  const invA = a.sleeping ? 0 : a.invMass;
+  const invB = b.sleeping ? 0 : b.invMass;
+  const invSum = invA + invB;
+  if (invSum <= 0) return;
+  const dx = b.pos[0] - a.pos[0];
+  const dy = b.pos[1] - a.pos[1];
+  const dz = b.pos[2] - a.pos[2];
+  const d = Math.hypot(dx, dy, dz);
+  if (d < 1e-9) return;
+  const nx = dx / d; const ny = dy / d; const nz = dz / d;
+  const c = d - joint.restLength;
+  const alphaTilde = xpbdAlphaTilde(joint.compliance, h);
+  const dl = xpbdDeltaLambda(c, joint.lambda, alphaTilde, invSum);
+  joint.lambda += dl;
+  // Δx_a = Δλ · w_a · ∇C_a with ∇C_a = −n̂; Δx_b likewise +n̂.
+  a.pos[0] -= dl * invA * nx; a.pos[1] -= dl * invA * ny; a.pos[2] -= dl * invA * nz;
+  b.pos[0] += dl * invB * nx; b.pos[1] += dl * invB * ny; b.pos[2] += dl * invB * nz;
+}
+
 function updateSleep(state: RigidSolverState, h: number, options: RigidStepOptions): void {
   const bodies = state.bodies;
   const n = bodies.length;
@@ -747,6 +1119,21 @@ export interface RigidResolved {
    *  the floor stands on the terrain; false — or no field —
    *  keeps the flat plane. */
   floorTerrain: boolean;
+  /** XPBD joints (Phase 20 stage 1): built only while true. */
+  jointEnabled: boolean;
+  /** Joint compliance α (0 = rigid). */
+  jointCompliance: number;
+  /** Joint break threshold (strain; 0 = unbreakable). */
+  jointBreakThreshold: number;
+  /** Stress break (Phase 20 stage 1): while true the step runs
+   *  the stress / propagation breaking instead of the legacy
+   *  strain / impact conditions. */
+  stressBreakEnabled: boolean;
+  /** Stress propagation rate (0..1). */
+  stressPropagation: number;
+  /** OBB shape collision (Phase 20 stage 1): bodies are built
+   *  with fitted OBB shapes and the step uses them while true. */
+  convexEnabled: boolean;
 }
 
 /**
@@ -767,6 +1154,12 @@ export function resolveRigid(config: ParticleConfig): RigidResolved {
     glueStrength: Math.max(0, Math.min(1000, config.gpgpuRigidGlueStrength ?? 45)),
     startSleeping: !!config.gpgpuRigidStartSleeping,
     floorTerrain: !!config.gpgpuRigidFloorTerrain,
+    jointEnabled: !!config.gpgpuRigidJointEnabled,
+    jointCompliance: Math.max(0, config.gpgpuRigidJointCompliance ?? 0),
+    jointBreakThreshold: Math.max(0, config.gpgpuRigidJointBreakThreshold ?? 0),
+    stressBreakEnabled: !!config.gpgpuRigidStressBreakEnabled,
+    stressPropagation: Math.max(0, Math.min(1, config.gpgpuRigidStressPropagation ?? 0.5)),
+    convexEnabled: !!config.gpgpuRigidConvexEnabled,
   };
 }
 

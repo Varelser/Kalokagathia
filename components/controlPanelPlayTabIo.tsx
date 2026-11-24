@@ -9,6 +9,7 @@ import { INITIAL_LINK_STATE, LinkSyncClient, type LinkBridgeState } from '../lib
 import { MidiOutputEngine, loadMidiOutputSettings, saveMidiOutputSettings, type MidiOutputPortLike, type MidiOutputSettings } from '../lib/midiOutput';
 import { DEFAULT_OSC_BRIDGE_URL, describeOscTarget, isValidOscAddress, loadOscAssignments, oscValueToRatio, resolveOscAssignment, saveOscAssignments, scaleOscValue, type OscAssignment, type OscTarget } from '../lib/oscControl';
 import { noteModulationMidiTrigger } from '../lib/modulation';
+import { fireEventRulesLive } from '../lib/eventRules';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { SectionTitle, TAB_SHORT_LABELS } from './controlPanelPlayTabShared';
 
@@ -470,6 +471,13 @@ export const MidiSection: React.FC<{
         // evaluates against.
         noteModulationMidiTrigger(performance.now() / 1000);
         setLastEvent(`CH${channel + 1} Note ${note} (${describeMidiNote(note)}) vel ${velocity}`);
+        // Phase 21 stage 2: event rules with a midi-note trigger
+        // fire on every genuine note-on (a learn capture below
+        // consumes its note instead). The live performer is the
+        // audio controller's synth; with audio off nothing sounds.
+        if (!learnNoteActionRef.current) {
+          fireEventRulesLive({ type: 'midi-note', note }, { note, velocity: velocity / 127, vel: velocity / 127 });
+        }
         const learnAction = learnNoteActionRef.current;
         if (learnAction) {
           learnNoteActionRef.current = null;

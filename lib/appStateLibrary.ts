@@ -9,6 +9,7 @@ import {
   normalizeSequenceTransitionEasing,
 } from './appStateConfig';
 import { getHydratedPayload } from './storageDb';
+import { sanitizeUserParameters } from './userParameters';
 
 declare const __LIBRARY_SCOPE__: string | undefined;
 
@@ -62,13 +63,21 @@ function dedupePresetSequence(items: PresetSequenceItem[]): PresetSequenceItem[]
 }
 
 function normalizePersistedPreset(item: Partial<PresetRecord> & { id: string; name: string }): PresetRecord {
-  return {
+  const record: PresetRecord = {
     id: item.id,
     name: item.name,
     config: normalizeConfig(item.config),
     createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
     updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString(),
   };
+  // Phase 21 stage 1 (#p= propagation): preserve bundled declarations
+  // through persistence, sanitised; absent/empty stays absent so
+  // legacy records round-trip shape-identically.
+  if (item.userParameters !== undefined) {
+    const clean = sanitizeUserParameters(item.userParameters);
+    if (clean.length > 0) record.userParameters = clean;
+  }
+  return record;
 }
 
 function normalizePersistedSequenceItem(item: Partial<PresetSequenceItem> & { id: string; presetId: string }): PresetSequenceItem {

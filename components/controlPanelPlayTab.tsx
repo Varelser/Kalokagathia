@@ -4,6 +4,7 @@ import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { BreedingSection, ExpressionMap } from './controlPanelPlayTabGeneration';
 import { CsgSection, ExportSection, GraphSection, KeyboardShortcutsSection, PromptDraftSection } from './controlPanelPlayTabGraph';
 import { MidiSection, OscSection } from './controlPanelPlayTabIo';
+import { EventRulesSection } from './controlPanelEventRules';
 import { PerformanceSection, SimilaritySection, SourceEditorSection } from './controlPanelPlayTabRender';
 import { CleanOutputSection, GpuDiagnosticsSection, ModulationSection, StageSection } from './controlPanelPlayTabStage';
 import { DataSourceSection, HistorySection, ParameterSearchSection, PointCacheSection, TexturePackSection, XyPadSection } from './controlPanelPlayTabTools';
@@ -82,6 +83,7 @@ export const PlayTabContent: React.FC<ControlPanelContentProps> = (props) => (
       onStopSequencePlayback={props.onStopSequencePlayback}
     />
     <OscSection updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
+    <EventRulesSection isPublicLibrary={props.isPublicLibrary} />
     <ModulationSection isPublicLibrary={props.isPublicLibrary} />
     <PerformanceSection config={props.config} onApplyConfig={props.onApplyConfig} />
     <ExportSection captureRef={props.pointCloudCaptureRef} config={props.config} updateConfig={props.updateConfig} />

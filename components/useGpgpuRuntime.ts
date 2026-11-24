@@ -11,7 +11,8 @@ import { planVerticalTextOnPath, splitTextOnPathGlyphs, type TextGlyphRaster } f
 import type { TextColumnAdjustments } from '../lib/textColumnLayout';
 import { traceContourGeometry } from '../lib/contourTrace';
 import { fractureOptionFromConfig } from '../lib/voronoiFracture';
-import { publishFragmentBake } from '../lib/fragmentCollection';
+import { publishFragmentBake, resolveFragmentRestoreGate, type FragmentRestoreStatus } from '../lib/fragmentCollection';
+import { buildBodyClusterColorLut, RIGID_CLUSTER_COLOR_COUNT } from '../lib/rigidClusterColors';
 import {
   createRigidSolver,
   resolveRigid,
@@ -29,6 +30,7 @@ import { sampleSvgPointCloud } from '../lib/svgMorph';
 import { parseSvgPathGeometry, type PathGeometry } from '../lib/pathGeometry';
 import { sampleObjPointCloudWithNormals } from '../lib/objMorph';
 import { getSceneGeneration, noteGpgpuBackendSettled } from '../lib/sceneGeneration';
+import { useDebouncedValue, TERRAIN_EROSION_DEBOUNCE_MS } from '../lib/useDebouncedValue';
 import {
   initWebGPUCompute,
   destroyWebGPUCompute,
@@ -523,6 +525,11 @@ export type GpgpuRuntimeRefs = {
   // exist only while the solver is enabled AND a morph bake
   // produced a fracture cell table to bind.
   rigidCellTexRef: MutableRefObject<THREE.DataTexture | null>;
+  // Cluster colour LUT (Phase 20 stage 1): 64×1 RGBA float,
+  // row = body index, colour = the body's static bake-time
+  // cluster colour. Exists only while the cluster colour key
+  // is on AND a bake produced a cell table to derive it from.
+  rigidClusterLutTexRef: MutableRefObject<THREE.DataTexture | null>;
   rigidBodyTexRef: MutableRefObject<THREE.DataTexture | null>;
   rigidBodyDataRef: MutableRefObject<Float32Array | null>;
   rigidSolverRef: MutableRefObject<RigidSolverState | null>;
@@ -838,6 +845,14 @@ export function buildMorphBakeData(
         talus: config.gpgpuMorphTerrainErosionTalus,
         thermalPasses: config.gpgpuMorphTerrainErosionThermalPasses,
         seed: config.gpgpuMorphTerrainErosionSeed,
+        // Erosion mask (Phase 20 stage 3).
+        mask: {
+          mode: config.gpgpuMorphTerrainErosionMaskMode,
+          strength: config.gpgpuMorphTerrainErosionMaskStrength,
+          invert: config.gpgpuMorphTerrainErosionMaskInvert,
+          low: config.gpgpuMorphTerrainErosionMaskLow,
+          high: config.gpgpuMorphTerrainErosionMaskHigh,
+        },
       },
     },
     // Terrain scatter grammar (Phase AI): a top-level bake
@@ -943,6 +958,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const vellumComponentTexRef = useRef<THREE.DataTexture | null>(null);
   const vellumComponentsRef = useRef<VellumComponent[] | null>(null);
   const rigidCellTexRef = useRef<THREE.DataTexture | null>(null);
+  const rigidClusterLutTexRef = useRef<THREE.DataTexture | null>(null);
   const rigidBodyTexRef = useRef<THREE.DataTexture | null>(null);
   const rigidBodyDataRef = useRef<Float32Array | null>(null);
   const rigidSolverRef = useRef<RigidSolverState | null>(null);
@@ -1576,6 +1592,19 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const rigidEnabled = config.gpgpuRigidEnabled;
   const rigidGlueEnabled = config.gpgpuRigidGlueEnabled;
   const rigidStartSleeping = config.gpgpuRigidStartSleeping;
+  // Phase 20 stage 1: joints and OBB shapes are build-time
+  // solver state too, so their keys are bake inputs as well.
+  const rigidJointEnabled = config.gpgpuRigidJointEnabled;
+  const rigidJointCompliance = config.gpgpuRigidJointCompliance;
+  const rigidJointBreakThreshold = config.gpgpuRigidJointBreakThreshold;
+  const rigidConvexEnabled = config.gpgpuRigidConvexEnabled;
+  // Fragment restore + cluster colouring (Phase 20 stage 1):
+  // both ride the bake (the restore assignment drives it; the
+  // cluster LUT derives from its cell table), so their keys and
+  // the saved collection text are bake inputs too.
+  const rigidClusterColorEnabled = config.gpgpuRigidClusterColorEnabled;
+  const fragmentRestoreEnabled = config.gpgpuFragmentCollectionRestoreEnabled;
+  const fragmentCollectionJson = config.gpgpuFragmentCollectionJson;
   const morphFractureEnabled = config.gpgpuMorphFractureEnabled;
   const morphFractureCells = config.gpgpuMorphFractureCells;
   const morphFractureSeed = config.gpgpuMorphFractureSeed;
@@ -1647,6 +1676,38 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphTerrainErosionTalus = config.gpgpuMorphTerrainErosionTalus;
   const morphTerrainErosionThermalPasses = config.gpgpuMorphTerrainErosionThermalPasses;
   const morphTerrainErosionSeed = config.gpgpuMorphTerrainErosionSeed;
+  // Erosion mask (Phase 20 stage 3).
+  const morphTerrainErosionMaskMode = config.gpgpuMorphTerrainErosionMaskMode;
+  const morphTerrainErosionMaskStrength = config.gpgpuMorphTerrainErosionMaskStrength;
+  const morphTerrainErosionMaskInvert = config.gpgpuMorphTerrainErosionMaskInvert;
+  const morphTerrainErosionMaskLow = config.gpgpuMorphTerrainErosionMaskLow;
+  const morphTerrainErosionMaskHigh = config.gpgpuMorphTerrainErosionMaskHigh;
+  // Debounce (Phase 20 stage 3): the morph rebake runs the
+  // erosion sim synchronously, so ONLY the erosion parameters
+  // (mask included) settle for a quiet period before a slider
+  // drag rebakes. Every other bake input stays immediate, and
+  // the settled values below are what the bake effect reads
+  // and depends on.
+  const morphTerrainErosionSettled = useDebouncedValue(
+    {
+      water: morphTerrainErosionWater,
+      droplets: morphTerrainErosionDroplets,
+      deposit: morphTerrainErosionDeposit,
+      thermal: morphTerrainErosionThermal,
+      talus: morphTerrainErosionTalus,
+      thermalPasses: morphTerrainErosionThermalPasses,
+      seed: morphTerrainErosionSeed,
+      mask: {
+        mode: morphTerrainErosionMaskMode,
+        strength: morphTerrainErosionMaskStrength,
+        invert: morphTerrainErosionMaskInvert,
+        low: morphTerrainErosionMaskLow,
+        high: morphTerrainErosionMaskHigh,
+      },
+    },
+    TERRAIN_EROSION_DEBOUNCE_MS,
+    (e) => JSON.stringify(e),
+  );
   const morphTerrainTunnel = config.gpgpuTerrainMeshTunnel;
   const morphScatterEnabled = config.gpgpuMorphScatterEnabled;
   const morphScatterDensity = config.gpgpuMorphScatterDensity;
@@ -1794,7 +1855,31 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       ? sampleObjPointCloudWithNormals(morphObjSource, morphObjSampleMode) : null;
     const objPoints = objSample ? objSample.points : null;
     const objNormals = objSample ? objSample.normals : null;
-    const { data, normalData, fractureCells, speciesData } = buildGpgpuMorphTargetDataWithNormals({
+    // Fragment restore (Phase 20 stage 1): the triple gate —
+    // restore key on (this block), rigid solver on (rigidEnabled
+    // gates the resolution), exact signature match (owned by
+    // resolveFragmentRestore against the signature THIS bake
+    // will publish). A rejection is kept as an explicit status
+    // and published with the bake so the panel can show why;
+    // the bake itself then runs the legacy sites division.
+    const bakeSignature = (() => {
+      const rf = rigidFractureOptionFromConfig(config);
+      return {
+        sourceTarget: morphTarget,
+        particleCount: texSize * texSize,
+        cells: rf.cells,
+        fractureSeed: rf.seed,
+        gap: rf.gap,
+      };
+    })();
+    const fragmentRestoreGate = resolveFragmentRestoreGate({
+      restoreEnabled: fragmentRestoreEnabled,
+      rigidEnabled,
+      savedJson: fragmentCollectionJson,
+      signature: bakeSignature,
+    });
+    const fragmentRestoreAssignment = fragmentRestoreGate.assignment;
+    const { data, normalData, fractureCells, speciesData, fragmentRestoreApplied } = buildGpgpuMorphTargetDataWithNormals({
       texSize,
       target: morphTarget,
       worldScale: morphScale * morphBounceRadius * 0.48,
@@ -1832,6 +1917,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       // produced cloud). Null while disabled — no cell data is
       // computed and the bake is untouched.
       rigidFracture: rigidEnabled ? rigidFractureOptionFromConfig(config) : null,
+      // Fragment restore (Phase 20 stage 1): the resolved saved
+      // assignment, or null (legacy sites division, bit-identical).
+      fragmentRestore: fragmentRestoreAssignment ? { assignment: fragmentRestoreAssignment } : null,
       form: {
         disperseAmount: morphDisperseAmount,
         disperseDirection: morphDisperseDirection,
@@ -1865,15 +1953,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         kind: morphTerrainKind,
         terraceSteps: morphTerrainTerraceSteps,
         // Terrain erosion (Phase AP): stripped in tunnel mode.
-        erosion: morphTerrainTunnel ? undefined : {
-          water: morphTerrainErosionWater,
-          droplets: morphTerrainErosionDroplets,
-          deposit: morphTerrainErosionDeposit,
-          thermal: morphTerrainErosionThermal,
-          talus: morphTerrainErosionTalus,
-          thermalPasses: morphTerrainErosionThermalPasses,
-          seed: morphTerrainErosionSeed,
-        },
+        // Phase 20 stage 3: the debounced (settled) values.
+        erosion: morphTerrainTunnel ? undefined : morphTerrainErosionSettled,
       },
       // Terrain scatter grammar (Phase AI): top-level bake
       // option, same assembly as the shared builder above.
@@ -1913,16 +1994,33 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // solver or the renderer reads it back, so an unsaved /
     // unused collection leaves every routing untouched.
     if (fractureCells) {
-      const rf = rigidFractureOptionFromConfig(config);
+      // Fragment restore (Phase 20 stage 1): while the restore
+      // key was on for this bake, publish the outcome with the
+      // bake — applied only when the builder confirms the
+      // assignment actually drove the division; a resolution
+      // that passed but could not be applied is reported as a
+      // rejection, never silently.
+      let restoreStatus: FragmentRestoreStatus | undefined;
+      if (fragmentRestoreGate.status) {
+        if (fragmentRestoreApplied) {
+          restoreStatus = { state: 'applied' };
+        } else if (fragmentRestoreGate.status.state === 'rejected') {
+          restoreStatus = fragmentRestoreGate.status;
+        } else {
+          // The gate passed the assignment but the builder
+          // could not drive the division with it — reported,
+          // never silent.
+          restoreStatus = {
+            state: 'rejected',
+            reason: 'assignment-undecodable',
+            detail: 'saved assignment could not be applied to this bake',
+          };
+        }
+      }
       publishFragmentBake({
         cellData: fractureCells,
-        signature: {
-          sourceTarget: morphTarget,
-          particleCount: texSize * texSize,
-          cells: rf.cells,
-          fractureSeed: rf.seed,
-          gap: rf.gap,
-        },
+        signature: bakeSignature,
+        restore: restoreStatus,
       });
     }
     // Species channel (Phase 16 stage 5): same publish as the
@@ -1958,6 +2056,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // cloud. Absent cell data (solver off) leaves all refs null.
     let rigidCellTex: THREE.DataTexture | null = null;
     let rigidBodyTex: THREE.DataTexture | null = null;
+    let rigidClusterLutTex: THREE.DataTexture | null = null;
     if (rigidEnabled && fractureCells) {
       const cellData = new Float32Array(texSize * texSize * 4);
       for (let i = 0; i < texSize * texSize; i++) {
@@ -1973,6 +2072,14 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       rigidSolverRef.current = createRigidSolver(fractureCells, {
         glueEnabled: resolved.glueEnabled,
         startSleeping: resolved.startSleeping,
+        // XPBD joints + OBB shapes (Phase 20 stage 1): both are
+        // build-time state, resolved through the same
+        // resolveRigid call as the legacy keys. Off builds
+        // neither (legacy state shape).
+        jointEnabled: resolved.jointEnabled,
+        jointCompliance: resolved.jointCompliance,
+        jointBreakThreshold: resolved.jointBreakThreshold,
+        convexEnabled: resolved.convexEnabled,
       });
       const bodyData = new Float32Array(RIGID_BODY_TEX_WIDTH * RIGID_BODY_TEX_HEIGHT * 4);
       writeRigidBodyTexture(rigidSolverRef.current, bodyData);
@@ -1980,6 +2087,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       rigidBodyTex = new THREE.DataTexture(bodyData, RIGID_BODY_TEX_WIDTH, RIGID_BODY_TEX_HEIGHT, THREE.RGBAFormat, THREE.FloatType);
       rigidBodyTex.needsUpdate = true;
       rigidBodyTexRef.current = rigidBodyTex;
+      // Cluster colour LUT (Phase 20 stage 1): built only while
+      // the colour key is on — the per-body cluster colours of
+      // THIS bake's cell table (static, bake-time clusters).
+      if (rigidClusterColorEnabled) {
+        const lutData = buildBodyClusterColorLut(fractureCells);
+        rigidClusterLutTex = new THREE.DataTexture(lutData, RIGID_CLUSTER_COLOR_COUNT, 1, THREE.RGBAFormat, THREE.FloatType);
+        rigidClusterLutTex.needsUpdate = true;
+        rigidClusterLutTexRef.current = rigidClusterLutTex;
+      }
     }
     return () => {
       tex.dispose();
@@ -1995,6 +2111,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         if (rigidBodyTexRef.current === rigidBodyTex) rigidBodyTexRef.current = null;
         rigidBodyDataRef.current = null;
         rigidSolverRef.current = null;
+      }
+      if (rigidClusterLutTex) {
+        rigidClusterLutTex.dispose();
+        if (rigidClusterLutTexRef.current === rigidClusterLutTex) rigidClusterLutTexRef.current = null;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- フィールド単位の依存が意図的: 本体は config 全体を各ビルダーへ渡すが、再ベイク条件は上方で抽出したフィールドだけに限る（config 全体を依存に入れると全ての設定変更で再ベイクされる）
@@ -2043,13 +2163,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTerrainSeed,
     morphTerrainKind,
     morphTerrainTerraceSteps,
-    morphTerrainErosionWater,
-    morphTerrainErosionDroplets,
-    morphTerrainErosionDeposit,
-    morphTerrainErosionThermal,
-    morphTerrainErosionTalus,
-    morphTerrainErosionThermalPasses,
-    morphTerrainErosionSeed,
+    morphTerrainErosionSettled,
     morphTerrainTunnel,
     morphScatterEnabled,
     morphScatterDensity,
@@ -2103,6 +2217,13 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     rigidEnabled,
     rigidGlueEnabled,
     rigidStartSleeping,
+    rigidJointEnabled,
+    rigidJointCompliance,
+    rigidJointBreakThreshold,
+    rigidConvexEnabled,
+    rigidClusterColorEnabled,
+    fragmentRestoreEnabled,
+    fragmentCollectionJson,
     morphFractureEnabled,
     morphFractureCells,
     morphFractureSeed,
@@ -2345,6 +2466,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     vellumComponentTexRef,
     vellumComponentsRef,
     rigidCellTexRef,
+    rigidClusterLutTexRef,
     rigidBodyTexRef,
     rigidBodyDataRef,
     rigidSolverRef,

@@ -4,8 +4,10 @@ import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP
 import type { VelocityFragmentVariantOptions } from "./gpgpuShaderSimulationVelocity";
 import { grainsCellSortActive, grainsNeighborhoodMode, grainsProjectionActive } from "../lib/gpgpuGrains";
 import { flip3dActive } from "../lib/flip3d";
+import { resolveSteeringSeek } from "../lib/steering";
 import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG, SIM_VELLUM_VEL_FRAG, SIM_VELLUM_VOLUME_APPLY_FRAG, SIM_VELLUM_VOLUME_PROJ_FRAG, SIM_VELLUM_VOLUME_REDUCE_FRAG, SIM_VELLUM_XPBD_CLEAR_FRAG, SIM_VELLUM_XPBD_LAMBDA_FRAG, SIM_VELLUM_XPBD_PROJ_FRAG, SIM_VELLUM_XPBD_VEL_FRAG } from "./gpgpuShaderSimulationVellum";
-import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG } from "./gpgpuShaderAux";
+import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, buildAuxPosFrag, buildAuxVelFrag } from "./gpgpuShaderAux";
+import { auxSdfSplashActive } from "../lib/auxChain";
 import { WW_POS_FRAG, WW_VEL_FRAG } from "./gpgpuShaderWhitewater";
 import { WW3_POS_FRAG, WW3_VEL_FRAG } from "./gpgpuShaderWhitewater3d";
 import {
@@ -54,6 +56,9 @@ export function velocityVariantOptions(config: ParticleConfig): VelocityFragment
   return {
     grainsFullScan: grainsNeighborhoodMode(config) === 1,
     flip3dCouple: flip3dActive(config),
+    // Phase 20 stage 2: the steering chunk + uniforms exist in
+    // the built string only while the steer-seek keys are on.
+    steeringSeek: resolveSteeringSeek(config).active,
   };
 }
 
@@ -114,6 +119,23 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uParticleLifeAvoid:         { value: 0 },
       uSteerAvoid:                { value: 0 },
       uSteerAvoidRange:           { value: 0 },
+      // Crowd steering (Phase 20 stage 2): declared in the
+      // shader only in the Phase 20 variant; the passes fill
+      // these from resolveSteeringSeek per frame.
+      uSteerSeekEnabled:          { value: false },
+      uSteerSeekMode:             { value: 0 },
+      uSteerSeekStrength:         { value: 1 },
+      uSteerSeekMaxSpeed:         { value: 1 },
+      uSteerSeekMaxForce:         { value: 0 },
+      uSteerSeekTarget:           { value: new THREE.Vector3() },
+      uSteerSeekTarget1:          { value: new THREE.Vector3() },
+      uSteerSeekSlowingRadius:    { value: 50 },
+      uSteerSeekStateSlot:        { value: 0 },
+      uSteerSeekStateThreshold:   { value: 0.5 },
+      uSteerSeekPath:             { value: new Float32Array(24) },
+      uSteerSeekPathCount:        { value: 0 },
+      uSteerSeekPathLookAhead:    { value: 20 },
+      uSteerSeekPathRadius:       { value: 0 },
       // Lifecycle grammar (Phase AB): gate off / legacy drag at
       // the defaults; the passes fill them from config per frame.
       uSpawnRate:   { value: 1.0 },
@@ -648,8 +670,16 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uGravity:      { value: 0.2 },
       uDelta:        { value: 0.016 },
       uTime:         { value: 0 },
+      // Phase 20 stage 4: declared in the shader only in the
+      // SDF-splash variant; the passes fill these per frame.
+      uSdfEnabled:   { value: false },
+      uSdfShape:     { value: 0 },
+      uSdfX:         { value: 0 },
+      uSdfY:         { value: 0 },
+      uSdfZ:         { value: 0 },
+      uSdfSize:      { value: 0 },
     },
-    vertexShader: SIM_VERT, fragmentShader: AUX_VEL_FRAG,
+    vertexShader: SIM_VERT, fragmentShader: buildAuxVelFrag({ sdfSplash: auxSdfSplashActive(config) }),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
@@ -672,8 +702,15 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uBounceRadius: { value: 150.0 },
       uDelta:        { value: 0.016 },
       uTime:         { value: 0 },
+      // Phase 20 stage 4: see auxVelMat above.
+      uSdfEnabled:   { value: false },
+      uSdfShape:     { value: 0 },
+      uSdfX:         { value: 0 },
+      uSdfY:         { value: 0 },
+      uSdfZ:         { value: 0 },
+      uSdfSize:      { value: 0 },
     },
-    vertexShader: SIM_VERT, fragmentShader: AUX_POS_FRAG,
+    vertexShader: SIM_VERT, fragmentShader: buildAuxPosFrag({ sdfSplash: auxSdfSplashActive(config) }),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
@@ -1173,7 +1210,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // config's variant), so a variant-only change swaps the shader
   // through this same path and the mount behaviour is unchanged.
   const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
-    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}`;
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}`;
   const appliedForceCodeRef = useRef<string | null>(
     `\n\n${variantKeyOf(velocityVariantOptions(config))}`,
   );
@@ -1240,6 +1277,22 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     });
     posSimMat.needsUpdate = true;
   }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, posSimMat]);
+
+  // Phase 20 stage 4 (UE5 #22): the Aux pair's string variant
+  // follows the SDF-splash activity (SDF collider on + bounceSplash
+  // mode), the same condition the passes use to fill the SDF
+  // uniforms. The factories built the initial variant from the
+  // initial config; this effect swaps it when the condition flips.
+  const auxVariantRef = useRef(auxSdfSplashActive(config));
+  useEffect(() => {
+    const active = auxSdfSplashActive(config);
+    if (auxVariantRef.current === active) return;
+    auxVariantRef.current = active;
+    auxVelMat.fragmentShader = buildAuxVelFrag({ sdfSplash: active });
+    auxVelMat.needsUpdate = true;
+    auxPosMat.fragmentShader = buildAuxPosFrag({ sdfSplash: active });
+    auxPosMat.needsUpdate = true;
+  }, [config.gpgpuSdfEnabled, config.gpgpuAuxMode, auxVelMat, auxPosMat]);
 
   return {
     simMeshRef,

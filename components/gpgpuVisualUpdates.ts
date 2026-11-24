@@ -48,6 +48,11 @@ function getShadowOcclusionTexture(config: ParticleConfig): THREE.DataTexture | 
     config.gpgpuMorphTerrainErosionDeposit, config.gpgpuMorphTerrainErosionThermal,
     config.gpgpuMorphTerrainErosionTalus, config.gpgpuMorphTerrainErosionThermalPasses,
     config.gpgpuMorphTerrainErosionSeed, config.gpgpuTerrainMeshTunnel,
+    // Erosion mask (Phase 20 stage 3): the occluder follows the
+    // masked field, so the mask params are part of the key.
+    config.gpgpuMorphTerrainErosionMaskMode, config.gpgpuMorphTerrainErosionMaskStrength,
+    config.gpgpuMorphTerrainErosionMaskInvert, config.gpgpuMorphTerrainErosionMaskLow,
+    config.gpgpuMorphTerrainErosionMaskHigh,
   ]);
   if (key !== shadowCacheKey) {
     const bake = bakeShadowOcclusionMap(buildShadowScene(config), 64);
@@ -195,6 +200,12 @@ export function syncVisualUniforms(args: {
   // state texture (this frame's output), or null — null keeps
   // the crack flag off and the draw bit-identical.
   vellumStateTexture?: THREE.Texture | null;
+  // Rigid cluster colouring (Phase 20 stage 1): the rigid cell
+  // texture (per-particle body index in .w) and the per-body
+  // cluster colour LUT of the current bake, or null — null
+  // keeps the cluster supply off and the draw bit-identical.
+  rigidCellTexture?: THREE.Texture | null;
+  rigidClusterLutTexture?: THREE.Texture | null;
   texSize?: number;
   time?: number;
   // Density compensation (Phase DN): drawing-buffer size in
@@ -472,6 +483,17 @@ export function syncVisualUniforms(args: {
     drawMat.uniforms.uVellumCrackEnabled.value = crackOn;
     if (drawMat.uniforms.uVellumStateTex) drawMat.uniforms.uVellumStateTex.value = args.vellumStateTexture ?? null;
     if (drawMat.uniforms.uVellumMode) drawMat.uniforms.uVellumMode.value = config.gpgpuVellumMode === 'shell' ? 1 : 0;
+  }
+  // Rigid cluster colouring (Phase 20 stage 1): points draw
+  // only (the geometry draw is out of scope). Engages only
+  // while the colour key + rigid solver are on AND both supply
+  // textures exist for the current bake.
+  if (drawMat.uniforms.uClusterColorEnabled) {
+    const clusterOn = !!args.rigidCellTexture && !!args.rigidClusterLutTexture
+      && !!config.gpgpuRigidClusterColorEnabled && !!config.gpgpuRigidEnabled;
+    drawMat.uniforms.uClusterColorEnabled.value = clusterOn;
+    if (drawMat.uniforms.uClusterCellTex) drawMat.uniforms.uClusterCellTex.value = args.rigidCellTexture ?? null;
+    if (drawMat.uniforms.uClusterColorLutTex) drawMat.uniforms.uClusterColorLutTex.value = args.rigidClusterLutTexture ?? null;
   }
   if (geomMat.uniforms.uVellumCrackEnabled) {
     const crackOn = !!args.vellumStateTexture && config.gpgpuVellumEnabled

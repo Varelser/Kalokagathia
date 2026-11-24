@@ -253,6 +253,15 @@ export function buildCpuMorphData(
         talus: config.gpgpuMorphTerrainErosionTalus,
         thermalPasses: config.gpgpuMorphTerrainErosionThermalPasses,
         seed: config.gpgpuMorphTerrainErosionSeed,
+        // Erosion mask (Phase 20 stage 3): carried like every
+        // other config-side builder so the landscape stays one.
+        mask: {
+          mode: config.gpgpuMorphTerrainErosionMaskMode,
+          strength: config.gpgpuMorphTerrainErosionMaskStrength,
+          invert: config.gpgpuMorphTerrainErosionMaskInvert,
+          low: config.gpgpuMorphTerrainErosionMaskLow,
+          high: config.gpgpuMorphTerrainErosionMaskHigh,
+        },
       },
     },
     // Terrain scatter grammar (Phase AI): top-level bake option,

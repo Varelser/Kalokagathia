@@ -48,7 +48,7 @@ import { usePresetTransition } from './lib/usePresetTransition';
 import { useProjectTransfer } from './lib/useProjectTransfer';
 import { useSequenceController } from './lib/useSequenceController';
 import { usePointCachePlayback } from './lib/usePointCachePlayback';
-import { decodeConfigPayload, enterSharedView, fetchCatalogPreset, parseShareHash } from './lib/shareLink';
+import { decodeConfigPayload, enterSharedView, fetchCatalogPreset, parseShareHash, presetSessionDeclarations } from './lib/shareLink';
 import { setSessionUserParameters } from './lib/userParameters';
 import { maybeWarnHeavyPreset } from './lib/gpuTierWarnings';
 import { initGpuTier } from './lib/gpuTier';
@@ -186,9 +186,18 @@ const AppBody: React.FC = () => {
       }).catch(() => { /* malformed payload: keep the default scene */ });
       return;
     }
+    // Phase 21 stage 1 (#p= propagation): declarations bundled in
+    // the resolved preset record become the session-only overlay,
+    // exactly like #c= bundles. Records without declarations leave
+    // the overlay untouched — the legacy behaviour.
+    const applyPresetDeclarations = (rec: PresetRecord) => {
+      const bundled = presetSessionDeclarations(rec);
+      if (bundled.length > 0) setSessionUserParameters(bundled);
+    };
     const local = presets.find((preset) => preset.id === parsed.id);
     if (local) {
       applyConfigMorph(local.config, presetBlendDuration, local.id);
+      applyPresetDeclarations(local);
       return;
     }
     // Perf stage 4: the starter library now loads on an idle schedule,
@@ -204,6 +213,7 @@ const AppBody: React.FC = () => {
           if (hit) {
             setPresets((prev) => (prev.some((preset) => preset.id === hit.id) ? prev : [...prev, hit]));
             applyConfigMorph(hit.config, presetBlendDuration, hit.id);
+            applyPresetDeclarations(hit);
             return;
           }
         } catch {
@@ -215,6 +225,7 @@ const AppBody: React.FC = () => {
           if (rec) {
             setPresets((prev) => (prev.some((preset) => preset.id === rec.id) ? prev : [...prev, rec]));
             applyConfigMorph(rec.config, presetBlendDuration, rec.id);
+            applyPresetDeclarations(rec);
           }
         })
         .catch(() => { /* unknown preset id: keep the default scene */ });

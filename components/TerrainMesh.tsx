@@ -10,6 +10,7 @@ import {
 } from '../lib/terrainMesh';
 import { buildShadowScene, occlusionAtPoint } from '../lib/shadowOcclusion';
 import { STANDARD_FIXED_PBR } from '../lib/materialGrammar';
+import { useDebouncedValue, TERRAIN_EROSION_DEBOUNCE_MS } from '../lib/useDebouncedValue';
 
 // Terrain Mesh (Phase P, Mir-style): a polygon counterpart to the
 // Phase L point terrain. A 128x128 grid is displaced by the shared
@@ -69,6 +70,28 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
   const erosionTalus = config.gpgpuMorphTerrainErosionTalus;
   const erosionThermalPasses = config.gpgpuMorphTerrainErosionThermalPasses;
   const erosionSeed = config.gpgpuMorphTerrainErosionSeed;
+  // Erosion mask (Phase 20 stage 3).
+  const erosionMaskMode = config.gpgpuMorphTerrainErosionMaskMode;
+  const erosionMaskStrength = config.gpgpuMorphTerrainErosionMaskStrength;
+  const erosionMaskInvert = config.gpgpuMorphTerrainErosionMaskInvert;
+  const erosionMaskLow = config.gpgpuMorphTerrainErosionMaskLow;
+  const erosionMaskHigh = config.gpgpuMorphTerrainErosionMaskHigh;
+  // Debounce (Phase 20 stage 3): the geometry rebake runs the
+  // erosion sim synchronously, so ONLY the erosion parameters
+  // settle for a quiet period before the mesh follows a slider
+  // drag. Every other input keeps its immediate path.
+  const erosionSettled = useDebouncedValue(
+    {
+      water: erosionWater, droplets: erosionDroplets, deposit: erosionDeposit,
+      thermal: erosionThermal, talus: erosionTalus, thermalPasses: erosionThermalPasses, seed: erosionSeed,
+      mask: {
+        mode: erosionMaskMode, strength: erosionMaskStrength, invert: erosionMaskInvert,
+        low: erosionMaskLow, high: erosionMaskHigh,
+      },
+    },
+    TERRAIN_EROSION_DEBOUNCE_MS,
+    (e) => JSON.stringify(e),
+  );
   const seed = config.gpgpuSeed;
   const morphScale = config.gpgpuMorphScale;
   const bounceRadius = config.gpgpuBounceRadius;
@@ -94,10 +117,7 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
     const data = buildTerrainMeshGeometryData({
       terrain: {
         amplitude: amp, frequency: freq, octaves, seed: terrainSeed, kind: terrainKind, terraceSteps: terrainTerraceSteps,
-        erosion: tunnel ? undefined : {
-          water: erosionWater, droplets: erosionDroplets, deposit: erosionDeposit,
-          thermal: erosionThermal, talus: erosionTalus, thermalPasses: erosionThermalPasses, seed: erosionSeed,
-        },
+        erosion: tunnel ? undefined : erosionSettled,
       },
       seed,
       worldScale,
@@ -124,7 +144,7 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
     geo.computeVertexNormals();
     return geo;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, amp, freq, octaves, terrainSeed, terrainKind, terrainTerraceSteps, erosionWater, erosionDroplets, erosionDeposit, erosionThermal, erosionTalus, erosionThermalPasses, erosionSeed, seed, morphScale, bounceRadius, meshScale, tunnel, shadowActive, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
+  }, [enabled, amp, freq, octaves, terrainSeed, terrainKind, terrainTerraceSteps, erosionSettled, seed, morphScale, bounceRadius, meshScale, tunnel, shadowActive, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
 
   React.useEffect(() => {
     return () => {

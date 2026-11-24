@@ -127,6 +127,30 @@ struct Uniforms {
   // only the morph kick's respawn-frame trigger reads it here;
   // the lifecycle itself runs in the position pass.
   ageEnabled : f32,
+  // Crowd steering (Phase 20 stage 2): buffer indices 99-113,
+  // the path array at 116 (vec3f arrays are 16-byte aligned).
+  // The WGSL twin of lib/steering.ts — seek / arrive / path.
+  // Mode 3 (state) has no attribute texture in this pass, so
+  // it resolves to state 0 (seek the target) here; the state
+  // slot reading itself is WebGL-side (see the GLSL chunk).
+  steerEnabled : f32,
+  steerMode : i32,
+  steerStrength : f32,
+  steerMaxSpeed : f32,
+  steerMaxForce : f32,
+  steerTargetX : f32,
+  steerTargetY : f32,
+  steerTargetZ : f32,
+  steerTarget1X : f32,
+  steerTarget1Y : f32,
+  steerTarget1Z : f32,
+  steerSlowingRadius : f32,
+  steerPathCount : i32,
+  steerPathLookAhead : f32,
+  steerPathRadius : f32,
+  steerPad0 : f32,
+  steerPad1 : f32,
+  steerPath : array<vec3f, 8>,
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -348,6 +372,78 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       vel += normalize(sepForce + vec3f(0.0001)) * u.boidsSeparation * u.delta * 150.0;
       vel += normalize(aliForce * inv - vel + vec3f(0.0001)) * u.boidsAlignment * u.delta * 60.0;
       vel += normalize(cohPos * inv - pos + vec3f(0.0001)) * u.boidsCohesion * u.delta * 60.0;
+    }
+  }
+
+  // Crowd steering (Phase 20 stage 2): the WGSL twin of
+  // lib/steering.ts, formula for formula with the GLSL chunk
+  // (desired = normalize(target - pos) * maxSpeed, arrive ramps
+  // inside the slowing radius, steer = desired - vel clamped
+  // to maxForce when > 0; application * strength * delta * 60).
+  // Mode 3 (state) resolves to state 0 in this pass — the
+  // attribute texture the slot reading needs is not bound here.
+  if (u.steerEnabled > 0.5) {
+    var sTarget = vec3f(u.steerTargetX, u.steerTargetY, u.steerTargetZ);
+    var sMode = u.steerMode;
+    if (sMode == 3) { sMode = 0; }
+    var sApply = true;
+    if (sMode == 2) {
+      if (u.steerPathCount <= 0) {
+        sApply = false;
+      } else if (u.steerPathCount == 1) {
+        sTarget = u.steerPath[0];
+      } else {
+        var bestDistSq = 1e30;
+        var bestArc = 0.0;
+        var arcBefore = 0.0;
+        for (var i = 0; i < 7; i++) {
+          if (i >= u.steerPathCount - 1) { break; }
+          let pa = u.steerPath[i];
+          let pb = u.steerPath[i + 1];
+          let ab = pb - pa;
+          let segLen = length(ab);
+          let lenSq = dot(ab, ab);
+          var pt = 0.0;
+          if (lenSq > 0.0) { pt = clamp(dot(pos - pa, ab) / lenSq, 0.0, 1.0); }
+          let pq = pa + ab * pt;
+          let pdq = pos - pq;
+          let distSq = dot(pdq, pdq);
+          if (distSq < bestDistSq) { bestDistSq = distSq; bestArc = arcBefore + segLen * pt; }
+          arcBefore += segLen;
+        }
+        let targetArc = clamp(bestArc + max(u.steerPathLookAhead, 0.0), 0.0, arcBefore);
+        var walkArc = 0.0;
+        for (var j = 0; j < 7; j++) {
+          if (j >= u.steerPathCount - 1) { break; }
+          let pa = u.steerPath[j];
+          let pb = u.steerPath[j + 1];
+          let segLen = length(pb - pa);
+          if (targetArc <= walkArc + segLen || j == u.steerPathCount - 2) {
+            var wt = 0.0;
+            if (segLen > 0.0) { wt = clamp((targetArc - walkArc) / segLen, 0.0, 1.0); }
+            sTarget = pa + (pb - pa) * wt;
+            break;
+          }
+          walkArc += segLen;
+        }
+        if (u.steerPathRadius > 0.0 && sqrt(bestDistSq) <= u.steerPathRadius) { sApply = false; }
+      }
+    }
+    if (sApply) {
+      let toTarget = sTarget - pos;
+      let sDist = length(toTarget);
+      var effSpeed = u.steerMaxSpeed;
+      if (sMode == 1 && u.steerSlowingRadius > 0.0 && sDist < u.steerSlowingRadius) {
+        effSpeed = u.steerMaxSpeed * sDist / u.steerSlowingRadius;
+      }
+      var desired = vec3f(0.0);
+      if (sDist > 0.0) { desired = (toTarget / sDist) * effSpeed; }
+      var steerForce = desired - vel;
+      if (u.steerMaxForce > 0.0) {
+        let fLen = length(steerForce);
+        if (fLen > u.steerMaxForce) { steerForce *= u.steerMaxForce / fLen; }
+      }
+      vel += steerForce * u.steerStrength * u.delta * 60.0;
     }
   }
 
@@ -957,7 +1053,7 @@ export type WebGPUComputeState = {
 
 // Vel uniform buffer: 98 f32 slots (see the WGSL Uniforms struct
 // field order; int fields are written through an Int32Array view).
-const VEL_UNIFORM_BYTES = 400;
+const VEL_UNIFORM_BYTES = 592;
 // Pos uniform buffer: 21 f32 slots.
 const POS_UNIFORM_BYTES = 128;
 
@@ -1031,8 +1127,8 @@ export async function initWebGPUCompute(
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
   });
 
-  // Uniform buffers (vel 400 bytes incl. the Phase X3 force fields,
-  // pos 96 bytes)
+  // Uniform buffers (vel 592 bytes incl. the Phase X3 force
+  // fields and the Phase 20 steering set, pos 96 bytes)
   const velUBuf = device.createBuffer({ size: VEL_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const posUBuf = device.createBuffer({ size: POS_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
@@ -1143,6 +1239,27 @@ export interface WebGPUForceParams {
   // law's parameters, mirroring the WebGL uniform derivations.
   ageEnabled: boolean; ageMax: number; ageReplicaCount: number; ageReplicaStep: number; replicaAgeBase: number;
   emitLightEnabled: boolean; emitLightPos: { x: number; y: number; z: number };
+  // Crowd steering (Phase 20 stage 2): structurally the
+  // SteeringSeekResolved of lib/steering.ts (stateSlot /
+  // stateThreshold ride along unused — the WGSL pass has no
+  // attribute texture, so mode 3 resolves to state 0 there).
+  steeringSeek: WebGPUSteeringParams | null;
+}
+
+/** The steering subset stepWebGPUCompute consumes (Phase 20). */
+export interface WebGPUSteeringParams {
+  active: boolean;
+  modeId: number;
+  strength: number;
+  maxSpeed: number;
+  maxForce: number;
+  target: { x: number; y: number; z: number };
+  target1: { x: number; y: number; z: number };
+  slowingRadius: number;
+  path: readonly { x: number; y: number; z: number }[];
+  pathPacked: Float32Array;
+  pathLookAhead: number;
+  pathRadius: number;
 }
 
 export function stepWebGPUCompute(
@@ -1263,6 +1380,31 @@ export function stepWebGPUCompute(
   velI[96] = f ? f.mouseMode : 0;
   velU[97] = f ? f.mousePaintRate : 0;
   velU[98] = f && f.ageEnabled ? 1 : 0;
+  // Crowd steering (Phase 20 stage 2): indices 99-113, path
+  // points at 116 + 4 per point (vec3f stride 16 bytes).
+  const st = f ? f.steeringSeek : null;
+  velU[99] = st && st.active ? 1 : 0;
+  velI[100] = st ? st.modeId : 0;
+  velU[101] = st ? st.strength : 0;
+  velU[102] = st ? st.maxSpeed : 0;
+  velU[103] = st ? st.maxForce : 0;
+  velU[104] = st ? st.target.x : 0;
+  velU[105] = st ? st.target.y : 0;
+  velU[106] = st ? st.target.z : 0;
+  velU[107] = st ? st.target1.x : 0;
+  velU[108] = st ? st.target1.y : 0;
+  velU[109] = st ? st.target1.z : 0;
+  velU[110] = st ? st.slowingRadius : 0;
+  velI[111] = st ? Math.min(st.path.length, 8) : 0;
+  velU[112] = st ? st.pathLookAhead : 0;
+  velU[113] = st ? st.pathRadius : 0;
+  velU[114] = 0; velU[115] = 0;
+  for (let pi = 0; pi < 8; pi++) {
+    velU[116 + pi * 4] = st ? st.pathPacked[pi * 3] : 0;
+    velU[116 + pi * 4 + 1] = st ? st.pathPacked[pi * 3 + 1] : 0;
+    velU[116 + pi * 4 + 2] = st ? st.pathPacked[pi * 3 + 2] : 0;
+    velU[116 + pi * 4 + 3] = 0;
+  }
   new Uint32Array(velU.buffer)[0] = texSize; // texSizeはu32なのでUint32Arrayビューで書く
   device.queue.writeBuffer(velUBuf, 0, velU);
 

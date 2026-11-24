@@ -394,6 +394,119 @@ export function fragmentSignatureMatches(
   return fragmentSignatureDiffs(saved, current).length === 0;
 }
 
+// ── Restore resolution (Phase 20 stage 1) ────────────────────
+// The restore core: a saved collection may be fed back into the
+// bake ONLY when its signature matches the current bake
+// conditions exactly. Resolution is a pure, explicit verdict —
+// never a silent fallback. A rejection always carries a machine
+// reason plus a human-readable detail (and, for a signature
+// mismatch, the differing fields), so the panel can show WHY a
+// restore was refused instead of quietly baking the parametric
+// division. The triple gate around this (signature match here,
+// rigid solver on, restore key on) lives with the bake builder;
+// this function owns the signature leg and the payload's own
+// validity.
+
+export type FragmentRestoreRejectReason =
+  /** No saved collection text at all. */
+  | 'empty'
+  /** The text is not a valid serialised collection. */
+  | 'malformed'
+  /** Valid collection, but its signature differs from the
+   *  current bake conditions (see `diffs`). */
+  | 'signature-mismatch'
+  /** The stored assignment could not be decoded (defensive:
+   *  parse already validates the codec, so this only fires if
+   *  a collection object was assembled by hand). */
+  | 'assignment-undecodable';
+
+export type FragmentRestoreResolution =
+  | {
+    ok: true;
+    /** The validated saved collection. */
+    collection: FragmentCollection;
+    /** The decoded per-particle body assignment, ready to hand
+     *  to the assignment-driven fracture builders. */
+    assignment: Int32Array;
+  }
+  | {
+    ok: false;
+    reason: FragmentRestoreRejectReason;
+    /** Human-readable explanation for display. */
+    detail: string;
+    /** Differing signature fields (signature-mismatch only). */
+    diffs?: FragmentSignatureField[];
+  };
+
+/**
+ * Resolve a saved collection (serialised JSON) against the
+ * CURRENT bake signature. Returns the restore target only on an
+ * exact signature match; every other outcome is an explicit
+ * rejection with its reason.
+ */
+export function resolveFragmentRestore(
+  json: string,
+  current: FragmentCollectionSignature,
+): FragmentRestoreResolution {
+  if (!json) {
+    return { ok: false, reason: 'empty', detail: 'no saved fragment collection' };
+  }
+  const collection = parseFragmentCollection(json);
+  if (!collection) {
+    return { ok: false, reason: 'malformed', detail: 'saved fragment collection is not valid serialised data' };
+  }
+  const diffs = fragmentSignatureDiffs(collection.signature, current);
+  if (diffs.length > 0) {
+    return {
+      ok: false,
+      reason: 'signature-mismatch',
+      detail: `saved division belongs to different bake conditions (differing: ${diffs.join(', ')})`,
+      diffs,
+    };
+  }
+  const assignment = decodeCollectionAssignment(collection);
+  if (!assignment) {
+    return { ok: false, reason: 'assignment-undecodable', detail: 'saved assignment could not be decoded' };
+  }
+  return { ok: true, collection, assignment };
+}
+
+/**
+ * The restore triple gate (Phase 20 stage 1), resolved as one
+ * pure verdict: the restore key on, the rigid solver on, and
+ * the saved collection's signature matching the current bake
+ * conditions exactly. While either key is off the gate is
+ * CLOSED (no assignment, no status) and the bake is the legacy
+ * sites division, bit-identical. While the gate is open, the
+ * outcome is always explicit: an assignment to drive the bake
+ * (status 'applied' — provisional until the bake builder
+ * confirms it actually drove the division), or a rejection
+ * status carrying the reason. Never a silent fallback.
+ */
+export interface FragmentRestoreGate {
+  assignment: Int32Array | null;
+  status: FragmentRestoreStatus | null;
+}
+
+export function resolveFragmentRestoreGate(input: {
+  restoreEnabled: boolean;
+  rigidEnabled: boolean;
+  savedJson: string;
+  signature: FragmentCollectionSignature;
+}): FragmentRestoreGate {
+  if (!input.restoreEnabled || !input.rigidEnabled) {
+    return { assignment: null, status: null };
+  }
+  const resolution = resolveFragmentRestore(input.savedJson, input.signature);
+  if (!resolution.ok) {
+    return {
+      assignment: null,
+      status: { state: 'rejected', reason: resolution.reason, detail: resolution.detail },
+    };
+  }
+  return { assignment: resolution.assignment, status: { state: 'applied' } };
+}
+
 // ── Bake publication registry ─────────────────────────────────
 // The runtime's bake produces FractureCellData inside the
 // runtime hook; the control panel has no handle to it. The
@@ -404,9 +517,23 @@ export function fragmentSignatureMatches(
 // produced cell data (the rigid solver path); with the solver
 // off nothing is published and the panel says so.
 
+/**
+ * The outcome of a bake's restore attempt (Phase 20 stage 1),
+ * published alongside the bake so the panel can show it. Only
+ * present while the restore key was on for that bake: 'applied'
+ * means the saved assignment drove the bake's division;
+ * 'rejected' carries the resolution's reason + detail (a
+ * restore is never refused silently).
+ */
+export type FragmentRestoreStatus =
+  | { state: 'applied' }
+  | { state: 'rejected'; reason: FragmentRestoreRejectReason; detail: string };
+
 export interface PublishedFragmentBake {
   cellData: FractureCellData;
   signature: FragmentCollectionSignature;
+  /** Restore outcome of this bake (restore key on only). */
+  restore?: FragmentRestoreStatus;
 }
 
 let publishedFragmentBake: PublishedFragmentBake | null = null;

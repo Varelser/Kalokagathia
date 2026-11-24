@@ -154,7 +154,7 @@ const RULE_TEXT_MAX = 4096;
 const RULE_AXIOM_MAX = 64;
 const RULE_PRODUCTION_MAX = 256;
 const RULE_PRODUCTIONS_MAX = 24;
-const RULE_SYMBOL_OK = /^[A-Za-z0-9+\-\[\]]+$/;
+const RULE_SYMBOL_OK = /^[A-Za-z0-9+\-[\]]+$/;
 
 export function parseLSystemRuleText(text: string, base: LSystemRuleSet): LSystemRuleSet | null {
   if (typeof text !== 'string') return null;

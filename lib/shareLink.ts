@@ -122,12 +122,35 @@ export async function encodeConfigPayload(
  * a matching JSON record (unknown id, SPA-shell fallback, network error),
  * so callers can degrade quietly.
  */
+/**
+ * Phase 21 stage 1: the declarations a preset record carries for
+ * #p= propagation. Sanitised through the same validator as #c=
+ * bundles; a record without (valid) declarations yields [], which
+ * callers treat as "no overlay" — the legacy behaviour.
+ */
+export function presetSessionDeclarations(
+  rec: Pick<PresetRecord, 'userParameters'> | null | undefined,
+): UserParameterDeclaration[] {
+  if (!rec || rec.userParameters === undefined) return [];
+  return sanitizeUserParameters(rec.userParameters);
+}
+
 export async function fetchCatalogPreset(presetId: string): Promise<PresetRecord | null> {
   try {
     const r = await fetch(`/presets/${encodeURIComponent(presetId)}.json`);
     if (!(r.headers.get('content-type') || '').includes('json')) return null;
     const rec = (await r.json()) as PresetRecord | null;
-    if (rec && rec.id === presetId && rec.config && typeof rec.config === 'object') return rec;
+    if (rec && rec.id === presetId && rec.config && typeof rec.config === 'object') {
+      // Phase 21 stage 1: sanitise bundled declarations on the way
+      // in; drop the field entirely when nothing valid remains so
+      // the record stays shape-identical to a legacy record.
+      if (rec.userParameters !== undefined) {
+        const clean = sanitizeUserParameters(rec.userParameters);
+        if (clean.length > 0) rec.userParameters = clean;
+        else delete rec.userParameters;
+      }
+      return rec;
+    }
     return null;
   } catch {
     return null;

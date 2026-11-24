@@ -265,6 +265,17 @@ const DRAW_VERT_CRACK_UNIFORMS = /* glsl */ `  // Vellum crack visualisation (Ph
   uniform sampler2D uVellumStateTex;
   uniform int       uVellumMode;
 `;
+const DRAW_VERT_CLUSTER_UNIFORMS = /* glsl */ `  // Rigid cluster colouring (Phase 20 stage 1): while on, the
+  // particle's body index comes from the rigid cell texture
+  // (.w, the same texture the position pass consumes) and the
+  // per-body cluster colour from the 64x1 LUT (row = body
+  // index). The fragment replaces the base colour with it —
+  // age / velocity colour and the gradient still win over it,
+  // in the legacy priority order.
+  uniform bool      uClusterColorEnabled;
+  uniform sampler2D uClusterCellTex;
+  uniform sampler2D uClusterColorLutTex;
+`;
 const DRAW_VERT_MID_A = /* glsl */ `  attribute vec2 aTexCoord;
   varying float vSpeed;
   varying float vNormAge;
@@ -282,6 +293,9 @@ const DRAW_VERT_MID_A = /* glsl */ `  attribute vec2 aTexCoord;
   varying float vDensityMul;
 `;
 const DRAW_VERT_CRACK_VARYING = /* glsl */ `  varying float vCrack;
+`;
+const DRAW_VERT_CLUSTER_VARYING = /* glsl */ `  varying vec3 vClusterColor;
+  varying float vClusterOn;
 `;
 const DRAW_VERT_MID_B = /* glsl */ `
   ${AGE_CURVE_GLSL}
@@ -485,6 +499,20 @@ const DRAW_VERT_CRACK_COMPUTE = /* glsl */ `    // Crack flag: any dead structur
       sizeMul *= 1.0 + 0.35 * vCrack;
     }
 `;
+const DRAW_VERT_CLUSTER_COMPUTE = /* glsl */ `    // Cluster colour (Phase 20 stage 1): body index from the
+    // rigid cell texture at the post-sort texel (particleUv,
+    // like every other per-particle read above), then the
+    // per-body LUT row. vClusterOn stays 0 while the supply is
+    // off, and the fragment keeps the legacy base colour.
+    vClusterColor = vec3(1.0);
+    vClusterOn = 0.0;
+    if (uClusterColorEnabled) {
+      float bodyIndex = texture2D(uClusterCellTex, particleUv).w;
+      vec4 lutEntry = texture2D(uClusterColorLutTex, vec2((bodyIndex + 0.5) / 64.0, 0.5));
+      vClusterColor = lutEntry.rgb;
+      vClusterOn = 1.0;
+    }
+`;
 const DRAW_VERT_TAIL = /* glsl */ `    vec4 mvPos = modelViewMatrix * vec4(worldPos, 1.0);
     float dist = -mvPos.z;
     gl_PointSize = max(0.5, uSize * sizeMul * (dist > 0.5 ? min(4.0, 500.0 / dist) : 1.0));
@@ -509,21 +537,31 @@ const DRAW_VERT_TAIL = /* glsl */ `    vec4 mvPos = modelViewMatrix * vec4(world
 // strings (both pinned by scripts/phase18-shader-hash.mjs).
 export interface DrawShaderVariantOptions {
   vellumCrack?: boolean;
+  /** Rigid cluster colouring (Phase 20 stage 1): splices the
+   *  cell-texture → LUT lookup into the vertex and the base-
+   *  colour replacement into the fragment. Off (the default)
+   *  assembles the Phase 19 strings byte-identically. */
+  clusterColor?: boolean;
 }
 
 export function buildDrawVert(options?: DrawShaderVariantOptions): string {
   const crack = !!options?.vellumCrack;
+  const cluster = !!options?.clusterColor;
   return DRAW_VERT_HEAD
     + (crack ? DRAW_VERT_CRACK_UNIFORMS : '')
+    + (cluster ? DRAW_VERT_CLUSTER_UNIFORMS : '')
     + DRAW_VERT_MID_A
     + (crack ? DRAW_VERT_CRACK_VARYING : '')
+    + (cluster ? DRAW_VERT_CLUSTER_VARYING : '')
     + DRAW_VERT_MID_B
     + (crack ? DRAW_VERT_CRACK_COMPUTE : '')
+    + (cluster ? DRAW_VERT_CLUSTER_COMPUTE : '')
     + DRAW_VERT_TAIL;
 }
 
 export const DRAW_VERT = buildDrawVert();
 export const DRAW_VERT_PHASE19 = buildDrawVert({ vellumCrack: true });
+export const DRAW_VERT_PHASE20 = buildDrawVert({ clusterColor: true });
 
 // ── Draw fragment ──
 const DRAW_FRAG_HEAD = /* glsl */ `
@@ -619,7 +657,10 @@ const DRAW_FRAG_HEAD = /* glsl */ `
 `;
 const DRAW_FRAG_CRACK_VARYING = /* glsl */ `  varying float vCrack;
 `;
-const DRAW_FRAG_MID = /* glsl */ `
+const DRAW_FRAG_CLUSTER_VARYING = /* glsl */ `  varying vec3 vClusterColor;
+  varying float vClusterOn;
+`;
+const DRAW_FRAG_MID_A = /* glsl */ `
   ${PARTICLE_SHAPE_GLSL}
 
   ${AGE_CURVE_GLSL}
@@ -677,7 +718,15 @@ const DRAW_FRAG_MID = /* glsl */ `
     if (d > 0.5) discard;
 
     vec3 col = uColor;
-    if (uAgeColorEnabled) {
+`;
+const DRAW_FRAG_CLUSTER_ASSIGN = /* glsl */ `    // Rigid cluster colouring (Phase 20 stage 1): the cluster
+    // colour replaces the BASE colour — the age / velocity
+    // paths below and the gradient above them still win, in
+    // the legacy priority order. vClusterOn is 0 unless the
+    // vertex resolved a cluster colour for this particle.
+    if (vClusterOn > 0.5) col = vClusterColor;
+`;
+const DRAW_FRAG_MID_B = /* glsl */ `    if (uAgeColorEnabled) {
       col = mix(uAgeColorYoung, uAgeColorOld, vNormAge);
     } else if (uVelColorEnabled) {
       float hue = mix(uVelColorHueMin, uVelColorHueMax, vSpeed) / 360.0;
@@ -827,13 +876,18 @@ const DRAW_FRAG_TAIL = /* glsl */ `    // 3D light (Phase T): brightness from th
 // strings (both pinned by scripts/phase18-shader-hash.mjs).
 export function buildDrawFrag(options?: DrawShaderVariantOptions): string {
   const crack = !!options?.vellumCrack;
+  const cluster = !!options?.clusterColor;
   return DRAW_FRAG_HEAD
     + (crack ? DRAW_FRAG_CRACK_VARYING : '')
-    + DRAW_FRAG_MID
+    + (cluster ? DRAW_FRAG_CLUSTER_VARYING : '')
+    + DRAW_FRAG_MID_A
+    + (cluster ? DRAW_FRAG_CLUSTER_ASSIGN : '')
+    + DRAW_FRAG_MID_B
     + (crack ? DRAW_FRAG_CRACK_DARKEN : '')
     + DRAW_FRAG_TAIL;
 }
 
 export const DRAW_FRAG = buildDrawFrag();
 export const DRAW_FRAG_PHASE19 = buildDrawFrag({ vellumCrack: true });
+export const DRAW_FRAG_PHASE20 = buildDrawFrag({ clusterColor: true });
 

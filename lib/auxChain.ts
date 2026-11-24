@@ -122,6 +122,22 @@ export function resolveAuxChainLevels(
 }
 
 /**
+ * Phase 20 stage 4 (UE5 #22): whether the level-1 Aux shaders use
+ * the SDF-splash variant strings (AUX_VEL_FRAG_PHASE20 /
+ * AUX_POS_FRAG_PHASE20). The SDF contact source exists only while
+ * BOTH the analytic SDF collider is enabled and the level-1 mode
+ * is bounceSplash — in every other configuration the assembled
+ * Aux shaders are the shipped stock strings, with no SDF text.
+ * Chain levels are not covered: their sources are Aux particles,
+ * whose physics has no SDF collider to collide with.
+ */
+export function auxSdfSplashActive(
+  config: Pick<ParticleConfig, 'gpgpuSdfEnabled' | 'gpgpuAuxMode'>,
+): boolean {
+  return config.gpgpuSdfEnabled && config.gpgpuAuxMode === 'bounceSplash';
+}
+
+/**
  * Resolve a level's draw colour: an explicit colour wins; ''
  * inherits the resolved colour one level up (level 1 inherits the
  * main pool colour). Mirrors the Phase Q inheritance rule, extended

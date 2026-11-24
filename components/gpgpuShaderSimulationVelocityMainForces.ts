@@ -594,6 +594,94 @@ export const VEL_FRAG_FORCE_STEER_AVOID = /* glsl */ `
     }
 
 `;
+export const VEL_FRAG_FORCE_STEER_SEEK = /* glsl */ `
+    // Crowd steering (Phase 20 stage 2, Houdini §3): the GPU
+    // twin of lib/steering.ts — seekForce / arriveForce /
+    // pathFollowForce / steeringForState, formula for formula:
+    // desired = normalize(target - pos) * maxSpeed (arrive ramps
+    // the speed linearly inside the slowing radius), steer =
+    // desired - vel, clamped to maxForce only when maxForce > 0.
+    // The pass application (steer * strength * uDelta * 60) is
+    // the Boids application convention; the force law itself is
+    // steering.ts verbatim. Mode 3 (state) reads the attribute
+    // slot via the head's attrData fetch: state 0 seeks the
+    // target, state 1 arrives at the second target
+    // (steeringForState's defaults; stateFromSlot's non-finite
+    // case cannot occur — the attribute texture is finite by
+    // construction). This chunk exists in the built shader ONLY
+    // in the Phase 20 variant (see buildMainForcesFragment):
+    // without the variant the assembly is byte-identical.
+    if (uSteerSeekEnabled) {
+      vec3 sTarget = uSteerSeekTarget;
+      int sMode = uSteerSeekMode;
+      bool sApply = true;
+      if (sMode == 3) {
+        float slotValue = kaloAttrChannel(attrData, uSteerSeekStateSlot);
+        bool isState1 = slotValue >= uSteerSeekStateThreshold;
+        sTarget = isState1 ? uSteerSeekTarget1 : uSteerSeekTarget;
+        sMode = isState1 ? 1 : 0;
+      }
+      if (sMode == 2) {
+        // Path following (pathFollowTarget): closest segment
+        // projection, advanced lookAhead of arc length.
+        if (uSteerSeekPathCount <= 0) {
+          sApply = false;
+        } else if (uSteerSeekPathCount == 1) {
+          sTarget = uSteerSeekPath[0];
+        } else {
+          float bestDistSq = 1e30;
+          float bestArc = 0.0;
+          float arcBefore = 0.0;
+          for (int i = 0; i < 7; i++) {
+            if (i >= uSteerSeekPathCount - 1) break;
+            vec3 pa = uSteerSeekPath[i];
+            vec3 pb = uSteerSeekPath[i + 1];
+            vec3 ab = pb - pa;
+            float segLen = length(ab);
+            float lenSq = dot(ab, ab);
+            float pt = 0.0;
+            if (lenSq > 0.0) pt = clamp(dot(pos - pa, ab) / lenSq, 0.0, 1.0);
+            vec3 pq = pa + ab * pt;
+            vec3 pdq = pos - pq;
+            float distSq = dot(pdq, pdq);
+            if (distSq < bestDistSq) { bestDistSq = distSq; bestArc = arcBefore + segLen * pt; }
+            arcBefore += segLen;
+          }
+          float targetArc = clamp(bestArc + max(uSteerSeekPathLookAhead, 0.0), 0.0, arcBefore);
+          float walkArc = 0.0;
+          for (int i = 0; i < 7; i++) {
+            if (i >= uSteerSeekPathCount - 1) break;
+            vec3 pa = uSteerSeekPath[i];
+            vec3 pb = uSteerSeekPath[i + 1];
+            float segLen = length(pb - pa);
+            if (targetArc <= walkArc + segLen || i == uSteerSeekPathCount - 2) {
+              float pt = segLen > 0.0 ? clamp((targetArc - walkArc) / segLen, 0.0, 1.0) : 0.0;
+              sTarget = pa + (pb - pa) * pt;
+              break;
+            }
+            walkArc += segLen;
+          }
+          // PathRadius > 0: steer only outside the corridor.
+          if (uSteerSeekPathRadius > 0.0 && sqrt(bestDistSq) <= uSteerSeekPathRadius) sApply = false;
+        }
+      }
+      if (sApply) {
+        vec3 toTarget = sTarget - pos;
+        float sDist = length(toTarget);
+        float effSpeed = uSteerSeekMaxSpeed;
+        if (sMode == 1 && uSteerSeekSlowingRadius > 0.0 && sDist < uSteerSeekSlowingRadius) {
+          effSpeed = uSteerSeekMaxSpeed * sDist / uSteerSeekSlowingRadius;
+        }
+        vec3 desired = sDist > 0.0 ? (toTarget / sDist) * effSpeed : vec3(0.0);
+        vec3 steerForce = desired - vel;
+        if (uSteerSeekMaxForce > 0.0) {
+          float fLen = length(steerForce);
+          if (fLen > uSteerSeekMaxForce) steerForce *= uSteerSeekMaxForce / fLen;
+        }
+        vel += steerForce * uSteerSeekStrength * uDelta * 60.0;
+      }
+    }
+`;
 export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
   'pyro-buoyancy': VEL_FRAG_FORCE_PYRO_BUOYANCY,
   'turbulence': VEL_FRAG_FORCE_TURBULENCE,
@@ -614,16 +702,35 @@ export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
   'elastic': VEL_FRAG_FORCE_ELASTIC,
   'magnetic': VEL_FRAG_FORCE_MAGNETIC,
   'steer-avoid': VEL_FRAG_FORCE_STEER_AVOID,
+  'steer-seek': VEL_FRAG_FORCE_STEER_SEEK,
 };
 /** Assemble head + force chunks in the given order (names are
  * normalised by lib/gpgpuForceOrder: unknown / duplicate names
  * dropped, missing chunks appended in default order). With no
  * order (or the default order) the result is byte-identical to
- * the historical VEL_FRAG_MAIN_FORCES. */
-export function buildMainForcesFragment(order?: string | readonly string[]): string {
+ * the historical VEL_FRAG_MAIN_FORCES.
+ *
+ * Phase 20 stage 2: the 'steer-seek' chunk is variant-gated —
+ * it is spliced in only while `options.steeringSeek` is set,
+ * because on the target GPU any code-text change breaks
+ * bit-identity with the shipped string even when the code never
+ * runs (the Phase 19 lesson). Without the option the chunk is
+ * skipped wherever the order names it, and the result stays
+ * byte-identical to the historical assembly. */
+export interface MainForcesVariantOptions {
+  steeringSeek?: boolean;
+}
+
+export function buildMainForcesFragment(
+  order?: string | readonly string[],
+  options?: MainForcesVariantOptions,
+): string {
   const names = normalizeGpgpuForceOrder(order);
   let out = VEL_FRAG_MAIN_FORCES_HEAD;
-  for (const name of names) out += VEL_FRAG_FORCE_CHUNKS[name];
+  for (const name of names) {
+    if (name === 'steer-seek' && !options?.steeringSeek) continue;
+    out += VEL_FRAG_FORCE_CHUNKS[name];
+  }
   return out;
 }
 

@@ -73,6 +73,22 @@
       "length": 21644,
       "sha256": "652c327402f5ed5289bdcb5dda2a25b252470163213a672ac067b502655dcaed"
     },
+    "DRAW_VERT_PHASE20": {
+      "length": 18865,
+      "sha256": "1d72339eda42c9ba5d4e72530031b202948375e33355bf3072f739c1b82b1893"
+    },
+    "DRAW_FRAG_PHASE20": {
+      "length": 21814,
+      "sha256": "db3335c11691b2aa347ed4b6447bb61decb1fb6eac836e0d23591c543a10c32d"
+    },
+    "buildDrawVert(phase19+phase20)": {
+      "length": 20246,
+      "sha256": "98c12f4147cfa9e4bf448bcb882f1e48dd7d476c2d07a06f904614e1e125a6e7"
+    },
+    "buildDrawFrag(phase19+phase20)": {
+      "length": 22053,
+      "sha256": "7eb2ea7a5b185121f13d59ded3b0a827f1f0db6c38dd2f643e4bf1727bb217f3"
+    },
     "GEOM_VERT": {
       "length": 7470,
       "sha256": "3123bc1869559b312371f2c821248d7fa836410ee6a2b11ce16c10b3ecc669fe"
@@ -93,6 +109,22 @@
       "length": 94958,
       "sha256": "2b4c3beb4ed746417e4190957821f6c4596a920653fd64a0b4ec820a7fdec828"
     },
+    "VEL_FRAG_PREAMBLE_PHASE20": {
+      "length": 20270,
+      "sha256": "e2d18ca1e05bf71c6f89c69c20141fd03f18e33955e53bd96e4bca427b8c4885"
+    },
+    "SIM_VEL_FRAG_PHASE20": {
+      "length": 99825,
+      "sha256": "384b6fe59ae531ce4c06f25a1adbfdca4998df6150b07e1c9939e03319c1d356"
+    },
+    "buildVelocityFragment(phase20)": {
+      "length": 99825,
+      "sha256": "384b6fe59ae531ce4c06f25a1adbfdca4998df6150b07e1c9939e03319c1d356"
+    },
+    "buildVelocityFragment(steering-only)": {
+      "length": 90211,
+      "sha256": "c453e209fb0c0bb94fc27862810d48a6886361630d1d580fbac33fd0828b0ba8"
+    },
     "buildPositionFragment(phase19)": {
       "length": 28709,
       "sha256": "ddcc90fcd515582fcbd3d09bc80c18afeb8aac3c61ebbe20c0c7a280eb5ca407"
@@ -100,6 +132,22 @@
     "buildPositionFragment(phase19-cell)": {
       "length": 31864,
       "sha256": "ad83b69c14d4565ecd46ab66235f80bc7674cf48e681145ac68a158bee3289f2"
+    },
+    "AUX_VEL_FRAG": {
+      "length": 7860,
+      "sha256": "9bdf0c431b4330df19bfb24aa96016e6b5d312fd13c5105cc960b56c2df1653e"
+    },
+    "AUX_POS_FRAG": {
+      "length": 5846,
+      "sha256": "cfe2304d5b8aa3958fb975c8e35f4aa882cbe7a518e2ed096bc59c238aebab3b"
+    },
+    "AUX_VEL_FRAG_PHASE20": {
+      "length": 10655,
+      "sha256": "1babcc8745ba643ef91244170bf109272ef86571a626a6606e4bc91def87a41b"
+    },
+    "AUX_POS_FRAG_PHASE20": {
+      "length": 8641,
+      "sha256": "a24dde6d9ef9a47db847ec501562ccf48e0e60226346ebf6560032c26c77a89f"
     }
   }
 }

@@ -44,7 +44,7 @@ import type { ParticleConfig } from '../types';
 import { createSeededRng } from './seededRng';
 import { evaluatePcgGraph, pcgAcceptance, pcgStepStrength, resolvePcgGraph, type PcgPlan } from './pcgGraph';
 import { pathJitterOffset } from './pathJitter';
-import { applyVoronoiFracture, buildFractureCellData, type FractureCellData } from './voronoiFracture';
+import { applyVoronoiFracture, applyVoronoiFractureWithAssignment, buildFractureCellData, buildFractureCellDataFromAssignment, type FractureCellData } from './voronoiFracture';
 import {
   maskAcceptsAt,
   resolveActiveMask,
@@ -423,6 +423,22 @@ export interface GpgpuMorphTargetBuildOptions {
     cells: number;
     seed: number;
     gap: number;
+  } | null;
+  /**
+   * Fragment restore (Phase 20 stage 1, lib/fragmentCollection.ts):
+   * a saved collection's per-particle body assignment, ALREADY
+   * resolved by the caller (the triple gate — restore key on,
+   * rigid solver on, exact signature match — lives with the
+   * runtime, which owns the signature). While present AND
+   * rigidFracture is present, the assignment drives BOTH the
+   * cell table (buildFractureCellDataFromAssignment) and the
+   * fracture transform (applyVoronoiFractureWithAssignment), so
+   * the solver's material and the produced cloud stay in
+   * agreement. Absent / null = the sites-derived division
+   * exactly, bit-identical to the legacy bake.
+   */
+  fragmentRestore?: {
+    assignment: Int32Array;
   } | null;
   /**
    * Terrain scatter grammar (Phase AI, see
@@ -963,6 +979,31 @@ export function terrainScatterFinishNormal(
  * the same eroded landscape. Per-frame cost is zero — the field
  * is baked, like the derived maps.
  */
+/** Which field of the PRE-erosion grid the erosion mask reads. */
+export type TerrainErosionMaskMode = 'off' | 'height' | 'slope' | 'curvature';
+
+/**
+ * Erosion mask (Phase 20 stage 3): a per-cell coefficient grid
+ * generated automatically from the pre-erosion height grid —
+ * a smooth band window over the normalised height / slope /
+ * curvature — that scales how strongly erosion and deposition
+ * act at each cell. 'off' (and a window that resolves to all 1s
+ * at strength 1) is the identity: the sim never reads a mask
+ * grid and the landscape stays bit-identical to Phase AP.
+ */
+export interface TerrainErosionMaskOptions {
+  mode: TerrainErosionMaskMode;
+  /** Mask depth 0..1: 1 = the window fully gates the sim,
+   *  0 = no gating anywhere (mask value 1 at every cell). */
+  strength: number;
+  /** Invert the window (band ↔ complement). */
+  invert: boolean;
+  /** Window low edge in normalised field units 0..1. */
+  low: number;
+  /** Window high edge in normalised field units 0..1. */
+  high: number;
+}
+
 export interface GpgpuMorphTerrainErosionOptions {
   /** Hydraulic (droplet) erosion strength 0..1. 0 = off. */
   water: number;
@@ -978,6 +1019,19 @@ export interface GpgpuMorphTerrainErosionOptions {
   thermalPasses: number;
   /** Erosion seed offset (droplet placement). */
   seed: number;
+  /** Erosion mask (Phase 20 stage 3): an extra field on the
+   *  options object so every existing hand-off (config-side
+   *  builders, the tunnel strip) carries it unchanged. Absent
+   *  / mode 'off' = no mask, the Phase AP sim verbatim. */
+  mask?: TerrainErosionMaskOptions | null;
+}
+
+export interface ResolvedTerrainErosionMask {
+  mode: Exclude<TerrainErosionMaskMode, 'off'>;
+  strength: number;
+  invert: boolean;
+  low: number;
+  high: number;
 }
 
 export interface ResolvedTerrainErosion {
@@ -990,6 +1044,35 @@ export interface ResolvedTerrainErosion {
   talusSlope: number;
   thermalPasses: number;
   seed: number;
+  /** Resolved erosion mask, or null while the mask is off
+   *  (the sim then never touches a mask grid — identity). */
+  mask: ResolvedTerrainErosionMask | null;
+}
+
+/**
+ * Read-only erosion measurement (Phase 20 stage 3, "段B"): the
+ * sim accumulates these grids while it runs WITHOUT feeding
+ * anything back into the height updates, so a run with a
+ * measure attached produces a bit-identical height grid to a
+ * run without one (pinned by the stage-3 tests). The derived
+ * maps turn them into the flow / deposit / erosion bakes.
+ */
+export interface TerrainErosionMeasure {
+  /** Droplet traffic: water volume accumulated per cell. */
+  flow: Float32Array;
+  /** Total material deposited per cell (droplet addAt > 0). */
+  depositTotal: Float32Array;
+  /** Total material eroded per cell (droplet addAt < 0). */
+  erosionTotal: Float32Array;
+}
+
+export function createTerrainErosionMeasure(size: number): TerrainErosionMeasure {
+  const count = size * size;
+  return {
+    flow: new Float32Array(count),
+    depositTotal: new Float32Array(count),
+    erosionTotal: new Float32Array(count),
+  };
 }
 
 /** Side length of the erosion grid: the derived-maps grid
@@ -1014,6 +1097,28 @@ function clampErosion01(v: number, fallback: number): number {
  * or both strengths at 0). Null is the identity guarantee, the
  * same shape as resolveTerrainScatter.
  */
+/**
+ * Resolve the erosion mask options (Phase 20 stage 3), or null
+ * while the mask is off / absent — null is the identity: the
+ * sim branches never read a mask grid. A pure function of the
+ * options, kept beside resolveTerrainErosion so every consumer
+ * resolves the mask the same way.
+ */
+export function resolveTerrainErosionMask(
+  erosion: GpgpuMorphTerrainErosionOptions | null | undefined,
+): ResolvedTerrainErosionMask | null {
+  const mask = erosion?.mask;
+  if (!mask) return null;
+  if (mask.mode !== 'height' && mask.mode !== 'slope' && mask.mode !== 'curvature') return null;
+  return {
+    mode: mask.mode,
+    strength: clampErosion01(mask.strength, 1),
+    invert: !!mask.invert,
+    low: clampErosion01(mask.low, 0),
+    high: clampErosion01(mask.high, 1),
+  };
+}
+
 export function resolveTerrainErosion(
   erosion: GpgpuMorphTerrainErosionOptions | null | undefined,
 ): ResolvedTerrainErosion | null {
@@ -1044,7 +1149,116 @@ export function resolveTerrainErosion(
     talusSlope: 0.15 + talus * 2.35,
     thermalPasses,
     seed,
+    mask: resolveTerrainErosionMask(erosion),
   };
+}
+
+/**
+ * Build the erosion mask grid from a PRE-erosion height grid
+ * (Phase 20 stage 3): the chosen field (height / slope /
+ * curvature, each normalised over this grid exactly like the
+ * derived maps normalise theirs) is passed through a smooth
+ * band window [low, high], optionally inverted, and blended
+ * toward 1 by (1 − strength). The result multiplies the
+ * sim's per-cell erosion / deposition amounts. Deterministic
+ * and pure; a full-1 grid is the identity.
+ */
+export function buildErosionMaskGrid(
+  heights: Float32Array,
+  n: number,
+  step: number,
+  mask: ResolvedTerrainErosionMask,
+): Float32Array {
+  const count = n * n;
+  const field = new Float32Array(count);
+  if (mask.mode === 'height') {
+    let min = Infinity;
+    let max = -Infinity;
+    for (let k = 0; k < count; k++) {
+      if (heights[k] < min) min = heights[k];
+      if (heights[k] > max) max = heights[k];
+    }
+    const range = max - min;
+    for (let k = 0; k < count; k++) field[k] = range > 0 ? (heights[k] - min) / range : 0;
+  } else {
+    // Gradient (and Laplacian for curvature) per cell, central
+    // differences with the derived maps' border rule.
+    const invStep = 1 / Math.max(step, 1e-9);
+    let maxRef = 0;
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const idx = j * n + i;
+        const hl = heights[j * n + Math.max(0, i - 1)];
+        const hr = heights[j * n + Math.min(n - 1, i + 1)];
+        const hd = heights[Math.max(0, j - 1) * n + i];
+        const hu = heights[Math.min(n - 1, j + 1) * n + i];
+        const spanX = (Math.min(n - 1, i + 1) - Math.max(0, i - 1)) * step;
+        const spanZ = (Math.min(n - 1, j + 1) - Math.max(0, j - 1)) * step;
+        const dx = (hr - hl) / Math.max(spanX, 1e-9);
+        const dz = (hu - hd) / Math.max(spanZ, 1e-9);
+        if (mask.mode === 'slope') {
+          field[idx] = Math.hypot(dx, dz);
+        } else {
+          const hc = heights[idx];
+          const lapX = ((i > 0 ? heights[idx - 1] : hc) + (i < n - 1 ? heights[idx + 1] : hc) - 2 * hc) * invStep * invStep;
+          const lapZ = ((j > 0 ? heights[idx - n] : hc) + (j < n - 1 ? heights[idx + n] : hc) - 2 * hc) * invStep * invStep;
+          field[idx] = lapX + lapZ;
+        }
+        const a = Math.abs(field[idx]);
+        if (a > maxRef) maxRef = a;
+      }
+    }
+    if (mask.mode === 'slope') {
+      for (let k = 0; k < count; k++) field[k] = maxRef > 0 ? field[k] / maxRef : 0;
+    } else {
+      // Curvature normalises to the derived-map encoding
+      // (0.5 = flat, > 0.5 convex, < 0.5 concave) so a band can
+      // select ridges or hollows.
+      for (let k = 0; k < count; k++) field[k] = maxRef > 0 ? 0.5 + 0.5 * (field[k] / maxRef) : 0.5;
+    }
+  }
+  const out = new Float32Array(count);
+  const lo = Math.min(mask.low, mask.high);
+  const hi = Math.max(mask.low, mask.high);
+  for (let k = 0; k < count; k++) {
+    let w: number;
+    if (hi - lo < 1e-9) {
+      w = field[k] >= lo ? 1 : 0;
+    } else {
+      const t = Math.max(0, Math.min(1, (field[k] - lo) / (hi - lo)));
+      w = t * t * (3 - 2 * t);
+    }
+    if (mask.invert) w = 1 - w;
+    out[k] = 1 - mask.strength * (1 - w);
+  }
+  return out;
+}
+
+/** Bilinear sample of a grid in cell coordinates (the droplet
+ *  sampler's clamping, shared by the mask and the measure). */
+function sampleGridBilinear(grid: Float32Array, n: number, px: number, pz: number): number {
+  const ix = Math.max(0, Math.min(n - 2, Math.floor(px)));
+  const iz = Math.max(0, Math.min(n - 2, Math.floor(pz)));
+  const fx = Math.max(0, Math.min(1, px - ix));
+  const fz = Math.max(0, Math.min(1, pz - iz));
+  const h00 = grid[iz * n + ix];
+  const h10 = grid[iz * n + ix + 1];
+  const h01 = grid[(iz + 1) * n + ix];
+  const h11 = grid[(iz + 1) * n + ix + 1];
+  return (h00 * (1 - fx) + h10 * fx) * (1 - fz) + (h01 * (1 - fx) + h11 * fx) * fz;
+}
+
+/** Spread an amount over the 4 cells around a cell-space point
+ *  with the droplet addAt weights. */
+function spreadGridAt(grid: Float32Array, n: number, px: number, pz: number, amount: number): void {
+  const ix = Math.max(0, Math.min(n - 2, Math.floor(px)));
+  const iz = Math.max(0, Math.min(n - 2, Math.floor(pz)));
+  const fx = Math.max(0, Math.min(1, px - ix));
+  const fz = Math.max(0, Math.min(1, pz - iz));
+  grid[iz * n + ix] += amount * (1 - fx) * (1 - fz);
+  grid[iz * n + ix + 1] += amount * fx * (1 - fz);
+  grid[(iz + 1) * n + ix] += amount * (1 - fx) * fz;
+  grid[(iz + 1) * n + ix + 1] += amount * fx * fz;
 }
 
 /** RNG seed of the droplet sim: the field seed mixed with the
@@ -1068,6 +1282,8 @@ function erodeDropletsInPlace(
   n: number,
   resolved: ResolvedTerrainErosion,
   rngSeed: number,
+  mask: Float32Array | null,
+  measure: TerrainErosionMeasure | null,
 ): void {
   const count = resolved.dropletCount;
   if (count <= 0 || resolved.water <= 0) return;
@@ -1114,6 +1330,10 @@ function erodeDropletsInPlace(
       const ix = Math.floor(px);
       const iz = Math.floor(pz);
       if (ix < 0 || iz < 0 || ix >= n - 1 || iz >= n - 1) break;
+      // Measurement (段B): droplet traffic at the current
+      // position. Read-only — nothing here feeds back into
+      // the height updates below.
+      if (measure) spreadGridAt(measure.flow, n, px, pz, waterVol);
       const fx = px - ix;
       const fz = pz - iz;
       const h00 = heights[iz * n + ix];
@@ -1142,14 +1362,21 @@ function erodeDropletsInPlace(
       const newH = sampleAt(px, pz);
       const dh = newH - prevH;
       const capacity = Math.max(-dh * speed * waterVol * capacityFactor, minCapacity);
+      // Erosion mask (Phase 20 stage 3): the exchange at the
+      // position where material is removed / deposited is
+      // scaled by the mask sampled there. A full-1 mask
+      // multiplies by exactly 1, so the run stays bit-identical.
+      const maskFactor = mask ? sampleGridBilinear(mask, n, oldX, oldZ) : 1;
       if (sediment > capacity || dh > 0) {
-        const amount = dh > 0 ? Math.min(dh, sediment) : sediment * depositRate;
+        const amount = (dh > 0 ? Math.min(dh, sediment) : sediment * depositRate) * maskFactor;
         sediment -= amount;
         addAt(oldX, oldZ, amount);
+        if (measure && amount !== 0) spreadGridAt(measure.depositTotal, n, oldX, oldZ, amount);
       } else {
-        const amount = Math.min((capacity - sediment) * erodeRate, -dh);
+        const amount = Math.min((capacity - sediment) * erodeRate, -dh) * maskFactor;
         sediment += amount;
         addAt(oldX, oldZ, -amount);
+        if (measure && amount !== 0) spreadGridAt(measure.erosionTotal, n, oldX, oldZ, amount);
       }
       prevH = newH;
       speed = Math.sqrt(Math.max(0, speed * speed + dh * gravity));
@@ -1170,11 +1397,16 @@ function relaxThermalInPlace(
   n: number,
   step: number,
   resolved: ResolvedTerrainErosion,
+  mask: Float32Array | null,
 ): void {
   if (resolved.thermal <= 0) return;
   const maxDiff = resolved.talusSlope * step;
   const rate = 0.5 * resolved.thermal;
   const delta = new Float32Array(n * n);
+  // Erosion mask (Phase 20 stage 3): each transfer is scaled
+  // by the average of the two endpoint mask values. An average
+  // of exactly 1s keeps the transfer bit-identical.
+  const maskScale = (a: number, b: number): number => (mask ? (mask[a] + mask[b]) * 0.5 : 1);
   for (let pass = 0; pass < resolved.thermalPasses; pass++) {
     delta.fill(0);
     let moved = false;
@@ -1185,20 +1417,20 @@ function relaxThermalInPlace(
         if (i + 1 < n) {
           const diff = h - heights[idx + 1];
           if (diff > maxDiff) {
-            const m = (diff - maxDiff) * rate * 0.5;
+            const m = (diff - maxDiff) * rate * 0.5 * maskScale(idx, idx + 1);
             delta[idx] -= m; delta[idx + 1] += m; moved = true;
           } else if (diff < -maxDiff) {
-            const m = (-diff - maxDiff) * rate * 0.5;
+            const m = (-diff - maxDiff) * rate * 0.5 * maskScale(idx, idx + 1);
             delta[idx] += m; delta[idx + 1] -= m; moved = true;
           }
         }
         if (j + 1 < n) {
           const diff = h - heights[idx + n];
           if (diff > maxDiff) {
-            const m = (diff - maxDiff) * rate * 0.5;
+            const m = (diff - maxDiff) * rate * 0.5 * maskScale(idx, idx + n);
             delta[idx] -= m; delta[idx + n] += m; moved = true;
           } else if (diff < -maxDiff) {
-            const m = (-diff - maxDiff) * rate * 0.5;
+            const m = (-diff - maxDiff) * rate * 0.5 * maskScale(idx, idx + n);
             delta[idx] += m; delta[idx + n] -= m; moved = true;
           }
         }
@@ -1223,9 +1455,18 @@ export function erodeHeightGridInPlace(
   step: number,
   resolved: ResolvedTerrainErosion,
   rngSeed: number,
+  measure?: TerrainErosionMeasure | null,
 ): void {
-  erodeDropletsInPlace(heights, size, resolved, rngSeed);
-  relaxThermalInPlace(heights, size, step, resolved);
+  // The mask is generated from the PRE-erosion grid, before
+  // either pass carves anything (Phase 20 stage 3).
+  let mask = resolved.mask ? buildErosionMaskGrid(heights, size, step, resolved.mask) : null;
+  // A uniform-1 mask (strength 0, a window covering the whole
+  // field, ...) collapses to no mask at all: bilinear sampling
+  // of an all-1 grid is not guaranteed to return exactly 1 in
+  // floating point, and the identity guarantee is bit-level.
+  if (mask && mask.every((v) => v === 1)) mask = null;
+  erodeDropletsInPlace(heights, size, resolved, rngSeed, mask, measure ?? null);
+  relaxThermalInPlace(heights, size, step, resolved, mask);
 }
 
 /** The eroded height field: one baked grid + a bilinear sampler. */
@@ -1240,11 +1481,16 @@ let erodedFieldCache: { key: string; field: ErodedTerrainField } | null = null;
 
 function erodedFieldCacheKey(terrain: GpgpuMorphTerrainOptions, fieldSeed: number): string {
   const e = terrain.erosion;
+  const m = e?.mask;
   return [
     terrain.amplitude, terrain.frequency, terrain.octaves, terrain.seed,
     terrain.kind ?? 'fbm', terrain.terraceSteps ?? 6,
     e?.water ?? 0, e?.droplets ?? 1, e?.deposit ?? 0.3,
     e?.thermal ?? 0, e?.talus ?? 0.5, e?.thermalPasses ?? 24, e?.seed ?? 0,
+    // Phase 20 stage 3: the mask re-carves the field, so its
+    // parameters are part of the cache identity too (a miss
+    // would serve the un-masked landscape against a masked one).
+    m?.mode ?? 'off', m?.strength ?? 1, m?.invert ? 1 : 0, m?.low ?? 0, m?.high ?? 1,
     fieldSeed,
   ].join('|');
 }
@@ -1266,6 +1512,7 @@ export function getErodedTerrainField(
   if (!resolved) return null;
   const key = erodedFieldCacheKey(terrain, fieldSeed);
   if (erodedFieldCache && erodedFieldCache.key === key) return erodedFieldCache.field;
+  const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const n = TERRAIN_EROSION_GRID_SIZE;
   const extent = 1.05;
   const step = (extent * 2) / (n - 1);
@@ -1280,7 +1527,63 @@ export function getErodedTerrainField(
   erodeHeightGridInPlace(heights, n, step, resolved, erosionRngSeedFor(fieldSeed, resolved.seed));
   const field: ErodedTerrainField = { size: n, extent, step, heights };
   erodedFieldCache = { key, field };
+  // Phase 21 stage 4: bake bookkeeping for the manual-trigger /
+  // status surface. Pure counters — never read by the bake itself.
+  erodedFieldBakeStats = {
+    bakes: erodedFieldBakeStats.bakes + 1,
+    lastDurationMs: (typeof performance !== 'undefined' ? performance.now() : Date.now()) - started,
+    lastKey: key,
+    lastAt: Date.now(),
+  };
   return field;
+}
+
+/* ---------------- Phase 21 stage 4: manual rebake + status ----------------
+ * The erosion bake is a single synchronous in-place pass shared
+ * cell-for-cell with the derived maps, so it is NOT split into
+ * async chunks (a split would risk the two landscapes diverging).
+ * The manual surface is therefore: an explicit rebake trigger
+ * (cache invalidation + the same pure bake, bit-identical for the
+ * same parameters) and a status readout (bake count, last bake
+ * duration, whether the current parameters match the baked key).
+ */
+export interface ErodedTerrainFieldBakeStats {
+  bakes: number;
+  lastDurationMs: number;
+  lastKey: string | null;
+  lastAt: number;
+}
+
+let erodedFieldBakeStats: ErodedTerrainFieldBakeStats = { bakes: 0, lastDurationMs: 0, lastKey: null, lastAt: 0 };
+
+export function getErodedTerrainFieldBakeStats(): ErodedTerrainFieldBakeStats {
+  return { ...erodedFieldBakeStats };
+}
+
+/** The cache key the given parameters WOULD bake under (no bake). */
+export function erodedTerrainFieldKeyFor(terrain: GpgpuMorphTerrainOptions, fieldSeed: number): string {
+  return erodedFieldCacheKey(terrain, fieldSeed);
+}
+
+/** Whether the cached field is exactly the given parameters' bake. */
+export function isErodedTerrainFieldCurrent(terrain: GpgpuMorphTerrainOptions, fieldSeed: number): boolean {
+  if (!resolveTerrainErosion(terrain.erosion)) return false;
+  return erodedFieldCache !== null && erodedFieldCache.key === erodedFieldCacheKey(terrain, fieldSeed);
+}
+
+/**
+ * Manual rebake: drop the cached field and run the bake again for
+ * the same parameters. The bake is a pure function, so the result
+ * is bit-identical to the field it replaces; only the bake stats
+ * (count / duration) change. Returns the field, or null when the
+ * erosion grammar is off.
+ */
+export function rebakeErodedTerrainField(
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+): ErodedTerrainField | null {
+  erodedFieldCache = null;
+  return getErodedTerrainField(terrain, fieldSeed);
 }
 
 /** Bilinear sample of the eroded field at a field point
@@ -1434,8 +1737,14 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
    *  its own channel so the draw can split per species. All 0
    *  when the scatter grammar is inactive or species is 1. */
   speciesData: Uint8Array;
+  /** Fragment restore (Phase 20 stage 1): true when a supplied
+   *  restore assignment actually drove this bake's division
+   *  (cell table AND fracture transform). False on every legacy
+   *  path, and false if the assignment proved unusable here
+   *  (defensive fallback to the sites division). */
+  fragmentRestoreApplied: boolean;
 } {
-  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, rigidFracture, scatter, contourGeometry, polygonSides, pathJitter } = options;
+  const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, rigidFracture, fragmentRestore, scatter, contourGeometry, polygonSides, pathJitter } = options;
   const formActive = isFormDeformationActive(form);
   // Raster mask (Phase X): resolved once; null unless the mode is
   // on and the map is usable, in which case the placement branches
@@ -2326,14 +2635,28 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
   // the same division options, so the solver's initial placement
   // reproduces the (possibly fractured) cloud exactly. Read-only
   // over the data — the bake itself is untouched by the request.
+  // Fragment restore (Phase 20 stage 1): a caller-resolved saved
+  // assignment drives the cell table through the assignment
+  // twin. Unusable here (defensive: the runtime's resolution
+  // already validated it against this bake's signature) falls
+  // back to the sites division — and reports not-applied.
+  const restoredCells = rigidFracture && fragmentRestore
+    ? buildFractureCellDataFromAssignment(data, count, fragmentRestore.assignment, rigidFracture.gap)
+    : null;
+  const fragmentRestoreApplied = restoredCells !== null;
   const fractureCells = rigidFracture
-    ? buildFractureCellData(data, count, rigidFracture)
+    ? (restoredCells ?? buildFractureCellData(data, count, rigidFracture))
     : null;
   // Voronoi fracture (Phase AG): post-pass over the finished
   // cloud. Skipped entirely unless the option is present, so the
-  // default bake stays bit-identical.
+  // default bake stays bit-identical. A restored bake transforms
+  // by the SAME assignment its cell table was built from.
   if (fracture) {
-    applyVoronoiFracture(data, count, fracture);
+    if (fragmentRestoreApplied && fragmentRestore) {
+      applyVoronoiFractureWithAssignment(data, count, fragmentRestore.assignment, fracture.gap);
+    } else {
+      applyVoronoiFracture(data, count, fracture);
+    }
   }
-  return { data, normalData, fractureCells, speciesData };
+  return { data, normalData, fractureCells, speciesData, fragmentRestoreApplied };
 }

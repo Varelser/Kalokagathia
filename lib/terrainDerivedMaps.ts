@@ -15,6 +15,13 @@
  *  - curvature map — luma = 0.5 + 0.5 * laplacian / max|laplacian|
  *                    (mid grey = flat, bright = convex ridge,
  *                    dark = concave hollow).
+ *  - flow / deposit / erosion / moisture maps (Phase 20
+ *                    stage 3) — luma bakes of the erosion sim's
+ *                    read-only measurement (droplet traffic,
+ *                    total deposited / eroded material, and
+ *                    smoothed flow weighted toward flat
+ *                    ground), each normalised by its own grid
+ *                    maximum and all zero while erosion is off.
  *  - gradient tex  — the shader-facing bake for the slope force:
  *                    R/G encode the unit DOWNHILL direction,
  *                    B the normalised slope magnitude.
@@ -43,21 +50,25 @@
 
 import * as THREE from 'three';
 import {
+  createTerrainErosionMeasure,
   erodeHeightGridInPlace,
   erosionRngSeedFor,
   resolveTerrainErosion,
   terrainFieldSeedFor,
   terrainHeightAt,
   type GpgpuMorphTerrainOptions,
+  type TerrainErosionMeasure,
 } from './gpgpuMorphTargets';
 import { TERRAIN_MESH_EXTENT, TERRAIN_MESH_RESOLUTION } from './terrainMesh';
 import { getMapImageTexture, type MapImageTextureState } from './mapImageTexture';
 import { resolveAfMapSourceTexture } from './mapSourceSupply';
 import type { ParticleConfig } from '../types';
 
-export type TerrainDerivedMapKind = 'normal' | 'slope' | 'curvature';
+export type TerrainDerivedMapKind = 'normal' | 'slope' | 'curvature' | 'flow' | 'deposit' | 'erosion' | 'moisture';
 
-export const TERRAIN_DERIVED_KINDS: readonly TerrainDerivedMapKind[] = ['normal', 'slope', 'curvature'];
+export const TERRAIN_DERIVED_KINDS: readonly TerrainDerivedMapKind[] = [
+  'normal', 'slope', 'curvature', 'flow', 'deposit', 'erosion', 'moisture',
+];
 
 /** Vertex-grid side length of the derived bakes: the terrain
  *  mesh's own grid (TERRAIN_MESH_RESOLUTION segments + 1). */
@@ -72,7 +83,7 @@ export function terrainDerivedSource(kind: TerrainDerivedMapKind): string {
 export function parseTerrainDerivedSource(source: string): TerrainDerivedMapKind | null {
   if (!source || !source.startsWith(TERRAIN_DERIVED_SOURCE_PREFIX)) return null;
   const kind = source.slice(TERRAIN_DERIVED_SOURCE_PREFIX.length);
-  return kind === 'normal' || kind === 'slope' || kind === 'curvature' ? kind : null;
+  return (TERRAIN_DERIVED_KINDS as readonly string[]).includes(kind) ? (kind as TerrainDerivedMapKind) : null;
 }
 
 export function isTerrainDerivedSource(source: string): boolean {
@@ -89,6 +100,11 @@ export interface TerrainHeightGrid {
   extent: number;
   /** Grid spacing in field units. */
   step: number;
+  /** Erosion measurement (Phase 20 stage 3): the read-only
+   *  flow / deposit / erosion accumulation of the sim run that
+   *  carved this grid, or null while erosion is inactive. The
+   *  measurement never feeds back into the heights. */
+  erosionMeasure: TerrainErosionMeasure | null;
 }
 
 export function buildTerrainHeightGrid(
@@ -114,11 +130,14 @@ export function buildTerrainHeightGrid(
   // carved landscape the bake and the mesh read. The sim is the
   // shared erodeHeightGridInPlace over this same base grid, so
   // the result agrees cell for cell with the eroded field.
+  // Phase 20 stage 3: the run also carries a read-only measure
+  // (flow / deposit / erosion totals) for the new derived kinds.
   const erosion = resolveTerrainErosion(terrain.erosion);
+  const erosionMeasure = erosion ? createTerrainErosionMeasure(n) : null;
   if (erosion) {
-    erodeHeightGridInPlace(heights, n, step, erosion, erosionRngSeedFor(fieldSeed, erosion.seed));
+    erodeHeightGridInPlace(heights, n, step, erosion, erosionRngSeedFor(fieldSeed, erosion.seed), erosionMeasure);
   }
-  return { size: n, heights, extent, step };
+  return { size: n, heights, extent, step, erosionMeasure };
 }
 
 export interface TerrainDerivedMaps {
@@ -139,6 +158,18 @@ export interface TerrainDerivedMaps {
    * with NearestFilter.
    */
   collider: Uint8ClampedArray;
+  /**
+   * Erosion-measurement bakes (Phase 20 stage 3), each a luma
+   * bake normalised by its own grid maximum: flow = droplet
+   * traffic, deposit / erosion = total material deposited /
+   * removed by the droplet sim, moisture = smoothed flow
+   * weighted toward flat ground. All zero (alpha opaque) while
+   * erosion is inactive or no measure was supplied.
+   */
+  flow: Uint8ClampedArray;
+  deposit: Uint8ClampedArray;
+  erosion: Uint8ClampedArray;
+  moisture: Uint8ClampedArray;
   maxGradient: number;
   maxAbsCurvature: number;
   /** Maximum |height| over the grid — the collider pack range and
@@ -159,7 +190,12 @@ function toByte(v: number): number {
  * square grid, so the unit tests can feed analytic shapes (a
  * sine wave, a flat plane) and compare against theory.
  */
-export function deriveMapsFromHeightGrid(heights: ArrayLike<number>, size: number, step: number): TerrainDerivedMaps {
+export function deriveMapsFromHeightGrid(
+  heights: ArrayLike<number>,
+  size: number,
+  step: number,
+  measure?: TerrainErosionMeasure | null,
+): TerrainDerivedMaps {
   const n = Math.max(2, Math.floor(size));
   const count = n * n;
   const gx = new Float32Array(count);
@@ -205,6 +241,42 @@ export function deriveMapsFromHeightGrid(heights: ArrayLike<number>, size: numbe
   const curvature = new Uint8ClampedArray(count * 4);
   const gradient = new Uint8ClampedArray(count * 4);
   const collider = new Uint8ClampedArray(count * 4);
+  // Erosion-measurement bakes (Phase 20 stage 3): normalised by
+  // their own maxima; moisture is the 3x3-smoothed flow (also
+  // normalised) weighted by (1 − normalised slope), so wet
+  // ground reads as flat, much-trafficked cells. With no
+  // measure every new bake stays zero (alpha set below).
+  const flow = new Uint8ClampedArray(count * 4);
+  const depositMap = new Uint8ClampedArray(count * 4);
+  const erosionMap = new Uint8ClampedArray(count * 4);
+  const moisture = new Uint8ClampedArray(count * 4);
+  let maxFlow = 0;
+  let maxDeposit = 0;
+  let maxErosionTotal = 0;
+  const smoothedFlow = new Float32Array(count);
+  if (measure) {
+    for (let k = 0; k < count; k++) {
+      if (measure.flow[k] > maxFlow) maxFlow = measure.flow[k];
+      if (measure.depositTotal[k] > maxDeposit) maxDeposit = measure.depositTotal[k];
+      if (measure.erosionTotal[k] > maxErosionTotal) maxErosionTotal = measure.erosionTotal[k];
+    }
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        let sum = 0;
+        let terms = 0;
+        for (let dj = -1; dj <= 1; dj++) {
+          for (let di = -1; di <= 1; di++) {
+            const ii = i + di;
+            const jj = j + dj;
+            if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+            sum += measure.flow[jj * n + ii];
+            terms += 1;
+          }
+        }
+        smoothedFlow[j * n + i] = terms > 0 ? sum / terms : 0;
+      }
+    }
+  }
   const gradNorm = maxGradient > 0 ? 1 / maxGradient : 0;
   const curvNorm = maxAbsCurvature > 0 ? 1 / maxAbsCurvature : 0;
   for (let idx = 0; idx < count; idx++) {
@@ -239,8 +311,20 @@ export function deriveMapsFromHeightGrid(heights: ArrayLike<number>, size: numbe
     collider[o + 1] = packed & 255;
     collider[o + 2] = toByte(maxGradient > 0 ? dx * gradNorm * 0.5 + 0.5 : 0.5);
     collider[o + 3] = toByte(maxGradient > 0 ? dz * gradNorm * 0.5 + 0.5 : 0.5);
+    const fb = measure && maxFlow > 0 ? toByte(measure.flow[idx] / maxFlow) : 0;
+    flow[o] = fb; flow[o + 1] = fb; flow[o + 2] = fb; flow[o + 3] = 255;
+    const db = measure && maxDeposit > 0 ? toByte(measure.depositTotal[idx] / maxDeposit) : 0;
+    depositMap[o] = db; depositMap[o + 1] = db; depositMap[o + 2] = db; depositMap[o + 3] = 255;
+    const eb = measure && maxErosionTotal > 0 ? toByte(measure.erosionTotal[idx] / maxErosionTotal) : 0;
+    erosionMap[o] = eb; erosionMap[o + 1] = eb; erosionMap[o + 2] = eb; erosionMap[o + 3] = 255;
+    const mb = measure && maxFlow > 0 ? toByte((smoothedFlow[idx] / maxFlow) * (1 - s)) : 0;
+    moisture[o] = mb; moisture[o + 1] = mb; moisture[o + 2] = mb; moisture[o + 3] = 255;
   }
-  return { size: n, normal, slope, curvature, gradient, collider, maxGradient, maxAbsCurvature, maxAbsHeight };
+  return {
+    size: n, normal, slope, curvature, gradient, collider,
+    flow, deposit: depositMap, erosion: erosionMap, moisture,
+    maxGradient, maxAbsCurvature, maxAbsHeight,
+  };
 }
 
 export function buildTerrainDerivedMaps(
@@ -249,11 +333,19 @@ export function buildTerrainDerivedMaps(
   size: number = TERRAIN_DERIVED_SIZE,
 ): TerrainDerivedMaps {
   const grid = buildTerrainHeightGrid(terrain, seed, size);
-  return deriveMapsFromHeightGrid(grid.heights, grid.size, grid.step);
+  return deriveMapsFromHeightGrid(grid.heights, grid.size, grid.step, grid.erosionMeasure);
 }
 
 export function terrainDerivedMapBytes(maps: TerrainDerivedMaps, kind: TerrainDerivedMapKind): Uint8ClampedArray {
-  return kind === 'normal' ? maps.normal : kind === 'slope' ? maps.slope : maps.curvature;
+  switch (kind) {
+    case 'normal': return maps.normal;
+    case 'slope': return maps.slope;
+    case 'curvature': return maps.curvature;
+    case 'flow': return maps.flow;
+    case 'deposit': return maps.deposit;
+    case 'erosion': return maps.erosion;
+    case 'moisture': return maps.moisture;
+  }
 }
 
 /** Luma grid of one derived map (row 0 = fz = -extent), for the
@@ -290,6 +382,15 @@ export function terrainOptionsFromConfig(config: ParticleConfig): GpgpuMorphTerr
       talus: config.gpgpuMorphTerrainErosionTalus,
       thermalPasses: config.gpgpuMorphTerrainErosionThermalPasses,
       seed: config.gpgpuMorphTerrainErosionSeed,
+      // Erosion mask (Phase 20 stage 3): an extra field on the
+      // erosion options, carried by every config-side builder.
+      mask: {
+        mode: config.gpgpuMorphTerrainErosionMaskMode,
+        strength: config.gpgpuMorphTerrainErosionMaskStrength,
+        invert: config.gpgpuMorphTerrainErosionMaskInvert,
+        low: config.gpgpuMorphTerrainErosionMaskLow,
+        high: config.gpgpuMorphTerrainErosionMaskHigh,
+      },
     },
   };
 }
@@ -314,6 +415,13 @@ function derivedCacheKey(config: ParticleConfig): string {
     config.gpgpuMorphTerrainErosionTalus,
     config.gpgpuMorphTerrainErosionThermalPasses,
     config.gpgpuMorphTerrainErosionSeed,
+    // Phase 20 stage 3: the erosion mask re-carves every bake,
+    // so it is part of the cache identity too.
+    config.gpgpuMorphTerrainErosionMaskMode,
+    config.gpgpuMorphTerrainErosionMaskStrength,
+    config.gpgpuMorphTerrainErosionMaskInvert,
+    config.gpgpuMorphTerrainErosionMaskLow,
+    config.gpgpuMorphTerrainErosionMaskHigh,
     config.gpgpuSeed,
   ].join('|');
 }

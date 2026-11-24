@@ -18,6 +18,7 @@ import {
 } from '../lib/fragmentCollection';
 import { clampFractureCells } from '../lib/voronoiFracture';
 import { PcgGraphEditorBlock } from './controlPanelPcgGraphEditor';
+import { ErosionRebakeBlock } from './controlPanelErosionRebake';
 
 // Mesh SDF bake status (Phase BY): the bake runs async on the
 // CPU; this line polls while it is in flight so the user can see
@@ -67,10 +68,12 @@ const FRAGMENT_SIGNATURE_FIELD_LABELS: Record<FragmentSignatureField, string> = 
 // The bake's cell table reaches the panel only through the
 // runtime's publication (lib/fragmentCollection.ts) — it exists
 // while the rigid solver path produced cell data. A saved
-// collection is compared, never silently applied: restoration of
-// the assignment into a bake is not wired in this stage, so what
-// is stored is the asset (signature + assignment + clusters) and
-// the explicit match / mismatch report below.
+// collection is compared, never silently applied. Phase 20
+// stage 1 adds the opt-in restore: while the Restore key (and
+// the rigid solver) is on, an exactly-matching saved assignment
+// is fed back into the bake by the runtime, and the published
+// bake carries the outcome (applied / rejected with reason)
+// shown below.
 const FragmentCollectionBlock: React.FC<{ config: ParticleConfig; updateConfig: GlobalDisplayEffectsSharedProps['updateConfig'] }> = ({ config, updateConfig }) => {
   const [, setTick] = React.useState(0);
   const [notice, setNotice] = React.useState('');
@@ -83,6 +86,17 @@ const FragmentCollectionBlock: React.FC<{ config: ParticleConfig; updateConfig: 
   const savedJson = config.gpgpuFragmentCollectionJson;
   const saved = parseFragmentCollection(savedJson);
   const bake = getPublishedFragmentBake();
+  // Fragment restore (Phase 20 stage 1): the outcome of the
+  // latest bake's restore attempt, published by the runtime.
+  // Shown only while the restore key is on — a refusal is
+  // always surfaced with its reason, never silent.
+  const restoreLine = (() => {
+    if (!config.gpgpuFragmentCollectionRestoreEnabled) return '';
+    if (!bake) return '復元: ベイク未取得のため、まだ判定できていません（剛体ソルバ On のベイクで判定されます）。';
+    if (!bake.restore) return '';
+    if (bake.restore.state === 'applied') return '復元中: 保存済み分割が現在のベイクに適用されています。';
+    return `却下: 保存済み分割は適用されませんでした（${bake.restore.detail}）。`;
+  })();
   // Conditions derivable from config alone (particle count is not
   // one of them — it comes from the published bake's signature).
   const configSignature: FragmentCollectionSignature = {
@@ -162,8 +176,14 @@ const FragmentCollectionBlock: React.FC<{ config: ParticleConfig; updateConfig: 
         </div>
       )}
       {notice && <div className="mt-1 text-[9px] leading-relaxed text-white/60">{notice}</div>}
+      <div className="mt-2">
+        <Toggle label="Restore into Bake （ベイク復元）" value={config.gpgpuFragmentCollectionRestoreEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuFragmentCollectionRestoreEnabled', v)} />
+      </div>
+      {restoreLine && (
+        <div className="mt-1 text-[9px] leading-relaxed text-white/60">{restoreLine}</div>
+      )}
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-        保存されるのは分割そのもの（署名・セル割当・接着クラスタ）で、剛体の落下後の状態は含みません。保存済み分割のベイクへの復元適用は本段階では行わず、条件の照合までです。
+        保存されるのは分割そのもの（署名・セル割当・接着クラスタ）で、剛体の落下後の状態は含みません。復元は、復元キーと剛体ソルバが両方 On で、署名が現在のベイク条件と完全に一致する場合にだけ適用されます（一致しない場合は上の却下表示が出ます）。
       </div>
     </>
   );
@@ -333,9 +353,19 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
               <Slider label="Talus （タラス角）" value={config.gpgpuMorphTerrainErosionTalus} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionTalus', v)} />
               <Slider label="Thermal Passes （緩和パス）" value={config.gpgpuMorphTerrainErosionThermalPasses} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionThermalPasses', Math.round(v))} />
               <Slider label="Erosion Seed （侵食シード）" value={config.gpgpuMorphTerrainErosionSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionSeed', Math.round(v))} />
+              <Toggle label="Erosion Mask （侵食マスク）" value={config.gpgpuMorphTerrainErosionMaskMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Height （高度）', val: 'height' as const }, { label: 'Slope （斜度）', val: 'slope' as const }, { label: 'Curvature （曲率）', val: 'curvature' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskMode', v)} />
+              {config.gpgpuMorphTerrainErosionMaskMode !== 'off' && (
+                <>
+                  <Slider label="Mask Strength （マスクの深さ）" value={config.gpgpuMorphTerrainErosionMaskStrength} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskStrength', v)} />
+                  <Slider label="Mask Low （帯の下限）" value={config.gpgpuMorphTerrainErosionMaskLow} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskLow', v)} />
+                  <Slider label="Mask High （帯の上限）" value={config.gpgpuMorphTerrainErosionMaskHigh} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskHigh', v)} />
+                  <Toggle label="Mask Invert （帯を反転）" value={config.gpgpuMorphTerrainErosionMaskInvert} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskInvert', v)} />
+                </>
+              )}
               <div className="mt-1 text-[9px] leading-relaxed text-white/40">
                 生成済みの高度場をベイク時に彫り直す侵食シミュレーションです（Phase AP）。Water は水滴が谷を刻む水力侵食、Thermal はタラス角を超えた斜面が崩れる熱侵食で、どちらも 0 のときは従来の地形と完全に同一です。侵食後の地形はモーフ・メッシュ・派生マップ・コライダ・影で共有されます。トンネル表示のときは平面前提が崩れるため侵食は無効です。
               </div>
+              <ErosionRebakeBlock config={config} />
               <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Terrain Scatter （地形散布）</div>
               <Toggle label="Scatter （散布文法）" value={config.gpgpuMorphScatterEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphScatterEnabled', v)} />
               {config.gpgpuMorphScatterEnabled && (
@@ -514,6 +544,15 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Slider label="Talus （タラス角）" value={config.gpgpuMorphTerrainErosionTalus} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionTalus', v)} />
           <Slider label="Thermal Passes （緩和パス）" value={config.gpgpuMorphTerrainErosionThermalPasses} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionThermalPasses', Math.round(v))} />
           <Slider label="Erosion Seed （侵食シード）" value={config.gpgpuMorphTerrainErosionSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionSeed', Math.round(v))} />
+          <Toggle label="Erosion Mask （侵食マスク）" value={config.gpgpuMorphTerrainErosionMaskMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Height （高度）', val: 'height' as const }, { label: 'Slope （斜度）', val: 'slope' as const }, { label: 'Curvature （曲率）', val: 'curvature' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskMode', v)} />
+          {config.gpgpuMorphTerrainErosionMaskMode !== 'off' && (
+            <>
+              <Slider label="Mask Strength （マスクの深さ）" value={config.gpgpuMorphTerrainErosionMaskStrength} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskStrength', v)} />
+              <Slider label="Mask Low （帯の下限）" value={config.gpgpuMorphTerrainErosionMaskLow} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskLow', v)} />
+              <Slider label="Mask High （帯の上限）" value={config.gpgpuMorphTerrainErosionMaskHigh} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskHigh', v)} />
+              <Toggle label="Mask Invert （帯を反転）" value={config.gpgpuMorphTerrainErosionMaskInvert} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskInvert', v)} />
+            </>
+          )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は地形専用画像が優先され、未設定時は Horizon 背景画像を流用します。Repeat / Offset は全テクスチャ種に効く UV 変換です。Tunnel Speed は地形の位相スクロールによる前進表現で、カメラ自体は動きません。速度 0 では従来の静止トンネルと完全に同一です。侵食（Phase AP）はベイク時に高度場を彫り直すシミュレーションで、Water／Thermal とも 0 では従来と完全に同一です。トンネル表示では侵食は無効です。
           </div>
@@ -596,6 +635,7 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Slider label="Glue Strength （破断閾値）" value={config.gpgpuRigidGlueStrength} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuRigidGlueStrength', Math.round(v))} />
           <Toggle label="Start Sleeping （全スリープ開始）" value={config.gpgpuRigidStartSleeping} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidStartSleeping', v)} />
           <Toggle label="Floor Terrain （地形床）" value={config.gpgpuRigidFloorTerrain} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidFloorTerrain', v)} />
+          <Toggle label="Cluster Colors （クラスタ色分け）" value={config.gpgpuRigidClusterColorEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidClusterColorEnabled', v)} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             破砕ベイクのセル（最大64体）を永続剛体として CPU で解くソルバです（質量・球近似の慣性・逐次インパルス接触・接着と破断・スリープ／活性化）。モーフ点群が前提で、破砕の Cells / Seed がそのまま体の分割になります。有効中は年齢リスポーン／キル条件／スポーンゲート／モーフ引力／レプリカ独立 sim は体を守るため無効化され、Vellum より優先されます。衝突形状はセルのバウンディング球近似のみ（開始時の重なりは初期距離を下限として許容）、凸包・メッシュ衝突・拘束ジョイントは解きません。床とバウンス球には衝突します。地形床 ON のときは、侵食ベイクの高度場がある場面でのみ床がその地形になります（無い場面では平面の床のまま。地形との衝突は体の中心直下の高さで解くため、大きな体は急斜面の脇で地形にめり込むことがあります）。
           </div>

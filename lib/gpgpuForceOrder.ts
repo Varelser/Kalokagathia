@@ -31,6 +31,14 @@ export const GPGPU_FORCE_CHUNK_NAMES = [
   'elastic',
   'magnetic',
   'steer-avoid',
+  // Phase 20 stage 2: crowd steering (lib/steering.ts). This
+  // chunk is VARIANT-GATED: it is spliced into the built shader
+  // only while the Phase 20 steering variant is selected (the
+  // steer-seek keys on), so the default-order assembly without
+  // the variant stays byte-identical to the pre-Phase-20 string.
+  // The name still lives in the order list so a user order can
+  // place it; without the variant the builder skips the chunk.
+  'steer-seek',
 ] as const;
 
 export type GpgpuForceChunkName = (typeof GPGPU_FORCE_CHUNK_NAMES)[number];

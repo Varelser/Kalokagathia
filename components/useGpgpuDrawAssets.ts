@@ -14,6 +14,18 @@ export function vellumCrackVariantOn(config: ParticleConfig): boolean {
     && (config.gpgpuVellumTearGap ?? 0) > 0
     && (config.gpgpuVellumTear ?? 0) > 0;
 }
+
+// Rigid cluster colouring (Phase 20 stage 1): the points draw's
+// string variant follows the config side of the cluster colour
+// condition — colour key on AND the rigid solver on. The
+// per-frame half (a cell texture and LUT actually exist) is
+// resolved in gpgpuVisualUpdates, exactly like the crack
+// variant's state texture. Off, the draw strings are
+// byte-identical to the Phase 19 strings.
+export function rigidClusterColorVariantOn(config: ParticleConfig): boolean {
+  return !!config.gpgpuRigidClusterColorEnabled
+    && !!config.gpgpuRigidEnabled;
+}
 import { AUX_DRAW_FRAG, AUX_DRAW_VERT, AUX_TEX_SIZE } from "./gpgpuShaderAux";
 import { WW_DRAW_FRAG, WW_DRAW_VERT, WW_TEX_SIZE } from "./gpgpuShaderWhitewater";
 
@@ -158,29 +170,41 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uVellumCrackEnabled: { value: false },
       uVellumStateTex:     { value: null },
       uVellumMode:         { value: 0 },
+      // Rigid cluster colouring (Phase 20 stage 1): supply off /
+      // no textures is the identity configuration — the vertex
+      // leaves vClusterOn at 0 and the fragment keeps the
+      // legacy base colour.
+      uClusterColorEnabled:  { value: false },
+      uClusterCellTex:       { value: null },
+      uClusterColorLutTex:   { value: null },
       uDensityCompEnabled: { value: false },
       uDensityTarget:      { value: 0.5 },
       uDensityCount:       { value: texSize * texSize },
       uViewportSizePx:     { value: new THREE.Vector2(1, 1) },
     },
-    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(config) }),
-    fragmentShader: buildDrawFrag({ vellumCrack: vellumCrackVariantOn(config) }),
+    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config) }),
+    fragmentShader: buildDrawFrag({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
-  // Phase 19 gate fix: swap the draw strings when the crack
+  // Phase 19 gate fix: swap the draw strings when either
   // variant condition flips (creation already used the initial
-  // config's variant).
-  const drawCrackRef = useRef(vellumCrackVariantOn(config));
+  // config's variants). Phase 20 stage 1: the cluster colour
+  // variant joins the same swap.
+  const drawVariantRef = useRef({
+    crack: vellumCrackVariantOn(config),
+    cluster: rigidClusterColorVariantOn(config),
+  });
   useEffect(() => {
-    const on = vellumCrackVariantOn(config);
-    if (drawCrackRef.current === on) return;
-    drawCrackRef.current = on;
-    drawMat.vertexShader = buildDrawVert({ vellumCrack: on });
-    drawMat.fragmentShader = buildDrawFrag({ vellumCrack: on });
+    const crack = vellumCrackVariantOn(config);
+    const cluster = rigidClusterColorVariantOn(config);
+    if (drawVariantRef.current.crack === crack && drawVariantRef.current.cluster === cluster) return;
+    drawVariantRef.current = { crack, cluster };
+    drawMat.vertexShader = buildDrawVert({ vellumCrack: crack, clusterColor: cluster });
+    drawMat.fragmentShader = buildDrawFrag({ vellumCrack: crack, clusterColor: cluster });
     drawMat.needsUpdate = true;
-  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, drawMat]);
+  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuRigidClusterColorEnabled, config.gpgpuRigidEnabled, drawMat]);
 
   const drawGeo = useMemo(() => {
     const count = texSize * texSize;

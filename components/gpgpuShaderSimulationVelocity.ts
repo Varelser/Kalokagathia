@@ -41,12 +41,27 @@ export const SIM_VEL_FRAG =
 export interface VelocityFragmentVariantOptions {
   grainsFullScan?: boolean;
   flip3dCouple?: boolean;
+  // Phase 20 stage 2: crowd steering ('steer-seek' chunk +
+  // its preamble uniform set), spliced in in the Phase 19
+  // manner — only while the steer-seek keys are on.
+  steeringSeek?: boolean;
 }
 
 export const SIM_VEL_FRAG_PHASE19 =
   buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true }) +
   VEL_FRAG_HELPERS +
   VEL_FRAG_MAIN_FORCES +
+  buildVelocitySphGrains({ grainsFullScan: true }) +
+  buildVelocityTail({ flip3dCouple: true });
+
+// Phase 20 stage 2: the full Phase 20 string — every Phase 19
+// variant plus the steering additions (preamble uniform set and
+// the 'steer-seek' force chunk at its default order position,
+// last). The Phase 19 and default strings above are unchanged.
+export const SIM_VEL_FRAG_PHASE20 =
+  buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true }) +
+  VEL_FRAG_HELPERS +
+  buildMainForcesFragment(undefined, { steeringSeek: true }) +
   buildVelocitySphGrains({ grainsFullScan: true }) +
   buildVelocityTail({ flip3dCouple: true });
 
@@ -74,10 +89,10 @@ export function buildVelocityFragment(customCode: string, forceOrder?: string, o
   // Phase 19 gate fix: a Phase 19 variant option rebuilds the
   // affected chunks in their variant form. With no variant on,
   // the historical paths above are untouched.
-  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple;
+  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek;
   const base = !hasVariant && (!forceOrder || isDefaultGpgpuForceOrder(forceOrder))
     ? SIM_VEL_FRAG
-    : buildVelocityPreamble(options) + VEL_FRAG_HELPERS + buildMainForcesFragment(forceOrder)
+    : buildVelocityPreamble(options) + VEL_FRAG_HELPERS + buildMainForcesFragment(forceOrder, options)
       + buildVelocitySphGrains(options) + buildVelocityTail(options);
   if (!snippet) return base;
   const extraction = extractCustomForceControls(snippet);

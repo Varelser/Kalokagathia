@@ -430,6 +430,27 @@ const VEL_FRAG_PREAMBLE_FLIP3D = /* glsl */ `  // FLIP 3D coupling (Phase 19 sta
     return clamp(m + 0.5, 0.0, 1.0);
   }
 `;
+const VEL_FRAG_PREAMBLE_STEERING = /* glsl */ `  // Crowd steering (Phase 20 stage 2): the uniform set of the
+  // 'steer-seek' force chunk — the GPU twin of lib/steering.ts
+  // (seek / arrive / path following / two-state switching).
+  // Mode ids: 0 seek, 1 arrive, 2 path, 3 state. The path is a
+  // fixed 8-point uniform array (STEERING_PATH_MAX in
+  // lib/steering.ts); PathCount 0 leaves the path mode inert.
+  uniform bool  uSteerSeekEnabled;
+  uniform int   uSteerSeekMode;
+  uniform float uSteerSeekStrength;
+  uniform float uSteerSeekMaxSpeed;
+  uniform float uSteerSeekMaxForce;
+  uniform vec3  uSteerSeekTarget;
+  uniform vec3  uSteerSeekTarget1;
+  uniform float uSteerSeekSlowingRadius;
+  uniform int   uSteerSeekStateSlot;
+  uniform float uSteerSeekStateThreshold;
+  uniform vec3  uSteerSeekPath[8];
+  uniform int   uSteerSeekPathCount;
+  uniform float uSteerSeekPathLookAhead;
+  uniform float uSteerSeekPathRadius;
+`;
 const VEL_FRAG_PREAMBLE_TAIL = /* glsl */ `  varying vec2 vUv;
 
 `;
@@ -445,6 +466,10 @@ const VEL_FRAG_PREAMBLE_TAIL = /* glsl */ `  varying vec2 vUv;
 export interface VelocityPreambleVariantOptions {
   grainsFullScan?: boolean;
   flip3dCouple?: boolean;
+  // Phase 20 stage 2: crowd steering uniform set. Spliced in
+  // only behind this option, in the Phase 19 manner — the
+  // default preamble stays byte-identical to v2.00.
+  steeringSeek?: boolean;
 }
 
 export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions): string {
@@ -452,8 +477,10 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
     + (options?.grainsFullScan ? VEL_FRAG_PREAMBLE_GRAINS_SCAN + VEL_FRAG_PREAMBLE_GRAINS_CELL : '')
     + VEL_FRAG_PREAMBLE_MID
     + (options?.flip3dCouple ? VEL_FRAG_PREAMBLE_FLIP3D : '')
+    + (options?.steeringSeek ? VEL_FRAG_PREAMBLE_STEERING : '')
     + VEL_FRAG_PREAMBLE_TAIL;
 }
 
 export const VEL_FRAG_PREAMBLE = buildVelocityPreamble();
 export const VEL_FRAG_PREAMBLE_PHASE19 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true });
+export const VEL_FRAG_PREAMBLE_PHASE20 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true });

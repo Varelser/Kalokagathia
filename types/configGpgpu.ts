@@ -515,6 +515,35 @@ export interface ParticleConfigGpgpu {
   // (1.5 * SDF size). When both avoids are on, they add.
   gpgpuSteerAvoid: number;
   gpgpuSteerAvoidRange: number;
+  // Crowd steering (Phase 20 stage 2, Houdini §3): the GPU wiring
+  // of lib/steering.ts — seek / arrive / path following / two-state
+  // switching as a velocity-pass force ('steer-seek'). Disabled
+  // (default) keeps every shader string byte-identical: the block
+  // exists only in the Phase 20 variant strings. Mode ids:
+  // seek 0, arrive 1, path 2, state 3 (state reads the attribute
+  // slot StateSlot: state 0 seeks Target, state 1 arrives at
+  // Target1 — steeringForState's defaults). Path is a
+  // semicolon-separated "x,y,z;x,y,z;…" list (max 8 points);
+  // PathRadius 0 = always steer toward the path target (the
+  // steering.ts law verbatim), > 0 = steer only outside the
+  // corridor. MaxForce 0 = no clamp (steering.ts semantics).
+  gpgpuSteerSeekEnabled: boolean;
+  gpgpuSteerSeekMode: 'seek' | 'arrive' | 'path' | 'state';
+  gpgpuSteerSeekStrength: number;
+  gpgpuSteerSeekMaxSpeed: number;
+  gpgpuSteerSeekMaxForce: number;
+  gpgpuSteerSeekTargetX: number;
+  gpgpuSteerSeekTargetY: number;
+  gpgpuSteerSeekTargetZ: number;
+  gpgpuSteerSeekTarget1X: number;
+  gpgpuSteerSeekTarget1Y: number;
+  gpgpuSteerSeekTarget1Z: number;
+  gpgpuSteerSeekSlowingRadius: number;
+  gpgpuSteerSeekStateSlot: number;
+  gpgpuSteerSeekStateThreshold: number;
+  gpgpuSteerSeekPath: string;
+  gpgpuSteerSeekPathLookAhead: number;
+  gpgpuSteerSeekPathRadius: number;
   // Spring (to spawn pos)
   gpgpuSpringEnabled: boolean;
   gpgpuSpringStrength: number;
@@ -623,6 +652,15 @@ export interface ParticleConfigGpgpu {
   gpgpuMorphTerrainErosionTalus: number;
   gpgpuMorphTerrainErosionThermalPasses: number;
   gpgpuMorphTerrainErosionSeed: number;
+  // Erosion mask (Phase 20 stage 3): an automatically generated
+  // band over the pre-erosion height / slope / curvature that
+  // scales erosion per cell. Mode 'off' (default) = no mask and
+  // the Phase AP landscape stays bit-identical.
+  gpgpuMorphTerrainErosionMaskMode: 'off' | 'height' | 'slope' | 'curvature';
+  gpgpuMorphTerrainErosionMaskStrength: number;
+  gpgpuMorphTerrainErosionMaskInvert: boolean;
+  gpgpuMorphTerrainErosionMaskLow: number;
+  gpgpuMorphTerrainErosionMaskHigh: number;
   // Terrain scatter grammar (Phase AI): a foliage-style placement
   // grammar for the terrain morph target — density / height band /
   // slope cap drive the bake's acceptance resampling, the aligned
@@ -752,6 +790,13 @@ export interface ParticleConfigGpgpu {
   // form is only ever compared against the current bake
   // conditions, never silently applied.
   gpgpuFragmentCollectionJson: string;
+  // Fragment restore (Phase 20 stage 1): while on (AND the
+  // rigid solver is on), a saved collection whose signature
+  // matches the current bake conditions exactly is fed back
+  // into the bake as the division; a mismatch is refused and
+  // reported, never silently applied. Default off = the legacy
+  // bake, bit-identical.
+  gpgpuFragmentCollectionRestoreEnabled: boolean;
   // Morph-surface fibers (Phase AG, lib/morphFiber.ts): strands
   // grown from the morph bake's surface points along their
   // normals (radial fallback), drawn by an independent overlay
@@ -1424,6 +1469,29 @@ export interface ParticleConfigGpgpu {
   // (erosion off / tunnel mode) falls back to the plane, and the
   // default (off) keeps the plane path verbatim.
   gpgpuRigidFloorTerrain: boolean;
+  // XPBD joints + stress breaking (Phase 20 stage 1): joints
+  // are XPBD centre-distance constraints built with the glue
+  // adjacency rule, and stress breaking replaces the legacy
+  // glue break conditions with per-bond stress + propagation.
+  // Both are inert unless their switch is on; the defaults
+  // (off / α 0 / threshold 0 = unbreakable) keep every legacy
+  // path verbatim.
+  gpgpuRigidJointEnabled: boolean;
+  gpgpuRigidJointCompliance: number;
+  gpgpuRigidJointBreakThreshold: number;
+  gpgpuRigidStressBreakEnabled: boolean;
+  gpgpuRigidStressPropagation: number;
+  // OBB shape collision (Phase 20 stage 1): while on, the
+  // pair narrow phase and the floor test use each body's
+  // fitted OBB (lib/rigidObb.ts) instead of its bounding
+  // sphere. The default (off) keeps the sphere paths verbatim.
+  gpgpuRigidConvexEnabled: boolean;
+  // Cluster colouring (Phase 20 stage 1): while on (AND the
+  // rigid solver is on AND a cell texture exists), the points
+  // draw takes each particle's base colour from its body's
+  // static bake-time cluster colour (cell texture .w → LUT).
+  // Default off = the legacy draw strings, bit-identical.
+  gpgpuRigidClusterColorEnabled: boolean;
   // WebGPU Compute Backend
   gpgpuWebGPUEnabled: boolean;
   gpgpuExecutionPreference: 'auto' | 'webgl' | 'webgpu';
