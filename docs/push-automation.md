@@ -26,8 +26,15 @@ push が止まる問題を、経路変更で解消する。販売・公開・課
   - 対象: オーナー (Varelser) が開いた非ドラフト PR のみ。他人の PR は対象外。
   - 動作: hmarr/auto-approve-action@v4 で自動 Approve →
     `gh pr merge --squash --auto` で auto-merge 予約。
-  - 前提: リポ設定 Settings → General → Pull Requests の
-    「Allow auto-merge」が ON であること (OFF だと予約ステップが失敗として見える)。
+  - 前提 (どちらも 2026-11-24 に ON 化済み):
+    (1) Settings → General → Pull Requests の「Allow auto-merge」
+    (2) Settings → Actions → General → Workflow permissions の
+        「Allow GitHub Actions to create and approve pull requests」
+        — これが OFF だと Auto-approve が "GitHub Actions is not permitted
+        to approve pull requests" で失敗する (PR #1 初回テストで実測し修正)。
+- 実証: PR #1 (docs/push-automation.md の追加) で、github-actions[bot] が
+  自動 Approve → squash auto-merge まで無人で完了 (merge commit 61d21a9)。
+  テスト用ブランチはマージ後に削除済み。
 - ブランチ保護 (Approve 必須化) は **あえて未設定**。設定すると direct push
   (B経路や他AIの snapshot push) まで止まるため。PR 方式は「使いたいときに
   使える」状態に留める。
