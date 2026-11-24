@@ -24,7 +24,7 @@ permissions:
 #   A single global queue was avoided on purpose: GitHub keeps only one
 #   pending run per concurrency group and cancels older pending runs, which
 #   could silently drop a PR under a submission rush.
-# - Each run waits a deterministic stagger of 0-4 minutes derived from the
+# - Each run waits a deterministic stagger of 0-2 minutes derived from the
 #   PR number, so simultaneous submissions spread out.
 # - Enabling auto-merge retries with growing backoff (30/60/90s) if a race
 #   makes the first attempt fail.
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Stagger start (spread simultaneous PRs)
-        run: sleep $(( (${{ github.event.pull_request.number }} % 5) * 60 ))
+        run: sleep $(( (${{ github.event.pull_request.number }} % 3) * 60 ))
 
       - name: Auto-approve
         uses: hmarr/auto-approve-action@v4
