@@ -4,6 +4,7 @@ import {
   normalizeAttrExprs,
   resolveAttrExtConsumers,
 } from './gpgpuAttributes';
+import { flip3dMode } from './flip3d';
 
 export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   'particles',
@@ -22,11 +23,27 @@ export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   // (verbatim force laws in lib/webgpuCompute.ts), including the
   // OBJ normal kick inside the morph block, so every feature below
   // is genuinely implemented on this path. Still unsupported —
-  // and therefore still routing to WebGL — are 'fluid-field'
-  // (its solver is a WebGL FBO pass with no WGSL counterpart),
-  // 'flip' (Phase AT: the P2G / pressure-projection passes are
-  // WebGL FBO passes with no WGSL counterpart) and
-  // 'custom-force' (user GLSL cannot be compiled to WGSL).
+  // and therefore still routing to WebGL — are 'flip' (Phase AT:
+  // the P2G / pressure-projection passes are WebGL FBO passes
+  // with no WGSL counterpart) and 'custom-force' (user GLSL
+  // cannot be compiled to WGSL).
+  // Phase 25: 'fluid-field' joined — FLUID_WGSL advects the
+  // resident 64x64 grid on a third compute pipeline ahead of the
+  // velocity pass, which samples it through the legacy coupling
+  // formula. Only the field itself moved: a config combining it
+  // with 'flip' (or any other unsupported feature) still routes
+  // to WebGL, where the FLIP layer lives on the same field.
+  'fluid-field',
+  // Phase 26: 'flip-3d' joined — the atlas FLIP solver stepped
+  // by FLIP3D_*_WGSL inside stepWebGPUCompute, with the G2P
+  // coupling in the WGSL velocity pass. The requirement split
+  // (the Phase 24 reconciliation memo's section 3.6 option):
+  // 'flip' now names only the 2D layer (still WebGL-only), and
+  // a 3D-mode config requests 'flip-3d' instead. In 3D mode the
+  // 2D layer never runs (the passes disable it), so the split
+  // changes no behaviour — it only stops the 2D layer's
+  // requirement from holding 3D configs on the WebGL path.
+  'flip-3d',
   // Phase 15 (UE5 #18): 'age' joined — the WGSL position pass now
   // runs the age advance + wrap respawn with the WebGL placement
   // law, and the velocity pass gained the kick's respawn-frame
@@ -218,6 +235,9 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // declaring it routes to WebGL (the CPU fallback mirrors it in
   // attractor units).
   if (config.gpgpuAttractorEnabled && config.gpgpuAttractorSpaceMode && config.gpgpuAttractorSpaceMode !== 'legacy') features.push('attractor-space-mode');
+  // Phase 27: attractor unit 2 — same rule for the second
+  // unit's space mode (its legacy mode runs on both routes).
+  if (config.gpgpuAttractor2Enabled && config.gpgpuAttractor2SpaceMode && config.gpgpuAttractor2SpaceMode !== 'legacy') features.push('attractor-space-mode');
   // Wind volume (Phase AL): the placed wind localisation lives in
   // the WebGL velocity pass only — declaring it routes to WebGL.
   if (config.gpgpuWindVolumeEnabled) features.push('wind-volume');
@@ -235,11 +255,16 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // routes to WebGL (the CPU fallback treats it as a no-op,
   // like SPH / Grains).
   if (config.gpgpuPyroEnabled) features.push('pyro');
-  // FLIP (Phase AT): the P2G splat, pressure projection and
-  // G2P transfer live on the WebGL FBO path only — declaring
-  // it routes to WebGL (the CPU fallback treats it as a
-  // no-op, like SPH / Grains).
-  if (config.gpgpuFlipEnabled) features.push('flip');
+  // FLIP (Phase AT): the 2D layer's P2G splat, pressure
+  // projection and G2P transfer live on the WebGL FBO path
+  // only — declaring 'flip' routes to WebGL (the CPU fallback
+  // treats it as a no-op, like SPH / Grains). Phase 26 split
+  // the requirement by mode: a '3d'-mode config requests
+  // 'flip-3d' (supported — the WGSL atlas solver) instead,
+  // because the 2D layer is disabled in 3D mode.
+  if (config.gpgpuFlipEnabled) {
+    features.push(flip3dMode(config) === '3d' ? 'flip-3d' : 'flip');
+  }
   // Whitewater (Phase BC): the foam pool's spawn / carry passes
   // are WebGL FBO passes over the FLIP field — declaring it
   // routes to WebGL (the CPU fallback treats it as a no-op,

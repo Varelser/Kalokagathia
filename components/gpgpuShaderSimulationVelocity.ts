@@ -49,6 +49,11 @@ export interface VelocityFragmentVariantOptions {
   // SPH-head chunks), spliced in in the same manner — only
   // while the Akinci strength key is above zero.
   sphAkinci?: boolean;
+  // Phase 27 (9-6 stage 1): strange attractor unit 2
+  // (preamble uniform set + the 'attractor-2' force chunk),
+  // spliced in in the same manner — only while the unit-2
+  // enable key is on.
+  attractor2?: boolean;
 }
 
 export const SIM_VEL_FRAG_PHASE19 =
@@ -80,6 +85,18 @@ export const SIM_VEL_FRAG_PHASE24 =
   buildVelocitySphGrains({ grainsFullScan: true, sphAkinci: true }) +
   buildVelocityTail({ flip3dCouple: true });
 
+// Phase 27: the full Phase 27 string — every Phase 24 variant
+// plus the attractor unit-2 additions (preamble uniform set
+// and the 'attractor-2' force chunk right after 'attractor').
+// The default, Phase 19, Phase 20 and Phase 24 strings above
+// are unchanged.
+export const SIM_VEL_FRAG_PHASE27 =
+  buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true, attractor2: true }) +
+  VEL_FRAG_HELPERS +
+  buildMainForcesFragment(undefined, { steeringSeek: true, attractor2: true }) +
+  buildVelocitySphGrains({ grainsFullScan: true, sphAkinci: true }) +
+  buildVelocityTail({ flip3dCouple: true });
+
 // Builds the effective velocity fragment shader with a user's custom GLSL
 // force snippet injected at the placeholder above — after every built-in
 // force has been accumulated into `vel`, before the speed clamp, damping
@@ -104,7 +121,7 @@ export function buildVelocityFragment(customCode: string, forceOrder?: string, o
   // Phase 19 gate fix: a Phase 19 variant option rebuilds the
   // affected chunks in their variant form. With no variant on,
   // the historical paths above are untouched.
-  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci;
+  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci || !!options?.attractor2;
   const base = !hasVariant && (!forceOrder || isDefaultGpgpuForceOrder(forceOrder))
     ? SIM_VEL_FRAG
     : buildVelocityPreamble(options) + VEL_FRAG_HELPERS + buildMainForcesFragment(forceOrder, options)

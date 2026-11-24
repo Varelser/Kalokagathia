@@ -632,6 +632,29 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       )}
     </div>
 
+    {/* Strange Attractor 2 (Phase 27: second unit, 9-6 stage 1) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Strange Attractor 2" value={config.gpgpuAttractor2Enabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuAttractor2Enabled', v)} />
+      {config.gpgpuAttractor2Enabled && (
+        <>
+          <Toggle
+            label="Type"
+            value={config.gpgpuAttractor2Type}
+            options={[{ label: 'Lorenz', val: 'lorenz' }, { label: 'Rössler', val: 'rossler' }, { label: 'Thomas', val: 'thomas' }, { label: 'Halvorsen', val: 'halvorsen' }, { label: 'Chen', val: 'chen' }, { label: 'Lü', val: 'lu' }, { label: 'Aizawa', val: 'aizawa' }, { label: 'Sprott', val: 'sprott' }, { label: 'Rabinovich', val: 'rabinovich' }, { label: 'De Jong', val: 'dejong' }, { label: 'Ikeda', val: 'ikeda' }, { label: 'Chua', val: 'chua' }]}
+            onChange={(v) => updateConfig('gpgpuAttractor2Type', v)}
+          />
+          <Slider label="Strength" value={config.gpgpuAttractor2Strength} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuAttractor2Strength', v)} />
+          <Slider label="Scale" value={config.gpgpuAttractor2Scale} min={0.5} max={50} step={0.5} onChange={(v) => updateConfig('gpgpuAttractor2Scale', v)} />
+          <Toggle
+            label="Space Mode"
+            value={config.gpgpuAttractor2SpaceMode}
+            options={[{ label: 'Legacy', val: 'legacy' }, { label: 'Spread', val: 'spread' }, { label: 'Frame', val: 'frame' }, { label: 'Ring', val: 'ring' }]}
+            onChange={(v) => updateConfig('gpgpuAttractor2SpaceMode', v)}
+          />
+        </>
+      )}
+    </div>
+
     {/* Lévy flight */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Lévy Flight" value={config.gpgpuLevyEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuLevyEnabled', v)} />

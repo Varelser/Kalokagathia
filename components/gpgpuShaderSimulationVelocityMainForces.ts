@@ -460,6 +460,19 @@ export const VEL_FRAG_FORCE_ATTRACTOR = /* glsl */ `
       }
     }
 `;
+// Phase 27 (9-6 stage 1): strange attractor unit 2 — the same
+// force law as unit 1, driven by the uAttractor2* uniform set.
+// The chunk is DERIVED from the unit-1 chunk by renaming the
+// uniform prefix, so the two units can never drift apart in
+// the force laws (all 12 types and the space modes included).
+// Variant-gated like 'steer-seek': it exists in the built
+// shader only behind the attractor2 option (see
+// buildMainForcesFragment), so the stock assembly stays
+// byte-identical.
+export const VEL_FRAG_FORCE_ATTRACTOR2 =
+  VEL_FRAG_FORCE_ATTRACTOR
+    .replace('// Strange Attractor\n', '// Strange Attractor (unit 2)\n')
+    .replaceAll('uAttractor', 'uAttractor2');
 export const VEL_FRAG_FORCE_LEVY = /* glsl */ `
     // Lévy flight: rare heavy-tailed impulses. The gate is quantised by tick
     // (floor(uTime * rate)) so jump frequency is frame-rate independent; the
@@ -693,6 +706,7 @@ export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
   'kuramoto': VEL_FRAG_FORCE_KURAMOTO,
   'particle-life': VEL_FRAG_FORCE_PARTICLE_LIFE,
   'attractor': VEL_FRAG_FORCE_ATTRACTOR,
+  'attractor-2': VEL_FRAG_FORCE_ATTRACTOR2,
   'levy': VEL_FRAG_FORCE_LEVY,
   'vortex': VEL_FRAG_FORCE_VORTEX,
   'wind': VEL_FRAG_FORCE_WIND,
@@ -719,6 +733,10 @@ export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
  * byte-identical to the historical assembly. */
 export interface MainForcesVariantOptions {
   steeringSeek?: boolean;
+  // Phase 27: the 'attractor-2' chunk is variant-gated the
+  // same way — spliced in only while the attractor unit-2
+  // enable key is on.
+  attractor2?: boolean;
 }
 
 export function buildMainForcesFragment(
@@ -729,6 +747,7 @@ export function buildMainForcesFragment(
   let out = VEL_FRAG_MAIN_FORCES_HEAD;
   for (const name of names) {
     if (name === 'steer-seek' && !options?.steeringSeek) continue;
+    if (name === 'attractor-2' && !options?.attractor2) continue;
     out += VEL_FRAG_FORCE_CHUNKS[name];
   }
   return out;

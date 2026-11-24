@@ -65,6 +65,10 @@ export function velocityVariantOptions(config: ParticleConfig): VelocityFragment
     // SPH block either way, this keeps the string stock for
     // non-SPH configs that carry a stale strength value).
     sphAkinci: !!config.gpgpuSphEnabled && (config.gpgpuSphSurfaceTensionAkinci || 0) > 0,
+    // Phase 27 (9-6 stage 1): the attractor unit-2 chunk +
+    // uniforms exist in the built string only while the
+    // unit-2 enable key is on.
+    attractor2: !!config.gpgpuAttractor2Enabled,
   };
 }
 
@@ -102,6 +106,14 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uAttractorStrength: { value: 1.0 },
       uAttractorScale:    { value: 8.0 },
       uAttractorSpaceMode: { value: 0 },
+      // Phase 27: declared in the shader only in the
+      // attractor2 variant string; the entries are inert
+      // otherwise.
+      uAttractor2Enabled:  { value: false },
+      uAttractor2Type:     { value: 0 },
+      uAttractor2Strength: { value: 1.0 },
+      uAttractor2Scale:    { value: 8.0 },
+      uAttractor2SpaceMode: { value: 0 },
       uLevyEnabled:       { value: false },
       uLevyStrength:      { value: 2.0 },
       uLevyRate:          { value: 6.0 },
@@ -1219,7 +1231,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // config's variant), so a variant-only change swaps the shader
   // through this same path and the mount behaviour is unchanged.
   const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
-    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}`;
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}`;
   const appliedForceCodeRef = useRef<string | null>(
     `\n\n${variantKeyOf(velocityVariantOptions(config))}`,
   );
@@ -1263,7 +1275,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     velSimMat.needsUpdate = true;
     appliedForceCodeRef.current = appliedKey;
     setCustomForceStatus({ state: 'active' });
-  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, gl, velSimMat]);
+  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, config.gpgpuAttractor2Enabled, gl, velSimMat]);
 
   // Phase 19 gate fix: the position material's string variant
   // follows the Grains projection activity (the same condition

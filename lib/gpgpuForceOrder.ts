@@ -22,6 +22,15 @@ export const GPGPU_FORCE_CHUNK_NAMES = [
   'kuramoto',
   'particle-life',
   'attractor',
+  // Phase 27 (9-6 stage 1): strange attractor unit 2. Like
+  // 'steer-seek' below, this chunk is VARIANT-GATED: it is
+  // spliced into the built shader only while the attractor2
+  // variant is selected (the unit-2 enable key on), so the
+  // default-order assembly without the variant stays
+  // byte-identical. The name lives in the order list so a
+  // user order can place it; without the variant the builder
+  // skips the chunk.
+  'attractor-2',
   'levy',
   'vortex',
   'wind',

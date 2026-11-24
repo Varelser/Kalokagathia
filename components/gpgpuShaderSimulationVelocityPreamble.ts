@@ -458,6 +458,17 @@ const VEL_FRAG_PREAMBLE_AKINCI = /* glsl */ `  // Surface tension, Akinci form (
   // stock preamble carries no trace of it.
   uniform float uSphSurfaceTensionAkinci;
 `;
+const VEL_FRAG_PREAMBLE_ATTRACTOR2 = /* glsl */ `  // Strange attractor unit 2 (Phase 27, 9-6 stage 1): the
+  // second parameter set of the attractor force ('attractor-2'
+  // chunk). Spliced in only behind this option, in the
+  // Phase 19 manner — the stock preamble carries no trace
+  // of it.
+  uniform bool  uAttractor2Enabled;
+  uniform int   uAttractor2Type;
+  uniform float uAttractor2Strength;
+  uniform float uAttractor2Scale;
+  uniform int   uAttractor2SpaceMode;
+`;
 const VEL_FRAG_PREAMBLE_TAIL = /* glsl */ `  varying vec2 vUv;
 
 `;
@@ -480,6 +491,9 @@ export interface VelocityPreambleVariantOptions {
   // Phase 24: the Akinci surface-tension uniform. Same
   // discipline — the default preamble stays byte-identical.
   sphAkinci?: boolean;
+  // Phase 27: the attractor unit-2 uniform set. Same
+  // discipline — the default preamble stays byte-identical.
+  attractor2?: boolean;
 }
 
 export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions): string {
@@ -489,6 +503,7 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
     + (options?.flip3dCouple ? VEL_FRAG_PREAMBLE_FLIP3D : '')
     + (options?.steeringSeek ? VEL_FRAG_PREAMBLE_STEERING : '')
     + (options?.sphAkinci ? VEL_FRAG_PREAMBLE_AKINCI : '')
+    + (options?.attractor2 ? VEL_FRAG_PREAMBLE_ATTRACTOR2 : '')
     + VEL_FRAG_PREAMBLE_TAIL;
 }
 
@@ -496,3 +511,4 @@ export const VEL_FRAG_PREAMBLE = buildVelocityPreamble();
 export const VEL_FRAG_PREAMBLE_PHASE19 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true });
 export const VEL_FRAG_PREAMBLE_PHASE20 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true });
 export const VEL_FRAG_PREAMBLE_PHASE24 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true });
+export const VEL_FRAG_PREAMBLE_PHASE27 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true, attractor2: true });

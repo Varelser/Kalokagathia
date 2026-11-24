@@ -32,7 +32,8 @@ import {
   type PyroGridTargets,
 } from './gpgpuPyroGridPasses';
 import { pyroGridVelScale } from '../lib/pyroGrid';
-import { flip3dHalfExtent } from '../lib/flip3d';
+import { flip3dActive, flip3dHalfExtent, resolveFlip3dResolution } from '../lib/flip3d';
+import { resolveEffectiveTierSync } from '../lib/gpuTier';
 import {
   flip3dCurrentVelTexture,
   type Flip3dTargets,
@@ -613,6 +614,10 @@ export function runSimulationPasses(args: {
         attractorType: { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractorType] ?? 0,
         attractorStrength: config.gpgpuAttractorStrength,
         attractorScale: config.gpgpuAttractorScale,
+        attractor2Enabled: config.gpgpuAttractor2Enabled,
+        attractor2Type: { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractor2Type] ?? 0,
+        attractor2Strength: config.gpgpuAttractor2Strength,
+        attractor2Scale: config.gpgpuAttractor2Scale,
         levyEnabled: config.gpgpuLevyEnabled,
         levyStrength: config.gpgpuLevyStrength,
         levyRate: config.gpgpuLevyRate,
@@ -695,6 +700,42 @@ export function runSimulationPasses(args: {
         // params, from the same single resolution point as the
         // WebGL uniforms below.
         steeringSeek: resolveSteeringSeek(config),
+      },
+      // Fluid field (Phase 25): the same config values the WebGL
+      // branch assigns to the advection material and the velocity
+      // pass's fluid uniforms. The registry keeps any config that
+      // combines the field with the FLIP layer on the WebGL path,
+      // so the WGSL side only ever runs the legacy coupling.
+      {
+        enabled: config.gpgpuFluidEnabled,
+        diffuse: config.gpgpuFluidDiffuse,
+        decay: config.gpgpuFluidDecay,
+        strength: config.gpgpuFluidStrength,
+        influence: config.gpgpuFluidInfluence,
+        scale: config.gpgpuFluidScale,
+        extForce: config.gpgpuFluidExtForce,
+      },
+      // FLIP 3D (Phase 26): the same config values the WebGL
+      // branch feeds runFlip3dPasses / applyFlip3dCoupleUniforms,
+      // with the same clamps (pressure iterations 0..32 in the
+      // passes runner; viscosity / tension floored at 0 there).
+      // The resolution follows the shared rule the WebGL target
+      // allocation uses, so both routes solve the same grid.
+      {
+        active: flip3dActive(config),
+        resolution: flip3dActive(config)
+          ? resolveFlip3dResolution(resolveEffectiveTierSync(), config.gpgpuFlip3dResolution)
+          : 0,
+        pressureIterations: Math.max(0, Math.min(32, Math.round(config.gpgpuFlipPressureIterations))),
+        viscosity: Math.max(0, config.gpgpuFlipViscosity || 0),
+        surfaceTension: Math.max(0, config.gpgpuFlipSurfaceTension || 0),
+        vorticityEnabled: Boolean(config.gpgpuFlipVorticityEnabled),
+        vorticityEpsilon: config.gpgpuFlipVorticityEpsilon,
+        blend: config.gpgpuFlipBlend,
+        transfer: config.gpgpuFlipTransfer,
+        bounceRadius: config.gpgpuBounceRadius,
+        fluidScale: config.gpgpuFluidScale,
+        count: config.gpgpuCount,
       },
     );
     webgpuPingIsARef.current = !webgpuPingIsARef.current;
@@ -786,6 +827,11 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uBoidsRadius.value = config.gpgpuBoidsRadius;
   velSimMat.uniforms.uAttractorEnabled.value = config.gpgpuAttractorEnabled;
   velSimMat.uniforms.uAttractorType.value = { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractorType] ?? 0;
+  // Phase 27: attractor unit 2 — the uniform entries exist in
+  // the material from creation (inert while the attractor2
+  // variant string is not built).
+  if (velSimMat.uniforms.uAttractor2Enabled) velSimMat.uniforms.uAttractor2Enabled.value = config.gpgpuAttractor2Enabled;
+  if (velSimMat.uniforms.uAttractor2Type) velSimMat.uniforms.uAttractor2Type.value = { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractor2Type] ?? 0;
   velSimMat.uniforms.uLevyEnabled.value = config.gpgpuLevyEnabled;
   velSimMat.uniforms.uLevyStrength.value = config.gpgpuLevyStrength;
   velSimMat.uniforms.uLevyRate.value = config.gpgpuLevyRate;
@@ -871,6 +917,9 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uAttractorStrength.value = config.gpgpuAttractorStrength;
   velSimMat.uniforms.uAttractorScale.value = config.gpgpuAttractorScale;
   if (velSimMat.uniforms.uAttractorSpaceMode) velSimMat.uniforms.uAttractorSpaceMode.value = { legacy: 0, spread: 1, frame: 2, ring: 3 }[config.gpgpuAttractorSpaceMode] ?? 0;
+  if (velSimMat.uniforms.uAttractor2Strength) velSimMat.uniforms.uAttractor2Strength.value = config.gpgpuAttractor2Strength;
+  if (velSimMat.uniforms.uAttractor2Scale) velSimMat.uniforms.uAttractor2Scale.value = config.gpgpuAttractor2Scale;
+  if (velSimMat.uniforms.uAttractor2SpaceMode) velSimMat.uniforms.uAttractor2SpaceMode.value = { legacy: 0, spread: 1, frame: 2, ring: 3 }[config.gpgpuAttractor2SpaceMode] ?? 0;
   velSimMat.uniforms.uVortexEnabled.value = config.gpgpuVortexEnabled;
   velSimMat.uniforms.uVortexStrength.value = config.gpgpuVortexStrength;
   velSimMat.uniforms.uVortexTilt.value = config.gpgpuVortexTilt;

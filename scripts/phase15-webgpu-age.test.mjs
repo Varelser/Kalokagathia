@@ -51,7 +51,10 @@ try {
   const ageKill = getWebgpuComputeCapabilityReport({ ...DEFAULT_CONFIG, gpgpuAgeEnabled: true, gpgpuKillBoundary: true });
   check('age + kill conditions still routes to WebGL', !ageKill.canRunRequestedConfig && ageKill.unsupportedFeatures.includes('kill-conditions'));
   const ageFluid = getWebgpuComputeCapabilityReport({ ...DEFAULT_CONFIG, gpgpuAgeEnabled: true, gpgpuFluidEnabled: true });
-  check('age + fluid still routes to WebGL', !ageFluid.canRunRequestedConfig && ageFluid.unsupportedFeatures.includes('fluid-field'));
+  // Phase 25 superseded this expectation: the fluid field gained
+  // its WGSL port, so age + fluid now runs on the WebGPU route.
+  check('age + fluid runs on WebGPU route (Phase 25)', ageFluid.canRunRequestedConfig && ageFluid.supportedFeatures.includes('fluid-field'),
+    JSON.stringify(ageFluid.unsupportedFeatures));
 } finally {
   try { unlinkSync(BUNDLE); } catch { /* gone */ }
 }

@@ -823,7 +823,22 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       posTexture: posIn.texture,
     });
 
-    runFluidAdvectionPass({
+    // Fluid field (Phase 25): on the WebGPU route the field is
+    // advected by FLUID_WGSL inside stepWebGPUCompute instead, so
+    // the WebGL FBO pass must not also run. Routing is formally
+    // resolved later in this frame; this provisional resolution
+    // uses the same inputs (replica stacks mask WebGPU out) and
+    // therefore agrees with it.
+    const replicaStacksEarly = replicaStacksRef.current;
+    const stacksActiveEarly = !!replicaStacksEarly && replicaStacksEarly.length > 0;
+    const fluidFrameUseWebGPU = resolveGpgpuFrameRouting({
+      config,
+      webgpuState: stacksActiveEarly ? null : webgpuStateRef.current,
+      webgpuPosTexture: stacksActiveEarly ? null : webgpuPosTexRef.current,
+      fallbackPosTexture: posOut.texture,
+      posReadbackRef,
+    }).useWebGPU;
+    if (!fluidFrameUseWebGPU) runFluidAdvectionPass({
       config,
       fluidRTA: fluidRTARef.current,
       fluidRTB: fluidRTBRef.current,
@@ -1303,11 +1318,13 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       });
     }
 
-    // FLIP 3D (Phase 19 stage 2, WebGL path only — the WebGPU
-    // compute backend has no 3D FLIP solver): steps here, after
-    // the Pyro grid, reading the frame-start particle textures
-    // (the same state the 2D FLIP layer's P2G reads). The
-    // runner no-ops unless the mode is '3d' and targets exist.
+    // FLIP 3D (Phase 19 stage 2, WebGL path; Phase 26 gave the
+    // WebGPU backend its own WGSL solver, stepped inside
+    // stepWebGPUCompute — each route steps only its own): steps
+    // here, after the Pyro grid, reading the frame-start
+    // particle textures (the same state the 2D FLIP layer's
+    // P2G reads). The runner no-ops unless the mode is '3d'
+    // and targets exist.
     if (!routing.useWebGPU && flip3dRef.current && simMeshRef.current) {
       runFlip3dPasses({
         config,

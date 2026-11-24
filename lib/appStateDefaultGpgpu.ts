@@ -159,6 +159,16 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuAttractorStrength: 1.0,
   gpgpuAttractorScale: 8.0,
   gpgpuAttractorSpaceMode: 'legacy' as const,
+  // Strange Attractor unit 2 (Phase 27, 9-6 stage 1): the
+  // '2号機' second parameter set, Aux2-style. The defaults
+  // mirror unit 1 and the unit is disabled, so every existing
+  // config behaves exactly as before; the shader chunk and
+  // uniforms exist only in the attractor2 variant string.
+  gpgpuAttractor2Enabled: false,
+  gpgpuAttractor2Type: 'lorenz' as const,
+  gpgpuAttractor2Strength: 1.0,
+  gpgpuAttractor2Scale: 8.0,
+  gpgpuAttractor2SpaceMode: 'legacy' as const,
   // Vortex
   gpgpuVortexEnabled: false,
   gpgpuVortexStrength: 1.0,

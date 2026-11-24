@@ -150,6 +150,7 @@ const NUMS: NumDef[] = [
   ['gpgpuCurlStrength', 'GPGPUの渦（カール）の強さ'],
   ['gpgpuAttractorScale', 'GPGPUアトラクタの大きさ'],
   ['gpgpuAttractorSpaceMode', 'アトラクタ空間モード（legacy=従来／spread=広がった構造／frame=両翼を額縁に／ring=帯を輪として額縁）'],
+  ['gpgpuAttractor2SpaceMode', 'アトラクタ2号機の空間モード（legacy=従来／spread=広がった構造／frame=両翼を額縁に／ring=帯を輪として額縁）'],
   // Ambient
   ['ambientCount', '漂う微粒子の数'],
   ['ambientBaseSize', '微粒子の大きさ'],
@@ -382,6 +383,8 @@ const NUMS: NumDef[] = [
   ['layer3RaymarchOpacity', 'レイヤー3のレイマーチングSDFの不透明度'],
   // --- Expansion: GPGPU forces / behaviour / kuramoto / levy ---
   ['gpgpuAttractorStrength', 'GPGPUアトラクタの引き寄せの強さ'],
+  ['gpgpuAttractor2Strength', 'GPGPUアトラクタ2号機の引き寄せの強さ'],
+  ['gpgpuAttractor2Scale', 'GPGPUアトラクタ2号機の大きさ'],
   ['gpgpuCurlScale', 'GPGPUの渦（カール）の細かさ'],
   ['gpgpuVFieldStrength', 'GPGPUベクトル場（流れ場）の強さ'],
   ['gpgpuGravity', 'GPGPU粒子の重力'],
@@ -831,6 +834,7 @@ const BOOLS: BoolDef[] = [
   ['gpgpuCurlEnabled', 'GPGPUの渦（カール）'],
   ['gpgpuBoidsEnabled', 'GPGPU群れ（ボイド）'],
   ['gpgpuAttractorEnabled', 'GPGPUアトラクタ'],
+  ['gpgpuAttractor2Enabled', 'GPGPUアトラクタ2号機'],
   ['gpgpuVortexEnabled', 'GPGPU渦（ボルテックス）'],
   ['gpgpuWindEnabled', 'GPGPUの風'],
   ['gpgpuMagneticEnabled', 'GPGPU磁場'],
@@ -936,6 +940,8 @@ const ENUMS: { key: keyof ParticleConfig; gloss: string; values: readonly string
   },
   { key: 'gpgpuAttractorType', gloss: 'GPGPUアトラクタの種類', values: ['lorenz', 'thomas', 'rossler', 'halvorsen', 'chen', 'lu', 'aizawa', 'sprott', 'rabinovich', 'dejong', 'ikeda', 'chua'] },
   { key: 'gpgpuAttractorSpaceMode', gloss: 'アトラクタ空間モード', values: ['legacy', 'spread', 'frame', 'ring'] },
+  { key: 'gpgpuAttractor2Type', gloss: 'GPGPUアトラクタ2号機の種類', values: ['lorenz', 'thomas', 'rossler', 'halvorsen', 'chen', 'lu', 'aizawa', 'sprott', 'rabinovich', 'dejong', 'ikeda', 'chua'] },
+  { key: 'gpgpuAttractor2SpaceMode', gloss: 'アトラクタ2号機の空間モード', values: ['legacy', 'spread', 'frame', 'ring'] },
   { key: 'gpgpuMorphTarget', gloss: 'GPGPUモーフの目標形状（terrain はシード付きフラクタル高度場の地形）', values: ['trefoil', 'torusKnot', 'galaxy', 'mobius', 'geodesic', 'crown', 'blackhole', 'klein', 'cymatic', 'gyroid', 'dnaRibbon', 'hypercube', 'mandelbulb', 'shell', 'text', 'image', 'svg', 'obj', 'terrain', 'data', 'contour', 'polygon'] },
   { key: 'gpgpuMorphReplicaAxis', gloss: 'GPGPUモーフ複製を並べる軸', values: ['x', 'y', 'z'] },
   { key: 'gpgpuMorphObjSampleMode', gloss: 'GPGPUモーフOBJのサンプリング方式（surface=表面 / vertices=頂点 / volume=閉メッシュ内部、非閉時は surface）', values: ['surface', 'vertices', 'volume'] },

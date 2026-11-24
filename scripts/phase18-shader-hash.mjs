@@ -51,8 +51,8 @@ const recordPath = args[1] ? join(ROOT, args[1]) : DEFAULT_RECORD_PATH;
 await build({
   stdin: {
     contents: `
-      export { SIM_VEL_FRAG, SIM_VEL_FRAG_PHASE19, SIM_VEL_FRAG_PHASE20, SIM_VEL_FRAG_PHASE24, buildVelocityFragment } from './components/gpgpuShaderSimulationVelocity.ts';
-      export { VEL_FRAG_PREAMBLE, VEL_FRAG_PREAMBLE_PHASE19, VEL_FRAG_PREAMBLE_PHASE20, VEL_FRAG_PREAMBLE_PHASE24 } from './components/gpgpuShaderSimulationVelocityPreamble.ts';
+      export { SIM_VEL_FRAG, SIM_VEL_FRAG_PHASE19, SIM_VEL_FRAG_PHASE20, SIM_VEL_FRAG_PHASE24, SIM_VEL_FRAG_PHASE27, buildVelocityFragment } from './components/gpgpuShaderSimulationVelocity.ts';
+      export { VEL_FRAG_PREAMBLE, VEL_FRAG_PREAMBLE_PHASE19, VEL_FRAG_PREAMBLE_PHASE20, VEL_FRAG_PREAMBLE_PHASE24, VEL_FRAG_PREAMBLE_PHASE27 } from './components/gpgpuShaderSimulationVelocityPreamble.ts';
       export { VEL_FRAG_HELPERS } from './components/gpgpuShaderSimulationVelocityHelpers.ts';
       export { VEL_FRAG_MAIN_FORCES } from './components/gpgpuShaderSimulationVelocityMainForces.ts';
       export { VEL_FRAG_MAIN_SPH_GRAINS, VEL_FRAG_MAIN_SPH_GRAINS_PHASE19, VEL_FRAG_MAIN_SPH_GRAINS_PHASE24, buildVelocitySphGrains } from './components/gpgpuShaderSimulationVelocityMainSphGrains.ts';
@@ -141,6 +141,13 @@ const parts = {
   VEL_FRAG_MAIN_SPH_GRAINS_PHASE24: lib.VEL_FRAG_MAIN_SPH_GRAINS_PHASE24,
   SIM_VEL_FRAG_PHASE24: lib.SIM_VEL_FRAG_PHASE24,
   'buildVelocityFragment(phase24)': lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true }),
+  // Phase 27 (9-6 stage 1) string variants: the attractor
+  // unit-2 additions, behind the attractor2 builder option;
+  // every part above stays at its shipped hash.
+  VEL_FRAG_PREAMBLE_PHASE27: lib.VEL_FRAG_PREAMBLE_PHASE27,
+  SIM_VEL_FRAG_PHASE27: lib.SIM_VEL_FRAG_PHASE27,
+  'buildVelocityFragment(phase27)': lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true, attractor2: true }),
+  'buildVelocityFragment(attractor2-only)': lib.buildVelocityFragment('', '', { attractor2: true }),
   'buildVelocityFragment(akinci-only)': lib.buildVelocityFragment('', '', { sphAkinci: true }),
   'buildVelocitySphGrains(akinci-only)': lib.buildVelocitySphGrains({ sphAkinci: true }),
   'buildPositionFragment(phase19)': lib.buildPositionFragment({ grainsProjection: true }),
@@ -174,6 +181,8 @@ const invariants = {
   steeringOnlyDiffersFromStock: lib.buildVelocityFragment('', '', { steeringSeek: true }) !== lib.SIM_VEL_FRAG,
   phase24SnippetIsVariant: lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true }) === lib.SIM_VEL_FRAG_PHASE24,
   akinciOnlyDiffersFromStock: lib.buildVelocityFragment('', '', { sphAkinci: true }) !== lib.SIM_VEL_FRAG,
+  phase27SnippetIsVariant: lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true, attractor2: true }) === lib.SIM_VEL_FRAG_PHASE27,
+  attractor2OnlyDiffersFromStock: lib.buildVelocityFragment('', '', { attractor2: true }) !== lib.SIM_VEL_FRAG,
   akinciSphGrainsIsVariant: lib.buildVelocitySphGrains({ grainsFullScan: true, sphAkinci: true }) === lib.VEL_FRAG_MAIN_SPH_GRAINS_PHASE24,
   drawDefaultIsStock: lib.buildDrawVert() === lib.DRAW_VERT && lib.buildDrawFrag() === lib.DRAW_FRAG,
   drawShadowMapIsVariant: lib.buildDrawVert({ shadowMap: true }) === lib.DRAW_VERT_PHASE23
@@ -200,6 +209,8 @@ console.log(`  invariant buildVelocityFragment(phase20) === SIM_VEL_FRAG_PHASE20
 console.log(`  invariant buildVelocityFragment(steering-only) !== SIM_VEL_FRAG: ${invariants.steeringOnlyDiffersFromStock}`);
 console.log(`  invariant buildVelocityFragment(phase24) === SIM_VEL_FRAG_PHASE24: ${invariants.phase24SnippetIsVariant}`);
 console.log(`  invariant buildVelocityFragment(akinci-only) !== SIM_VEL_FRAG: ${invariants.akinciOnlyDiffersFromStock}`);
+console.log(`  invariant buildVelocityFragment(phase27) === SIM_VEL_FRAG_PHASE27: ${invariants.phase27SnippetIsVariant}`);
+console.log(`  invariant buildVelocityFragment(attractor2-only) !== SIM_VEL_FRAG: ${invariants.attractor2OnlyDiffersFromStock}`);
 console.log(`  invariant buildVelocitySphGrains(phase19+akinci) === VEL_FRAG_MAIN_SPH_GRAINS_PHASE24: ${invariants.akinciSphGrainsIsVariant}`);
 console.log(`  invariant buildDrawVert()/buildDrawFrag() === stock pair: ${invariants.drawDefaultIsStock}`);
 console.log(`  invariant buildDrawVert(shadowMap)/buildDrawFrag(shadowMap) === PHASE23 pair: ${invariants.drawShadowMapIsVariant}`);
@@ -212,6 +223,7 @@ if (!invariants.concatenationMatches || !invariants.emptySnippetIsStock
   || !invariants.positionCellNeedsProjection || !invariants.phase20SnippetIsVariant
   || !invariants.steeringOnlyDiffersFromStock
   || !invariants.phase24SnippetIsVariant || !invariants.akinciOnlyDiffersFromStock
+  || !invariants.phase27SnippetIsVariant || !invariants.attractor2OnlyDiffersFromStock
   || !invariants.akinciSphGrainsIsVariant
   || !invariants.drawDefaultIsStock || !invariants.drawShadowMapIsVariant
   || !invariants.geomShadowMapIsVariant

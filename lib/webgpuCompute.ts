@@ -16,12 +16,21 @@
 // step (gravity / turbulence / morph / bounce) is untouched for
 // configs that use none of them. Phase 15 added the age
 // lifecycle (advance + wrap respawn in the position pass, the
-// kick's respawn-frame trigger in the velocity pass). Still
-// WebGL-only (declared unsupported by the capability registry,
-// which routes those configs to WebGL): the fluid field (its
-// solver is a WebGL FBO pass), the Aux event pools (WebGL FBO
+// kick's respawn-frame trigger in the velocity pass). Phase 25
+// added the fluid field (FLUID_WGSL + the legacy coupling) and
+// Phase 26 the FLIP 3D solver (FLIP3D_*_WGSL + the FLIP3D
+// coupling block). Still WebGL-only (declared unsupported by
+// the capability registry, which routes those configs to
+// WebGL): the 2D FLIP layer, the Aux event pools (WebGL FBO
 // passes), and user GLSL custom forces (WGSL cannot compile
 // GLSL).
+
+import { PYRO_GRID_LAYOUTS, pyroGridAtlasSize } from './pyroGrid';
+import {
+  FLIP3D_VISCOSITY_ITERATIONS,
+  flip3dPassCount,
+  setFlip3dRuntimeStatus,
+} from './flip3d';
 
 const VEL_WGSL = /* wgsl */ `
 struct Uniforms {
@@ -151,6 +160,15 @@ struct Uniforms {
   steerPad0 : f32,
   steerPad1 : f32,
   steerPath : array<vec3f, 8>,
+  // Strange attractor unit 2 (Phase 27, 9-6 stage 1): buffer
+  // indices 148-151, appended after the steering path array
+  // so every earlier field offset is unchanged. The WGSL
+  // twin carries no space mode (unit 1 has none here either;
+  // space modes are WebGL-side depiction).
+  attractor2Enabled : f32,
+  attractor2Type : i32,
+  attractor2Strength : f32,
+  attractor2Scale : f32,
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -161,6 +179,115 @@ struct Uniforms {
 @group(0) @binding(5) var<storage, read>       morphNormalIn : array<vec4f>;
 @group(0) @binding(6) var<storage, read>       initPosIn : array<vec4f>;
 @group(0) @binding(7) var<storage, read>       particleLifeIn : array<f32, 36>;
+// Fluid field (Phase 25): the resident 64x64 grid (ping-pong
+// storage buffers written by FLUID_WGSL) sampled by the coupling
+// block in main. The grid lives in buffers, not GPU textures, so
+// the WebGL field's LinearFilter + RepeatWrapping sampling is
+// reproduced by hand (fluidSample below) on every device —
+// float textures are neither filterable nor writable everywhere.
+// fu mirrors the FLUID_WGSL uniform block layout.
+struct FluidUniforms {
+  delta        : f32,
+  diffuse      : f32,
+  decay        : f32,
+  strength     : f32,
+  time         : f32,
+  extForce     : f32,
+  influence    : f32,
+  scale        : f32,
+  enabled      : f32,
+};
+@group(0) @binding(8) var<storage, read>       fluidIn : array<vec4f>;
+@group(0) @binding(9) var<uniform>             fu : FluidUniforms;
+
+// FLIP 3D coupling (Phase 26): the previous solver step's
+// projected grid velocity and pre-projection base, published
+// into dedicated textures at the end of each stepped frame
+// (the WebGL coupling reads the same pair one step behind).
+// The WebGL pass's flip3dSample is reproduced as a manual
+// trilinear over the atlas texel coordinates (tile = z slice,
+// ClampToEdge per cell) with textureLoad fetches.
+struct Flip3dUniforms {
+  couple     : f32,
+  blend      : f32,
+  transfer   : f32,
+  velScale   : f32,
+  halfExtent : f32,
+  gridN      : f32,
+  atlasW     : f32,
+  tilesX     : f32,
+};
+// The couple pair rides in sampled textures, NOT storage
+// buffers: the velocity stage already binds 8 storage buffers
+// (the default maxStorageBuffersPerShaderStage) and two more
+// would invalidate the pipeline on spec-limit devices — the
+// Phase 26 gate's first round proved exactly that. textureLoad
+// needs no sampler and no filtering, so the manual trilinear
+// below is unchanged; the step publishes the pair with
+// copyBufferToTexture after the velocity pass.
+@group(0) @binding(10) var flipVelTex : texture_2d<f32>;
+@group(0) @binding(11) var flipBaseTex : texture_2d<f32>;
+@group(0) @binding(12) var<uniform>            f3u : Flip3dUniforms;
+
+fn flipTexelXY(cellRaw: vec3f, gridN: f32, tilesX: f32) -> vec2i {
+  let c = clamp(cellRaw, vec3f(0.0), vec3f(gridN - 1.0));
+  let z = u32(c.z);
+  let tileX = z % u32(tilesX);
+  let tileY = z / u32(tilesX);
+  let tx = tileX * u32(gridN) + u32(c.x);
+  let ty = tileY * u32(gridN) + u32(c.y);
+  return vec2i(i32(tx), i32(ty));
+}
+fn flipFetchVel(cell: vec3f) -> vec4f {
+  return textureLoad(flipVelTex, flipTexelXY(cell, f3u.gridN, f3u.tilesX), 0);
+}
+fn flipFetchBase(cell: vec3f) -> vec4f {
+  return textureLoad(flipBaseTex, flipTexelXY(cell, f3u.gridN, f3u.tilesX), 0);
+}
+fn flipTri(c000: vec4f, c100: vec4f, c010: vec4f, c110: vec4f,
+           c001: vec4f, c101: vec4f, c011: vec4f, c111: vec4f, f: vec3f) -> vec4f {
+  return mix(mix(mix(c000, c100, f.x), mix(c010, c110, f.x), f.y),
+             mix(mix(c001, c101, f.x), mix(c011, c111, f.x), f.y), f.z);
+}
+fn flipSampleVel(p: vec3f) -> vec4f {
+  let pc = clamp(p, vec3f(0.0), vec3f(f3u.gridN - 1.0));
+  let b = floor(pc);
+  let f = pc - b;
+  return flipTri(
+    flipFetchVel(b), flipFetchVel(b + vec3f(1.0, 0.0, 0.0)),
+    flipFetchVel(b + vec3f(0.0, 1.0, 0.0)), flipFetchVel(b + vec3f(1.0, 1.0, 0.0)),
+    flipFetchVel(b + vec3f(0.0, 0.0, 1.0)), flipFetchVel(b + vec3f(1.0, 0.0, 1.0)),
+    flipFetchVel(b + vec3f(0.0, 1.0, 1.0)), flipFetchVel(b + vec3f(1.0, 1.0, 1.0)), f);
+}
+fn flipSampleBase(p: vec3f) -> vec4f {
+  let pc = clamp(p, vec3f(0.0), vec3f(f3u.gridN - 1.0));
+  let b = floor(pc);
+  let f = pc - b;
+  return flipTri(
+    flipFetchBase(b), flipFetchBase(b + vec3f(1.0, 0.0, 0.0)),
+    flipFetchBase(b + vec3f(0.0, 1.0, 0.0)), flipFetchBase(b + vec3f(1.0, 1.0, 0.0)),
+    flipFetchBase(b + vec3f(0.0, 0.0, 1.0)), flipFetchBase(b + vec3f(1.0, 0.0, 1.0)),
+    flipFetchBase(b + vec3f(0.0, 1.0, 1.0)), flipFetchBase(b + vec3f(1.0, 1.0, 1.0)), f);
+}
+
+fn fluidWrap64(i: i32) -> i32 { return ((i % 64) + 64) % 64; }
+fn fluidTexel(x: i32, y: i32) -> vec2f {
+  return fluidIn[u32(fluidWrap64(y) * 64 + fluidWrap64(x))].xy;
+}
+// Bilinear sample with RepeatWrapping — the twin of the WebGL
+// velocity pass's texture2D(uFluidTex, uv) on a LinearFilter RT.
+fn fluidSample(uv: vec2f) -> vec2f {
+  let p = uv * 64.0 - 0.5;
+  let base = floor(p);
+  let fr = p - base;
+  let x0 = i32(base.x);
+  let y0 = i32(base.y);
+  let c00 = fluidTexel(x0, y0);
+  let c10 = fluidTexel(x0 + 1, y0);
+  let c01 = fluidTexel(x0, y0 + 1);
+  let c11 = fluidTexel(x0 + 1, y0 + 1);
+  return mix(mix(c00, c10, fr.x), mix(c01, c11, fr.x), fr.y);
+}
 
 fn dmHash11(n: f32) -> f32 {
   var p3 = fract(vec3f(n) * vec3f(0.1031, 0.1030, 0.0973));
@@ -543,6 +670,52 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     vel += normalize(dv + vec3f(0.0001)) * u.attractorStrength * u.delta * 40.0;
   }
 
+  // Strange attractor unit 2 (Phase 27, 9-6 stage 1):
+  // the same 12 laws, driven by the attractor2* fields.
+  if (u.attractor2Enabled > 0.5) {
+    let ap = pos / max(0.1, u.attractor2Scale);
+    var dv = vec3f(0.0);
+    if (u.attractor2Type == 0) { // Lorenz
+      dv = vec3f(10.0*(ap.y-ap.x), ap.x*(28.0-ap.z)-ap.y, ap.x*ap.y-2.667*ap.z);
+    } else if (u.attractor2Type == 1) { // Rossler
+      dv = vec3f(-(ap.y+ap.z), ap.x+0.2*ap.y, 0.2+ap.z*(ap.x-5.7));
+    } else if (u.attractor2Type == 3) { // Halvorsen
+      dv = vec3f(-1.4*ap.x - 4.0*ap.y - 4.0*ap.z - ap.y*ap.y,
+                 -1.4*ap.y - 4.0*ap.z - 4.0*ap.x - ap.z*ap.z,
+                 -1.4*ap.z - 4.0*ap.x - 4.0*ap.y - ap.x*ap.x);
+    } else if (u.attractor2Type == 4) { // Chen
+      dv = vec3f(35.0*(ap.y-ap.x), -7.0*ap.x - ap.x*ap.z + 28.0*ap.y, ap.x*ap.y - 3.0*ap.z);
+    } else if (u.attractor2Type == 5) { // Lu
+      dv = vec3f(36.0*(ap.y-ap.x), -ap.x*ap.z + 20.0*ap.y, ap.x*ap.y - 3.0*ap.z);
+    } else if (u.attractor2Type == 6) { // Aizawa
+      let zb = ap.z - 0.7;
+      dv = vec3f(zb*ap.x - 3.5*ap.y,
+                 3.5*ap.x + zb*ap.y,
+                 0.6 + 0.95*ap.z - (ap.z*ap.z*ap.z)/3.0 - (ap.x*ap.x + ap.y*ap.y)*(1.0 + 0.25*ap.z) + 0.1*ap.z*ap.x*ap.x*ap.x);
+    } else if (u.attractor2Type == 7) { // Sprott F
+      dv = vec3f(ap.y + ap.z, -ap.x + 0.5*ap.y, ap.x*ap.x - ap.z);
+    } else if (u.attractor2Type == 8) { // Rabinovich-Fabrikant
+      dv = vec3f(ap.y*(ap.z - 1.0 + ap.x*ap.x) + 0.1*ap.x,
+                 ap.x*(3.0*ap.z + 1.0 - ap.x*ap.x) + 0.1*ap.y,
+                 -2.0*ap.z*(0.14 + ap.x*ap.y));
+    } else if (u.attractor2Type == 9) { // De Jong map
+      let mp = vec2f(sin(1.4*ap.y) - cos(-2.3*ap.x), sin(2.4*ap.x) - cos(-2.1*ap.y));
+      dv = vec3f(mp - ap.xy, -0.5*ap.z);
+    } else if (u.attractor2Type == 10) { // Ikeda map
+      let r2 = dot(ap.xy, ap.xy);
+      let tt = 0.4 - 6.0/(1.0 + r2);
+      let ct = cos(tt); let st = sin(tt);
+      let mp = vec2f(1.0, 0.0) + 0.918 * vec2f(ap.x*ct - ap.y*st, ap.x*st + ap.y*ct);
+      dv = vec3f(mp - ap.xy, -0.5*ap.z);
+    } else if (u.attractor2Type == 11) { // Chua
+      let fx = -0.714*ap.x - 0.2145*(abs(ap.x + 1.0) - abs(ap.x - 1.0));
+      dv = vec3f(15.6*(ap.y - ap.x - fx), ap.x - ap.y + ap.z, -28.0*ap.y);
+    } else { // Thomas (2)
+      dv = vec3f(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
+    }
+    vel += normalize(dv + vec3f(0.0001)) * u.attractor2Strength * u.delta * 40.0;
+  }
+
   // Lévy flight: rare heavy-tailed impulses, tick-quantised gate.
   if (u.levyEnabled > 0.5) {
     let tick = floor(u.time * u.levyRate);
@@ -813,6 +986,43 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     vel.z *= 0.92;
   }
 
+  // Fluid field coupling (Phase 25): the legacy (non-FLIP) branch
+  // of the WebGL velocity pass, verbatim — the field's y component
+  // drives the particle's z. The 2D FLIP branch never reaches
+  // this path ('flip' still routes to WebGL in the registry);
+  // in 3D mode the WebGL pass applies this same legacy coupling
+  // alongside its FLIP3D block below.
+  if (fu.enabled > 0.5) {
+    var fieldUv = pos.xz / (u.bounceRadius * fu.scale) * 0.5 + 0.5;
+    fieldUv = clamp(fieldUv, vec2f(0.001), vec2f(0.999));
+    let fieldVel = fluidSample(fieldUv);
+    vel.x += fieldVel.x * fu.influence * u.delta * 300.0;
+    vel.z += fieldVel.y * fu.influence * u.delta * 300.0;
+  }
+
+  // FLIP 3D coupling (Phase 26): G2P transfer from the atlas
+  // solver's previous step, placed where the WebGL tail puts
+  // its FLIP3D block (after the legacy field and the Pyro
+  // coupling — Pyro has no WGSL path, so the field block is the
+  // immediate predecessor here). PIC takes the grid velocity
+  // itself; FLIP takes the particle velocity plus the grid's
+  // change this step (projected minus the pre-projection
+  // base). The domain fade drops the transfer at the cube
+  // faces, where the grid holds no liquid.
+  if (f3u.couple > 0.5) {
+    let cellPos = ((pos / (2.0 * f3u.halfExtent)) + 0.5) * f3u.gridN - 0.5;
+    let dFade = min(cellPos, vec3f(f3u.gridN - 1.0) - cellPos);
+    let fade = clamp(min(dFade.x, min(dFade.y, dFade.z)) + 0.5, 0.0, 1.0);
+    if (fade > 0.0) {
+      let gridVel = flipSampleVel(cellPos).xyz;
+      let baseVel = flipSampleBase(cellPos).xyz;
+      let picVel = gridVel * f3u.velScale;
+      let flipVel = vel + (gridVel - baseVel) * f3u.velScale;
+      let targetVel = mix(picVel, flipVel, f3u.blend);
+      vel = mix(vel, targetVel, f3u.transfer * fade);
+    }
+  }
+
   let spd = length(vel);
   if (spd > 350.0) { vel *= 350.0 / spd; }
   vel *= (1.0 - 1.1 * u.delta);
@@ -1020,6 +1230,539 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 `;
 
+// Fluid field advection (Phase 25): the WGSL twin of
+// FLUID_ADVECT_FRAG (components/gpgpuShaderSimulationFluid.ts) —
+// Semi-Lagrangian backward trace + 5-point Laplacian diffusion +
+// exponential decay + optional vortex/perturbation forcing, one
+// dispatch per frame over the resident 64x64 ping-pong grid.
+// Sampling is manual bilinear with RepeatWrapping, matching the
+// WebGL field render targets (LinearFilter + Repeat).
+const FLUID_WGSL = /* wgsl */ `
+struct FluidUniforms {
+  delta        : f32,
+  diffuse      : f32,
+  decay        : f32,
+  strength     : f32,
+  time         : f32,
+  extForce     : f32,
+  influence    : f32,
+  scale        : f32,
+  enabled      : f32,
+};
+
+@group(0) @binding(0) var<uniform>             fu : FluidUniforms;
+@group(0) @binding(1) var<storage, read>       fluidIn : array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> fluidOut : array<vec4f>;
+
+fn fluidWrap64(i: i32) -> i32 { return ((i % 64) + 64) % 64; }
+fn fluidTexel(x: i32, y: i32) -> vec2f {
+  return fluidIn[u32(fluidWrap64(y) * 64 + fluidWrap64(x))].xy;
+}
+fn fluidSample(uv: vec2f) -> vec2f {
+  let p = uv * 64.0 - 0.5;
+  let base = floor(p);
+  let fr = p - base;
+  let x0 = i32(base.x);
+  let y0 = i32(base.y);
+  let c00 = fluidTexel(x0, y0);
+  let c10 = fluidTexel(x0 + 1, y0);
+  let c01 = fluidTexel(x0, y0 + 1);
+  let c11 = fluidTexel(x0 + 1, y0 + 1);
+  return mix(mix(c00, c10, fr.x), mix(c01, c11, fr.x), fr.y);
+}
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  if (gid.x >= 64u || gid.y >= 64u) { return; }
+  let idx = gid.y * 64u + gid.x;
+  let uv = (vec2f(f32(gid.x), f32(gid.y)) + 0.5) / 64.0;
+  let vel = fluidIn[idx].xy;
+  let ts = 1.0 / 64.0;
+  // Semi-Lagrangian backward trace
+  let backPos = uv - vel * fu.delta * ts * 80.0;
+  let advVel = fluidSample(backPos);
+  // 5-point Laplacian diffusion
+  let vL = fluidSample(uv + vec2f(-ts, 0.0));
+  let vR = fluidSample(uv + vec2f(ts, 0.0));
+  let vB = fluidSample(uv + vec2f(0.0, -ts));
+  let vT = fluidSample(uv + vec2f(0.0, ts));
+  let lap = vL + vR + vB + vT - 4.0 * advVel;
+  var newVel = advVel + fu.diffuse * lap;
+  // Exponential decay
+  newVel *= 1.0 - fu.decay * fu.delta * 60.0;
+  // External forcing: rotating vortex + periodic perturbation
+  if (fu.extForce > 0.5) {
+    let c = uv - 0.5;
+    let r = length(c) + 0.001;
+    let rot = vec2f(-c.y, c.x) / (r * r + 0.1);
+    newVel += rot * fu.strength * fu.delta * 2.0;
+    let t = fu.time * 0.3;
+    let perturb = vec2f(sin(uv.y * 6.2832 + t), cos(uv.x * 6.2832 - t)) * fu.strength * 0.3 * fu.delta;
+    newVel += perturb;
+  }
+  fluidOut[idx] = vec4f(newVel, 0.0, 1.0);
+}
+`;
+
+// FLIP 3D solver (Phase 26): the WGSL twin of the atlas-packed
+// solver in components/gpgpuShaderSimulationFlip3d.ts, stepped
+// by the orchestration twin in stepWebGPUCompute (the buffer
+// discipline of components/gpgpuFlip3dPasses.ts, verbatim). The
+// grid lives in storage buffers indexed by atlas texel — tile =
+// z slice, per-cell ClampToEdge (pyroFetch semantics) — so the
+// sampling is manual everywhere, the twin of the WebGL pass's
+// uManualTrilinear path (mathematically the same lerps as the
+// hardware path). One module, eleven entry points; each pass
+// gets its own explicit bind group layout in init.
+//
+// P2G is the one scatter: WGSL has no float atomics and no
+// additive blending, so the transfer buffer is fixed-point
+// (array<atomic<i32>>, scale 2^10). Integer addition commutes,
+// so the accumulation is order-independent — deterministic,
+// where the WebGL blend accumulation is not. Composite / phi
+// read the deposits back as value / 2^10.
+const FLIP3D_FIXED_SCALE = 1024.0;
+const FLIP3D_WGSL_COMMON = /* wgsl */ `
+struct FlipU {
+  gridN        : f32,
+  atlasW       : u32,
+  atlasH       : u32,
+  tilesX       : u32,
+  avgWeight    : f32,
+  delta        : f32,
+  alpha        : f32,
+  sigma        : f32,
+  epsilon      : f32,
+  maxSpeed     : f32,
+  bounceRadius : f32,
+  fluidScale   : f32,
+  particleCount : u32,
+  pad0         : u32,
+  pad1         : u32,
+  pad2         : u32,
+};
+fn flipTexelOf(u: FlipU, cellRaw: vec3f) -> u32 {
+  let c = clamp(cellRaw, vec3f(0.0), vec3f(u.gridN - 1.0));
+  let z = u32(c.z);
+  let tileX = z % u.tilesX;
+  let tileY = z / u.tilesX;
+  let tx = tileX * u32(u.gridN) + u32(c.x);
+  let ty = tileY * u32(u.gridN) + u32(c.y);
+  return ty * u.atlasW + tx;
+}
+// Per-texel kernel addressing: returns (cellX, cellY, cellZ,
+// outsideFlag) for an atlas texel index. Texels whose slice
+// index reaches gridN (the 96^3 layout has spare tiles) are
+// outside and take each pass's documented outside value.
+fn flipCellOfTexel(u: FlipU, idx: u32) -> vec4f {
+  let tx = idx % u.atlasW;
+  let ty = idx / u.atlasW;
+  let n = u32(u.gridN);
+  let tileX = tx / n;
+  let cx = tx % n;
+  let tileY = ty / n;
+  let cy = ty % n;
+  let z = tileY * u.tilesX + tileX;
+  return vec4f(f32(cx), f32(cy), f32(z), select(0.0, 1.0, z >= n));
+}
+fn flipAtlasTexels(u: FlipU) -> u32 { return u.atlasW * u.atlasH; }
+`;
+
+const FLIP3D_SPLAT_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read>       posIn : array<vec4f>;
+@group(0) @binding(2) var<storage, read>       velIn : array<vec4f>;
+@group(0) @binding(3) var<storage, read_write> transferI : array<atomic<i32>>;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= u.particleCount) { return; }
+  let pos = posIn[idx].xyz;
+  let vel = velIn[idx].xyz;
+  let extent = u.bounceRadius * u.fluidScale;
+  let g = (pos / (2.0 * extent) + 0.5) * u.gridN - 0.5;
+  let base = floor(g);
+  let frac = g - base;
+  for (var oz = 0; oz <= 1; oz++) {
+    for (var oy = 0; oy <= 1; oy++) {
+      for (var ox = 0; ox <= 1; ox++) {
+        let off = vec3f(f32(ox), f32(oy), f32(oz));
+        let axisW = mix(1.0 - frac, frac, off);
+        let w = axisW.x * axisW.y * axisW.z;
+        let cell = base + off;
+        if (w <= 0.0 || cell.x < 0.0 || cell.y < 0.0 || cell.z < 0.0
+            || cell.x > u.gridN - 1.0 || cell.y > u.gridN - 1.0 || cell.z > u.gridN - 1.0) {
+          continue;
+        }
+        let t = flipTexelOf(u, cell) * 4u;
+        // Quantise the WEIGHT first and weight the momentum by
+        // the quantised weight: the composite's momentum/weight
+        // ratio is then a true weighted average of deposited
+        // velocities, bounded by the fastest depositor. The
+        // naive form (round(vel*w*S) beside round(w*S)) lets a
+        // fast particle's momentum survive rounding in a corner
+        // whose weight rounds to ~0, and the composite divides
+        // it by that near-zero weight — fabricated grid
+        // velocities far above any particle's, which the G2P
+        // coupling then injects back (the Phase 26 gate's
+        // runaway: transfer ratio 187 vs particle max 43).
+        let wq = i32(round(w * ${FLIP3D_FIXED_SCALE}));
+        if (wq <= 0) { continue; }
+        atomicAdd(&transferI[t + 0u], i32(round(vel.x * f32(wq))));
+        atomicAdd(&transferI[t + 1u], i32(round(vel.y * f32(wq))));
+        atomicAdd(&transferI[t + 2u], i32(round(vel.z * f32(wq))));
+        atomicAdd(&transferI[t + 3u], wq);
+      }
+    }
+  }
+}
+`;
+
+const FLIP3D_TRANSFER_READ = /* wgsl */ `
+fn flipTransferAt(cell: vec3f) -> vec4f {
+  let t = flipTexelOf(u, cell) * 4u;
+  return vec4f(f32(atomicLoad(&transferI[t + 0u])),
+               f32(atomicLoad(&transferI[t + 1u])),
+               f32(atomicLoad(&transferI[t + 2u])),
+               f32(atomicLoad(&transferI[t + 3u]))) / ${FLIP3D_FIXED_SCALE};
+}
+`;
+
+const FLIP3D_COMPOSITE_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read_write> transferI : array<atomic<i32>>;
+@group(0) @binding(2) var<storage, read_write> dataOut : array<vec4f>;
+${FLIP3D_TRANSFER_READ}
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= flipAtlasTexels(u)) { return; }
+  let co = flipCellOfTexel(u, idx);
+  if (co.w > 0.5) { dataOut[idx] = vec4f(0.0); return; }
+  let tr = flipTransferAt(co.xyz);
+  let w = tr.w;
+  let vel = select(vec3f(0.0), tr.xyz / w, w > 1e-6);
+  let cov = clamp(w / max(u.avgWeight, 1e-4), 0.0, 1.0);
+  dataOut[idx] = vec4f(vel, cov);
+}
+`;
+
+const FLIP3D_PHI_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read_write> transferI : array<atomic<i32>>;
+@group(0) @binding(2) var<storage, read_write> dataOut : array<vec4f>;
+${FLIP3D_TRANSFER_READ}
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= flipAtlasTexels(u)) { return; }
+  let co = flipCellOfTexel(u, idx);
+  if (co.w > 0.5) { dataOut[idx] = vec4f(1.0, 0.0, 0.0, 1.0); return; }
+  let cell = co.xyz;
+  var sum = 0.0;
+  for (var dz = -1; dz <= 1; dz++) {
+    for (var dy = -1; dy <= 1; dy++) {
+      for (var dx = -1; dx <= 1; dx++) {
+        let w = flipTransferAt(cell + vec3f(f32(dx), f32(dy), f32(dz))).w;
+        sum += clamp(w / max(u.avgWeight, 1e-4), 0.0, 1.0);
+      }
+    }
+  }
+  let chi = sum / 27.0;
+  let phi = (0.5 - chi) * 2.0;
+  dataOut[idx] = vec4f(phi, chi, 0.0, 1.0);
+}
+`;
+
+const FLIP3D_PHI_ADVECT_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read>       phiIn : array<vec4f>;
+@group(0) @binding(2) var<storage, read>       velIn : array<vec4f>;
+@group(0) @binding(3) var<storage, read_write> transferI : array<atomic<i32>>;
+@group(0) @binding(4) var<storage, read_write> dataOut : array<vec4f>;
+${FLIP3D_TRANSFER_READ}
+fn fetchPhi(cell: vec3f) -> vec4f { return phiIn[flipTexelOf(u, cell)]; }
+fn samplePhi(p: vec3f) -> vec4f {
+  let pc = clamp(p, vec3f(0.0), vec3f(u.gridN - 1.0));
+  let b = floor(pc);
+  let f = pc - b;
+  let c000 = fetchPhi(b);
+  let c100 = fetchPhi(b + vec3f(1.0, 0.0, 0.0));
+  let c010 = fetchPhi(b + vec3f(0.0, 1.0, 0.0));
+  let c110 = fetchPhi(b + vec3f(1.0, 1.0, 0.0));
+  let c001 = fetchPhi(b + vec3f(0.0, 0.0, 1.0));
+  let c101 = fetchPhi(b + vec3f(1.0, 0.0, 1.0));
+  let c011 = fetchPhi(b + vec3f(0.0, 1.0, 1.0));
+  let c111 = fetchPhi(b + vec3f(1.0, 1.0, 1.0));
+  return mix(mix(mix(c000, c100, f.x), mix(c010, c110, f.x), f.y),
+             mix(mix(c001, c101, f.x), mix(c011, c111, f.x), f.y), f.z);
+}
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= flipAtlasTexels(u)) { return; }
+  let co = flipCellOfTexel(u, idx);
+  if (co.w > 0.5) { dataOut[idx] = vec4f(1.0, 0.0, 0.0, 1.0); return; }
+  let cell = co.xyz;
+  let vel = velIn[flipTexelOf(u, cell)].xyz;
+  let back = cell - vel * u.delta;
+  let adv = samplePhi(back).rg;
+  let occ = clamp(flipTransferAt(cell).w / max(u.avgWeight, 1e-4), 0.0, 1.0);
+  let chi = max(adv.y, occ);
+  let phi = (0.5 - chi) * 2.0;
+  dataOut[idx] = vec4f(phi, chi, 0.0, 1.0);
+}
+`;
+
+const FLIP3D_VISCOSITY_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read>       velStar : array<vec4f>;
+@group(0) @binding(2) var<storage, read>       velIter : array<vec4f>;
+@group(0) @binding(3) var<storage, read>       phiIn : array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> dataOut : array<vec4f>;
+fn fetchIter(cell: vec3f) -> vec4f { return velIter[flipTexelOf(u, cell)]; }
+fn fetchPhi(cell: vec3f) -> vec4f { return phiIn[flipTexelOf(u, cell)]; }
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= flipAtlasTexels(u)) { return; }
+  let co = flipCellOfTexel(u, idx);
+  if (co.w > 0.5) { dataOut[idx] = vec4f(0.0); return; }
+  let cell = co.xyz;
+  let iter = fetchIter(cell).xyz;
+  if (fetchPhi(cell).g < 0.5) { dataOut[idx] = vec4f(iter, 1.0); return; }
+  var sum = vec3f(0.0);
+  sum += select(iter, fetchIter(cell + vec3f(1.0, 0.0, 0.0)).xyz, fetchPhi(cell + vec3f(1.0, 0.0, 0.0)).g >= 0.5);
+  sum += select(iter, fetchIter(cell - vec3f(1.0, 0.0, 0.0)).xyz, fetchPhi(cell - vec3f(1.0, 0.0, 0.0)).g >= 0.5);
+  sum += select(iter, fetchIter(cell + vec3f(0.0, 1.0, 0.0)).xyz, fetchPhi(cell + vec3f(0.0, 1.0, 0.0)).g >= 0.5);
+  sum += select(iter, fetchIter(cell - vec3f(0.0, 1.0, 0.0)).xyz, fetchPhi(cell - vec3f(0.0, 1.0, 0.0)).g >= 0.5);
+  sum += select(iter, fetchIter(cell + vec3f(0.0, 0.0, 1.0)).xyz, fetchPhi(cell + vec3f(0.0, 0.0, 1.0)).g >= 0.5);
+  sum += select(iter, fetchIter(cell - vec3f(0.0, 0.0, 1.0)).xyz, fetchPhi(cell - vec3f(0.0, 0.0, 1.0)).g >= 0.5);
+  let star = velStar[flipTexelOf(u, cell)].xyz;
+  let outVel = (star + u.alpha * sum) / (1.0 + 6.0 * u.alpha);
+  dataOut[idx] = vec4f(outVel, 1.0);
+}
+`;
+
+const FLIP3D_SURFACE_FN = /* wgsl */ `
+fn flipNormalAt(cell: vec3f) -> vec3f {
+  let g = vec3f(
+    fetchPhi(cell + vec3f(1.0, 0.0, 0.0)).r - fetchPhi(cell - vec3f(1.0, 0.0, 0.0)).r,
+    fetchPhi(cell + vec3f(0.0, 1.0, 0.0)).r - fetchPhi(cell - vec3f(0.0, 1.0, 0.0)).r,
+    fetchPhi(cell + vec3f(0.0, 0.0, 1.0)).r - fetchPhi(cell - vec3f(0.0, 0.0, 1.0)).r
+  ) * 0.5;
+  let len = length(g);
+  return select(vec3f(0.0), g / len, len >= 1e-9);
+}
+fn flipCurvatureAt(cell: vec3f) -> f32 {
+  let nxp = flipNormalAt(cell + vec3f(1.0, 0.0, 0.0)).x;
+  let nxm = flipNormalAt(cell - vec3f(1.0, 0.0, 0.0)).x;
+  let nyp = flipNormalAt(cell + vec3f(0.0, 1.0, 0.0)).y;
+  let nym = flipNormalAt(cell - vec3f(0.0, 1.0, 0.0)).y;
+  let nzp = flipNormalAt(cell + vec3f(0.0, 0.0, 1.0)).z;
+  let nzm = flipNormalAt(cell - vec3f(0.0, 0.0, 1.0)).z;
+  return (nxp - nxm) * 0.5 + (nyp - nym) * 0.5 + (nzp - nzm) * 0.5;
+}
+`;
+
+const FLIP3D_CURVATURE_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read>       phiIn : array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> dataOut : array<vec4f>;
+fn fetchPhi(cell: vec3f) -> vec4f { return phiIn[flipTexelOf(u, cell)]; }
+${FLIP3D_SURFACE_FN}
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= flipAtlasTexels(u)) { return; }
+  let co = flipCellOfTexel(u, idx);
+  if (co.w > 0.5) { dataOut[idx] = vec4f(0.0); return; }
+  let cell = co.xyz;
+  let phi = fetchPhi(cell).r;
+  let kappa = select(flipCurvatureAt(cell), 0.0, abs(phi) > 2.0);
+  dataOut[idx] = vec4f(kappa, 0.0, 0.0, 1.0);
+}
+`;
+
+const FLIP3D_TENSION_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read>       velIn : array<vec4f>;
+@group(0) @binding(2) var<storage, read>       phiIn : array<vec4f>;
+@group(0) @binding(3) var<storage, read>       curvIn : array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> dataOut : array<vec4f>;
+fn fetchPhi(cell: vec3f) -> vec4f { return phiIn[flipTexelOf(u, cell)]; }
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= flipAtlasTexels(u)) { return; }
+  let co = flipCellOfTexel(u, idx);
+  if (co.w > 0.5) { dataOut[idx] = vec4f(0.0); return; }
+  let cell = co.xyz;
+  var vel = velIn[flipTexelOf(u, cell)].xyz;
+  let phiChi = fetchPhi(cell).rg;
+  if (abs(phiChi.r) <= 2.0 && phiChi.g > 0.001) {
+    let gradChi = vec3f(
+      fetchPhi(cell + vec3f(1.0, 0.0, 0.0)).g - fetchPhi(cell - vec3f(1.0, 0.0, 0.0)).g,
+      fetchPhi(cell + vec3f(0.0, 1.0, 0.0)).g - fetchPhi(cell - vec3f(0.0, 1.0, 0.0)).g,
+      fetchPhi(cell + vec3f(0.0, 0.0, 1.0)).g - fetchPhi(cell - vec3f(0.0, 0.0, 1.0)).g
+    ) * 0.5;
+    let kappa = curvIn[flipTexelOf(u, cell)].r;
+    vel += u.delta * u.sigma * kappa * gradChi;
+  }
+  dataOut[idx] = vec4f(vel, 1.0);
+}
+`;
+
+const FLIP3D_CURL_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read>       velIn : array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> dataOut : array<vec4f>;
+fn fetchVel(cell: vec3f) -> vec4f { return velIn[flipTexelOf(u, cell)]; }
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= flipAtlasTexels(u)) { return; }
+  let co = flipCellOfTexel(u, idx);
+  if (co.w > 0.5) { dataOut[idx] = vec4f(0.0); return; }
+  let cell = co.xyz;
+  let duz_dy = (fetchVel(cell + vec3f(0.0, 1.0, 0.0)).z - fetchVel(cell - vec3f(0.0, 1.0, 0.0)).z) * 0.5;
+  let duy_dz = (fetchVel(cell + vec3f(0.0, 0.0, 1.0)).y - fetchVel(cell - vec3f(0.0, 0.0, 1.0)).y) * 0.5;
+  let dux_dz = (fetchVel(cell + vec3f(0.0, 0.0, 1.0)).x - fetchVel(cell - vec3f(0.0, 0.0, 1.0)).x) * 0.5;
+  let duz_dx = (fetchVel(cell + vec3f(1.0, 0.0, 0.0)).z - fetchVel(cell - vec3f(1.0, 0.0, 0.0)).z) * 0.5;
+  let duy_dx = (fetchVel(cell + vec3f(1.0, 0.0, 0.0)).y - fetchVel(cell - vec3f(1.0, 0.0, 0.0)).y) * 0.5;
+  let dux_dy = (fetchVel(cell + vec3f(0.0, 1.0, 0.0)).x - fetchVel(cell - vec3f(0.0, 1.0, 0.0)).x) * 0.5;
+  let w = vec3f(duz_dy - duy_dz, dux_dz - duz_dx, duy_dx - dux_dy);
+  dataOut[idx] = vec4f(w, length(w));
+}
+`;
+
+const FLIP3D_VORTICITY_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read>       velIn : array<vec4f>;
+@group(0) @binding(2) var<storage, read>       curlIn : array<vec4f>;
+@group(0) @binding(3) var<storage, read_write> dataOut : array<vec4f>;
+fn fetchCurl(cell: vec3f) -> vec4f { return curlIn[flipTexelOf(u, cell)]; }
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= flipAtlasTexels(u)) { return; }
+  let co = flipCellOfTexel(u, idx);
+  if (co.w > 0.5) { dataOut[idx] = vec4f(0.0); return; }
+  let cell = co.xyz;
+  var vel = velIn[flipTexelOf(u, cell)].xyz;
+  let eta = vec3f(
+    fetchCurl(cell + vec3f(1.0, 0.0, 0.0)).w - fetchCurl(cell - vec3f(1.0, 0.0, 0.0)).w,
+    fetchCurl(cell + vec3f(0.0, 1.0, 0.0)).w - fetchCurl(cell - vec3f(0.0, 1.0, 0.0)).w,
+    fetchCurl(cell + vec3f(0.0, 0.0, 1.0)).w - fetchCurl(cell - vec3f(0.0, 0.0, 1.0)).w
+  ) * 0.5;
+  let etaLen = length(eta);
+  if (etaLen > 1e-6) {
+    let w = fetchCurl(cell).xyz;
+    vel += u.epsilon * cross(eta / etaLen, w) * u.delta;
+  }
+  if (cell.x <= 0.0 || cell.x >= u.gridN - 1.0) { vel.x = 0.0; }
+  if (cell.y <= 0.0 || cell.y >= u.gridN - 1.0) { vel.y = 0.0; }
+  if (cell.z <= 0.0 || cell.z >= u.gridN - 1.0) { vel.z = 0.0; }
+  dataOut[idx] = vec4f(clamp(vel, vec3f(-u.maxSpeed), vec3f(u.maxSpeed)), 1.0);
+}
+`;
+
+const FLIP3D_JACOBI_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read>       velIn : array<vec4f>;
+@group(0) @binding(2) var<storage, read>       presIn : array<vec4f>;
+@group(0) @binding(3) var<storage, read>       phiIn : array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> dataOut : array<vec4f>;
+fn fetchVel(cell: vec3f) -> vec4f { return velIn[flipTexelOf(u, cell)]; }
+fn fetchPres(cell: vec3f) -> vec4f { return presIn[flipTexelOf(u, cell)]; }
+fn fetchPhi(cell: vec3f) -> vec4f { return phiIn[flipTexelOf(u, cell)]; }
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= flipAtlasTexels(u)) { return; }
+  let co = flipCellOfTexel(u, idx);
+  if (co.w > 0.5) { dataOut[idx] = vec4f(0.0); return; }
+  let cell = co.xyz;
+  if (fetchPhi(cell).g < 0.5) { dataOut[idx] = vec4f(0.0); return; }
+  let vC = fetchVel(cell).xyz;
+  let div = (vC.x - fetchVel(cell - vec3f(1.0, 0.0, 0.0)).x)
+          + (vC.y - fetchVel(cell - vec3f(0.0, 1.0, 0.0)).y)
+          + (vC.z - fetchVel(cell - vec3f(0.0, 0.0, 1.0)).z);
+  var sum = 0.0;
+  var count = 0.0;
+  var nb = cell + vec3f(1.0, 0.0, 0.0);
+  if (nb.x < u.gridN) { count += 1.0; if (fetchPhi(nb).g >= 0.5) { sum += fetchPres(nb).r; } }
+  nb = cell - vec3f(1.0, 0.0, 0.0);
+  if (nb.x >= 0.0) { count += 1.0; if (fetchPhi(nb).g >= 0.5) { sum += fetchPres(nb).r; } }
+  nb = cell + vec3f(0.0, 1.0, 0.0);
+  if (nb.y < u.gridN) { count += 1.0; if (fetchPhi(nb).g >= 0.5) { sum += fetchPres(nb).r; } }
+  nb = cell - vec3f(0.0, 1.0, 0.0);
+  if (nb.y >= 0.0) { count += 1.0; if (fetchPhi(nb).g >= 0.5) { sum += fetchPres(nb).r; } }
+  nb = cell + vec3f(0.0, 0.0, 1.0);
+  if (nb.z < u.gridN) { count += 1.0; if (fetchPhi(nb).g >= 0.5) { sum += fetchPres(nb).r; } }
+  nb = cell - vec3f(0.0, 0.0, 1.0);
+  if (nb.z >= 0.0) { count += 1.0; if (fetchPhi(nb).g >= 0.5) { sum += fetchPres(nb).r; } }
+  let p = select(0.0, (sum - div) / count, count > 0.0);
+  dataOut[idx] = vec4f(p, 0.0, 0.0, 1.0);
+}
+`;
+
+const FLIP3D_SUBTRACT_WGSL = /* wgsl */ `
+${FLIP3D_WGSL_COMMON}
+@group(0) @binding(0) var<uniform>             u : FlipU;
+@group(0) @binding(1) var<storage, read>       velIn : array<vec4f>;
+@group(0) @binding(2) var<storage, read>       presIn : array<vec4f>;
+@group(0) @binding(3) var<storage, read>       phiIn : array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> dataOut : array<vec4f>;
+fn fetchPres(cell: vec3f) -> vec4f { return presIn[flipTexelOf(u, cell)]; }
+fn fetchPhi(cell: vec3f) -> vec4f { return phiIn[flipTexelOf(u, cell)]; }
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= flipAtlasTexels(u)) { return; }
+  let co = flipCellOfTexel(u, idx);
+  if (co.w > 0.5) { dataOut[idx] = vec4f(0.0); return; }
+  let cell = co.xyz;
+  var vel = velIn[flipTexelOf(u, cell)].xyz;
+  if (fetchPhi(cell).g < 0.5) { dataOut[idx] = vec4f(vel, 1.0); return; }
+  let pC = fetchPres(cell).r;
+  let pX = select(0.0, fetchPres(cell + vec3f(1.0, 0.0, 0.0)).r, fetchPhi(cell + vec3f(1.0, 0.0, 0.0)).g >= 0.5);
+  let pY = select(0.0, fetchPres(cell + vec3f(0.0, 1.0, 0.0)).r, fetchPhi(cell + vec3f(0.0, 1.0, 0.0)).g >= 0.5);
+  let pZ = select(0.0, fetchPres(cell + vec3f(0.0, 0.0, 1.0)).r, fetchPhi(cell + vec3f(0.0, 0.0, 1.0)).g >= 0.5);
+  vel -= vec3f(pX - pC, pY - pC, pZ - pC);
+  dataOut[idx] = vec4f(vel, 1.0);
+}
+`;
+
+export const WEBGPU_FLUID_SIZE = 64;
+
+/** The analytic vortex the WebGL runtime seeds both fluid targets
+ * with (useGpgpuRuntime.ts), as a flat RGBA field — the WebGPU
+ * grid's initial state, byte-identical in value. */
+export function createFluidInitialFieldData(size: number = WEBGPU_FLUID_SIZE): Float32Array {
+  const data = new Float32Array(size * size * 4);
+  for (let fi = 0; fi < size * size; fi++) {
+    const fu = (fi % size) / size - 0.5;
+    const fv = Math.floor(fi / size) / size - 0.5;
+    const fr = Math.sqrt(fu * fu + fv * fv) + 0.001;
+    data[fi * 4 + 0] = -fv / (fr * fr + 0.1) * 0.08;
+    data[fi * 4 + 1] = fu / (fr * fr + 0.1) * 0.08;
+    data[fi * 4 + 2] = 0;
+    data[fi * 4 + 3] = 1;
+  }
+  return data;
+}
+
 export type WebGPUComputeState = {
   device: GPUDevice;
   velPipeline: GPUComputePipeline;
@@ -1049,11 +1792,89 @@ export type WebGPUComputeState = {
   lastParticleLifeMatrix: Float32Array | null;
   /** stagingBuf への readback mapAsync が未解決の間は true */
   readbackPending: boolean;
+  /** Fluid field (Phase 25): the advection pipeline (third
+   * pipeline), its uniform block, and the resident ping-pong
+   * grid. The grid buffers are created lazily on the first
+   * fluid-enabled step — a fluid-off state allocates none of
+   * them and never dispatches the pass. */
+  fluidPipeline: GPUComputePipeline;
+  fluidUBuf: GPUBuffer;
+  fluidUData: Float32Array<ArrayBuffer>;
+  /** Placeholder bound at the velocity pass's fluid binding
+   * while no grid exists (never sampled: fu.enabled is 0). */
+  fluidDummyBuf: GPUBuffer;
+  fluidABuf: GPUBuffer | null;
+  fluidBBuf: GPUBuffer | null;
+  fluidPingIsA: boolean;
+  /** FLIP 3D (Phase 26): the eleven solver pipelines, the
+   * shared per-pass uniform slots, the velocity coupling
+   * uniform block, and the lazily created atlas grid (created
+   * on the first flip3d-active step, recreated when the
+   * resolved resolution changes). A flip3d-off state allocates
+   * no grid buffers and never dispatches a solver pass. */
+  flip3dPipelines: Flip3dPipelines;
+  flipUBuf: GPUBuffer;
+  flipUData: Float32Array<ArrayBuffer>;
+  flipVelUBuf: GPUBuffer;
+  flipVelUData: Float32Array<ArrayBuffer>;
+  /** 1x1 placeholder bound at the velocity pass's FLIP texture
+   * bindings while no grid exists (never loaded: couple is 0). */
+  flipDummyTex: GPUTexture;
+  flipGrid: Flip3dGridState | null;
+};
+
+type Flip3dPipelines = {
+  splat: GPUComputePipeline;
+  composite: GPUComputePipeline;
+  phi: GPUComputePipeline;
+  phiAdvect: GPUComputePipeline;
+  viscosity: GPUComputePipeline;
+  curvature: GPUComputePipeline;
+  tension: GPUComputePipeline;
+  curl: GPUComputePipeline;
+  vorticity: GPUComputePipeline;
+  jacobi: GPUComputePipeline;
+  subtract: GPUComputePipeline;
+};
+
+type Flip3dGridState = {
+  resolution: number;
+  atlasW: number;
+  atlasH: number;
+  tilesX: number;
+  texels: number;
+  velA: GPUBuffer;
+  velB: GPUBuffer;
+  presA: GPUBuffer;
+  presB: GPUBuffer;
+  transferI: GPUBuffer;
+  phiA: GPUBuffer;
+  phiB: GPUBuffer;
+  scratch: GPUBuffer;
+  curv: GPUBuffer;
+  /** Viscosity's fixed star copy: the WebGL runner binds the
+   * live velocity as uVelStar while alternating writes include
+   * that same buffer — legal as a WebGL feedback loop, but a
+   * WebGPU validation error (one buffer bound read + read_write
+   * in a single dispatch, which invalidates the whole command
+   * buffer; the Phase 26 gate's viscosity stage proved it).
+   * The WGSL step copies velLive here once per step instead. */
+  star: GPUBuffer;
+  /** Previous step's projected velocity / pre-projection base
+   * (the velocity coupling's sources, published at step end
+   * via copyBufferToTexture — textures, not storage buffers,
+   * because the velocity stage's storage-buffer budget is
+   * already at the default limit of 8). */
+  coupleVelTex: GPUTexture;
+  coupleBaseTex: GPUTexture;
+  velPingIsA: boolean;
+  phiPingIsA: boolean;
+  framesStepped: number;
 };
 
 // Vel uniform buffer: 98 f32 slots (see the WGSL Uniforms struct
 // field order; int fields are written through an Int32Array view).
-const VEL_UNIFORM_BYTES = 592;
+const VEL_UNIFORM_BYTES = 608;
 // Pos uniform buffer: 21 f32 slots.
 const POS_UNIFORM_BYTES = 128;
 
@@ -1145,6 +1966,11 @@ export async function initWebGPUCompute(
       { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
       { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
       { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 8, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 9, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+      { binding: 10, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
+      { binding: 11, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
+      { binding: 12, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
     ],
   });
   const posBGL = device.createBindGroupLayout({
@@ -1166,6 +1992,76 @@ export async function initWebGPUCompute(
     compute: { module: posModule, entryPoint: 'main' },
   });
 
+  // Fluid field (Phase 25): third pipeline + its uniform block.
+  // The grid buffers themselves stay unallocated until the first
+  // fluid-enabled step (see ensureFluidGrid).
+  const fluidModule = device.createShaderModule({ code: FLUID_WGSL });
+  const fluidBGL = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    ],
+  });
+  const fluidPipeline = device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [fluidBGL] }),
+    compute: { module: fluidModule, entryPoint: 'main' },
+  });
+  const fluidUBuf = device.createBuffer({ size: FLUID_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const fluidUData = new Float32Array(new ArrayBuffer(FLUID_UNIFORM_BYTES));
+  const fluidDummyBuf = device.createBuffer({
+    size: 16,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+
+  // FLIP 3D (Phase 26): eleven solver pipelines over one shared
+  // uniform-slot buffer. The grid buffers stay unallocated
+  // until the first flip3d-active step (see ensureFlip3dGrid).
+  const makeFlipPipeline = (
+    code: string,
+    types: Array<'uniform' | 'read-only-storage' | 'storage'>,
+  ): GPUComputePipeline => {
+    const layout = device.createBindGroupLayout({
+      entries: types.map((type, binding) => ({
+        binding,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type },
+      })),
+    });
+    return device.createComputePipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+      compute: { module: device.createShaderModule({ code }), entryPoint: 'main' },
+    });
+  };
+  const RO = 'read-only-storage' as const;
+  const RW = 'storage' as const;
+  const UN = 'uniform' as const;
+  const flip3dPipelines: Flip3dPipelines = {
+    splat: makeFlipPipeline(FLIP3D_SPLAT_WGSL, [UN, RO, RO, RW]),
+    composite: makeFlipPipeline(FLIP3D_COMPOSITE_WGSL, [UN, RW, RW]),
+    phi: makeFlipPipeline(FLIP3D_PHI_WGSL, [UN, RW, RW]),
+    phiAdvect: makeFlipPipeline(FLIP3D_PHI_ADVECT_WGSL, [UN, RO, RO, RW, RW]),
+    viscosity: makeFlipPipeline(FLIP3D_VISCOSITY_WGSL, [UN, RO, RO, RO, RW]),
+    curvature: makeFlipPipeline(FLIP3D_CURVATURE_WGSL, [UN, RO, RW]),
+    tension: makeFlipPipeline(FLIP3D_TENSION_WGSL, [UN, RO, RO, RO, RW]),
+    curl: makeFlipPipeline(FLIP3D_CURL_WGSL, [UN, RO, RW]),
+    vorticity: makeFlipPipeline(FLIP3D_VORTICITY_WGSL, [UN, RO, RO, RW]),
+    jacobi: makeFlipPipeline(FLIP3D_JACOBI_WGSL, [UN, RO, RO, RO, RW]),
+    subtract: makeFlipPipeline(FLIP3D_SUBTRACT_WGSL, [UN, RO, RO, RO, RW]),
+  };
+  const flipUBuf = device.createBuffer({
+    size: FLIP3D_UNIFORM_STRIDE * FLIP3D_UNIFORM_SLOTS,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  const flipUData = new Float32Array(new ArrayBuffer(FLIP3D_UNIFORM_STRIDE * FLIP3D_UNIFORM_SLOTS));
+  const flipVelUBuf = device.createBuffer({ size: FLIP3D_VEL_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const flipVelUData = new Float32Array(new ArrayBuffer(FLIP3D_VEL_UNIFORM_BYTES));
+  const flipDummyTex = device.createTexture({
+    size: [1, 1, 1],
+    format: 'rgba32float',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+
   const velUData = new Float32Array(new ArrayBuffer(VEL_UNIFORM_BYTES));
   const posUData = new Float32Array(new ArrayBuffer(POS_UNIFORM_BYTES));
 
@@ -1174,7 +2070,100 @@ export async function initWebGPUCompute(
     morphBuf, morphNormalBuf, initPosBuf, prevPosBuf, particleLifeBuf,
     velUBuf, posUBuf, stagingBuf, texSize, velUData, posUData,
     lastParticleLifeMatrix: null, readbackPending: false,
+    fluidPipeline, fluidUBuf, fluidUData, fluidDummyBuf,
+    fluidABuf: null, fluidBBuf: null, fluidPingIsA: true,
+    flip3dPipelines, flipUBuf, flipUData, flipVelUBuf, flipVelUData,
+    flipDummyTex,
+    flipGrid: null,
   };
+}
+
+// Fluid uniform buffer: 9 f32 fields (see the WGSL FluidUniforms
+// struct), padded to 48 bytes.
+const FLUID_UNIFORM_BYTES = 48;
+
+// FLIP 3D uniform slot: the FlipU struct (16 slots of 4 bytes).
+const FLIP3D_UNIFORM_BYTES = 64;
+// Slot stride in the shared buffer: uniform binding offsets
+// must satisfy minUniformBufferOffsetAlignment (256 on the
+// reference Metal adapter — the Phase 26 gate's second round
+// proved 64-byte strides invalid), so slots sit 256 apart.
+const FLIP3D_UNIFORM_STRIDE = 256;
+// Slots: 0 splat, 1 composite, 2 phi, 3 phiAdvect, 4 viscosity,
+// 5 tension, 6 generic (curvature / curl / jacobi / subtract),
+// 7 vorticity. Jacobi iterations share one slot (same values).
+const FLIP3D_UNIFORM_SLOTS = 8;
+// Velocity coupling uniform block (Flip3dUniforms, 8 f32 used).
+const FLIP3D_VEL_UNIFORM_BYTES = 48;
+
+/** Create the FLIP 3D atlas grid on first use (Phase 26) and
+ * seed it zeroed — WebGPU buffers are zero-initialised, the
+ * twin of the WebGL targets' zero-copy init. Recreated when
+ * the resolved resolution changes (framesStepped resets, like
+ * a fresh WebGL target set). */
+function ensureFlip3dGrid(state: WebGPUComputeState, resolution: number): Flip3dGridState | null {
+  if (state.flipGrid && state.flipGrid.resolution === resolution) return state.flipGrid;
+  const layout = PYRO_GRID_LAYOUTS[resolution];
+  const size = pyroGridAtlasSize(resolution);
+  if (!layout || !size) return null;
+  if (state.flipGrid) destroyFlip3dGrid(state.flipGrid);
+  const texels = size.width * size.height;
+  const opts: GPUBufferDescriptor = {
+    size: texels * 16,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+  };
+  const mk = () => state.device.createBuffer(opts);
+  const mkTex = () => state.device.createTexture({
+    size: [size.width, size.height, 1],
+    format: 'rgba32float',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  state.flipGrid = {
+    resolution,
+    atlasW: size.width,
+    atlasH: size.height,
+    tilesX: layout.cols,
+    texels,
+    velA: mk(), velB: mk(), presA: mk(), presB: mk(),
+    transferI: mk(), phiA: mk(), phiB: mk(), scratch: mk(), curv: mk(), star: mk(),
+    coupleVelTex: mkTex(), coupleBaseTex: mkTex(),
+    velPingIsA: true,
+    phiPingIsA: true,
+    framesStepped: 0,
+  };
+  return state.flipGrid;
+}
+
+function destroyFlip3dGrid(grid: Flip3dGridState): void {
+  grid.velA.destroy();
+  grid.velB.destroy();
+  grid.presA.destroy();
+  grid.presB.destroy();
+  grid.transferI.destroy();
+  grid.phiA.destroy();
+  grid.phiB.destroy();
+  grid.scratch.destroy();
+  grid.curv.destroy();
+  grid.star.destroy();
+  grid.coupleVelTex.destroy();
+  grid.coupleBaseTex.destroy();
+}
+
+/** Create the resident fluid grid on first use and seed both
+ * sides with the analytic vortex (Phase 25). */
+function ensureFluidGrid(state: WebGPUComputeState): void {
+  if (state.fluidABuf && state.fluidBBuf) return;
+  const byteSize = WEBGPU_FLUID_SIZE * WEBGPU_FLUID_SIZE * 16;
+  const opts: GPUBufferDescriptor = {
+    size: byteSize,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+  };
+  state.fluidABuf = state.device.createBuffer(opts);
+  state.fluidBBuf = state.device.createBuffer(opts);
+  const init = createFluidInitialFieldData();
+  state.device.queue.writeBuffer(state.fluidABuf, 0, init.buffer as ArrayBuffer, init.byteOffset, init.byteLength);
+  state.device.queue.writeBuffer(state.fluidBBuf, 0, init.buffer as ArrayBuffer, init.byteOffset, init.byteLength);
+  state.fluidPingIsA = true;
 }
 
 /** Replace the baked morph cloud of a live state (Phase R): called
@@ -1219,6 +2208,7 @@ export interface WebGPUForceParams {
   curlEnabled: boolean; curlStrength: number; curlScale: number; curlSymmetry: number; curlMode: number; curlOctaves: number;
   boidsEnabled: boolean; boidsSeparation: number; boidsAlignment: number; boidsCohesion: number; boidsRadius: number;
   attractorEnabled: boolean; attractorType: number; attractorStrength: number; attractorScale: number;
+  attractor2Enabled: boolean; attractor2Type: number; attractor2Strength: number; attractor2Scale: number;
   levyEnabled: boolean; levyStrength: number; levyRate: number;
   kuramotoEnabled: boolean; kuramotoCoupling: number; kuramotoSpread: number; kuramotoRadius: number;
   particleLifeEnabled: boolean; particleLifeStrength: number; particleLifeRadius: number; particleLifeFriction: number; particleLifeSpecies: number;
@@ -1244,6 +2234,40 @@ export interface WebGPUForceParams {
   // stateThreshold ride along unused — the WGSL pass has no
   // attribute texture, so mode 3 resolves to state 0 there).
   steeringSeek: WebGPUSteeringParams | null;
+}
+
+/** Per-frame fluid field parameters for stepWebGPUCompute
+ * (Phase 25): the same config values the WebGL branch assigns to
+ * the advection material and the velocity pass's fluid uniforms. */
+export interface WebGPUFluidParams {
+  enabled: boolean;
+  diffuse: number;
+  decay: number;
+  strength: number;
+  influence: number;
+  scale: number;
+  extForce: boolean;
+}
+
+/** Per-frame FLIP 3D parameters for stepWebGPUCompute
+ * (Phase 26): the same config values the WebGL branch feeds
+ * runFlip3dPasses / applyFlip3dCoupleUniforms, with the same
+ * clamps applied by the caller. `active` is flip3dActive
+ * (mode '3d' + flip on + fluid on); `resolution` is the shared
+ * resolveFlip3dResolution result (0 while inactive). */
+export interface WebGPUFlip3dParams {
+  active: boolean;
+  resolution: number;
+  pressureIterations: number;
+  viscosity: number;
+  surfaceTension: number;
+  vorticityEnabled: boolean;
+  vorticityEpsilon: number;
+  blend: number;
+  transfer: number;
+  bounceRadius: number;
+  fluidScale: number;
+  count: number;
 }
 
 /** The steering subset stepWebGPUCompute consumes (Phase 20). */
@@ -1274,6 +2298,8 @@ export function stepWebGPUCompute(
   speed: number,
   morph?: WebGPUMorphParams | null,
   forces?: WebGPUForceParams | null,
+  fluid?: WebGPUFluidParams | null,
+  flip3d?: WebGPUFlip3dParams | null,
 ): void {
   const { device, velPipeline, posPipeline, posABuf, posBBuf, velABuf, velBBuf, morphBuf, morphNormalBuf, initPosBuf, prevPosBuf, particleLifeBuf, velUBuf, posUBuf, texSize } = state;
   const N = texSize * texSize;
@@ -1405,6 +2431,12 @@ export function stepWebGPUCompute(
     velU[116 + pi * 4 + 2] = st ? st.pathPacked[pi * 3 + 2] : 0;
     velU[116 + pi * 4 + 3] = 0;
   }
+  // Strange attractor unit 2 (Phase 27): indices 148-151,
+  // appended at the end of the uniform block.
+  velU[148] = f && f.attractor2Enabled ? 1 : 0;
+  velI[149] = f ? f.attractor2Type : 0;
+  velU[150] = f ? f.attractor2Strength : 0;
+  velU[151] = f ? f.attractor2Scale : 0;
   new Uint32Array(velU.buffer)[0] = texSize; // texSizeはu32なのでUint32Arrayビューで書く
   device.queue.writeBuffer(velUBuf, 0, velU);
 
@@ -1451,7 +2483,217 @@ export function stepWebGPUCompute(
   new Uint32Array(posU.buffer)[0] = texSize;
   device.queue.writeBuffer(posUBuf, 0, posU);
 
+  // Fluid field (Phase 25): write the shared fluid uniform block
+  // every frame (the velocity pass reads fu.enabled/influence/
+  // scale from the same buffer), then — only while the field is
+  // enabled — run the advection dispatch BEFORE the velocity
+  // pass so the velocity pass samples this frame's field, the
+  // WebGL pass order. The grid ping-pong flips here; the velocity
+  // pass binds the side just written.
+  const fluidU = state.fluidUData;
+  const fluidOn = Boolean(fluid && fluid.enabled);
+  fluidU[0] = delta;
+  fluidU[1] = fluid ? fluid.diffuse : 0;
+  fluidU[2] = fluid ? fluid.decay : 0;
+  fluidU[3] = fluid ? fluid.strength : 0;
+  fluidU[4] = time;
+  fluidU[5] = fluid && fluid.extForce ? 1 : 0;
+  fluidU[6] = fluid ? fluid.influence : 0;
+  fluidU[7] = fluid ? fluid.scale : 0;
+  fluidU[8] = fluidOn ? 1 : 0;
+  device.queue.writeBuffer(state.fluidUBuf, 0, fluidU);
+
   const enc = device.createCommandEncoder();
+
+  let fluidReadBuf: GPUBuffer = state.fluidDummyBuf;
+  if (fluidOn) {
+    ensureFluidGrid(state);
+    const fIn = state.fluidPingIsA ? state.fluidABuf! : state.fluidBBuf!;
+    const fOut = state.fluidPingIsA ? state.fluidBBuf! : state.fluidABuf!;
+    const fluidBG = device.createBindGroup({
+      layout: state.fluidPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: state.fluidUBuf } },
+        { binding: 1, resource: { buffer: fIn } },
+        { binding: 2, resource: { buffer: fOut } },
+      ],
+    });
+    const fluidPass = enc.beginComputePass();
+    fluidPass.setPipeline(state.fluidPipeline);
+    fluidPass.setBindGroup(0, fluidBG);
+    fluidPass.dispatchWorkgroups(WEBGPU_FLUID_SIZE / 8, WEBGPU_FLUID_SIZE / 8);
+    fluidPass.end();
+    state.fluidPingIsA = !state.fluidPingIsA;
+    fluidReadBuf = fOut;
+  }
+
+  // FLIP 3D (Phase 26): the solver steps BEFORE the velocity
+  // pass, from the frame-start particle buffers (posIn / velIn
+  // above — the same state the WebGL runner's P2G reads), and
+  // the velocity pass couples from the PREVIOUS step's pair
+  // (coupleVelTex / coupleBaseTex, refreshed at the end of
+  // this step) — the WebGL frame order, where runFlip3dPasses steps
+  // after runSimulationPasses and applyFlip3dCoupleUniforms
+  // fills from the last completed step. The step is skipped
+  // entirely (no grid, no dispatch) while flip3d is inactive
+  // or the clamped dt is 0, mirroring the WebGL runner.
+  const f3 = flip3d;
+  const f3Active = Boolean(f3 && f3.active && f3.resolution > 0);
+  const f3Dt = Math.min(Math.max(delta, 0), 0.05);
+  let f3Grid: Flip3dGridState | null = null;
+  if (f3Active) {
+    f3Grid = ensureFlip3dGrid(state, f3!.resolution);
+  }
+  const flipVelU = state.flipVelUData;
+  {
+    const halfExtent = Math.max(1e-3, (f3 ? f3.bounceRadius : 0) * (f3 ? f3.fluidScale : 0));
+    const res = f3Grid ? f3Grid.resolution : 32;
+    flipVelU[0] = f3Active && f3Grid && f3Grid.framesStepped > 0 ? 1 : 0;
+    flipVelU[1] = f3 ? f3.blend : 0;
+    flipVelU[2] = f3 ? f3.transfer : 0;
+    flipVelU[3] = (2 * halfExtent / res) / 60;
+    flipVelU[4] = halfExtent;
+    flipVelU[5] = res;
+    flipVelU[6] = f3Grid ? f3Grid.atlasW : 256;
+    flipVelU[7] = f3Grid ? f3Grid.tilesX : 8;
+    device.queue.writeBuffer(state.flipVelUBuf, 0, flipVelU);
+  }
+  let f3PendingCouple: { projected: GPUBuffer; base: GPUBuffer } | null = null;
+  if (f3Active && f3Grid && f3Dt > 0) {
+    const grid = f3Grid;
+    const P = state.flip3dPipelines;
+    const fu2 = state.flipUData;
+    const fu2i = new Uint32Array(fu2.buffer);
+    const avgWeight = Math.max(1, f3!.count) / (grid.resolution ** 3);
+    for (let s = 0; s < FLIP3D_UNIFORM_SLOTS; s++) {
+      const o = s * (FLIP3D_UNIFORM_STRIDE / 4);
+      fu2[o] = grid.resolution;
+      fu2i[o + 1] = grid.atlasW;
+      fu2i[o + 2] = grid.atlasH;
+      fu2i[o + 3] = grid.tilesX;
+      fu2[o + 4] = avgWeight;
+      fu2[o + 5] = f3Dt;
+      fu2[o + 6] = f3!.viscosity * f3Dt;
+      fu2[o + 7] = f3!.surfaceTension;
+      fu2[o + 8] = f3!.vorticityEpsilon;
+      fu2[o + 9] = 4.0 * grid.resolution;
+      fu2[o + 10] = f3!.bounceRadius;
+      fu2[o + 11] = f3!.fluidScale;
+      fu2i[o + 12] = N;
+      fu2i[o + 13] = 0;
+      fu2i[o + 14] = 0;
+      fu2i[o + 15] = 0;
+    }
+    device.queue.writeBuffer(state.flipUBuf, 0, fu2);
+
+    const gridPass = (pipeline: GPUComputePipeline, slot: number, bufs: GPUBuffer[], workgroups: number) => {
+      const bg = device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: state.flipUBuf, offset: slot * FLIP3D_UNIFORM_STRIDE, size: FLIP3D_UNIFORM_BYTES } },
+          ...bufs.map((buffer, i) => ({ binding: i + 1, resource: { buffer } })),
+        ],
+      });
+      const pass = enc.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bg);
+      pass.dispatchWorkgroups(workgroups);
+      pass.end();
+    };
+    const texelGroups = Math.ceil(grid.texels / 256);
+
+    // 0. Clears (FLIP rule: transfer and pressure restart at 0).
+    enc.clearBuffer(grid.transferI);
+    enc.clearBuffer(grid.presA);
+    enc.clearBuffer(grid.presB);
+
+    // 1. P2G splat (fixed-point scatter, see FLIP3D_SPLAT_WGSL).
+    gridPass(P.splat, 0, [posIn, velIn, grid.transferI], Math.ceil(N / 64));
+
+    // 2. Composite into the free velocity buffer.
+    const velCur = grid.velPingIsA ? grid.velA : grid.velB;
+    const velFree = grid.velPingIsA ? grid.velB : grid.velA;
+    gridPass(P.composite, 1, [grid.transferI, velFree], texelGroups);
+    let velLive: GPUBuffer = velFree;
+    let velSpare: GPUBuffer = velCur;
+
+    // 3. Phi build into the free phi buffer, advect into the
+    // other, which becomes the step's phi.
+    const phiFree = grid.phiPingIsA ? grid.phiB : grid.phiA;
+    const phiOther = grid.phiPingIsA ? grid.phiA : grid.phiB;
+    gridPass(P.phi, 2, [grid.transferI, phiFree], texelGroups);
+    gridPass(P.phiAdvect, 3, [phiFree, velLive, grid.transferI, phiOther], texelGroups);
+    grid.phiPingIsA = phiOther === grid.phiA;
+    const phiBuf = phiOther;
+
+    // 4. Viscosity (fixed 4 Jacobi iterations — an even count,
+    // so the result lands back in the live buffer).
+    if (f3!.viscosity > 0) {
+      // The star term is the fixed pre-viscosity velocity; it
+      // rides in its own buffer so no dispatch binds one buffer
+      // as both read and read_write (see Flip3dGridState.star).
+      enc.copyBufferToBuffer(velLive, 0, grid.star, 0, grid.texels * 16);
+      let iter: GPUBuffer = velLive;
+      let write: GPUBuffer = grid.scratch;
+      for (let i = 0; i < FLIP3D_VISCOSITY_ITERATIONS; i++) {
+        gridPass(P.viscosity, 4, [grid.star, iter, phiBuf, write], texelGroups);
+        const swap = iter; iter = write; write = swap;
+      }
+      velLive = iter;
+      velSpare = velLive === grid.scratch ? velSpare : grid.scratch;
+    }
+
+    // 5. Surface tension (CSF): curvature baked from phi, then
+    // the force applied into the scratch, which becomes live.
+    if (f3!.surfaceTension > 0) {
+      gridPass(P.curvature, 6, [phiBuf, grid.curv], texelGroups);
+      gridPass(P.tension, 5, [velLive, phiBuf, grid.curv, grid.scratch], texelGroups);
+      velSpare = velLive;
+      velLive = grid.scratch;
+    }
+
+    // 6. Vorticity confinement (the DL keys, 3D form).
+    const vorticityActive = Boolean(f3!.vorticityEnabled && f3!.vorticityEpsilon > 0);
+    if (vorticityActive) {
+      gridPass(P.curl, 6, [velLive, grid.curv], texelGroups);
+      const written = grid.scratch === velLive ? velSpare : grid.scratch;
+      gridPass(P.vorticity, 7, [velLive, grid.curv, written], texelGroups);
+      velSpare = velLive;
+      velLive = written;
+    }
+
+    // The pre-projection velocity (the coupling's FLIP base).
+    const baseVelBuf = velLive;
+
+    // 7. Pressure projection: Jacobi ping-pong from the cleared
+    // pair, divergence recomputed from the fixed live velocity.
+    const iterations = Math.max(0, Math.min(32, Math.round(f3!.pressureIterations)));
+    let presIn: GPUBuffer = grid.presA;
+    let presOut: GPUBuffer = grid.presB;
+    for (let i = 0; i < iterations; i++) {
+      gridPass(P.jacobi, 6, [velLive, presIn, phiBuf, presOut], texelGroups);
+      const swap = presIn; presIn = presOut; presOut = swap;
+    }
+
+    // 8. Gradient subtraction into a velocity buffer that is
+    // not the live one.
+    const projected: GPUBuffer = velLive === grid.velA ? grid.velB : grid.velA;
+    gridPass(P.subtract, 6, [velLive, presIn, phiBuf, projected], texelGroups);
+    grid.velPingIsA = projected === grid.velA;
+    grid.framesStepped += 1;
+    setFlip3dRuntimeStatus({
+      active: true,
+      resolution: grid.resolution,
+      passesPerStep: flip3dPassCount({
+        pressureIterations: iterations,
+        viscosity: f3!.viscosity,
+        surfaceTension: f3!.surfaceTension,
+        vorticity: vorticityActive,
+      }),
+      framesStepped: grid.framesStepped,
+    });
+    f3PendingCouple = { projected, base: baseVelBuf };
+  }
 
   // Velocity pass
   const velBG = device.createBindGroup({
@@ -1465,6 +2707,11 @@ export function stepWebGPUCompute(
       { binding: 5, resource: { buffer: morphNormalBuf } },
       { binding: 6, resource: { buffer: initPosBuf } },
       { binding: 7, resource: { buffer: particleLifeBuf } },
+      { binding: 8, resource: { buffer: fluidReadBuf } },
+      { binding: 9, resource: { buffer: state.fluidUBuf } },
+      { binding: 10, resource: (f3Grid ? f3Grid.coupleVelTex : state.flipDummyTex).createView() },
+      { binding: 11, resource: (f3Grid ? f3Grid.coupleBaseTex : state.flipDummyTex).createView() },
+      { binding: 12, resource: { buffer: state.flipVelUBuf } },
     ],
   });
   const velPass = enc.beginComputePass();
@@ -1495,6 +2742,26 @@ export function stepWebGPUCompute(
   posPass.setBindGroup(0, posBG);
   posPass.dispatchWorkgroups(Math.ceil(N / 64));
   posPass.end();
+
+  // FLIP 3D (Phase 26): publish this step's projected / base
+  // pair into the coupling textures — after the velocity pass
+  // above has consumed the previous step's pair, so the copies
+  // land for the NEXT step, the WebGL one-step-behind order.
+  // bytesPerRow is atlasW * 16, a multiple of 256 for every
+  // layout (atlasW 256 / 384 / 512 / 960).
+  if (f3PendingCouple && f3Grid) {
+    const srcLayout = { bytesPerRow: f3Grid.atlasW * 16, rowsPerImage: f3Grid.atlasH };
+    enc.copyBufferToTexture(
+      { buffer: f3PendingCouple.projected, ...srcLayout },
+      { texture: f3Grid.coupleVelTex },
+      [f3Grid.atlasW, f3Grid.atlasH, 1],
+    );
+    enc.copyBufferToTexture(
+      { buffer: f3PendingCouple.base, ...srcLayout },
+      { texture: f3Grid.coupleBaseTex },
+      [f3Grid.atlasW, f3Grid.atlasH, 1],
+    );
+  }
 
   // Copy posOut to staging for readback
   // mapAsync が未解決 / mapped の間は stagingBuf を触らない
@@ -1568,4 +2835,12 @@ export function destroyWebGPUCompute(state: WebGPUComputeState): void {
   state.velUBuf.destroy();
   state.posUBuf.destroy();
   state.stagingBuf.destroy();
+  state.fluidUBuf.destroy();
+  state.fluidDummyBuf.destroy();
+  state.fluidABuf?.destroy();
+  state.fluidBBuf?.destroy();
+  state.flipUBuf.destroy();
+  state.flipVelUBuf.destroy();
+  state.flipDummyTex.destroy();
+  if (state.flipGrid) destroyFlip3dGrid(state.flipGrid);
 }
