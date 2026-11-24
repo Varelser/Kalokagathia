@@ -589,7 +589,7 @@ const NUMS: NumDef[] = [
   ['gpgpuLightTrailWidth', 'GPGPU ライト軌跡リボンの幅（ワールド単位）'],
   ['gpgpuLightTrailFade', 'GPGPU ライト軌跡リボンの減衰（古い側ほど薄くなる指数）'],
   ['gpgpuShadowStrength', 'GPGPU シャドウ（遮蔽マップ近似）の濃さ（0で従来同一）'],
-  ['gpgpuShadowMapStrength', 'シャドウマップ（光視点の実深度、第1段は地形が受け手）の濃さ（0で従来同一）'],
+  ['gpgpuShadowMapStrength', 'シャドウマップ（光視点の実深度、受け手は地形と GPGPU 粒子）の濃さ（0で従来同一）'],
   ['gpgpuShadowMapBias', 'シャドウマップの深度バイアス'],
   ['gpgpuShadowMapSoftness', 'シャドウマップの PCF ぼかし半径（テクセル）'],
   ['gpgpuShadowSoftness', 'GPGPU シャドウ（遮蔽マップ近似）のぼかし量（半影の柔らかさ）'],

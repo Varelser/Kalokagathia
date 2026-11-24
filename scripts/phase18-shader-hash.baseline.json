@@ -89,6 +89,22 @@
       "length": 22053,
       "sha256": "7eb2ea7a5b185121f13d59ded3b0a827f1f0db6c38dd2f643e4bf1727bb217f3"
     },
+    "DRAW_VERT_PHASE23": {
+      "length": 19320,
+      "sha256": "3a4e56842e2f0e9f1c9b8afdd26a0b7317f63540109ccad72e8ae8d22fc44980"
+    },
+    "DRAW_FRAG_PHASE23": {
+      "length": 22445,
+      "sha256": "3f4c070f6523678ca063b896d98f53f853f8e79287d38aff59f698b880b97729"
+    },
+    "buildDrawVert(shadowMap)": {
+      "length": 19320,
+      "sha256": "3a4e56842e2f0e9f1c9b8afdd26a0b7317f63540109ccad72e8ae8d22fc44980"
+    },
+    "buildDrawFrag(shadowMap)": {
+      "length": 22445,
+      "sha256": "3f4c070f6523678ca063b896d98f53f853f8e79287d38aff59f698b880b97729"
+    },
     "GEOM_VERT": {
       "length": 7470,
       "sha256": "3123bc1869559b312371f2c821248d7fa836410ee6a2b11ce16c10b3ecc669fe"

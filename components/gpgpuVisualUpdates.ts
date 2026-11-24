@@ -15,6 +15,7 @@ import { normalizeSpriteFrameFps, normalizeSpriteSheetDimension, spriteFrameMode
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { normalizeLightDir } from '../lib/gpgpuLight';
 import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
+import { getLightShadowSource } from '../lib/lightShadowMap';
 import { normalizeAttrNames, normalizeAttrSlot, resolveAttrColorSlots, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { resolveIblEnvironment } from '../lib/iblEnvironment';
@@ -473,6 +474,31 @@ export function syncVisualUniforms(args: {
     if (drawMat.uniforms.uShadowReady) drawMat.uniforms.uShadowReady.value = shadowTex !== null;
     if (drawMat.uniforms.uShadowExtent) drawMat.uniforms.uShadowExtent.value = shadowCacheExtent;
     if (drawMat.uniforms.uShadowHeightScale) drawMat.uniforms.uShadowHeightScale.value = shadowCacheHeightScale;
+  }
+  // True shadow map (Phase 23, wiring stage 2): the GPGPU
+  // points receive from the same shared store the terrain
+  // mesh reads (components/LightShadowCapture.tsx publishes
+  // it only while the strength is positive). No source yet
+  // (first frames, or strength back at 0) resolves ready 0,
+  // and kaloShadowFactor then returns exactly 1.0 — the same
+  // not-ready contract as the terrain receiver. The uniform
+  // entries always exist on the draw material (the stock
+  // shader simply declares none of them); every write is
+  // guarded like the Phase Z block above.
+  if (drawMat.uniforms.uShadowMapTex) {
+    const smapSource = getLightShadowSource();
+    if (smapSource) {
+      drawMat.uniforms.uShadowMapTex.value = smapSource.texture;
+      if (drawMat.uniforms.uLightViewProj) {
+        (drawMat.uniforms.uLightViewProj.value as THREE.Matrix4).copy(smapSource.viewProj);
+      }
+      if (drawMat.uniforms.uShadowMapReady) drawMat.uniforms.uShadowMapReady.value = 1;
+    } else {
+      if (drawMat.uniforms.uShadowMapReady) drawMat.uniforms.uShadowMapReady.value = 0;
+    }
+    if (drawMat.uniforms.uShadowMapBias) drawMat.uniforms.uShadowMapBias.value = config.gpgpuShadowMapBias;
+    if (drawMat.uniforms.uShadowMapSoftness) drawMat.uniforms.uShadowMapSoftness.value = config.gpgpuShadowMapSoftness;
+    if (drawMat.uniforms.uShadowMapStrength) drawMat.uniforms.uShadowMapStrength.value = Math.min(1, Math.max(0, config.gpgpuShadowMapStrength));
   }
   // Vellum crack visualisation (Phase 19 stage 3): linked to
   // the tear gap — the crack flag exists only while the gap

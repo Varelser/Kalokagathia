@@ -3,9 +3,14 @@ import React from 'react';
 import type { ParticleConfig } from '../types';
 import {
   PCG_DEFAULT_GRAPH,
+  PCG_GRAPH_MAX_NODES,
+  PCG_NODE_OPS,
+  addPcgNode,
+  removePcgNode,
   resolvePcgGraph,
   serializePcgGraph,
   type PcgNode,
+  type PcgNodeKind,
 } from '../lib/pcgGraph';
 import { Toggle } from './controlPanelParts';
 import type { UpdateConfig } from './controlPanelGlobalDisplayEffectsShared';
@@ -41,8 +46,12 @@ export const PcgGraphEditorBlock: React.FC<{
   updateConfig: UpdateConfig;
 }> = ({ config, updateConfig }) => {
   const [open, setOpen] = React.useState(false);
+  const [addKind, setAddKind] = React.useState<PcgNodeKind>('filter');
+  const [addOp, setAddOp] = React.useState<string>(PCG_NODE_OPS.filter[0]);
   const nodes = resolvePcgGraph(config.gpgpuPcgGraphData);
   const isDefault = config.gpgpuPcgGraphData === '';
+  const atMaxNodes = nodes.length >= PCG_GRAPH_MAX_NODES;
+  const atMinNodes = nodes.length <= 1;
 
   const commit = (next: PcgNode[]) => {
     updateConfig('gpgpuPcgGraphData', serializePcgGraph(next));
@@ -63,6 +72,22 @@ export const PcgGraphEditorBlock: React.FC<{
   };
   const setParam = (index: number, key: 'attempts' | 'strength', value: number) => {
     commit(nodes.map((n, i) => (i === index ? { ...n, params: { ...n.params, [key]: value } } : n)));
+  };
+  const changeAddKind = (kind: PcgNodeKind) => {
+    setAddKind(kind);
+    setAddOp(PCG_NODE_OPS[kind][0]);
+  };
+  const addNode = () => {
+    // addPcgNode validates the result; null = refused (cap reached
+    // or unknown kind/op) and leaves the graph untouched.
+    const next = addPcgNode(nodes, addKind, addOp);
+    if (next) commit(next);
+  };
+  const removeNode = (index: number) => {
+    // removePcgNode re-points inputs at the preceding node and
+    // validates; null = refused (last node) and leaves it untouched.
+    const next = removePcgNode(nodes, index);
+    if (next) commit(next);
   };
 
   return (
@@ -97,6 +122,15 @@ export const PcgGraphEditorBlock: React.FC<{
                       <button type="button" className="px-1 text-[9px] opacity-70 hover:opacity-100" onClick={() => toggleNode(index)}>
                         {node.enabled ? '有効' : '無効'}
                       </button>
+                      <button
+                        type="button"
+                        className="px-1 text-[9px] opacity-70 hover:opacity-100 disabled:opacity-30"
+                        disabled={atMinNodes}
+                        title={atMinNodes ? '最後の1ノードは削除できません（空グラフは既定グラフに戻ります）' : 'このノードを削除（入力参照は直前ノードへ付け直し）'}
+                        onClick={() => removeNode(index)}
+                      >
+                        削除
+                      </button>
                     </span>
                   </div>
                   {node.kind === 'sampler' && (
@@ -123,6 +157,46 @@ export const PcgGraphEditorBlock: React.FC<{
                   )}
                 </div>
               ))}
+              <div className="rounded border border-white/10 px-2 py-1">
+                <div className="flex flex-wrap items-center gap-2 text-[9px]">
+                  <span className="opacity-80">ノード追加（末尾へ）</span>
+                  <select
+                    value={addKind}
+                    onChange={(e) => changeAddKind(e.target.value as PcgNodeKind)}
+                    className="bg-white/10 px-1"
+                    aria-label="追加するノードの種類"
+                  >
+                    {(Object.keys(PCG_NODE_OPS) as PcgNodeKind[]).map((kind) => (
+                      <option key={kind} value={kind}>{KIND_LABELS[kind]}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={addOp}
+                    onChange={(e) => setAddOp(e.target.value)}
+                    className="bg-white/10 px-1"
+                    aria-label="追加するノードの処理"
+                  >
+                    {PCG_NODE_OPS[addKind].map((op) => (
+                      <option key={op} value={op}>{OP_LABELS[op] ?? op}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="px-1 opacity-70 hover:opacity-100 disabled:opacity-30"
+                    disabled={atMaxNodes}
+                    title={atMaxNodes ? `ノード数の上限 ${PCG_GRAPH_MAX_NODES} に達しています` : '選択したノードを末尾に追加（入力は直前ノード）'}
+                    onClick={addNode}
+                  >
+                    追加
+                  </button>
+                  <span className="opacity-50">ノード数 {nodes.length} / {PCG_GRAPH_MAX_NODES}</span>
+                </div>
+                <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                  追加したノードの入力は直前ノードを参照します。同種の処理を重ねて追加でき、IDは自動で一意になります。
+                  上限 {PCG_GRAPH_MAX_NODES} ノードで追加は止まります。下限は1ノードで、最後の1つは削除できません
+                  （空グラフは無効として既定グラフに戻るため）。削除すると後続ノードの入力は直前ノードへ付け直されます。
+                </div>
+              </div>
               <button
                 type="button"
                 className="text-[9px] opacity-70 hover:opacity-100"

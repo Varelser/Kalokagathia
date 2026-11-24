@@ -175,6 +175,79 @@ export function serializePcgGraph(nodes: readonly PcgNode[] | null | undefined):
 }
 
 // ---------------------------------------------------------------------------
+// Editor operations (Phase 23): pure add / remove transforms used by
+// the PCG graph editor UI. These only reshape the node list; the
+// evaluation semantics above are untouched, and every result is run
+// through validatePcgGraph so an edit can never produce a graph the
+// validator would reject (callers treat null as "edit refused").
+
+/** First free node id for an op: the op itself, then op-2, op-3, … */
+export function nextPcgNodeId(nodes: readonly PcgNode[], op: string): string {
+  const seen = new Set(nodes.map((n) => n.id));
+  if (!seen.has(op)) return op;
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${op}-${suffix}`;
+    if (!seen.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * Build the node an "add" action appends: enabled, with its input
+ * pointing at the current last node (undefined when the list is
+ * empty), so the preceding-register rule holds by construction.
+ * Returns null for an unknown kind / op pair.
+ */
+export function createPcgNode(
+  nodes: readonly PcgNode[],
+  kind: PcgNodeKind,
+  op: string,
+): PcgNode | null {
+  if (!PCG_NODE_OPS[kind]?.includes(op)) return null;
+  const node: PcgNode = { id: nextPcgNodeId(nodes, op), kind, op, enabled: true };
+  const last = nodes[nodes.length - 1];
+  if (last) node.input = last.id;
+  return node;
+}
+
+/**
+ * Append a new node of the given kind / op at the end of the list.
+ * Returns the validated new list, or null when the edit is refused
+ * (unknown kind / op, or the PCG_GRAPH_MAX_NODES cap is reached).
+ */
+export function addPcgNode(
+  nodes: readonly PcgNode[],
+  kind: PcgNodeKind,
+  op: string,
+): PcgNode[] | null {
+  if (nodes.length >= PCG_GRAPH_MAX_NODES) return null;
+  const node = createPcgNode(nodes, kind, op);
+  if (!node) return null;
+  return validatePcgGraph([...nodes, node]);
+}
+
+/**
+ * Remove one node (by index or id). References are re-pointed the
+ * same way the editor's reorder does it: each remaining node's
+ * input becomes the node directly before it (the first node gets
+ * none), so a removal never leaves a dangling or forward reference
+ * and never silently falls the whole graph back to the default.
+ * Returns the validated new list, or null when the edit is refused
+ * (target not found, or it is the last node — an empty graph is
+ * invalid and would fall back to the default, so the editor keeps
+ * at least one node).
+ */
+export function removePcgNode(
+  nodes: readonly PcgNode[],
+  target: number | string,
+): PcgNode[] | null {
+  const index = typeof target === 'number' ? target : nodes.findIndex((n) => n.id === target);
+  if (index < 0 || index >= nodes.length || nodes.length <= 1) return null;
+  const rest = nodes.filter((_, i) => i !== index);
+  const rewired = rest.map((n, i) => (i === 0 ? { ...n, input: undefined } : { ...n, input: rest[i - 1].id }));
+  return validatePcgGraph(rewired);
+}
+
+// ---------------------------------------------------------------------------
 // Evaluation: node list -> the plan the scatter bake consumes.
 
 export interface PcgPlan {

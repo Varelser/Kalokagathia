@@ -616,7 +616,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuLightTrailFade: 'ライト軌跡リボンの減衰（古い側の薄れ方）',
   gpgpuShadowEnabled: 'シャドウ（遮蔽マップ近似）を使うか。地形と OBJ からライト方向の遮蔽をベイクし、粒子・地形・体積光を減衰させる。本格的なシャドウマップではない',
   gpgpuShadowStrength: 'シャドウ（遮蔽マップ近似）の濃さ（0で従来同一）',
-  gpgpuShadowMapStrength: 'シャドウマップ（光視点の実深度）の濃さ。第1段は地形メッシュが受け手、粒子は影を落とさない。0で捕捉自体が存在せず従来同一',
+  gpgpuShadowMapStrength: 'シャドウマップ（光視点の実深度）の濃さ。受け手は地形メッシュと GPGPU 粒子（第2段で追加）、粒子は影を落とさない。0で捕捉自体が存在せず従来同一',
   gpgpuShadowMapBias: 'シャドウマップの深度バイアス（自己影の縞＝アクネ回避）',
   gpgpuShadowMapSoftness: 'シャドウマップの PCF ぼかし半径（テクセル単位、0でハードシャドウ）',
   gpgpuShadowSoftness: 'シャドウのぼかし量（半影の柔らかさ）',

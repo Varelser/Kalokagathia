@@ -26,6 +26,17 @@ export function rigidClusterColorVariantOn(config: ParticleConfig): boolean {
   return !!config.gpgpuRigidClusterColorEnabled
     && !!config.gpgpuRigidEnabled;
 }
+
+// True shadow map (Phase 23, wiring stage 2): the GPGPU points
+// become a receiver while the shadow-map strength is positive
+// — the same condition that mounts the capture in AppScene.
+// The per-frame half (a captured source actually exists) is
+// resolved in gpgpuVisualUpdates via uShadowMapReady, exactly
+// like the crack variant's state texture. Off, the draw
+// strings are byte-identical to the Phase 20 strings.
+export function shadowMapVariantOn(config: ParticleConfig): boolean {
+  return (config.gpgpuShadowMapStrength ?? 0) > 0;
+}
 import { AUX_DRAW_FRAG, AUX_DRAW_VERT, AUX_TEX_SIZE } from "./gpgpuShaderAux";
 import { WW_DRAW_FRAG, WW_DRAW_VERT, WW_TEX_SIZE } from "./gpgpuShaderWhitewater";
 
@@ -129,6 +140,19 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uShadowReady:       { value: false },
       uShadowExtent:      { value: 1 },
       uShadowHeightScale: { value: 1 },
+      // True shadow map (Phase 23, wiring stage 2): no capture
+      // yet — texture null, ready 0, and the defaults mirror
+      // lib/appStateDefaultGpgpu.ts (bias 0.001, softness 1).
+      // These uniforms exist on the material from creation so
+      // the per-frame sync never has to add them; the shader
+      // variant that declares them is only assembled while
+      // gpgpuShadowMapStrength > 0.
+      uShadowMapTex:      { value: null },
+      uLightViewProj:     { value: new THREE.Matrix4() },
+      uShadowMapBias:     { value: 0.001 },
+      uShadowMapSoftness: { value: 1 },
+      uShadowMapReady:    { value: 0 },
+      uShadowMapStrength: { value: 0 },
       uPointShape:        { value: 0 },
       uGradEnabled:       { value: false },
       uGradDriver:        { value: 0 },
@@ -182,8 +206,8 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uDensityCount:       { value: texSize * texSize },
       uViewportSizePx:     { value: new THREE.Vector2(1, 1) },
     },
-    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config) }),
-    fragmentShader: buildDrawFrag({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config) }),
+    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config) }),
+    fragmentShader: buildDrawFrag({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -191,20 +215,25 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
   // Phase 19 gate fix: swap the draw strings when either
   // variant condition flips (creation already used the initial
   // config's variants). Phase 20 stage 1: the cluster colour
-  // variant joins the same swap.
+  // variant joins the same swap. Phase 23 stage 2: the
+  // shadow-map variant joins it too (its predicate is the
+  // strength's sign, not its value, so dragging the slider
+  // while positive does not recompile).
   const drawVariantRef = useRef({
     crack: vellumCrackVariantOn(config),
     cluster: rigidClusterColorVariantOn(config),
+    shadowMap: shadowMapVariantOn(config),
   });
   useEffect(() => {
     const crack = vellumCrackVariantOn(config);
     const cluster = rigidClusterColorVariantOn(config);
-    if (drawVariantRef.current.crack === crack && drawVariantRef.current.cluster === cluster) return;
-    drawVariantRef.current = { crack, cluster };
-    drawMat.vertexShader = buildDrawVert({ vellumCrack: crack, clusterColor: cluster });
-    drawMat.fragmentShader = buildDrawFrag({ vellumCrack: crack, clusterColor: cluster });
+    const shadowMap = shadowMapVariantOn(config);
+    if (drawVariantRef.current.crack === crack && drawVariantRef.current.cluster === cluster && drawVariantRef.current.shadowMap === shadowMap) return;
+    drawVariantRef.current = { crack, cluster, shadowMap };
+    drawMat.vertexShader = buildDrawVert({ vellumCrack: crack, clusterColor: cluster, shadowMap });
+    drawMat.fragmentShader = buildDrawFrag({ vellumCrack: crack, clusterColor: cluster, shadowMap });
     drawMat.needsUpdate = true;
-  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuRigidClusterColorEnabled, config.gpgpuRigidEnabled, drawMat]);
+  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuRigidClusterColorEnabled, config.gpgpuRigidEnabled, config.gpgpuShadowMapStrength, drawMat]);
 
   const drawGeo = useMemo(() => {
     const count = texSize * texSize;

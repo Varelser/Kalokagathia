@@ -1,6 +1,7 @@
 /**
  * True shadow map (Phase 22 stage 4, §3 design by #11 白丸 —
- * wiring stage 1: capture + terrain-mesh receiving).
+ * wiring stage 1: capture + terrain-mesh receiving;
+ * Phase 23, wiring stage 2: GPGPU points receiving).
  *
  * This is the ONLY feature in the app that may be called a
  * shadow map: the Phase T light object's viewpoint depth,
@@ -81,6 +82,30 @@ export function buildLightViewProj(
  */
 export function shadowSampleLit(storedDepth: number, fragDepth: number, bias: number): number {
   return fragDepth - bias <= storedDepth ? 1 : 0;
+}
+
+/**
+ * Combined brightness of the two shadow systems on a
+ * shader-factor receiver (TS twin of the Phase 23 stage-2
+ * points composition): with a = 1 - zBrightness (Phase Z
+ * shadow amount) and b = 1 - smapLit (shadow-map amount,
+ * strength-mixed), the union shadow amount is
+ * 1 - (1-a)(1-b) and the combined brightness is 1 minus
+ * that. In the shader the two halves are applied as separate
+ * multiplies (the fragment's shadow-map chunk and the tail's
+ * vShadowMul), whose product is exactly this value.
+ */
+export function combineShadowBrightness(
+  zBrightness: number,
+  smapFactor: number,
+  strength: number,
+): number {
+  const s = Math.min(1, Math.max(0, strength));
+  const smapLit = 1 + (smapFactor - 1) * s;
+  const a = 1 - zBrightness;
+  const b = 1 - smapLit;
+  const unionShadow = 1 - (1 - a) * (1 - b);
+  return 1 - unionShadow;
 }
 
 /**

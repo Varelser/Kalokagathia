@@ -1,4 +1,5 @@
 import { PARTICLE_SHAPE_GLSL } from './particleShapeGlsl';
+import { LIGHT_SHADOW_GLSL } from '../lib/lightShadowMap';
 
 // Sprite sheet (Phase AD): GLSL twins of lib/spriteSheet.ts
 // (spriteFrameIndex / spriteSheetUv — same formulas, so the
@@ -297,6 +298,13 @@ const DRAW_VERT_CRACK_VARYING = /* glsl */ `  varying float vCrack;
 const DRAW_VERT_CLUSTER_VARYING = /* glsl */ `  varying vec3 vClusterColor;
   varying float vClusterOn;
 `;
+const DRAW_VERT_SHADOWMAP_VARYING = /* glsl */ `  // True shadow map (Phase 23, wiring stage 2): the raw
+  // light-viewpoint depth factor at the particle's world
+  // position (1 = lit, also 1 while the capture is not ready
+  // or the particle is outside the shadow frustum). The
+  // fragment unions it with the Phase Z occlusion factor.
+  varying float vShadowMapMul;
+`;
 const DRAW_VERT_MID_B = /* glsl */ `
   ${AGE_CURVE_GLSL}
 
@@ -513,6 +521,11 @@ const DRAW_VERT_CLUSTER_COMPUTE = /* glsl */ `    // Cluster colour (Phase 20 st
       vClusterOn = 1.0;
     }
 `;
+const DRAW_VERT_SHADOWMAP_COMPUTE = /* glsl */ `    // True shadow map (Phase 23, wiring stage 2): sample the
+    // light-viewpoint depth at the same worldPos the Phase Z
+    // factor above read (nothing moves worldPos in between).
+    vShadowMapMul = kaloShadowFactor(worldPos);
+`;
 const DRAW_VERT_TAIL = /* glsl */ `    vec4 mvPos = modelViewMatrix * vec4(worldPos, 1.0);
     float dist = -mvPos.z;
     gl_PointSize = max(0.5, uSize * sizeMul * (dist > 0.5 ? min(4.0, 500.0 / dist) : 1.0));
@@ -542,26 +555,39 @@ export interface DrawShaderVariantOptions {
    *  colour replacement into the fragment. Off (the default)
    *  assembles the Phase 19 strings byte-identically. */
   clusterColor?: boolean;
+  /** True shadow map (Phase 23, wiring stage 2): splices the
+   *  LIGHT_SHADOW_GLSL chunk (lib/lightShadowMap.ts) into the
+   *  vertex, computes kaloShadowFactor(worldPos) there and
+   *  passes it to the fragment as vShadowMapMul, which unions
+   *  it with the Phase Z occlusion factor. Off (the default)
+   *  assembles the Phase 20 strings byte-identically — the
+   *  chunk is never part of the stock strings. */
+  shadowMap?: boolean;
 }
 
 export function buildDrawVert(options?: DrawShaderVariantOptions): string {
   const crack = !!options?.vellumCrack;
   const cluster = !!options?.clusterColor;
+  const shadowMap = !!options?.shadowMap;
   return DRAW_VERT_HEAD
     + (crack ? DRAW_VERT_CRACK_UNIFORMS : '')
     + (cluster ? DRAW_VERT_CLUSTER_UNIFORMS : '')
     + DRAW_VERT_MID_A
     + (crack ? DRAW_VERT_CRACK_VARYING : '')
     + (cluster ? DRAW_VERT_CLUSTER_VARYING : '')
+    + (shadowMap ? DRAW_VERT_SHADOWMAP_VARYING : '')
+    + (shadowMap ? LIGHT_SHADOW_GLSL : '')
     + DRAW_VERT_MID_B
     + (crack ? DRAW_VERT_CRACK_COMPUTE : '')
     + (cluster ? DRAW_VERT_CLUSTER_COMPUTE : '')
+    + (shadowMap ? DRAW_VERT_SHADOWMAP_COMPUTE : '')
     + DRAW_VERT_TAIL;
 }
 
 export const DRAW_VERT = buildDrawVert();
 export const DRAW_VERT_PHASE19 = buildDrawVert({ vellumCrack: true });
 export const DRAW_VERT_PHASE20 = buildDrawVert({ clusterColor: true });
+export const DRAW_VERT_PHASE23 = buildDrawVert({ shadowMap: true });
 
 // ── Draw fragment ──
 const DRAW_FRAG_HEAD = /* glsl */ `
@@ -659,6 +685,15 @@ const DRAW_FRAG_CRACK_VARYING = /* glsl */ `  varying float vCrack;
 `;
 const DRAW_FRAG_CLUSTER_VARYING = /* glsl */ `  varying vec3 vClusterColor;
   varying float vClusterOn;
+`;
+const DRAW_FRAG_SHADOWMAP_VARYING = /* glsl */ `  // True shadow map (Phase 23, wiring stage 2): the vertex
+  // factor (lib/lightShadowMap.ts kaloShadowFactor) and the
+  // strength it is mixed by. The remaining shadow-map
+  // uniforms live in the vertex only (the factor is computed
+  // there); this stage declares just what the union below
+  // consumes.
+  varying float vShadowMapMul;
+  uniform float uShadowMapStrength;
 `;
 const DRAW_FRAG_MID_A = /* glsl */ `
   ${PARTICLE_SHAPE_GLSL}
@@ -785,6 +820,18 @@ const DRAW_FRAG_CRACK_DARKEN = /* glsl */ `    // Vellum crack (Phase 19 stage 3
     // is exactly 0 unless the crack flag was computed.
     col *= 1.0 - 0.45 * vCrack;
 `;
+const DRAW_FRAG_SHADOWMAP_APPLY = /* glsl */ `    // True shadow map (Phase 23, wiring stage 2): union with
+    // the Phase Z occlusion factor. Writing a = 1 - vShadowMul
+    // (Phase Z shadow amount) and b = 1 - smapLit (shadow-map
+    // amount, strength-mixed), the union shadow amount is
+    // 1 - (1-a)(1-b), so the combined brightness is
+    // (1-a)(1-b) = vShadowMul * smapLit. The vShadowMul half is
+    // applied by the tail's multiplier chain right below; this
+    // chunk applies the shadow-map half. smapLit is exactly
+    // 1.0 at strength 0 or while the capture is not ready, so
+    // this multiply is then a bit-exact identity.
+    col *= mix(1.0, vShadowMapMul, uShadowMapStrength);
+`;
 const DRAW_FRAG_TAIL = /* glsl */ `    // 3D light (Phase T): brightness from the light object, computed
     // per-particle in the vertex shader from the world position.
     // vLightMul is exactly 1.0 while the light is disabled (or the
@@ -877,17 +924,21 @@ const DRAW_FRAG_TAIL = /* glsl */ `    // 3D light (Phase T): brightness from th
 export function buildDrawFrag(options?: DrawShaderVariantOptions): string {
   const crack = !!options?.vellumCrack;
   const cluster = !!options?.clusterColor;
+  const shadowMap = !!options?.shadowMap;
   return DRAW_FRAG_HEAD
     + (crack ? DRAW_FRAG_CRACK_VARYING : '')
     + (cluster ? DRAW_FRAG_CLUSTER_VARYING : '')
+    + (shadowMap ? DRAW_FRAG_SHADOWMAP_VARYING : '')
     + DRAW_FRAG_MID_A
     + (cluster ? DRAW_FRAG_CLUSTER_ASSIGN : '')
     + DRAW_FRAG_MID_B
     + (crack ? DRAW_FRAG_CRACK_DARKEN : '')
+    + (shadowMap ? DRAW_FRAG_SHADOWMAP_APPLY : '')
     + DRAW_FRAG_TAIL;
 }
 
 export const DRAW_FRAG = buildDrawFrag();
 export const DRAW_FRAG_PHASE19 = buildDrawFrag({ vellumCrack: true });
 export const DRAW_FRAG_PHASE20 = buildDrawFrag({ clusterColor: true });
+export const DRAW_FRAG_PHASE23 = buildDrawFrag({ shadowMap: true });
 

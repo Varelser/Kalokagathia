@@ -58,7 +58,7 @@ await build({
       export { VEL_FRAG_MAIN_SPH_GRAINS, VEL_FRAG_MAIN_SPH_GRAINS_PHASE19 } from './components/gpgpuShaderSimulationVelocityMainSphGrains.ts';
       export { VEL_FRAG_MAIN_TAIL, VEL_FRAG_MAIN_TAIL_PHASE19 } from './components/gpgpuShaderSimulationVelocityMainTail.ts';
       export { SIM_POS_FRAG, SIM_POS_FRAG_PHASE19, SIM_POS_FRAG_PHASE19_CELL, buildPositionFragment } from './components/gpgpuShaderSimulationPosition.ts';
-      export { DRAW_VERT, DRAW_VERT_PHASE19, DRAW_VERT_PHASE20, DRAW_FRAG, DRAW_FRAG_PHASE19, DRAW_FRAG_PHASE20, buildDrawVert, buildDrawFrag } from './components/gpgpuShaderPoints.ts';
+      export { DRAW_VERT, DRAW_VERT_PHASE19, DRAW_VERT_PHASE20, DRAW_VERT_PHASE23, DRAW_FRAG, DRAW_FRAG_PHASE19, DRAW_FRAG_PHASE20, DRAW_FRAG_PHASE23, buildDrawVert, buildDrawFrag } from './components/gpgpuShaderPoints.ts';
       export { GEOM_VERT, GEOM_VERT_PHASE19, GEOM_FRAG, GEOM_FRAG_PHASE19 } from './components/gpgpuShaderVolumes.ts';
       export { AUX_VEL_FRAG, AUX_POS_FRAG, AUX_VEL_FRAG_PHASE20, AUX_POS_FRAG_PHASE20, buildAuxVelFrag, buildAuxPosFrag } from './components/gpgpuShaderAux.ts';
     `,
@@ -105,6 +105,13 @@ const parts = {
   DRAW_FRAG_PHASE20: lib.DRAW_FRAG_PHASE20,
   'buildDrawVert(phase19+phase20)': lib.buildDrawVert({ vellumCrack: true, clusterColor: true }),
   'buildDrawFrag(phase19+phase20)': lib.buildDrawFrag({ vellumCrack: true, clusterColor: true }),
+  // Phase 23 stage 2 string variants: the true-shadow-map
+  // additions splice in only behind the shadowMap builder
+  // option; every part above stays at its shipped hash.
+  DRAW_VERT_PHASE23: lib.DRAW_VERT_PHASE23,
+  DRAW_FRAG_PHASE23: lib.DRAW_FRAG_PHASE23,
+  'buildDrawVert(shadowMap)': lib.buildDrawVert({ shadowMap: true }),
+  'buildDrawFrag(shadowMap)': lib.buildDrawFrag({ shadowMap: true }),
   GEOM_VERT: lib.GEOM_VERT,
   GEOM_VERT_PHASE19: lib.GEOM_VERT_PHASE19,
   GEOM_FRAG: lib.GEOM_FRAG,
@@ -147,6 +154,9 @@ const invariants = {
   positionCellNeedsProjection: lib.buildPositionFragment({ grainsCellSort: true }) === lib.SIM_POS_FRAG,
   phase20SnippetIsVariant: lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true, steeringSeek: true }) === lib.SIM_VEL_FRAG_PHASE20,
   steeringOnlyDiffersFromStock: lib.buildVelocityFragment('', '', { steeringSeek: true }) !== lib.SIM_VEL_FRAG,
+  drawDefaultIsStock: lib.buildDrawVert() === lib.DRAW_VERT && lib.buildDrawFrag() === lib.DRAW_FRAG,
+  drawShadowMapIsVariant: lib.buildDrawVert({ shadowMap: true }) === lib.DRAW_VERT_PHASE23
+    && lib.buildDrawFrag({ shadowMap: true }) === lib.DRAW_FRAG_PHASE23,
   auxDefaultIsStock: lib.buildAuxVelFrag() === lib.AUX_VEL_FRAG && lib.buildAuxPosFrag() === lib.AUX_POS_FRAG,
   auxPhase20IsVariant: lib.buildAuxVelFrag({ sdfSplash: true }) === lib.AUX_VEL_FRAG_PHASE20
     && lib.buildAuxPosFrag({ sdfSplash: true }) === lib.AUX_POS_FRAG_PHASE20,
@@ -165,6 +175,8 @@ console.log(`  invariant buildPositionFragment(phase19-cell) === SIM_POS_FRAG_PH
 console.log(`  invariant buildPositionFragment(cell-only) === SIM_POS_FRAG: ${invariants.positionCellNeedsProjection}`);
 console.log(`  invariant buildVelocityFragment(phase20) === SIM_VEL_FRAG_PHASE20: ${invariants.phase20SnippetIsVariant}`);
 console.log(`  invariant buildVelocityFragment(steering-only) !== SIM_VEL_FRAG: ${invariants.steeringOnlyDiffersFromStock}`);
+console.log(`  invariant buildDrawVert()/buildDrawFrag() === stock pair: ${invariants.drawDefaultIsStock}`);
+console.log(`  invariant buildDrawVert(shadowMap)/buildDrawFrag(shadowMap) === PHASE23 pair: ${invariants.drawShadowMapIsVariant}`);
 console.log(`  invariant buildAuxVelFrag()/buildAuxPosFrag() === stock pair: ${invariants.auxDefaultIsStock}`);
 console.log(`  invariant buildAuxVelFrag(sdf)/buildAuxPosFrag(sdf) === PHASE20 pair: ${invariants.auxPhase20IsVariant}`);
 if (!invariants.concatenationMatches || !invariants.emptySnippetIsStock
@@ -172,6 +184,7 @@ if (!invariants.concatenationMatches || !invariants.emptySnippetIsStock
   || !invariants.positionPhase19IsVariant || !invariants.positionCellIsVariant
   || !invariants.positionCellNeedsProjection || !invariants.phase20SnippetIsVariant
   || !invariants.steeringOnlyDiffersFromStock
+  || !invariants.drawDefaultIsStock || !invariants.drawShadowMapIsVariant
   || !invariants.auxDefaultIsStock || !invariants.auxPhase20IsVariant) {
   console.error('  result: FAIL — structural invariant broken');
   process.exit(1);
