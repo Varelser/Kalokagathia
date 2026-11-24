@@ -173,6 +173,42 @@
       "length": 104135,
       "sha256": "7cf97ed5c6f2e472829030216271b802ca0c9c91c83eab9b6d4f124197ee8f3f"
     },
+    "VEL_FRAG_PREAMBLE_PHASE27": {
+      "length": 21029,
+      "sha256": "6459a8b26618507178a1a7d54a74cae8f152e99e36a644db38e37883762e5821"
+    },
+    "SIM_VEL_FRAG_PHASE27": {
+      "length": 109211,
+      "sha256": "b46914fdfb62b7686086a196fa964c457c8cf073c1cb0e2b6dde83ab9cd4d8be"
+    },
+    "buildVelocityFragment(phase27)": {
+      "length": 109211,
+      "sha256": "b46914fdfb62b7686086a196fa964c457c8cf073c1cb0e2b6dde83ab9cd4d8be"
+    },
+    "buildVelocityFragment(attractor2-only)": {
+      "length": 90420,
+      "sha256": "16f7e2513f7c1a28913d2ca1965922873e74025689f2bc9244bd4498f71a657a"
+    },
+    "VEL_FRAG_PREAMBLE_PHASE29": {
+      "length": 21884,
+      "sha256": "cadea589b3e490f5c64eb94ebaa54c0c8e0562a33e1838b3aaef4569299a2721"
+    },
+    "SIM_VEL_FRAG_PHASE29": {
+      "length": 119362,
+      "sha256": "83b3c8252510586a4787c46a98a0bcf298572b4d85d216effe3f8309203dc7f6"
+    },
+    "buildVelocityFragment(phase29)": {
+      "length": 119362,
+      "sha256": "83b3c8252510586a4787c46a98a0bcf298572b4d85d216effe3f8309203dc7f6"
+    },
+    "buildVelocityFragment(attractor3-only)": {
+      "length": 90419,
+      "sha256": "362f724d1cec0c8768503f4792a9c844b79b10a1cc437d2bdf0705125302da46"
+    },
+    "buildVelocityFragment(attractor4-only)": {
+      "length": 90420,
+      "sha256": "cf9a08e5813b22b0b07c27ec43ae43f72d633bf3e984c6ad6a5e81a1d17c2284"
+    },
     "buildVelocityFragment(akinci-only)": {
       "length": 89654,
       "sha256": "52338c44adee31821b32f96a4c2dc218b37fceca4bdd0fdbd02f0109a3a17762"
@@ -204,22 +240,6 @@
     "AUX_POS_FRAG_PHASE20": {
       "length": 8641,
       "sha256": "a24dde6d9ef9a47db847ec501562ccf48e0e60226346ebf6560032c26c77a89f"
-    },
-    "VEL_FRAG_PREAMBLE_PHASE27": {
-      "length": 21029,
-      "sha256": "6459a8b26618507178a1a7d54a74cae8f152e99e36a644db38e37883762e5821"
-    },
-    "SIM_VEL_FRAG_PHASE27": {
-      "length": 109211,
-      "sha256": "b46914fdfb62b7686086a196fa964c457c8cf073c1cb0e2b6dde83ab9cd4d8be"
-    },
-    "buildVelocityFragment(phase27)": {
-      "length": 109211,
-      "sha256": "b46914fdfb62b7686086a196fa964c457c8cf073c1cb0e2b6dde83ab9cd4d8be"
-    },
-    "buildVelocityFragment(attractor2-only)": {
-      "length": 90420,
-      "sha256": "16f7e2513f7c1a28913d2ca1965922873e74025689f2bc9244bd4498f71a657a"
     }
   }
 }

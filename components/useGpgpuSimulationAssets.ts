@@ -69,6 +69,9 @@ export function velocityVariantOptions(config: ParticleConfig): VelocityFragment
     // uniforms exist in the built string only while the
     // unit-2 enable key is on.
     attractor2: !!config.gpgpuAttractor2Enabled,
+    // Phase 29 (9-6 stage 2): units 3 and 4, same discipline.
+    attractor3: !!config.gpgpuAttractor3Enabled,
+    attractor4: !!config.gpgpuAttractor4Enabled,
   };
 }
 
@@ -114,6 +117,18 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uAttractor2Strength: { value: 1.0 },
       uAttractor2Scale:    { value: 8.0 },
       uAttractor2SpaceMode: { value: 0 },
+      // Phase 29: units 3 and 4, declared in the shader only
+      // in their variant strings; inert otherwise.
+      uAttractor3Enabled:  { value: false },
+      uAttractor3Type:     { value: 0 },
+      uAttractor3Strength: { value: 1.0 },
+      uAttractor3Scale:    { value: 8.0 },
+      uAttractor3SpaceMode: { value: 0 },
+      uAttractor4Enabled:  { value: false },
+      uAttractor4Type:     { value: 0 },
+      uAttractor4Strength: { value: 1.0 },
+      uAttractor4Scale:    { value: 8.0 },
+      uAttractor4SpaceMode: { value: 0 },
       uLevyEnabled:       { value: false },
       uLevyStrength:      { value: 2.0 },
       uLevyRate:          { value: 6.0 },
@@ -1231,7 +1246,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // config's variant), so a variant-only change swaps the shader
   // through this same path and the mount behaviour is unchanged.
   const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
-    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}`;
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}`;
   const appliedForceCodeRef = useRef<string | null>(
     `\n\n${variantKeyOf(velocityVariantOptions(config))}`,
   );

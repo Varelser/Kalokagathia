@@ -51,8 +51,8 @@ const recordPath = args[1] ? join(ROOT, args[1]) : DEFAULT_RECORD_PATH;
 await build({
   stdin: {
     contents: `
-      export { SIM_VEL_FRAG, SIM_VEL_FRAG_PHASE19, SIM_VEL_FRAG_PHASE20, SIM_VEL_FRAG_PHASE24, SIM_VEL_FRAG_PHASE27, buildVelocityFragment } from './components/gpgpuShaderSimulationVelocity.ts';
-      export { VEL_FRAG_PREAMBLE, VEL_FRAG_PREAMBLE_PHASE19, VEL_FRAG_PREAMBLE_PHASE20, VEL_FRAG_PREAMBLE_PHASE24, VEL_FRAG_PREAMBLE_PHASE27 } from './components/gpgpuShaderSimulationVelocityPreamble.ts';
+      export { SIM_VEL_FRAG, SIM_VEL_FRAG_PHASE19, SIM_VEL_FRAG_PHASE20, SIM_VEL_FRAG_PHASE24, SIM_VEL_FRAG_PHASE27, SIM_VEL_FRAG_PHASE29, buildVelocityFragment } from './components/gpgpuShaderSimulationVelocity.ts';
+      export { VEL_FRAG_PREAMBLE, VEL_FRAG_PREAMBLE_PHASE19, VEL_FRAG_PREAMBLE_PHASE20, VEL_FRAG_PREAMBLE_PHASE24, VEL_FRAG_PREAMBLE_PHASE27, VEL_FRAG_PREAMBLE_PHASE29 } from './components/gpgpuShaderSimulationVelocityPreamble.ts';
       export { VEL_FRAG_HELPERS } from './components/gpgpuShaderSimulationVelocityHelpers.ts';
       export { VEL_FRAG_MAIN_FORCES } from './components/gpgpuShaderSimulationVelocityMainForces.ts';
       export { VEL_FRAG_MAIN_SPH_GRAINS, VEL_FRAG_MAIN_SPH_GRAINS_PHASE19, VEL_FRAG_MAIN_SPH_GRAINS_PHASE24, buildVelocitySphGrains } from './components/gpgpuShaderSimulationVelocityMainSphGrains.ts';
@@ -148,6 +148,15 @@ const parts = {
   SIM_VEL_FRAG_PHASE27: lib.SIM_VEL_FRAG_PHASE27,
   'buildVelocityFragment(phase27)': lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true, attractor2: true }),
   'buildVelocityFragment(attractor2-only)': lib.buildVelocityFragment('', '', { attractor2: true }),
+  // Phase 29 (9-6 stage 2) string variants: the attractor
+  // unit-3 / unit-4 additions from the replication machinery,
+  // behind their builder options; every part above stays at
+  // its shipped hash.
+  VEL_FRAG_PREAMBLE_PHASE29: lib.VEL_FRAG_PREAMBLE_PHASE29,
+  SIM_VEL_FRAG_PHASE29: lib.SIM_VEL_FRAG_PHASE29,
+  'buildVelocityFragment(phase29)': lib.buildVelocityFragment('', '', { grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true, attractor2: true, attractor3: true, attractor4: true }),
+  'buildVelocityFragment(attractor3-only)': lib.buildVelocityFragment('', '', { attractor3: true }),
+  'buildVelocityFragment(attractor4-only)': lib.buildVelocityFragment('', '', { attractor4: true }),
   'buildVelocityFragment(akinci-only)': lib.buildVelocityFragment('', '', { sphAkinci: true }),
   'buildVelocitySphGrains(akinci-only)': lib.buildVelocitySphGrains({ sphAkinci: true }),
   'buildPositionFragment(phase19)': lib.buildPositionFragment({ grainsProjection: true }),

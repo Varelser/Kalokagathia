@@ -83,7 +83,7 @@ const src = readFileSync(join(ROOT, 'lib', 'webgpuCompute.ts'), 'utf8');
   check('WGSL: uniform tail fields', src.includes('steerStateSlot : i32,') && src.includes('steerStateThreshold : f32,'));
   const tail = src.indexOf('attractor2Scale : f32,');
   check('WGSL: state fields appended after attractor2 (offsets stable)', tail > 0 && src.indexOf('steerStateSlot : i32,') > tail);
-  check('WGSL: uniform buffer is 624 bytes (616 would under-size: struct rounds to 16-byte alignment)', src.includes('const VEL_UNIFORM_BYTES = 624;'));
+  check('WGSL: uniform buffer grew past the Phase 28 size of 624 bytes (Phase 29 appended attractor units 3/4 -> 656; 616 would under-size: struct rounds to 16-byte alignment)', src.includes('const VEL_UNIFORM_BYTES = 656;'));
   check('WGSL: writer writes indices 152-153', src.includes('velI[152] = st ? st.stateSlot : 0;') && src.includes('velU[153] = st ? st.stateThreshold : 0.5;'));
   check('WGSL: steering params carry the pair', src.includes('stateSlot: number;') && src.includes('stateThreshold: number;'));
   check('WGSL: BGL entry for binding 13', src.includes('{ binding: 13, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: \'unfilterable-float\', viewDimension: \'2d\' } }'));

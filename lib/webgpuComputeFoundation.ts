@@ -248,6 +248,10 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // Phase 27: attractor unit 2 — same rule for the second
   // unit's space mode (its legacy mode runs on both routes).
   if (config.gpgpuAttractor2Enabled && config.gpgpuAttractor2SpaceMode && config.gpgpuAttractor2SpaceMode !== 'legacy') features.push('attractor-space-mode');
+  // Phase 29: attractor units 3 and 4 — same rule again (their
+  // legacy modes run on both routes).
+  if (config.gpgpuAttractor3Enabled && config.gpgpuAttractor3SpaceMode && config.gpgpuAttractor3SpaceMode !== 'legacy') features.push('attractor-space-mode');
+  if (config.gpgpuAttractor4Enabled && config.gpgpuAttractor4SpaceMode && config.gpgpuAttractor4SpaceMode !== 'legacy') features.push('attractor-space-mode');
   // Wind volume (Phase AL): the placed wind localisation lives in
   // the WebGL velocity pass only — declaring it routes to WebGL.
   if (config.gpgpuWindVolumeEnabled) features.push('wind-volume');

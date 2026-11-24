@@ -169,6 +169,22 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuAttractor2Strength: 1.0,
   gpgpuAttractor2Scale: 8.0,
   gpgpuAttractor2SpaceMode: 'legacy' as const,
+  // Strange Attractor units 3 and 4 (Phase 29, 9-6 stage 2):
+  // the replication machinery generalised — same defaults
+  // discipline as unit 2 (mirror unit 1, disabled), so every
+  // existing config behaves exactly as before; the shader
+  // chunks and uniforms exist only in the attractor3 /
+  // attractor4 variant strings.
+  gpgpuAttractor3Enabled: false,
+  gpgpuAttractor3Type: 'lorenz' as const,
+  gpgpuAttractor3Strength: 1.0,
+  gpgpuAttractor3Scale: 8.0,
+  gpgpuAttractor3SpaceMode: 'legacy' as const,
+  gpgpuAttractor4Enabled: false,
+  gpgpuAttractor4Type: 'lorenz' as const,
+  gpgpuAttractor4Strength: 1.0,
+  gpgpuAttractor4Scale: 8.0,
+  gpgpuAttractor4SpaceMode: 'legacy' as const,
   // Vortex
   gpgpuVortexEnabled: false,
   gpgpuVortexStrength: 1.0,

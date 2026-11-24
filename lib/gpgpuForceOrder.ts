@@ -31,6 +31,13 @@ export const GPGPU_FORCE_CHUNK_NAMES = [
   // user order can place it; without the variant the builder
   // skips the chunk.
   'attractor-2',
+  // Phase 29 (9-6 stage 2): attractor units 3 and 4, produced
+  // by the same replication machinery as unit 2. Variant-gated
+  // identically: spliced in only while the matching unit's
+  // variant is selected, so the default-order assembly without
+  // the variants stays byte-identical.
+  'attractor-3',
+  'attractor-4',
   'levy',
   'vortex',
   'wind',

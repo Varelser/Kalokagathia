@@ -458,17 +458,27 @@ const VEL_FRAG_PREAMBLE_AKINCI = /* glsl */ `  // Surface tension, Akinci form (
   // stock preamble carries no trace of it.
   uniform float uSphSurfaceTensionAkinci;
 `;
-const VEL_FRAG_PREAMBLE_ATTRACTOR2 = /* glsl */ `  // Strange attractor unit 2 (Phase 27, 9-6 stage 1): the
-  // second parameter set of the attractor force ('attractor-2'
+// Phase 29 (9-6 stage 2): the attractor unit preamble blocks
+// are generated, one per replicated unit. The generator's
+// unit-2 output reproduces the historical Phase 27 literal
+// byte-for-byte (pinned by the phase29 test); units 3 and 4
+// come from the same function.
+export function buildAttractorUnitPreamble(unit: number, ordinal: string, phaseNote: string): string {
+  return `  // Strange attractor unit ${unit} (${phaseNote}): the
+  // ${ordinal} parameter set of the attractor force ('attractor-${unit}'
   // chunk). Spliced in only behind this option, in the
   // Phase 19 manner — the stock preamble carries no trace
   // of it.
-  uniform bool  uAttractor2Enabled;
-  uniform int   uAttractor2Type;
-  uniform float uAttractor2Strength;
-  uniform float uAttractor2Scale;
-  uniform int   uAttractor2SpaceMode;
+  uniform bool  uAttractor${unit}Enabled;
+  uniform int   uAttractor${unit}Type;
+  uniform float uAttractor${unit}Strength;
+  uniform float uAttractor${unit}Scale;
+  uniform int   uAttractor${unit}SpaceMode;
 `;
+}
+const VEL_FRAG_PREAMBLE_ATTRACTOR2 = buildAttractorUnitPreamble(2, 'second', 'Phase 27, 9-6 stage 1');
+const VEL_FRAG_PREAMBLE_ATTRACTOR3 = buildAttractorUnitPreamble(3, 'third', 'Phase 29, 9-6 stage 2');
+const VEL_FRAG_PREAMBLE_ATTRACTOR4 = buildAttractorUnitPreamble(4, 'fourth', 'Phase 29, 9-6 stage 2');
 const VEL_FRAG_PREAMBLE_TAIL = /* glsl */ `  varying vec2 vUv;
 
 `;
@@ -494,6 +504,10 @@ export interface VelocityPreambleVariantOptions {
   // Phase 27: the attractor unit-2 uniform set. Same
   // discipline — the default preamble stays byte-identical.
   attractor2?: boolean;
+  // Phase 29: the attractor unit-3 / unit-4 uniform sets,
+  // gated identically.
+  attractor3?: boolean;
+  attractor4?: boolean;
 }
 
 export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions): string {
@@ -504,6 +518,8 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
     + (options?.steeringSeek ? VEL_FRAG_PREAMBLE_STEERING : '')
     + (options?.sphAkinci ? VEL_FRAG_PREAMBLE_AKINCI : '')
     + (options?.attractor2 ? VEL_FRAG_PREAMBLE_ATTRACTOR2 : '')
+    + (options?.attractor3 ? VEL_FRAG_PREAMBLE_ATTRACTOR3 : '')
+    + (options?.attractor4 ? VEL_FRAG_PREAMBLE_ATTRACTOR4 : '')
     + VEL_FRAG_PREAMBLE_TAIL;
 }
 
@@ -512,3 +528,4 @@ export const VEL_FRAG_PREAMBLE_PHASE19 = buildVelocityPreamble({ grainsFullScan:
 export const VEL_FRAG_PREAMBLE_PHASE20 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true });
 export const VEL_FRAG_PREAMBLE_PHASE24 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true });
 export const VEL_FRAG_PREAMBLE_PHASE27 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true, attractor2: true });
+export const VEL_FRAG_PREAMBLE_PHASE29 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true, attractor2: true, attractor3: true, attractor4: true });

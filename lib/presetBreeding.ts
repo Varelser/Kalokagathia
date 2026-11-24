@@ -38,6 +38,15 @@ const INHERIT_ONLY_KEYS = new Set<string>([
   'layer3MediaLumaMap',
   'layer2SourcePositions',
   'layer3SourcePositions',
+  // Phase 29 (9-6 stage 2, resolution-table extension): the
+  // emitter parent index arrays are index data, not numeric
+  // parameters — element-wise crossover would interpolate
+  // parent indices into fractional / wrong values and silently
+  // break the hierarchy (fractional indices normalise to
+  // root). Inherit them whole, like the position payloads.
+  'layer1SourceParents',
+  'layer2SourceParents',
+  'layer3SourceParents',
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

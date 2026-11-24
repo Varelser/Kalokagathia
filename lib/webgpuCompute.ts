@@ -181,6 +181,18 @@ struct Uniforms {
   // Phase 28 gate's first round proved exactly that.
   steerStatePad0 : f32,
   steerStatePad1 : f32,
+  // Phase 29 (9-6 stage 2): attractor units 3 and 4. Appended
+  // at the struct tail like every Phase 25-28 addition so all
+  // earlier field offsets stay put. 8 fields = 32 bytes, the
+  // total stays 16-byte aligned (656 bytes).
+  attractor3Enabled : f32,
+  attractor3Type : i32,
+  attractor3Strength : f32,
+  attractor3Scale : f32,
+  attractor4Enabled : f32,
+  attractor4Type : i32,
+  attractor4Strength : f32,
+  attractor4Scale : f32,
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -751,6 +763,98 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       dv = vec3f(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
     }
     vel += normalize(dv + vec3f(0.0001)) * u.attractor2Strength * u.delta * 40.0;
+  }
+
+  // Strange attractor unit 3 (Phase 29, 9-6 stage 2):
+  // the same 12 laws, driven by the attractor3* fields.
+  if (u.attractor3Enabled > 0.5) {
+    let ap = pos / max(0.1, u.attractor3Scale);
+    var dv = vec3f(0.0);
+    if (u.attractor3Type == 0) { // Lorenz
+      dv = vec3f(10.0*(ap.y-ap.x), ap.x*(28.0-ap.z)-ap.y, ap.x*ap.y-2.667*ap.z);
+    } else if (u.attractor3Type == 1) { // Rossler
+      dv = vec3f(-(ap.y+ap.z), ap.x+0.2*ap.y, 0.2+ap.z*(ap.x-5.7));
+    } else if (u.attractor3Type == 3) { // Halvorsen
+      dv = vec3f(-1.4*ap.x - 4.0*ap.y - 4.0*ap.z - ap.y*ap.y,
+                 -1.4*ap.y - 4.0*ap.z - 4.0*ap.x - ap.z*ap.z,
+                 -1.4*ap.z - 4.0*ap.x - 4.0*ap.y - ap.x*ap.x);
+    } else if (u.attractor3Type == 4) { // Chen
+      dv = vec3f(35.0*(ap.y-ap.x), -7.0*ap.x - ap.x*ap.z + 28.0*ap.y, ap.x*ap.y - 3.0*ap.z);
+    } else if (u.attractor3Type == 5) { // Lu
+      dv = vec3f(36.0*(ap.y-ap.x), -ap.x*ap.z + 20.0*ap.y, ap.x*ap.y - 3.0*ap.z);
+    } else if (u.attractor3Type == 6) { // Aizawa
+      let zb = ap.z - 0.7;
+      dv = vec3f(zb*ap.x - 3.5*ap.y,
+                 3.5*ap.x + zb*ap.y,
+                 0.6 + 0.95*ap.z - (ap.z*ap.z*ap.z)/3.0 - (ap.x*ap.x + ap.y*ap.y)*(1.0 + 0.25*ap.z) + 0.1*ap.z*ap.x*ap.x*ap.x);
+    } else if (u.attractor3Type == 7) { // Sprott F
+      dv = vec3f(ap.y + ap.z, -ap.x + 0.5*ap.y, ap.x*ap.x - ap.z);
+    } else if (u.attractor3Type == 8) { // Rabinovich-Fabrikant
+      dv = vec3f(ap.y*(ap.z - 1.0 + ap.x*ap.x) + 0.1*ap.x,
+                 ap.x*(3.0*ap.z + 1.0 - ap.x*ap.x) + 0.1*ap.y,
+                 -2.0*ap.z*(0.14 + ap.x*ap.y));
+    } else if (u.attractor3Type == 9) { // De Jong map
+      let mp = vec2f(sin(1.4*ap.y) - cos(-2.3*ap.x), sin(2.4*ap.x) - cos(-2.1*ap.y));
+      dv = vec3f(mp - ap.xy, -0.5*ap.z);
+    } else if (u.attractor3Type == 10) { // Ikeda map
+      let r2 = dot(ap.xy, ap.xy);
+      let tt = 0.4 - 6.0/(1.0 + r2);
+      let ct = cos(tt); let st = sin(tt);
+      let mp = vec2f(1.0, 0.0) + 0.918 * vec2f(ap.x*ct - ap.y*st, ap.x*st + ap.y*ct);
+      dv = vec3f(mp - ap.xy, -0.5*ap.z);
+    } else if (u.attractor3Type == 11) { // Chua
+      let fx = -0.714*ap.x - 0.2145*(abs(ap.x + 1.0) - abs(ap.x - 1.0));
+      dv = vec3f(15.6*(ap.y - ap.x - fx), ap.x - ap.y + ap.z, -28.0*ap.y);
+    } else { // Thomas (2)
+      dv = vec3f(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
+    }
+    vel += normalize(dv + vec3f(0.0001)) * u.attractor3Strength * u.delta * 40.0;
+  }
+
+  // Strange attractor unit 4 (Phase 29, 9-6 stage 2):
+  // the same 12 laws, driven by the attractor4* fields.
+  if (u.attractor4Enabled > 0.5) {
+    let ap = pos / max(0.1, u.attractor4Scale);
+    var dv = vec3f(0.0);
+    if (u.attractor4Type == 0) { // Lorenz
+      dv = vec3f(10.0*(ap.y-ap.x), ap.x*(28.0-ap.z)-ap.y, ap.x*ap.y-2.667*ap.z);
+    } else if (u.attractor4Type == 1) { // Rossler
+      dv = vec3f(-(ap.y+ap.z), ap.x+0.2*ap.y, 0.2+ap.z*(ap.x-5.7));
+    } else if (u.attractor4Type == 3) { // Halvorsen
+      dv = vec3f(-1.4*ap.x - 4.0*ap.y - 4.0*ap.z - ap.y*ap.y,
+                 -1.4*ap.y - 4.0*ap.z - 4.0*ap.x - ap.z*ap.z,
+                 -1.4*ap.z - 4.0*ap.x - 4.0*ap.y - ap.x*ap.x);
+    } else if (u.attractor4Type == 4) { // Chen
+      dv = vec3f(35.0*(ap.y-ap.x), -7.0*ap.x - ap.x*ap.z + 28.0*ap.y, ap.x*ap.y - 3.0*ap.z);
+    } else if (u.attractor4Type == 5) { // Lu
+      dv = vec3f(36.0*(ap.y-ap.x), -ap.x*ap.z + 20.0*ap.y, ap.x*ap.y - 3.0*ap.z);
+    } else if (u.attractor4Type == 6) { // Aizawa
+      let zb = ap.z - 0.7;
+      dv = vec3f(zb*ap.x - 3.5*ap.y,
+                 3.5*ap.x + zb*ap.y,
+                 0.6 + 0.95*ap.z - (ap.z*ap.z*ap.z)/3.0 - (ap.x*ap.x + ap.y*ap.y)*(1.0 + 0.25*ap.z) + 0.1*ap.z*ap.x*ap.x*ap.x);
+    } else if (u.attractor4Type == 7) { // Sprott F
+      dv = vec3f(ap.y + ap.z, -ap.x + 0.5*ap.y, ap.x*ap.x - ap.z);
+    } else if (u.attractor4Type == 8) { // Rabinovich-Fabrikant
+      dv = vec3f(ap.y*(ap.z - 1.0 + ap.x*ap.x) + 0.1*ap.x,
+                 ap.x*(3.0*ap.z + 1.0 - ap.x*ap.x) + 0.1*ap.y,
+                 -2.0*ap.z*(0.14 + ap.x*ap.y));
+    } else if (u.attractor4Type == 9) { // De Jong map
+      let mp = vec2f(sin(1.4*ap.y) - cos(-2.3*ap.x), sin(2.4*ap.x) - cos(-2.1*ap.y));
+      dv = vec3f(mp - ap.xy, -0.5*ap.z);
+    } else if (u.attractor4Type == 10) { // Ikeda map
+      let r2 = dot(ap.xy, ap.xy);
+      let tt = 0.4 - 6.0/(1.0 + r2);
+      let ct = cos(tt); let st = sin(tt);
+      let mp = vec2f(1.0, 0.0) + 0.918 * vec2f(ap.x*ct - ap.y*st, ap.x*st + ap.y*ct);
+      dv = vec3f(mp - ap.xy, -0.5*ap.z);
+    } else if (u.attractor4Type == 11) { // Chua
+      let fx = -0.714*ap.x - 0.2145*(abs(ap.x + 1.0) - abs(ap.x - 1.0));
+      dv = vec3f(15.6*(ap.y - ap.x - fx), ap.x - ap.y + ap.z, -28.0*ap.y);
+    } else { // Thomas (2)
+      dv = vec3f(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
+    }
+    vel += normalize(dv + vec3f(0.0001)) * u.attractor4Strength * u.delta * 40.0;
   }
 
   // Lévy flight: rare heavy-tailed impulses, tick-quantised gate.
@@ -1912,9 +2016,9 @@ type Flip3dGridState = {
   framesStepped: number;
 };
 
-// Vel uniform buffer: 98 f32 slots (see the WGSL Uniforms struct
+// Vel uniform buffer: 164 f32 slots (see the WGSL Uniforms struct
 // field order; int fields are written through an Int32Array view).
-const VEL_UNIFORM_BYTES = 624;
+const VEL_UNIFORM_BYTES = 656;
 // Pos uniform buffer: 21 f32 slots.
 const POS_UNIFORM_BYTES = 128;
 
@@ -2285,6 +2389,8 @@ export interface WebGPUForceParams {
   boidsEnabled: boolean; boidsSeparation: number; boidsAlignment: number; boidsCohesion: number; boidsRadius: number;
   attractorEnabled: boolean; attractorType: number; attractorStrength: number; attractorScale: number;
   attractor2Enabled: boolean; attractor2Type: number; attractor2Strength: number; attractor2Scale: number;
+  attractor3Enabled: boolean; attractor3Type: number; attractor3Strength: number; attractor3Scale: number;
+  attractor4Enabled: boolean; attractor4Type: number; attractor4Strength: number; attractor4Scale: number;
   levyEnabled: boolean; levyStrength: number; levyRate: number;
   kuramotoEnabled: boolean; kuramotoCoupling: number; kuramotoSpread: number; kuramotoRadius: number;
   particleLifeEnabled: boolean; particleLifeStrength: number; particleLifeRadius: number; particleLifeFriction: number; particleLifeSpecies: number;
@@ -2518,6 +2624,16 @@ export function stepWebGPUCompute(
   // Steering state mode (Phase 28, 9-5): indices 152-153.
   velI[152] = st ? st.stateSlot : 0;
   velU[153] = st ? st.stateThreshold : 0.5;
+  // Strange attractor units 3 and 4 (Phase 29): indices
+  // 156-163 (154-155 are the Phase 28 alignment pads, left 0).
+  velU[156] = f && f.attractor3Enabled ? 1 : 0;
+  velI[157] = f ? f.attractor3Type : 0;
+  velU[158] = f ? f.attractor3Strength : 0;
+  velU[159] = f ? f.attractor3Scale : 0;
+  velU[160] = f && f.attractor4Enabled ? 1 : 0;
+  velI[161] = f ? f.attractor4Type : 0;
+  velU[162] = f ? f.attractor4Strength : 0;
+  velU[163] = f ? f.attractor4Scale : 0;
   new Uint32Array(velU.buffer)[0] = texSize; // texSizeはu32なのでUint32Arrayビューで書く
   device.queue.writeBuffer(velUBuf, 0, velU);
 

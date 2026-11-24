@@ -655,6 +655,52 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       )}
     </div>
 
+    {/* Strange Attractor 3 (Phase 29: unit 3, 9-6 stage 2) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Strange Attractor 3" value={config.gpgpuAttractor3Enabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuAttractor3Enabled', v)} />
+      {config.gpgpuAttractor3Enabled && (
+        <>
+          <Toggle
+            label="Type"
+            value={config.gpgpuAttractor3Type}
+            options={[{ label: 'Lorenz', val: 'lorenz' }, { label: 'Rössler', val: 'rossler' }, { label: 'Thomas', val: 'thomas' }, { label: 'Halvorsen', val: 'halvorsen' }, { label: 'Chen', val: 'chen' }, { label: 'Lü', val: 'lu' }, { label: 'Aizawa', val: 'aizawa' }, { label: 'Sprott', val: 'sprott' }, { label: 'Rabinovich', val: 'rabinovich' }, { label: 'De Jong', val: 'dejong' }, { label: 'Ikeda', val: 'ikeda' }, { label: 'Chua', val: 'chua' }]}
+            onChange={(v) => updateConfig('gpgpuAttractor3Type', v)}
+          />
+          <Slider label="Strength" value={config.gpgpuAttractor3Strength} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuAttractor3Strength', v)} />
+          <Slider label="Scale" value={config.gpgpuAttractor3Scale} min={0.5} max={50} step={0.5} onChange={(v) => updateConfig('gpgpuAttractor3Scale', v)} />
+          <Toggle
+            label="Space Mode"
+            value={config.gpgpuAttractor3SpaceMode}
+            options={[{ label: 'Legacy', val: 'legacy' }, { label: 'Spread', val: 'spread' }, { label: 'Frame', val: 'frame' }, { label: 'Ring', val: 'ring' }]}
+            onChange={(v) => updateConfig('gpgpuAttractor3SpaceMode', v)}
+          />
+        </>
+      )}
+    </div>
+
+    {/* Strange Attractor 4 (Phase 29: unit 4, 9-6 stage 2) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Strange Attractor 4" value={config.gpgpuAttractor4Enabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuAttractor4Enabled', v)} />
+      {config.gpgpuAttractor4Enabled && (
+        <>
+          <Toggle
+            label="Type"
+            value={config.gpgpuAttractor4Type}
+            options={[{ label: 'Lorenz', val: 'lorenz' }, { label: 'Rössler', val: 'rossler' }, { label: 'Thomas', val: 'thomas' }, { label: 'Halvorsen', val: 'halvorsen' }, { label: 'Chen', val: 'chen' }, { label: 'Lü', val: 'lu' }, { label: 'Aizawa', val: 'aizawa' }, { label: 'Sprott', val: 'sprott' }, { label: 'Rabinovich', val: 'rabinovich' }, { label: 'De Jong', val: 'dejong' }, { label: 'Ikeda', val: 'ikeda' }, { label: 'Chua', val: 'chua' }]}
+            onChange={(v) => updateConfig('gpgpuAttractor4Type', v)}
+          />
+          <Slider label="Strength" value={config.gpgpuAttractor4Strength} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuAttractor4Strength', v)} />
+          <Slider label="Scale" value={config.gpgpuAttractor4Scale} min={0.5} max={50} step={0.5} onChange={(v) => updateConfig('gpgpuAttractor4Scale', v)} />
+          <Toggle
+            label="Space Mode"
+            value={config.gpgpuAttractor4SpaceMode}
+            options={[{ label: 'Legacy', val: 'legacy' }, { label: 'Spread', val: 'spread' }, { label: 'Frame', val: 'frame' }, { label: 'Ring', val: 'ring' }]}
+            onChange={(v) => updateConfig('gpgpuAttractor4SpaceMode', v)}
+          />
+        </>
+      )}
+    </div>
+
     {/* Lévy flight */}
     <div className="mt-4 border-t border-white/10 pt-4">
       <Toggle label="Lévy Flight" value={config.gpgpuLevyEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuLevyEnabled', v)} />

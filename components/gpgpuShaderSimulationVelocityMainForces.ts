@@ -469,10 +469,21 @@ export const VEL_FRAG_FORCE_ATTRACTOR = /* glsl */ `
 // shader only behind the attractor2 option (see
 // buildMainForcesFragment), so the stock assembly stays
 // byte-identical.
-export const VEL_FRAG_FORCE_ATTRACTOR2 =
-  VEL_FRAG_FORCE_ATTRACTOR
-    .replace('// Strange Attractor\n', '// Strange Attractor (unit 2)\n')
-    .replaceAll('uAttractor', 'uAttractor2');
+// Phase 29 (9-6 stage 2): the replication machinery behind
+// the attractor units. Unit 1 is the hand-written chunk above;
+// every further unit is DERIVED from it by renaming the
+// uniform family (uAttractor -> uAttractor<unit>) and the
+// header comment. deriveAttractorUnitChunk(2) reproduces the
+// historical Phase 27 derivation byte-for-byte (pinned by the
+// phase29 test); units 3 and 4 come from the same function.
+export function deriveAttractorUnitChunk(unit: number): string {
+  return VEL_FRAG_FORCE_ATTRACTOR
+    .replace('// Strange Attractor\n', `// Strange Attractor (unit ${unit})\n`)
+    .replaceAll('uAttractor', `uAttractor${unit}`);
+}
+export const VEL_FRAG_FORCE_ATTRACTOR2 = deriveAttractorUnitChunk(2);
+export const VEL_FRAG_FORCE_ATTRACTOR3 = deriveAttractorUnitChunk(3);
+export const VEL_FRAG_FORCE_ATTRACTOR4 = deriveAttractorUnitChunk(4);
 export const VEL_FRAG_FORCE_LEVY = /* glsl */ `
     // Lévy flight: rare heavy-tailed impulses. The gate is quantised by tick
     // (floor(uTime * rate)) so jump frequency is frame-rate independent; the
@@ -707,6 +718,8 @@ export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
   'particle-life': VEL_FRAG_FORCE_PARTICLE_LIFE,
   'attractor': VEL_FRAG_FORCE_ATTRACTOR,
   'attractor-2': VEL_FRAG_FORCE_ATTRACTOR2,
+  'attractor-3': VEL_FRAG_FORCE_ATTRACTOR3,
+  'attractor-4': VEL_FRAG_FORCE_ATTRACTOR4,
   'levy': VEL_FRAG_FORCE_LEVY,
   'vortex': VEL_FRAG_FORCE_VORTEX,
   'wind': VEL_FRAG_FORCE_WIND,
@@ -737,6 +750,10 @@ export interface MainForcesVariantOptions {
   // same way — spliced in only while the attractor unit-2
   // enable key is on.
   attractor2?: boolean;
+  // Phase 29: units 3 and 4, gated identically on their own
+  // enable keys.
+  attractor3?: boolean;
+  attractor4?: boolean;
 }
 
 export function buildMainForcesFragment(
@@ -748,6 +765,8 @@ export function buildMainForcesFragment(
   for (const name of names) {
     if (name === 'steer-seek' && !options?.steeringSeek) continue;
     if (name === 'attractor-2' && !options?.attractor2) continue;
+    if (name === 'attractor-3' && !options?.attractor3) continue;
+    if (name === 'attractor-4' && !options?.attractor4) continue;
     out += VEL_FRAG_FORCE_CHUNKS[name];
   }
   return out;

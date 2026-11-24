@@ -75,13 +75,14 @@ const pos = [{ x: 1, y: 2, z: 3 }, { x: 10, y: 0, z: 0 }, { x: 0, y: 5, z: 0 }, 
   // Phase 20 stage 2: 'steer-seek' joined the registry (20
   // names); it is variant-gated, see the identity block below.
   // Phase 27: 'attractor-2' joined the same way (21 names).
-  check('default order names count 21', GPGPU_FORCE_CHUNK_NAMES.length === 21);
+  // Phase 29: 'attractor-3' / 'attractor-4' joined identically (23 names).
+  check('default order names count 23', GPGPU_FORCE_CHUNK_NAMES.length === 23);
   check('normalize empty == default', JSON.stringify(normalizeGpgpuForceOrder('')) === JSON.stringify([...GPGPU_FORCE_CHUNK_NAMES]));
   check('isDefault empty/undefined/full', isDefaultGpgpuForceOrder('') && isDefaultGpgpuForceOrder(undefined) && isDefaultGpgpuForceOrder(GPGPU_FORCE_CHUNK_NAMES.join(',')));
   const partial = normalizeGpgpuForceOrder('wind,curl');
-  check('partial keeps head, appends missing in default order', partial[0] === 'wind' && partial[1] === 'curl' && partial.length === 21 && partial[2] === 'pyro-buoyancy', partial.join(','));
+  check('partial keeps head, appends missing in default order', partial[0] === 'wind' && partial[1] === 'curl' && partial.length === 23 && partial[2] === 'pyro-buoyancy', partial.join(','));
   const messy = normalizeGpgpuForceOrder('bogus,wind,wind,, curl ,nope');
-  check('unknown/duplicate dropped', messy.filter((n) => n === 'wind').length === 1 && !messy.includes('bogus') && messy.length === 21, messy.join(','));
+  check('unknown/duplicate dropped', messy.filter((n) => n === 'wind').length === 1 && !messy.includes('bogus') && messy.length === 23, messy.join(','));
   check('serialize default == empty string', serializeGpgpuForceOrder('') === '' && serializeGpgpuForceOrder('wind,curl').startsWith('wind,curl,'));
   check('non-default detected', !isDefaultGpgpuForceOrder('wind,curl'));
 }
@@ -94,7 +95,7 @@ const pos = [{ x: 1, y: 2, z: 3 }, { x: 10, y: 0, z: 0 }, { x: 0, y: 5, z: 0 }, 
   // Phase 20 stage 2: 'steer-seek' is variant-gated — the
   // variant-off assembly (VEL_FRAG_MAIN_FORCES) concatenates
   // every chunk EXCEPT it, so the manual concat excludes it.
-  const manualConcat = VEL_FRAG_MAIN_FORCES_HEAD + GPGPU_FORCE_CHUNK_NAMES.filter((n) => n !== 'steer-seek' && n !== 'attractor-2').map((n) => VEL_FRAG_FORCE_CHUNKS[n]).join('');
+  const manualConcat = VEL_FRAG_MAIN_FORCES_HEAD + GPGPU_FORCE_CHUNK_NAMES.filter((n) => n !== 'steer-seek' && n !== 'attractor-2' && n !== 'attractor-3' && n !== 'attractor-4').map((n) => VEL_FRAG_FORCE_CHUNKS[n]).join('');
   check('head + default chunks (variant-gated chunks out) == VEL_FRAG_MAIN_FORCES', manualConcat === VEL_FRAG_MAIN_FORCES);
   check('steer-seek chunk absent from variant-off assembly', !VEL_FRAG_MAIN_FORCES.includes(VEL_FRAG_FORCE_CHUNKS['steer-seek']));
   check('every chunk non-empty and registry complete', GPGPU_FORCE_CHUNK_NAMES.every((n) => typeof VEL_FRAG_FORCE_CHUNKS[n] === 'string' && VEL_FRAG_FORCE_CHUNKS[n].length > 0));
@@ -111,12 +112,14 @@ const pos = [{ x: 1, y: 2, z: 3 }, { x: 10, y: 0, z: 0 }, { x: 0, y: 5, z: 0 }, 
     // 'steer-seek' and 'attractor-2' are variant-gated: absent
     // without their variants, even when the order names them
     // (checked just below).
-    if (name === 'steer-seek' || name === 'attractor-2') continue;
+    if (name === 'steer-seek' || name === 'attractor-2' || name === 'attractor-3' || name === 'attractor-4') continue;
     if (!frag.includes(VEL_FRAG_FORCE_CHUNKS[name])) { check(`chunk ${name} present in reversed fragment`, false); }
   }
-  check('all chunks present in reversed fragment', GPGPU_FORCE_CHUNK_NAMES.every((n) => n === 'steer-seek' || n === 'attractor-2' || frag.includes(VEL_FRAG_FORCE_CHUNKS[n])));
+  check('all chunks present in reversed fragment', GPGPU_FORCE_CHUNK_NAMES.every((n) => n === 'steer-seek' || n === 'attractor-2' || n === 'attractor-3' || n === 'attractor-4' || frag.includes(VEL_FRAG_FORCE_CHUNKS[n])));
   check('steer-seek chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['steer-seek']));
   check('attractor-2 chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['attractor-2']));
+  check('attractor-3 chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['attractor-3']));
+  check('attractor-4 chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['attractor-4']));
   const windAt = frag.indexOf(VEL_FRAG_FORCE_CHUNKS['wind']);
   const curlAt = frag.indexOf(VEL_FRAG_FORCE_CHUNKS['curl']);
   const defWindAt = SIM_VEL_FRAG.indexOf(VEL_FRAG_FORCE_CHUNKS['wind']);

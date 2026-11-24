@@ -284,6 +284,16 @@ export interface ParticleConfigGpgpu {
   gpgpuAttractor2Strength: number;
   gpgpuAttractor2Scale: number;
   gpgpuAttractor2SpaceMode: 'legacy' | 'spread' | 'frame' | 'ring';
+  gpgpuAttractor3Enabled: boolean;
+  gpgpuAttractor3Type: 'lorenz' | 'rossler' | 'thomas' | 'halvorsen' | 'chen' | 'lu' | 'aizawa' | 'sprott' | 'rabinovich' | 'dejong' | 'ikeda' | 'chua';
+  gpgpuAttractor3Strength: number;
+  gpgpuAttractor3Scale: number;
+  gpgpuAttractor3SpaceMode: 'legacy' | 'spread' | 'frame' | 'ring';
+  gpgpuAttractor4Enabled: boolean;
+  gpgpuAttractor4Type: 'lorenz' | 'rossler' | 'thomas' | 'halvorsen' | 'chen' | 'lu' | 'aizawa' | 'sprott' | 'rabinovich' | 'dejong' | 'ikeda' | 'chua';
+  gpgpuAttractor4Strength: number;
+  gpgpuAttractor4Scale: number;
+  gpgpuAttractor4SpaceMode: 'legacy' | 'spread' | 'frame' | 'ring';
   // Vortex
   gpgpuVortexEnabled: boolean;
   gpgpuVortexStrength: number;

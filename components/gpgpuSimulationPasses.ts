@@ -618,6 +618,14 @@ export function runSimulationPasses(args: {
         attractor2Type: { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractor2Type] ?? 0,
         attractor2Strength: config.gpgpuAttractor2Strength,
         attractor2Scale: config.gpgpuAttractor2Scale,
+        attractor3Enabled: config.gpgpuAttractor3Enabled,
+        attractor3Type: { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractor3Type] ?? 0,
+        attractor3Strength: config.gpgpuAttractor3Strength,
+        attractor3Scale: config.gpgpuAttractor3Scale,
+        attractor4Enabled: config.gpgpuAttractor4Enabled,
+        attractor4Type: { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractor4Type] ?? 0,
+        attractor4Strength: config.gpgpuAttractor4Strength,
+        attractor4Scale: config.gpgpuAttractor4Scale,
         levyEnabled: config.gpgpuLevyEnabled,
         levyStrength: config.gpgpuLevyStrength,
         levyRate: config.gpgpuLevyRate,
@@ -832,6 +840,10 @@ export function runSimulationPasses(args: {
   // variant string is not built).
   if (velSimMat.uniforms.uAttractor2Enabled) velSimMat.uniforms.uAttractor2Enabled.value = config.gpgpuAttractor2Enabled;
   if (velSimMat.uniforms.uAttractor2Type) velSimMat.uniforms.uAttractor2Type.value = { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractor2Type] ?? 0;
+  if (velSimMat.uniforms.uAttractor3Enabled) velSimMat.uniforms.uAttractor3Enabled.value = config.gpgpuAttractor3Enabled;
+  if (velSimMat.uniforms.uAttractor3Type) velSimMat.uniforms.uAttractor3Type.value = { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractor3Type] ?? 0;
+  if (velSimMat.uniforms.uAttractor4Enabled) velSimMat.uniforms.uAttractor4Enabled.value = config.gpgpuAttractor4Enabled;
+  if (velSimMat.uniforms.uAttractor4Type) velSimMat.uniforms.uAttractor4Type.value = { lorenz: 0, rossler: 1, thomas: 2, halvorsen: 3, chen: 4, lu: 5, aizawa: 6, sprott: 7, rabinovich: 8, dejong: 9, ikeda: 10, chua: 11 }[config.gpgpuAttractor4Type] ?? 0;
   velSimMat.uniforms.uLevyEnabled.value = config.gpgpuLevyEnabled;
   velSimMat.uniforms.uLevyStrength.value = config.gpgpuLevyStrength;
   velSimMat.uniforms.uLevyRate.value = config.gpgpuLevyRate;
@@ -920,6 +932,12 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uAttractor2Strength) velSimMat.uniforms.uAttractor2Strength.value = config.gpgpuAttractor2Strength;
   if (velSimMat.uniforms.uAttractor2Scale) velSimMat.uniforms.uAttractor2Scale.value = config.gpgpuAttractor2Scale;
   if (velSimMat.uniforms.uAttractor2SpaceMode) velSimMat.uniforms.uAttractor2SpaceMode.value = { legacy: 0, spread: 1, frame: 2, ring: 3 }[config.gpgpuAttractor2SpaceMode] ?? 0;
+  if (velSimMat.uniforms.uAttractor3Strength) velSimMat.uniforms.uAttractor3Strength.value = config.gpgpuAttractor3Strength;
+  if (velSimMat.uniforms.uAttractor3Scale) velSimMat.uniforms.uAttractor3Scale.value = config.gpgpuAttractor3Scale;
+  if (velSimMat.uniforms.uAttractor3SpaceMode) velSimMat.uniforms.uAttractor3SpaceMode.value = { legacy: 0, spread: 1, frame: 2, ring: 3 }[config.gpgpuAttractor3SpaceMode] ?? 0;
+  if (velSimMat.uniforms.uAttractor4Strength) velSimMat.uniforms.uAttractor4Strength.value = config.gpgpuAttractor4Strength;
+  if (velSimMat.uniforms.uAttractor4Scale) velSimMat.uniforms.uAttractor4Scale.value = config.gpgpuAttractor4Scale;
+  if (velSimMat.uniforms.uAttractor4SpaceMode) velSimMat.uniforms.uAttractor4SpaceMode.value = { legacy: 0, spread: 1, frame: 2, ring: 3 }[config.gpgpuAttractor4SpaceMode] ?? 0;
   velSimMat.uniforms.uVortexEnabled.value = config.gpgpuVortexEnabled;
   velSimMat.uniforms.uVortexStrength.value = config.gpgpuVortexStrength;
   velSimMat.uniforms.uVortexTilt.value = config.gpgpuVortexTilt;
