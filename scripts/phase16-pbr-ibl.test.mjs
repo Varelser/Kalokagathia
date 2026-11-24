@@ -131,7 +131,9 @@ check('GEOM IBL path unchanged (uIblIntensity branch intact)', geom.includes('if
 
 const ibl = readFileSync(join(ROOT, 'lib/iblEnvironment.ts'), 'utf8');
 check('(d) PMREM helper present with dispose', ibl.includes('new THREE.PMREMGenerator') && ibl.includes('fromEquirectangular') && ibl.includes('renderTarget.dispose()'));
-check('(d) step-2 deferred note recorded', ibl.includes('第2段は対象を絞って残置'));
+// Step 2 was deferred when this test was written (Phase 16);
+// it landed in Phase 22 stage 3, and the note now records that.
+check('(d) step-2 landed note recorded (Phase 22 stage 3)', ibl.includes('landed in Phase 22 stage 3'));
 check('env intensity material helper present', ibl.includes('applySceneEnvIntensityToMaterials') && ibl.includes('isMeshStandardMaterial'));
 
 const rig = readFileSync(join(ROOT, 'components/AppSceneCameraRig.tsx'), 'utf8');

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { getLayerRuntimeGhostTrailSnapshot, getLayerRuntimeSdfSnapshot } from '../lib/sceneRenderRouting';
+import { resolveIblEnvironment } from '../lib/iblEnvironment';
+import { horizonEquirectYawRadians } from '../lib/horizonBackground';
 import type { ParticleSystemAudioRef, ParticleSystemCollider } from './sceneParticleSystemRuntimeTypes';
 
 export function applyParticleCollisionUniforms(
@@ -61,6 +63,25 @@ export function applyParticleSdfUniforms(
   mat.uniforms.uSdfSpecular.value = sdfSpec;
   mat.uniforms.uSdfShininess.value = sdfShin;
   mat.uniforms.uSdfAmbient.value = sdfAmb;
+  // IBL (Phase 22 stage 3): layers 2/3 only, mirroring the
+  // GEOM binding in gpgpuVisualUpdates — the environment is
+  // the shared resolveIblEnvironment result, the map stays
+  // unbound at intensity 0, and the shader variant itself is
+  // only built while the key is positive.
+  if (mat.uniforms.uIblIntensity) {
+    const iblRaw = layerIndex === 2 ? config.layer2IblIntensity
+      : layerIndex === 3 ? config.layer3IblIntensity : 0;
+    const iblIntensity = Math.max(0, Math.min(2, iblRaw ?? 0));
+    mat.uniforms.uIblIntensity.value = iblIntensity;
+    if (mat.uniforms.uIblMap) {
+      mat.uniforms.uIblMap.value = iblIntensity > 0.001
+        ? resolveIblEnvironment(config).texture
+        : null;
+    }
+    if (mat.uniforms.uIblYaw) {
+      mat.uniforms.uIblYaw.value = horizonEquirectYawRadians(config.backgroundEquirectYaw);
+    }
+  }
 }
 
 export function applyParticleGhostUniforms(

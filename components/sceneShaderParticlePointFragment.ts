@@ -1,4 +1,5 @@
 import { PARTICLE_SHAPE_GLSL } from './particleShapeGlsl';
+import { IBL_GLSL_HELPERS } from '../lib/iblGlsl';
 
 export const FRAGMENT_SHADER = `
   precision highp float;
@@ -195,9 +196,67 @@ export const FRAGMENT_SHADER = `
 // finalColor / alpha, run the snippet, split the result back.
 // An empty snippet yields the stock shader unchanged (the
 // marker comments are inert), so the defaults stay identical.
-export function buildParticleFragmentShader(customCode: string): string {
+export function buildParticleFragmentShader(customCode: string, ibl = false): string {
+  const base = ibl ? buildParticleFragmentIblVariant() : FRAGMENT_SHADER;
   const snippet = customCode.trim();
-  if (!snippet) return FRAGMENT_SHADER;
+  if (!snippet) return base;
   const block = `{ // particle points fragment (user GLSL)\n    vec4 color = vec4(finalColor, alpha);\n${snippet}\n    finalColor = color.rgb;\n    alpha = color.a;\n    }`;
-  return FRAGMENT_SHADER.split('// __CUSTOM_PARTICLE_FRAGMENT__').join(block);
+  return base.split('// __CUSTOM_PARTICLE_FRAGMENT__').join(block);
+}
+
+/**
+ * IBL variant (Phase 22 stage 3, §5 design): the GEOM IBL
+ * triplet ported to the sphere branch of the SDF lighting.
+ * Built only for a layer whose IBL intensity key is positive;
+ * at key 0 the stock FRAGMENT_SHADER is used verbatim, so the
+ * default render is unchanged. Insertions (all anchored on the
+ * stock text):
+ *   1. uIblMap / uIblIntensity / uIblYaw uniforms + the
+ *      vWorldPosIbl varying (the vertex variant supplies it).
+ *   2. The shared IBL helper chunk (lib/iblGlsl.ts — the same
+ *      chunk GEOM assembles from, so the two cannot drift).
+ *   3. Inside the sphere branch only: world normal from the
+ *      inverse view rotation of the sprite normal, view vector
+ *      from the particle-centre world position (the recorded
+ *      sprite approximation — no per-fragment parallax), and
+ *      the GEOM term added after the SDF lighting.
+ * Other shapes (ring / star / hexagon / Kinetix masks) have no
+ * normals and are untouched.
+ */
+export function buildParticleFragmentIblVariant(): string {
+  return FRAGMENT_SHADER
+    .replace(
+      '  uniform float uSdfAmbient;\n',
+      '  uniform float uSdfAmbient;\n'
+        + '  // IBL (Phase 22 stage 3): sphere branch only.\n'
+        + '  uniform sampler2D uIblMap;\n'
+        + '  uniform float uIblIntensity;\n'
+        + '  uniform float uIblYaw;\n'
+        + '  varying vec3 vWorldPosIbl;\n',
+    )
+    .replace(
+      '\n  void main() {\n    float dist = length(vUv - 0.5);',
+      IBL_GLSL_HELPERS + '\n  void main() {\n    float dist = length(vUv - 0.5);',
+    )
+    .replace(
+      '      // pseudo-3D lighting for sphere only\n      float lighting = 1.0;',
+      '      // pseudo-3D lighting for sphere only\n      float lighting = 1.0;\n      vec3 iblAdd = vec3(0.0);',
+    )
+    .replace(
+      '        lighting = clamp(uSdfAmbient + diffuse * (1.0 - uSdfAmbient) + specular, 0.0, 2.0);',
+      '        lighting = clamp(uSdfAmbient + diffuse * (1.0 - uSdfAmbient) + specular, 0.0, 2.0);\n'
+        + '        // IBL triplet, same form as GEOM (Phase AL): diffuse\n'
+        + '        // by the world normal, reflection fresnel-weighted.\n'
+        + '        vec3 WN = normalize((vec4(N, 0.0) * viewMatrix).xyz);\n'
+        + '        vec3 WV = normalize(cameraPosition - vWorldPosIbl);\n'
+        + '        vec3 R = reflect(-WV, WN);\n'
+        + '        vec3 iblDiff = texture2D(uIblMap, kaloEquirectUv(kaloIblRotYaw(WN, uIblYaw))).rgb;\n'
+        + '        vec3 iblRefl = texture2D(uIblMap, kaloEquirectUv(kaloIblRotYaw(R, uIblYaw))).rgb;\n'
+        + '        float fresI = pow(1.0 - abs(dot(WN, WV)), 3.0);\n'
+        + '        iblAdd = uIblIntensity * (iblDiff * finalColor * 0.6 + iblRefl * (0.15 + 0.85 * fresI));',
+    )
+    .replace(
+      '      finalColor = finalColor * lighting;',
+      '      finalColor = finalColor * lighting;\n      finalColor += iblAdd;',
+    );
 }

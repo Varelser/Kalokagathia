@@ -176,6 +176,7 @@ export interface ParticleConfigLayer3 {
   layer3SdfSpecular: number;
   layer3SdfShininess: number;
   layer3SdfAmbient: number;
+  layer3IblIntensity: number;
 
   layer3MaterialStyle: 'classic' | 'glass' | 'hologram' | 'chrome' | 'halftone';
   layer3TemporalProfile: 'steady' | 'growth' | 'decay' | 'crystallize' | 'melt' | 'rupture' | 'oscillate' | 'accrete' | 'evaporate' | 'shed' | 'resonate' | 'condense' | 'ignite' | 'unravel' | 'accumulate' | 'exfoliate' | 'phase_shift' | 'inhale' | 'rewrite' | 'saturate' | 'delaminate' | 'anneal' | 'bifurcate' | 'recur' | 'percolate' | 'slump' | 'rebound' | 'fissure' | 'ossify' | 'intermittent' | 'hysteresis' | 'fatigue' | 'recover' | 'erupt' | 'latency' | 'emerge' | 'collapse' | 'regrow' | 'invert';

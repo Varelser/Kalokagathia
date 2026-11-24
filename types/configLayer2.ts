@@ -201,6 +201,7 @@ export interface ParticleConfigLayer2 {
   layer2SdfSpecular: number;
   layer2SdfShininess: number;
   layer2SdfAmbient: number;
+  layer2IblIntensity: number;
 
   layer2MaterialStyle: 'classic' | 'glass' | 'hologram' | 'chrome' | 'halftone';
   layer2TemporalProfile: 'steady' | 'growth' | 'decay' | 'crystallize' | 'melt' | 'rupture' | 'oscillate' | 'accrete' | 'evaporate' | 'shed' | 'resonate' | 'condense' | 'ignite' | 'unravel' | 'accumulate' | 'exfoliate' | 'phase_shift' | 'inhale' | 'rewrite' | 'saturate' | 'delaminate' | 'anneal' | 'bifurcate' | 'recur' | 'percolate' | 'slump' | 'rebound' | 'fissure' | 'ossify' | 'intermittent' | 'hysteresis' | 'fatigue' | 'recover' | 'erupt' | 'latency' | 'emerge' | 'collapse' | 'regrow' | 'invert';

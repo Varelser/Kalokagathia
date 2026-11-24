@@ -1170,6 +1170,20 @@ export interface ParticleConfigGpgpu {
   gpgpuShadowSourceTerrain: boolean;
   /** OBJ mesh (bounding sphere) casts occlusion. */
   gpgpuShadowSourceObj: boolean;
+  // True shadow map (Phase 22 stage 4, wiring stage 1): the
+  // Phase T light's viewpoint depth, captured only while the
+  // strength is positive (components/LightShadowCapture.tsx)
+  // and received by the terrain mesh. This is the ONLY feature
+  // called a shadow map; the Phase Z feature above stays an
+  // occlusion-map approximation. 0 (default) = the capture
+  // never mounts, the store stays null and no receiver shader
+  // carries the chunk — bit-identical to v2.03.0.
+  /** Shadow map darkness 0..1; 0 keeps every receiver identical. */
+  gpgpuShadowMapStrength: number;
+  /** Depth comparison bias (acne avoidance). */
+  gpgpuShadowMapBias: number;
+  /** PCF blur radius in texels; 0 = hard shadow. */
+  gpgpuShadowMapSoftness: number;
   /** Fog / volumetric self-shadow strength; 0 = legacy fog. */
   gpgpuFogSelfShadow: number;
   /** Secondary march steps for the fog self-shadow (1..16). */

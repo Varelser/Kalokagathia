@@ -81,6 +81,7 @@ import {
   resolveAttrColorSlots,
   resolveAttrConsumers,
   resolveAttrExtConsumers,
+  attrExprsReferenceDensity,
 } from '../lib/gpgpuAttributes';
 import { evaluateGpgpuGroup, parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { grainsCellSortActive } from '../lib/gpgpuGrains';
@@ -2250,6 +2251,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // rebake signature (JSON-encoded — expressions may contain
   // any separator character).
   const attrExprsKey = JSON.stringify(normalizeAttrExprs(config.gpgpuAttrExprs));
+  // Density (Phase 22 stage 1): the SPH scale keys are bake
+  // inputs only while an expression reads den, so legacy
+  // signatures stay untouched otherwise.
+  const attrDenKey = attrExprsReferenceDensity(
+    config.gpgpuAttrExprs, config.gpgpuAttrNames, config.gpgpuAttrNames2,
+  ) ? `${config.gpgpuSphRadius}/${config.gpgpuSphRestDensity}` : '';
   const attrSignature = attrConsumers.anyActive
     ? [
       texSize,
@@ -2261,6 +2268,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       attrNamesKey,
       attrSourcesKey,
       attrExprsKey,
+      attrDenKey,
       // Colour drive (Phase CL): the bake writes the colour
       // slots RAW while the drive is active, so the drive's
       // resolution is itself a bake input.
@@ -2296,6 +2304,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       velData: initDataRef.current.velData,
       ageMax: config.gpgpuAgeMax,
       bounceRadius: config.gpgpuBounceRadius,
+      sphRadius: config.gpgpuSphRadius,
+      sphRestDensity: config.gpgpuSphRestDensity,
       speciesCount: config.gpgpuParticleLifeSpecies,
       morphData: bake ? bake.data : null,
       morphWorldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,
@@ -2356,6 +2366,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const attrNames2Key = normalizeAttrNames2(config.gpgpuAttrNames2).join(',');
   const attrSources2Key = normalizeAttrSources(config.gpgpuAttrSources2).join(',');
   const attrExprs2Key = JSON.stringify(normalizeAttrExprs(config.gpgpuAttrExprs2));
+  const attrExtDenKey = (attrDenKey || attrExprsReferenceDensity(
+    config.gpgpuAttrExprs2, config.gpgpuAttrNames, config.gpgpuAttrNames2,
+  )) ? `${config.gpgpuSphRadius}/${config.gpgpuSphRestDensity}` : '';
   const attrExtSignature = attrExtActive
     ? [
       texSize,
@@ -2370,6 +2383,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       attrNames2Key,
       attrSources2Key,
       attrExprs2Key,
+      attrExtDenKey,
       attrConsumers.colorActive ? 'attrColor' : '',
       attrCloud?.version ?? 0,
       config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0,
@@ -2392,6 +2406,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       velData: initDataRef.current.velData,
       ageMax: config.gpgpuAgeMax,
       bounceRadius: config.gpgpuBounceRadius,
+      sphRadius: config.gpgpuSphRadius,
+      sphRestDensity: config.gpgpuSphRestDensity,
       speciesCount: config.gpgpuParticleLifeSpecies,
       morphData: bake ? bake.data : null,
       morphWorldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,
@@ -2409,6 +2425,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       velData: initDataRef.current.velData,
       ageMax: config.gpgpuAgeMax,
       bounceRadius: config.gpgpuBounceRadius,
+      sphRadius: config.gpgpuSphRadius,
+      sphRestDensity: config.gpgpuSphRestDensity,
       speciesCount: config.gpgpuParticleLifeSpecies,
       morphData: bake ? bake.data : null,
       morphWorldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,

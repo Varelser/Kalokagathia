@@ -272,4 +272,5 @@ export const APP_STATE_DEFAULT_LAYER_3: Partial<ParticleConfig> = {
   layer3SdfSpecular: 0.8,
   layer3SdfShininess: 16.0,
   layer3SdfAmbient: 0.3,
+  layer3IblIntensity: 0,
 };

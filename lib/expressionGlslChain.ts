@@ -4,14 +4,18 @@ import {
 } from './expression';
 import {
   astToGlsl,
+  astUsesDensityVar,
   astUsesSimVar,
   simVarToGlsl,
+  ATTR_DEN_MAIN_LINES,
+  ATTR_DEN_UNIFORM_LINES,
   ATTR_EXT_MAIN_LINES,
   ATTR_EXT_UNIFORM_LINES,
   ATTR_SIM_MAIN_LINES,
   ATTR_SIM_UNIFORM_LINES,
   type GlslVarResolver,
 } from './expressionGlsl';
+import { DENSITY_VAR_NAME } from './gpgpuDensity';
 import {
   ATTR_SIM_VAR_NAMES,
   ATTR_SLOT_COUNT,
@@ -65,6 +69,7 @@ const RESERVED_NAMES: ReadonlySet<string> = new Set([
   'sqrt', 'pow', 'exp', 'log', 'floor', 'ceil', 'round', 'sign',
   'fract', 'mod', 'min', 'max', 'clamp', 'lerp', 'smoothstep',
   ...ATTR_SIM_VAR_NAMES,
+  DENSITY_VAR_NAME,
 ]);
 
 export function buildAttrChainFragment(
@@ -96,12 +101,14 @@ export function buildAttrChainFragment(
     ...lowerNames,
     ...[...extSlotByName.keys()],
     ...ATTR_SIM_VAR_NAMES,
+    DENSITY_VAR_NAME,
   ];
 
   const blocks: string[] = [];
   let activeSlots = 0;
   let usesSim = false;
   let usesExt = false;
+  let usesDen = false;
   for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
     const expr = exprs[slot];
     if (expr.trim().length === 0) continue;
@@ -122,6 +129,7 @@ export function buildAttrChainFragment(
     if (glsl === null) return null;
     activeSlots++;
     if (astUsesSimVar(compiled.ast)) usesSim = true;
+    if (astUsesDensityVar(compiled.ast)) usesDen = true;
     for (const key of extSlotByName.keys()) {
       if (astReferencesVariable(compiled.ast, key)) {
         usesExt = true;
@@ -143,11 +151,13 @@ export function buildAttrChainFragment(
     'uniform sampler2D uSrc;',
     ...(usesExt ? ATTR_EXT_UNIFORM_LINES : []),
     ...(usesSim ? ATTR_SIM_UNIFORM_LINES : []),
+    ...(usesDen ? ATTR_DEN_UNIFORM_LINES : []),
     'uniform float uTime;',
     'void main() {',
     '  vec4 src = texture2D(uSrc, vUv);',
     ...(usesExt ? ATTR_EXT_MAIN_LINES : []),
     ...(usesSim ? ATTR_SIM_MAIN_LINES : []),
+    ...(usesDen ? ATTR_DEN_MAIN_LINES : []),
     '  float v0 = src.r;',
     '  float v1 = src.g;',
     '  float v2 = src.b;',

@@ -292,4 +292,5 @@ export const APP_STATE_DEFAULT_LAYER_2: Partial<ParticleConfig> = {
   layer2SdfSpecular: 0.8,
   layer2SdfShininess: 16.0,
   layer2SdfAmbient: 0.3,
+  layer2IblIntensity: 0,
 };

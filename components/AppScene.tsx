@@ -39,6 +39,7 @@ import { AppSceneLayerContent } from './AppSceneLayerContent';
 import { EMPTY_PYRO_GRID_FOG_FEED, type PyroGridFogFeed } from '../lib/pyroGrid';
 import { AppScenePostFx } from './AppScenePostFx';
 import { SceneDepthCapture } from './SceneDepthCapture';
+import { LightShadowCapture } from './LightShadowCapture';
 import { DynResController } from './DynResController';
 import { useAppSceneTemporalConfig } from './useAppSceneTemporalConfig';
 import type { AppSceneProps } from './AppSceneTypes';
@@ -153,6 +154,10 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
           the depth occlusion strength is positive; at the default
           0 nothing is captured and the render is unchanged. */}
       {effectiveConfig.gpgpuDepthOcclusion > 0 && <SceneDepthCapture />}
+      {/* True shadow map (Phase 22 stage 4): mounted only while
+          the shadow map strength is positive; at the default 0
+          nothing is captured and the render is unchanged. */}
+      {effectiveConfig.gpgpuShadowMapStrength > 0 && <LightShadowCapture config={effectiveConfig} />}
       <SceneBackgroundSync
         backgroundColor={effectiveConfig.backgroundColor}
         transparentBackground={transparentBackground}

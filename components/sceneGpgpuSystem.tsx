@@ -52,6 +52,12 @@ import { applyFlip3dCoupleUniforms, runFlip3dPasses } from './gpgpuFlip3dPasses'
 import { EMPTY_PYRO_GRID_FOG_FEED, type PyroGridFogFeed } from '../lib/pyroGrid';
 import { labelVellumComponents } from '../lib/gpgpuVellum';
 import { GpgpuAttrDynPass } from './gpgpuAttrDynPass';
+import { GpgpuAttrDensityPass } from './gpgpuAttrDensityPass';
+import {
+  PARTICLE_DENSITY_SCALE,
+  PARTICLE_DENSITY_SPLAT_GAIN,
+  setParticleDensitySource,
+} from '../lib/particleDensity';
 import { buildAttrDynFragment } from '../lib/expressionGlsl';
 import { GpgpuAttrFeedbackPass } from './gpgpuAttrFeedbackPass';
 import { buildAttrFeedbackFragment } from '../lib/expressionGlslFeedback';
@@ -91,6 +97,42 @@ type GpgpuSystemProps = {
   // (read by the volume-fog layers).
   pyroFeedRef?: MutableRefObject<PyroGridFogFeed>;
 };
+
+// Shine density splat (Phase 22 stage 2): the main layer's
+// points drawn additively into the quarter-resolution density
+// target. The vertex mirrors the draw pass's BASE point-size
+// formula (uSize with the same distance attenuation; per-point
+// size multipliers — species / age curves / maps — are not
+// replicated: the field is an attenuation approximation, and
+// the additive splat is order-independent, so the draw's sort
+// texture is irrelevant here). Raw sim positions are used (a
+// ring-offset scene reads the un-offset cloud — recorded
+// approximation of this stage).
+const SHINE_DENSITY_SPLAT_VERT = /* glsl */ `
+attribute vec2 aTexCoord;
+uniform sampler2D uPosTex;
+uniform float uSize;
+uniform float uScale;
+void main() {
+  vec4 posData = texture2D(uPosTex, aTexCoord);
+  vec4 mvPos = modelViewMatrix * vec4(posData.xyz, 1.0);
+  float dist = -mvPos.z;
+  float ps = max(0.5, uSize * (dist > 0.5 ? min(4.0, 500.0 / dist) : 1.0));
+  gl_PointSize = max(1.0, ps * uScale);
+  gl_Position = projectionMatrix * mvPos;
+}
+`;
+const SHINE_DENSITY_SPLAT_FRAG = /* glsl */ `
+precision highp float;
+uniform float uGain;
+void main() {
+  vec2 pc = gl_PointCoord - 0.5;
+  float d2 = dot(pc, pc);
+  if (d2 > 0.25) discard;
+  float w = smoothstep(0.25, 0.0, d2);
+  gl_FragColor = vec4(vec3(uGain * w), 1.0);
+}
+`;
 
 export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config, isPlaying, posReadbackRef, pointCloudCaptureRef, pyroFeedRef }) => {
   const { gl, camera } = useThree();
@@ -601,6 +643,27 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const attrChainTextureRef = useRef<THREE.Texture | null>(null);
   const attrChainFrameRef = useRef(0);
 
+  // Phase 22 stage 1: the density supply. A generated fragment
+  // contains the sampling local `simDen` exactly when one of
+  // its expressions reads the reserved name `den` — that string
+  // is the detection (the builders emit it under conditional
+  // emission only). While no fragment reads den, the supply
+  // pass never exists.
+  const attrUsesDen = [attrDynFragment, attrChainFragment, attrFeedbackFragment]
+    .some((f) => typeof f === 'string' && f.includes('simDen'));
+  const attrDensityPassRef = useRef<GpgpuAttrDensityPass | null>(null);
+  const attrDensityTextureRef = useRef<THREE.Texture | null>(null);
+  const attrDensityFrameRef = useRef(0);
+
+  // Phase 22 stage 2: Shine density splat state (RT + material
+  // + a private scene holding one Points over the shared draw
+  // geometry). Allocated lazily, only while postShineDensity
+  // is positive; the store is nulled when it turns off.
+  const shineDensityRtRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const shineDensityMatRef = useRef<THREE.ShaderMaterial | null>(null);
+  const shineDensitySceneRef = useRef<THREE.Scene | null>(null);
+  const shineDensityPointsRef = useRef<THREE.Points | null>(null);
+
   useEffect(() => () => {
     attrDynPassRef.current?.dispose();
     attrDynPassRef.current = null;
@@ -608,6 +671,13 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     attrFeedbackPassRef.current = null;
     attrChainPassRef.current?.dispose();
     attrChainPassRef.current = null;
+    attrDensityPassRef.current?.dispose();
+    attrDensityPassRef.current = null;
+    setParticleDensitySource(null);
+    shineDensityRtRef.current?.dispose();
+    shineDensityRtRef.current = null;
+    shineDensityMatRef.current?.dispose();
+    shineDensityMatRef.current = null;
   }, []);
 
   const runtime = useGpgpuRuntime({ gl, texSize, config });
@@ -695,7 +765,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     return points;
   }, [texSize, flip3dSplatMat]);
 
-  useFrame(({ gl: glCtx }, delta) => {
+  useFrame(({ gl: glCtx, camera }, delta) => {
     if (!isPlaying || !rtRef.current || !simMeshRef.current) return;
 
     // Phase X1: while a deterministic job is active the manager feeds
@@ -860,12 +930,34 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // by the sim, so the variables keep reading the initial
     // state there — the capability registry declares the
     // sim-side gap (attr-sim-vars) instead of hiding it.
+    // Phase 22 stage 1: render the density supply on the
+    // shared interval cadence, from the same position snapshot
+    // the sim variables read, BEFORE the attribute passes run.
+    if (attrUsesDen) {
+      if (!attrDensityPassRef.current) {
+        attrDensityPassRef.current = new GpgpuAttrDensityPass(texSize);
+        attrDensityTextureRef.current = null;
+        attrDensityFrameRef.current = 0;
+      }
+      if (attrDensityFrameRef.current % attrDynInterval === 0) {
+        attrDensityTextureRef.current = attrDensityPassRef.current.run(
+          glCtx, posIn.texture, config.gpgpuSphRadius, config.gpgpuSphRestDensity,
+        );
+      }
+      attrDensityFrameRef.current += 1;
+    } else if (attrDensityPassRef.current) {
+      attrDensityPassRef.current.dispose();
+      attrDensityPassRef.current = null;
+      attrDensityTextureRef.current = null;
+      attrDensityFrameRef.current = 0;
+    }
     const attrPassExtra = {
       src2Tex: attrTex2Ref.current,
       posTex: posIn.texture,
       velTex: velIn.texture,
       ageDenom: Math.max(config.gpgpuAgeMax, 0.001),
       radiusDenom: Math.max(config.gpgpuBounceRadius, 0.001),
+      denTex: attrDensityTextureRef.current,
     };
     let attrDynTexture: THREE.Texture | null = null;
     if (attrFeedbackFragment) {
@@ -1528,6 +1620,77 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       time: timeRef.current,
       viewportSizePx: { x: gl.domElement.width, y: gl.domElement.height },
     });
+
+    // Shine density splat (Phase 22 stage 2): while
+    // postShineDensity is positive, splat the main layer into
+    // the quarter-resolution density target and publish it for
+    // the LightFx pass. Runs after syncVisualUniforms so the
+    // position texture and uSize it reads are this frame's.
+    // When the key is 0 the splat never runs and the store is
+    // null — the LightFx fragment is the legacy string then.
+    if (config.postShineDensity > 0) {
+      const drawSize = glCtx.getDrawingBufferSize(new THREE.Vector2());
+      const dw = Math.max(1, Math.floor(drawSize.x * PARTICLE_DENSITY_SCALE));
+      const dh = Math.max(1, Math.floor(drawSize.y * PARTICLE_DENSITY_SCALE));
+      let rt = shineDensityRtRef.current;
+      if (!rt) {
+        rt = new THREE.WebGLRenderTarget(dw, dh, {
+          type: THREE.FloatType,
+          format: THREE.RGBAFormat,
+          minFilter: THREE.LinearFilter,
+          magFilter: THREE.LinearFilter,
+          depthBuffer: false,
+          stencilBuffer: false,
+        });
+        shineDensityRtRef.current = rt;
+      } else if (rt.width !== dw || rt.height !== dh) {
+        rt.setSize(dw, dh);
+      }
+      let mat = shineDensityMatRef.current;
+      if (!mat) {
+        mat = new THREE.ShaderMaterial({
+          uniforms: {
+            uPosTex: { value: null as THREE.Texture | null },
+            uSize: { value: 2 },
+            uScale: { value: PARTICLE_DENSITY_SCALE },
+            uGain: { value: PARTICLE_DENSITY_SPLAT_GAIN },
+          },
+          vertexShader: SHINE_DENSITY_SPLAT_VERT,
+          fragmentShader: SHINE_DENSITY_SPLAT_FRAG,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthTest: false,
+          depthWrite: false,
+        });
+        shineDensityMatRef.current = mat;
+      }
+      if (!shineDensitySceneRef.current) {
+        shineDensitySceneRef.current = new THREE.Scene();
+        const points = new THREE.Points(drawGeo, mat);
+        points.frustumCulled = false;
+        shineDensityPointsRef.current = points;
+        shineDensitySceneRef.current.add(points);
+      } else if (shineDensityPointsRef.current) {
+        shineDensityPointsRef.current.geometry = drawGeo;
+        shineDensityPointsRef.current.material = mat;
+      }
+      const drawMatAny = assets.drawMat as unknown as { uniforms?: Record<string, { value: unknown }> } | null;
+      const liveSize = drawMatAny?.uniforms?.uSize?.value;
+      mat.uniforms.uPosTex.value = routing.outputPosTexture;
+      mat.uniforms.uSize.value = typeof liveSize === 'number' ? liveSize : 2;
+      const prevTarget = glCtx.getRenderTarget();
+      const prevClearColor = new THREE.Color();
+      glCtx.getClearColor(prevClearColor);
+      const prevClearAlpha = glCtx.getClearAlpha();
+      glCtx.setClearColor(0x000000, 0);
+      glCtx.setRenderTarget(rt);
+      glCtx.render(shineDensitySceneRef.current, camera);
+      glCtx.setRenderTarget(prevTarget);
+      glCtx.setClearColor(prevClearColor, prevClearAlpha);
+      setParticleDensitySource({ texture: rt.texture });
+    } else {
+      setParticleDensitySource(null);
+    }
 
   });
 

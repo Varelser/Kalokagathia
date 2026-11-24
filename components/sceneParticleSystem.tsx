@@ -89,11 +89,17 @@ export const ParticleSystem: React.FC<{
   // status store — the shared injection fallback rule. While
   // disabled / empty the stock shader string is used as-is.
   const gl = useThree((state) => state.gl);
+  // IBL (Phase 22 stage 3): this layer's shader pair switches
+  // to the IBL variant while its intensity key is positive
+  // (layers 2/3 only; layer 1 and aux keep the stock pair).
+  const iblActive = (layerIndex === 2 && config.layer2IblIntensity > 0.001)
+    || (layerIndex === 3 && config.layer3IblIntensity > 0.001);
   const [vertexShader, setVertexShader] = useState(PARTICLE_VERTEX_SHADER);
   const appliedVertexCodeRef = useRef<string | null>(null);
   useEffect(() => {
     const code = config.particlePointsVertexGlslEnabled ? config.particlePointsVertexGlslCode : '';
-    if (!code.trim()) {
+    const applyKey = `${iblActive ? 'ibl' : 'stock'}|${code}`;
+    if (!code.trim() && !iblActive) {
       if (appliedVertexCodeRef.current !== null) {
         setVertexShader(PARTICLE_VERTEX_SHADER);
         appliedVertexCodeRef.current = null;
@@ -101,7 +107,13 @@ export const ParticleSystem: React.FC<{
       setParticlePointsVertexGlslStatus({ state: 'inactive' });
       return;
     }
-    if (appliedVertexCodeRef.current === code) return;
+    if (appliedVertexCodeRef.current === applyKey) return;
+    if (!code.trim()) {
+      setVertexShader(buildParticleVertexShader('', true));
+      appliedVertexCodeRef.current = applyKey;
+      setParticlePointsVertexGlslStatus({ state: 'inactive' });
+      return;
+    }
     const validation = validateParticlePointsVertexGlslCode(code);
     if (!validation.ok) {
       setParticlePointsVertexGlslStatus({ state: 'error', message: validation.error ?? 'invalid code' });
@@ -116,10 +128,10 @@ export const ParticleSystem: React.FC<{
       setParticlePointsVertexGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
       return;
     }
-    setVertexShader(buildParticleVertexShader(code));
-    appliedVertexCodeRef.current = code;
+    setVertexShader(buildParticleVertexShader(code, iblActive));
+    appliedVertexCodeRef.current = applyKey;
     setParticlePointsVertexGlslStatus({ state: 'active' });
-  }, [config.particlePointsVertexGlslEnabled, config.particlePointsVertexGlslCode, gl]);
+  }, [config.particlePointsVertexGlslEnabled, config.particlePointsVertexGlslCode, gl, iblActive]);
 
   // Particle points fragment GLSL (Phase CE): the same
   // validate + compile-check + swap flow as the vertex point
@@ -132,7 +144,8 @@ export const ParticleSystem: React.FC<{
   const appliedFragmentCodeRef = useRef<string | null>(null);
   useEffect(() => {
     const code = config.particlePointsFragmentGlslEnabled ? config.particlePointsFragmentGlslCode : '';
-    if (!code.trim()) {
+    const applyKey = `${iblActive ? 'ibl' : 'stock'}|${code}`;
+    if (!code.trim() && !iblActive) {
       if (appliedFragmentCodeRef.current !== null) {
         setFragmentShader(FRAGMENT_SHADER);
         appliedFragmentCodeRef.current = null;
@@ -140,7 +153,13 @@ export const ParticleSystem: React.FC<{
       setParticlePointsFragmentGlslStatus({ state: 'inactive' });
       return;
     }
-    if (appliedFragmentCodeRef.current === code) return;
+    if (appliedFragmentCodeRef.current === applyKey) return;
+    if (!code.trim()) {
+      setFragmentShader(buildParticleFragmentShader('', true));
+      appliedFragmentCodeRef.current = applyKey;
+      setParticlePointsFragmentGlslStatus({ state: 'inactive' });
+      return;
+    }
     const validation = validateParticlePointsFragmentGlslCode(code);
     if (!validation.ok) {
       setParticlePointsFragmentGlslStatus({ state: 'error', message: validation.error ?? 'invalid code' });
@@ -155,10 +174,10 @@ export const ParticleSystem: React.FC<{
       setParticlePointsFragmentGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
       return;
     }
-    setFragmentShader(buildParticleFragmentShader(code));
-    appliedFragmentCodeRef.current = code;
+    setFragmentShader(buildParticleFragmentShader(code, iblActive));
+    appliedFragmentCodeRef.current = applyKey;
     setParticlePointsFragmentGlslStatus({ state: 'active' });
-  }, [config.particlePointsFragmentGlslEnabled, config.particlePointsFragmentGlslCode, gl]);
+  }, [config.particlePointsFragmentGlslEnabled, config.particlePointsFragmentGlslCode, gl, iblActive]);
 
   const maxGhost = 8;
   const ghostMats = useMemo(

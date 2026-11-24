@@ -81,6 +81,7 @@ export class GpgpuAttrFeedbackPass {
         uVelTex: { value: null as THREE.Texture | null },
         uAgeDenom: { value: 1 },
         uRadiusDenom: { value: 1 },
+        uDenTex: { value: null as THREE.Texture | null },
         uTime: { value: 0 },
       },
       vertexShader: ATTR_FEEDBACK_VERT,
@@ -120,6 +121,7 @@ export class GpgpuAttrFeedbackPass {
       this.mat.uniforms.uVelTex.value = extra.velTex ?? null;
       if (typeof extra.ageDenom === 'number') this.mat.uniforms.uAgeDenom.value = extra.ageDenom;
       if (typeof extra.radiusDenom === 'number') this.mat.uniforms.uRadiusDenom.value = extra.radiusDenom;
+      this.mat.uniforms.uDenTex.value = extra.denTex ?? null;
     }
     this.mat.uniforms.uTime.value = time;
     const prev = gl.getRenderTarget();

@@ -142,8 +142,10 @@ export { getHorizonGradientTexture };
 // lives so tests can reach it without a renderer).
 //
 // Step 2 (porting the GEOM IBL triplet to the layer particles' 3D
-// shape modes) is intentionally NOT done here: 第2段は対象を絞って残置.
-// The GEOM shader's own uIblIntensity path is unchanged.
+// shape modes) landed in Phase 22 stage 3: the sphere branch of
+// the layer point fragment, keys layer2IblIntensity /
+// layer3IblIntensity, helpers shared via lib/iblGlsl.ts. The
+// GEOM shader's own uIblIntensity path is unchanged.
 
 export { shouldApplySceneEnvironment } from './materialGrammar';
 

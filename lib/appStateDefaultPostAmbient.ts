@@ -118,6 +118,7 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postShineIntensity: 1.0,
   postShineLength: 0.5,
   postShineThreshold: 0.6,
+  postShineDensity: 0,
   postStarglowEnabled: false,
   postStarglowIntensity: 1.0,
   postStarglowLength: 0.35,

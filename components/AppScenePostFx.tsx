@@ -82,6 +82,7 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   lightFxPass.shineIntensity = config.postShineIntensity;
   lightFxPass.shineLength = config.postShineLength;
   lightFxPass.shineThreshold = config.postShineThreshold;
+  lightFxPass.shineDensity = config.postShineDensity;
   lightFxPass.starglowEnabled = config.postStarglowEnabled;
   lightFxPass.starglowIntensity = config.postStarglowIntensity;
   lightFxPass.starglowLength = config.postStarglowLength;

@@ -50,6 +50,7 @@
 import { Pass } from 'postprocessing';
 import * as THREE from 'three';
 import { SCENE_DEPTH_GLSL, getSceneDepthSource } from '../lib/sceneDepth';
+import { SHINE_DENSITY_GLSL, getParticleDensitySource } from '../lib/particleDensity';
 
 // Matches postprocessing's shared fullscreen vertex shader convention
 // (see feedbackPass.ts): vUv is derived from clip-space position.
@@ -61,7 +62,7 @@ void main() {
 }
 `;
 
-const FRAG = /* glsl */ `
+const FRAG_LEGACY = /* glsl */ `
 uniform sampler2D tDiffuse;
 uniform float uAspect;
 uniform vec2 uLightPos;
@@ -233,6 +234,53 @@ void main() {
 }
 `;
 
+/**
+ * Fragment builder (Phase 22 stage 2): with density OFF the
+ * legacy string is returned VERBATIM (the identity gate). With
+ * density ON, two surgical insertions are made into that same
+ * string — the density uniforms + log chunk after the depth
+ * uniforms, and the transmittance accumulation inside the
+ * Shine ray march (tap count and positions unchanged; the
+ * highlight of each tap is weighted by the transmittance
+ * accumulated up to it, and the beyond-pixel extension keeps
+ * attenuating with the same T). Nothing else in the fragment
+ * moves, so Starglow / Lux stay byte-identical in both forms.
+ */
+const SHINE_LOOP_LEGACY = `    vec3 acc = vec3(0.0);
+    for (int i = 0; i < 16; i++) {
+      float s = (float(i) / 15.0) * maxS;
+      vec2 suv = (lightAc + dir * s) / vec2(uAspect, 1.0);
+      float w = s <= dist ? 1.0 : exp(-(s - dist) / max(reach, 0.001));
+      acc += highlightAt(suv, uShineThreshold) * w;
+    }`;
+
+const SHINE_LOOP_DENSITY = `    vec3 acc = vec3(0.0);
+    float trans = 1.0;
+    float dsTap = maxS / 15.0;
+    for (int i = 0; i < 16; i++) {
+      float s = (float(i) / 15.0) * maxS;
+      vec2 suv = (lightAc + dir * s) / vec2(uAspect, 1.0);
+      float w = s <= dist ? 1.0 : exp(-(s - dist) / max(reach, 0.001));
+      acc += highlightAt(suv, uShineThreshold) * w * trans;
+      if (uDensityReady > 0.5) {
+        float pd = texture2D(uParticleDensity, clamp(suv, 0.001, 0.999)).r;
+        trans *= exp(-uShineDensity * 3.0 * kaloShineDensityLog(pd) * dsTap);
+      }
+    }`;
+
+export function buildLightFxFragment(withDensity: boolean): string {
+  if (!withDensity) return FRAG_LEGACY;
+  const withUniforms = FRAG_LEGACY.replace(
+    'uniform float uCamFar;\n',
+    'uniform float uCamFar;\n'
+      + 'uniform sampler2D uParticleDensity;\n'
+      + 'uniform float uShineDensity;\n'
+      + 'uniform float uDensityReady;\n'
+      + SHINE_DENSITY_GLSL,
+  );
+  return withUniforms.replace(SHINE_LOOP_LEGACY, SHINE_LOOP_DENSITY);
+}
+
 export class LightFxPass extends Pass {
   lightPos = new THREE.Vector2(0.5, 0.5);
 
@@ -243,6 +291,12 @@ export class LightFxPass extends Pass {
   shineLength = 0.5;
 
   shineThreshold = 0.6;
+
+  // Density attenuation (Phase 22 stage 2): 0 (default) keeps
+  // the legacy fragment verbatim and the density store unbound.
+  shineDensity = 0;
+
+  private densityFragActive = false;
 
   starglowEnabled = false;
 
@@ -284,7 +338,7 @@ export class LightFxPass extends Pass {
     super('LightFxPass');
     this.material = new THREE.ShaderMaterial({
       vertexShader: VERT,
-      fragmentShader: FRAG,
+      fragmentShader: buildLightFxFragment(false),
       uniforms: {
         tDiffuse: { value: null },
         uAspect: { value: 1 },
@@ -311,6 +365,9 @@ export class LightFxPass extends Pass {
         uDepthOcclusion: { value: 0 },
         uCamNear: { value: 0.1 },
         uCamFar: { value: 10000 },
+        uParticleDensity: { value: null },
+        uShineDensity: { value: 0 },
+        uDensityReady: { value: 0 },
       },
       depthTest: false,
       depthWrite: false,
@@ -333,6 +390,28 @@ export class LightFxPass extends Pass {
     u.uShineIntensity.value = this.shineIntensity;
     u.uShineLength.value = this.shineLength;
     u.uShineThreshold.value = this.shineThreshold;
+    // Density attenuation (Phase 22 stage 2): swap the fragment
+    // only when the density on/off state flips (the OFF string
+    // is the legacy fragment verbatim), and bind the shared
+    // density field while the strength is positive. With no
+    // capture published yet, uDensityReady stays 0 and the ray
+    // march is the legacy sum (trans stays exactly 1).
+    const wantDensity = this.shineDensity > 0;
+    if (wantDensity !== this.densityFragActive) {
+      this.densityFragActive = wantDensity;
+      this.material.fragmentShader = buildLightFxFragment(wantDensity);
+      this.material.needsUpdate = true;
+    }
+    const densitySource = wantDensity ? getParticleDensitySource() : null;
+    if (densitySource) {
+      u.uParticleDensity.value = densitySource.texture;
+      u.uShineDensity.value = Math.min(1, Math.max(0, this.shineDensity));
+      u.uDensityReady.value = 1;
+    } else {
+      u.uParticleDensity.value = null;
+      u.uShineDensity.value = 0;
+      u.uDensityReady.value = 0;
+    }
     u.uStarEnabled.value = this.starglowEnabled ? 1 : 0;
     u.uStarIntensity.value = this.starglowIntensity;
     u.uStarLength.value = this.starglowLength;

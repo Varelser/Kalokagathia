@@ -10,6 +10,7 @@ import {
   normalizeAttrNames,
   normalizeAttrNames2,
 } from './gpgpuAttributes';
+import { DENSITY_VAR_NAME } from './gpgpuDensity';
 
 /**
  * GLSL code generation for the expression language (Phase BO).
@@ -92,6 +93,8 @@ const RESERVED_NAMES: ReadonlySet<string> = new Set([
   // a slot carrying one of these names can never shadow the
   // sim variable (the bake applies the same rule).
   ...ATTR_SIM_VAR_NAMES,
+  // Density (Phase 22 stage 1): reserved the same way.
+  DENSITY_VAR_NAME,
 ]);
 
 const CHANNELS = ['r', 'g', 'b', 'a'] as const;
@@ -115,8 +118,30 @@ export function simVarToGlsl(name: string): string | null {
   if (name === 'vel') return 'simVelMag';
   if (name === 'age') return 'simAgeN';
   if (name === 'rad') return 'simRadN';
+  if (name === DENSITY_VAR_NAME) return 'simDen';
   return null;
 }
+
+/**
+ * Density support (Phase 22 stage 1), under the same
+ * conditional-emission discipline as the sim variables: the
+ * uDenTex uniform and the sampling line appear only when a
+ * compiled expression reads `den`. The supply texture is
+ * rendered by components/gpgpuAttrDensityPass.ts from the
+ * definition in lib/gpgpuDensity.ts; the bake's CPU twin is
+ * densityNormalised in the same module.
+ */
+export function astUsesDensityVar(node: AstNode): boolean {
+  return astReferencesVariable(node, DENSITY_VAR_NAME);
+}
+
+export const ATTR_DEN_UNIFORM_LINES: readonly string[] = [
+  'uniform sampler2D uDenTex;',
+];
+
+export const ATTR_DEN_MAIN_LINES: readonly string[] = [
+  '  float simDen = texture2D(uDenTex, vUv).r;',
+];
 
 export const ATTR_SIM_UNIFORM_LINES: readonly string[] = [
   'uniform sampler2D uPosTex;',
@@ -364,6 +389,7 @@ export function buildAttrDynFragment(
     ...lowerNames,
     ...[...extSlotByName.keys()],
     ...ATTR_SIM_VAR_NAMES,
+    DENSITY_VAR_NAME,
   ];
 
   // Compile everything first: whether the fragment needs the
@@ -372,6 +398,7 @@ export function buildAttrDynFragment(
   const compiledBySlot: (AstNode | null)[] = [];
   let usesSim = false;
   let usesExt = false;
+  let usesDen = false;
   for (let slot = 0; slot < ATTR_SLOT_COUNT; slot++) {
     const expr = exprs[slot];
     if (expr.trim().length === 0) {
@@ -385,6 +412,7 @@ export function buildAttrDynFragment(
     }
     compiledBySlot.push(compiled.ast);
     if (astUsesSimVar(compiled.ast)) usesSim = true;
+    if (astUsesDensityVar(compiled.ast)) usesDen = true;
     for (const key of extSlotByName.keys()) {
       if (astReferencesVariable(compiled.ast, key)) {
         usesExt = true;
@@ -427,11 +455,13 @@ export function buildAttrDynFragment(
     'uniform sampler2D uSrc;',
     ...(usesExt ? ATTR_EXT_UNIFORM_LINES : []),
     ...(usesSim ? ATTR_SIM_UNIFORM_LINES : []),
+    ...(usesDen ? ATTR_DEN_UNIFORM_LINES : []),
     'uniform float uTime;',
     'void main() {',
     '  vec4 src = texture2D(uSrc, vUv);',
     ...(usesExt ? ATTR_EXT_MAIN_LINES : []),
     ...(usesSim ? ATTR_SIM_MAIN_LINES : []),
+    ...(usesDen ? ATTR_DEN_MAIN_LINES : []),
     '  float v0 = src.r;',
     '  float v1 = src.g;',
     '  float v2 = src.b;',

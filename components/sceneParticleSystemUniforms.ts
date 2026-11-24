@@ -153,6 +153,14 @@ export function createParticleUniforms(config: ParticleConfig, isAux: boolean) {
     // shader then never samples the LUT and the colour is the
     // legacy single layer colour exactly.
     uLayerGradEnabled: { value: 0 },
+    // IBL (Phase 22 stage 3): consumed only by the IBL shader
+    // variant of layers 2/3 (sphere branch). The uniforms exist
+    // in the shared dict always (three ignores undeclared ones);
+    // the variant itself is only built while the layer's
+    // intensity key is positive.
+    uIblMap: { value: null as THREE.Texture | null },
+    uIblIntensity: { value: 0 },
+    uIblYaw: { value: 0 },
     uLayerGradLut: { value: createGradientLutTexture(
       getKinetixGradientPreset('sumie')?.start ?? '#0f172a',
       getKinetixGradientPreset('sumie')?.mid ?? '#334155',

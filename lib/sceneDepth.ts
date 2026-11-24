@@ -1,10 +1,10 @@
 // Scene depth foundation (Phase 16 stage 1, candidate A — the
-// minimal / safe depth base; shadow maps (candidate B) and the
-// Shine density texture (candidate C) are NOT built here and stay
-// recorded as a precision wall: the main draws are custom
-// ShaderMaterials, so three's standard shadows would not fall on
-// them automatically, and Shine's texture-isation sits behind
-// this depth base).
+// minimal / safe depth base). Candidates B and C were precision
+// walls when this file was written; both landed in Phase 22 —
+// shadow maps (candidate B) in lib/lightShadowMap.ts (stage 4,
+// terrain receiving first) and the Shine density texture
+// (candidate C) in lib/particleDensity.ts (stage 2). This file
+// remains the CAMERA-viewpoint depth base only.
 //
 // What lives here:
 //  1. Pure depth math (TS) + its GLSL twin: reconstructing a

@@ -9,6 +9,11 @@ import {
   tunnelScrollOffset,
 } from '../lib/terrainMesh';
 import { buildShadowScene, occlusionAtPoint } from '../lib/shadowOcclusion';
+import {
+  getLightShadowSource,
+  injectTerrainShadowFragment,
+  injectTerrainShadowVertex,
+} from '../lib/lightShadowMap';
 import { STANDARD_FIXED_PBR } from '../lib/materialGrammar';
 import { useDebouncedValue, TERRAIN_EROSION_DEBOUNCE_MS } from '../lib/useDebouncedValue';
 
@@ -110,6 +115,40 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
   // the shadow off no colour attribute exists and the materials
   // render exactly as before.
   const shadowActive = config.gpgpuShadowEnabled && config.gpgpuShadowStrength > 0 && !tunnel;
+
+  // True shadow map (Phase 22 stage 4, wiring stage 1): this
+  // mesh is the stage-1 receiver. While gpgpuShadowMapStrength
+  // is positive the shaded material carries the injected
+  // shadow chunk (onBeforeCompile, keyed remount); at 0 the
+  // material is the stock program untouched. Note the Phase Z
+  // vertex colours above multiply the diffuse colour while the
+  // shadow map multiplies the outgoing light, so with both on
+  // the two compose multiplicatively on this receiver (the
+  // 1-(1-a)(1-b) union form applies to shader-factor
+  // receivers — the stage-2 GPGPU points).
+  const shadowMapActive = config.gpgpuShadowMapStrength > 0;
+  const smapUniforms = React.useMemo(() => ({
+    uShadowMapTex: { value: null as THREE.Texture | null },
+    uLightViewProj: { value: new THREE.Matrix4() },
+    uShadowMapBias: { value: 0.001 },
+    uShadowMapSoftness: { value: 1 },
+    uShadowMapReady: { value: 0 },
+    uShadowMapStrength: { value: 0 },
+  }), []);
+  useFrame(() => {
+    if (!shadowMapActive) return;
+    const src = getLightShadowSource();
+    if (src) {
+      smapUniforms.uShadowMapTex.value = src.texture;
+      smapUniforms.uLightViewProj.value.copy(src.viewProj);
+      smapUniforms.uShadowMapBias.value = config.gpgpuShadowMapBias;
+      smapUniforms.uShadowMapSoftness.value = config.gpgpuShadowMapSoftness;
+      smapUniforms.uShadowMapStrength.value = Math.min(1, Math.max(0, config.gpgpuShadowMapStrength));
+      smapUniforms.uShadowMapReady.value = 1;
+    } else {
+      smapUniforms.uShadowMapReady.value = 0;
+    }
+  });
 
   const worldScale = morphScale * bounceRadius * 0.48 * meshScale;
   const geometry = React.useMemo(() => {
@@ -247,7 +286,19 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
             // lands — the remount on presence flip is what makes
             // the image texture visible at all (found in the
             // Phase V gate; the no-map form is byte-identical).
-            key={`${map ? 'with-map' : 'no-map'}-${shadowActive ? 'shadow' : 'plain'}`}
+            // The '-smap' suffix likewise remounts the material
+            // when the shadow map toggles, so the injected
+            // program never lingers after the key returns to 0.
+            key={`${map ? 'with-map' : 'no-map'}-${shadowActive ? 'shadow' : 'plain'}${shadowMapActive ? '-smap' : ''}`}
+            ref={(mat: THREE.MeshStandardMaterial | null) => {
+              if (!mat || !shadowMapActive) return;
+              mat.onBeforeCompile = (shader) => {
+                Object.assign(shader.uniforms, smapUniforms);
+                shader.vertexShader = injectTerrainShadowVertex(shader.vertexShader);
+                shader.fragmentShader = injectTerrainShadowFragment(shader.fragmentShader);
+              };
+              mat.customProgramCacheKey = () => 'terrain-smap-v1';
+            }}
             color={color}
             vertexColors={shadowActive}
             roughness={STANDARD_FIXED_PBR.terrain.roughness}

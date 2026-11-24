@@ -249,6 +249,19 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
               {config.gpgpuFogSelfShadow > 0 && (
                 <Slider label="Fog Shadow Steps (1-16)" value={config.gpgpuFogShadowSteps} min={1} max={16} step={1} onChange={(v) => updateConfig('gpgpuFogShadowSteps', Math.round(v))} />
               )}
+              <div className="mt-3 border-t border-white/10 pt-3">
+                <div className="mb-2 text-[10px] uppercase tracking-widest font-medium opacity-70">Shadow Map (シャドウマップ)</div>
+                <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                  3D ライトの視点から実深度を描き直す本方式です（上の遮蔽マップ近似とは別物）。第1段では地形メッシュだけが影を受け、粒子は影を落としません。
+                </div>
+                <Slider label="Shadow Map Strength" value={config.gpgpuShadowMapStrength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuShadowMapStrength', v)} />
+                {config.gpgpuShadowMapStrength > 0 && (
+                  <>
+                    <Slider label="Shadow Map Bias" value={config.gpgpuShadowMapBias} min={0} max={0.01} step={0.0001} onChange={(v) => updateConfig('gpgpuShadowMapBias', v)} />
+                    <Slider label="Shadow Map Softness (texels)" value={config.gpgpuShadowMapSoftness} min={0} max={4} step={0.25} onChange={(v) => updateConfig('gpgpuShadowMapSoftness', v)} />
+                  </>
+                )}
+              </div>
             </div>
           </div>
           <Toggle

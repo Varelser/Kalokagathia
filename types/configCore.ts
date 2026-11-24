@@ -339,6 +339,7 @@ export interface ParticleConfigCore {
   postShineIntensity: number;
   postShineLength: number;
   postShineThreshold: number;
+  postShineDensity: number;
   postStarglowEnabled: boolean;
   postStarglowIntensity: number;
   postStarglowLength: number;

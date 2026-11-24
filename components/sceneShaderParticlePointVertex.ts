@@ -337,11 +337,32 @@ export const PARTICLE_VERTEX_SHADER = `
 // the offset to both keeps the trail/streak delta measuring the
 // particle's own motion (Phase CD decision). An empty snippet
 // yields the stock shader unchanged.
-export function buildParticleVertexShader(customCode: string): string {
+export function buildParticleVertexShader(customCode: string, ibl = false): string {
+  const base = ibl ? buildParticleVertexIblVariant() : PARTICLE_VERTEX_SHADER;
   const snippet = customCode.trim();
-  if (!snippet) return PARTICLE_VERTEX_SHADER;
-  return PARTICLE_VERTEX_SHADER.replace(
+  if (!snippet) return base;
+  return base.replace(
     '    // __CUSTOM_PARTICLE_VERTEX__',
     `    { // particle points vertex (user GLSL)\n    vec3 disp = vec3(0.0);\n${snippet}\n    pos += disp;\n    prevPos += disp;\n    }`,
   );
+}
+
+/**
+ * IBL variant (Phase 22 stage 3): adds the vWorldPosIbl
+ * varying the fragment variant consumes — the particle-centre
+ * world position, written once the final `pos` is determined
+ * (after the custom-GLSL seam, so user displacement is
+ * included). At IBL intensity 0 the stock string is used
+ * verbatim.
+ */
+export function buildParticleVertexIblVariant(): string {
+  return PARTICLE_VERTEX_SHADER
+    .replace(
+      'varying float vAlpha; varying vec2 vUv; varying float vLife; varying float vVelocity; varying float vSpriteMode; varying float vVariant; varying float vBurst;',
+      'varying float vAlpha; varying vec2 vUv; varying float vLife; varying float vVelocity; varying float vSpriteMode; varying float vVariant; varying float vBurst; varying vec3 vWorldPosIbl;',
+    )
+    .replace(
+      '    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);',
+      '    vWorldPosIbl = (modelMatrix * vec4(pos, 1.0)).xyz;\n    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);',
+    );
 }

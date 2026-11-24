@@ -7,6 +7,7 @@ import {
   EXPRESSION_MAX_LENGTH,
   type ExpressionCompileResult,
 } from './expression';
+import { densityNormalised, DENSITY_VAR_NAME } from './gpgpuDensity';
 
 /**
  * Named point attributes (Phase AK).
@@ -87,8 +88,11 @@ export const DEFAULT_ATTR_NAMES2: readonly string[] = ['i', 'j', 'k', 'l'];
  * initial velocities, age / rad from the seeded positions —
  * which is the frame-0 value of the GPU definition, so one
  * expression keeps one meaning across the bake and the passes.
- * Density is deliberately NOT among them (a second step: its
- * supply texture belongs to another subsystem).
+ * Density is NOT among them: it has its own reserved name
+ * (`den`, Phase 22 stage 1 — see lib/gpgpuDensity.ts) because
+ * its supply belongs to another subsystem (a dedicated
+ * density texture on the GPU side, the densityNormalised
+ * twin here at bake time).
  */
 export const ATTR_SIM_VAR_NAMES: readonly string[] = ['vel', 'age', 'rad'];
 
@@ -217,6 +221,7 @@ const ATTR_EXPR_RESERVED_NAMES: ReadonlySet<string> = new Set([
   'fract', 'mod', 'min', 'max', 'clamp', 'lerp', 'smoothstep',
   'p',
   ...ATTR_SIM_VAR_NAMES,
+  DENSITY_VAR_NAME,
 ]);
 
 /**
@@ -240,7 +245,7 @@ export function resolveAttrNameSlot(
 }
 
 function compileAttrExprForScan(expr: string, lowerNames8: string[]): ExpressionCompileResult {
-  return compileExpression(expr, [...lowerNames8, ...ATTR_SIM_VAR_NAMES, 'p']);
+  return compileExpression(expr, [...lowerNames8, ...ATTR_SIM_VAR_NAMES, DENSITY_VAR_NAME, 'p']);
 }
 
 /** Do any of these expressions read an ext slot (4..7) by name? */
@@ -270,6 +275,27 @@ export function attrExprsReferenceExtSlot(
     for (const candidate of candidates) {
       if (astReferencesVariable(compiled.ast, candidate)) return true;
     }
+  }
+  return false;
+}
+
+/** Do any of these expressions read the density variable den?
+ *  (Phase 22 stage 1 — mirrors attrExprsReferenceSimVar.) */
+export function attrExprsReferenceDensity(
+  exprsInput: readonly string[] | unknown,
+  names: readonly string[],
+  names2: readonly string[] = [],
+): boolean {
+  const exprs = normalizeAttrExprs(exprsInput);
+  const lowerNames8 = [
+    ...normalizeAttrNames(names).map((n) => n.toLowerCase()),
+    ...normalizeAttrNames2(names2).map((n) => n.toLowerCase()),
+  ];
+  for (const expr of exprs) {
+    if (expr.trim().length === 0) continue;
+    const compiled = compileAttrExprForScan(expr, lowerNames8);
+    if (!compiled.ok) continue;
+    if (astReferencesVariable(compiled.ast, DENSITY_VAR_NAME)) return true;
   }
   return false;
 }
@@ -414,6 +440,14 @@ export interface BuildAttributeDataArgs {
   velData?: Float32Array | null;
   ageMax: number;
   bounceRadius: number;
+  /**
+   * Density scale for the `den` expression variable
+   * (Phase 22 stage 1): the SPH interaction radius and rest
+   * density from config. Absent = the config defaults
+   * (40 / 2.0). Only consulted when an expression reads den.
+   */
+  sphRadius?: number;
+  sphRestDensity?: number;
   /** Particle Life species count (for the 'species' source). */
   speciesCount: number;
   /** Morph bake cloud (xyz + alpha) or null (for 'target'). */
@@ -475,8 +509,13 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
   // (the initial state — see ATTR_SIM_VAR_NAMES). Expressions
   // that never mention them evaluate exactly as before.
   const compiledExprs: (ExpressionCompileResult | null)[] = hasExprs
-    ? exprs.map((expr) => (expr.trim().length > 0 ? compileExpression(expr, [...lowerNames, ...ATTR_SIM_VAR_NAMES]) : null))
+    ? exprs.map((expr) => (expr.trim().length > 0 ? compileExpression(expr, [...lowerNames, ...ATTR_SIM_VAR_NAMES, DENSITY_VAR_NAME]) : null))
     : [];
+  // Density (Phase 22 stage 1): computed per particle only
+  // when some compiled expression actually reads den.
+  const usesDen = compiledExprs.some(
+    (c) => c !== null && c.ok && astReferencesVariable(c.ast, DENSITY_VAR_NAME),
+  );
   const velData = args.velData ?? null;
   for (let i = 0; i < count; i++) {
     const px = posData[i * 4] ?? 0;
@@ -522,6 +561,11 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
       }
       values[slot] = value;
     }
+    // Density for this particle (Phase 22 stage 1): computed
+    // once, only when an expression reads den.
+    const denValue = usesDen
+      ? densityNormalised(posData, texSize, i, args.sphRadius ?? 40, args.sphRestDensity ?? 2.0)
+      : 0;
     if (hasExprs) {
       // Slots are processed in order 0 → 3. The environment for
       // slot k is: x = slot k's own source value, t = 0, and
@@ -555,6 +599,7 @@ export function buildAttributeData(args: BuildAttributeDataArgs): Float32Array {
         vars.vel = sim.vel;
         vars.age = sim.age;
         vars.rad = sim.rad;
+        if (usesDen) vars.den = denValue;
         const result = evaluateCompiledExpressionWithVars(compiled.ast, vars);
         values[slot] = Number.isFinite(result) ? clamp01(result) : sourceValue;
       }
@@ -572,6 +617,9 @@ export interface BuildAttributeDataExtArgs {
   velData?: Float32Array | null;
   ageMax: number;
   bounceRadius: number;
+  /** Density scale for `den` (see BuildAttributeDataArgs). */
+  sphRadius?: number;
+  sphRestDensity?: number;
   speciesCount: number;
   morphData?: Float32Array | null;
   morphWorldScale?: number;
@@ -618,8 +666,11 @@ export function buildAttributeDataExt(args: BuildAttributeDataExtArgs): Float32A
     ? [...names.map((n) => n.toLowerCase()), ...names2.map((n) => n.toLowerCase())]
     : [];
   const compiledExprs: (ExpressionCompileResult | null)[] = hasExprs
-    ? exprs2.map((expr) => (expr.trim().length > 0 ? compileExpression(expr, [...lowerNames8, ...ATTR_SIM_VAR_NAMES]) : null))
+    ? exprs2.map((expr) => (expr.trim().length > 0 ? compileExpression(expr, [...lowerNames8, ...ATTR_SIM_VAR_NAMES, DENSITY_VAR_NAME]) : null))
     : [];
+  const usesDenExt = compiledExprs.some(
+    (c) => c !== null && c.ok && astReferencesVariable(c.ast, DENSITY_VAR_NAME),
+  );
   for (let i = 0; i < count; i++) {
     const px = posData[i * 4] ?? 0;
     const py = posData[i * 4 + 1] ?? 0;
@@ -690,6 +741,12 @@ export function buildAttributeDataExt(args: BuildAttributeDataExtArgs): Float32A
         vars.vel = sim.vel;
         vars.age = sim.age;
         vars.rad = sim.rad;
+        if (usesDenExt) {
+          vars.den = densityNormalised(
+            posData, texSize, i,
+            args.sphRadius ?? 40, args.sphRestDensity ?? 2.0,
+          );
+        }
         const result = evaluateCompiledExpressionWithVars(compiled.ast, vars);
         values[slot] = Number.isFinite(result) ? clamp01(result) : sourceValue;
       }

@@ -306,6 +306,7 @@ export const SharedLayerTabParticleSections: React.FC<SharedLayerParticleSection
           <Slider label="Specular" value={read('SdfSpecular')} min={0} max={3} step={0.05} onChange={(v) => write('SdfSpecular', v)} />
           <Slider label="Shininess" value={read('SdfShininess')} min={1} max={64} step={1} onChange={(v) => write('SdfShininess', v)} />
           <Slider label="Ambient" value={read('SdfAmbient')} min={0} max={1} step={0.01} onChange={(v) => write('SdfAmbient', v)} />
+          <Slider label="IBL Intensity" value={read('IblIntensity')} min={0} max={2} step={0.01} onChange={(v) => write('IblIntensity', v)} />
           <Slider label="Light X" value={read('SdfLightX')} min={-1} max={1} step={0.01} onChange={(v) => write('SdfLightX', v)} />
           <Slider label="Light Y" value={read('SdfLightY')} min={-1} max={1} step={0.01} onChange={(v) => write('SdfLightY', v)} />
         </>

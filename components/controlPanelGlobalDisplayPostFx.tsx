@@ -323,6 +323,7 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             <Slider label="Shine Intensity" value={config.postShineIntensity} min={0} max={3} step={0.05} onChange={(v) => updateConfig('postShineIntensity', v)} />
             <Slider label="Shine Length" value={config.postShineLength} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postShineLength', v)} />
             <Slider label="Shine Threshold" value={config.postShineThreshold} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postShineThreshold', v)} />
+            <Slider label="Shine Density Attenuation" value={config.postShineDensity} min={0} max={1} step={0.01} onChange={(v) => updateConfig('postShineDensity', v)} />
           </>
         )}
         <Toggle

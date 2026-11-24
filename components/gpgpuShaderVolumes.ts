@@ -2,6 +2,7 @@ import {
   validateGeomCustomFragmentGlslCode,
   validateGeomCustomVertexGlslCode,
 } from "../lib/geomCustomGlsl";
+import { IBL_GLSL_HELPERS } from "../lib/iblGlsl";
 
 // ── Volumetric sphere sprite vertex ──
 export const VOLUMETRIC_VERT = /* glsl */ `
@@ -330,18 +331,7 @@ const GEOM_FRAG_HEAD = /* glsl */ `
 `;
 const GEOM_FRAG_CRACK_VARYING = /* glsl */ `  varying float vCrack;
 `;
-const GEOM_FRAG_MID = /* glsl */ `
-  vec3 kaloIblRotYaw(vec3 d, float yaw) {
-    float c = cos(yaw);
-    float s = sin(yaw);
-    return vec3(c * d.x + s * d.z, d.y, -s * d.x + c * d.z);
-  }
-  vec2 kaloEquirectUv(vec3 dir) {
-    float v = asin(clamp(dir.y, -1.0, 1.0)) * 0.31830988618 + 0.5;
-    float u = atan(dir.z, dir.x) * 0.15915494309 + 0.5;
-    return vec2(u, v);
-  }
-
+const GEOM_FRAG_MID = IBL_GLSL_HELPERS + /* glsl */ `
   void main() {
     vec3 N = normalize(vNormal);
     vec3 L = normalize(vec3(0.5, 1.0, 0.8));
