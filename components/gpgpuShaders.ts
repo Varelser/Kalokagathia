@@ -40,8 +40,10 @@ export {
   VOLUMETRIC_FRAG,
   GEOM_VERT,
   GEOM_VERT_PHASE19,
+  GEOM_VERT_PHASE24,
   GEOM_FRAG,
   GEOM_FRAG_PHASE19,
+  GEOM_FRAG_PHASE24,
   buildGeomVert,
   buildGeomFrag,
 } from "./gpgpuShaderVolumes";

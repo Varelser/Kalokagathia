@@ -451,6 +451,13 @@ const VEL_FRAG_PREAMBLE_STEERING = /* glsl */ `  // Crowd steering (Phase 20 sta
   uniform float uSteerSeekPathLookAhead;
   uniform float uSteerSeekPathRadius;
 `;
+const VEL_FRAG_PREAMBLE_AKINCI = /* glsl */ `  // Surface tension, Akinci form (Phase 24): the strength of
+  // the two-term model accumulated inside the SPH sample loop
+  // (sphAkinci variant of the SPH/Grains chunk). Spliced in
+  // only behind this option, in the Phase 19 manner — the
+  // stock preamble carries no trace of it.
+  uniform float uSphSurfaceTensionAkinci;
+`;
 const VEL_FRAG_PREAMBLE_TAIL = /* glsl */ `  varying vec2 vUv;
 
 `;
@@ -470,6 +477,9 @@ export interface VelocityPreambleVariantOptions {
   // only behind this option, in the Phase 19 manner — the
   // default preamble stays byte-identical to v2.00.
   steeringSeek?: boolean;
+  // Phase 24: the Akinci surface-tension uniform. Same
+  // discipline — the default preamble stays byte-identical.
+  sphAkinci?: boolean;
 }
 
 export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions): string {
@@ -478,9 +488,11 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
     + VEL_FRAG_PREAMBLE_MID
     + (options?.flip3dCouple ? VEL_FRAG_PREAMBLE_FLIP3D : '')
     + (options?.steeringSeek ? VEL_FRAG_PREAMBLE_STEERING : '')
+    + (options?.sphAkinci ? VEL_FRAG_PREAMBLE_AKINCI : '')
     + VEL_FRAG_PREAMBLE_TAIL;
 }
 
 export const VEL_FRAG_PREAMBLE = buildVelocityPreamble();
 export const VEL_FRAG_PREAMBLE_PHASE19 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true });
 export const VEL_FRAG_PREAMBLE_PHASE20 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true });
+export const VEL_FRAG_PREAMBLE_PHASE24 = buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true });

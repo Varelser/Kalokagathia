@@ -605,3 +605,161 @@ export function sphSurfaceTensionForce(
   }
   return out;
 }
+
+// ── SPH surface tension, Akinci form (Phase 24, design §9-1 E) ──
+
+/**
+ * Cohesion kernel of Akinci et al. 2013, in the normalised
+ * coordinate q = distance / radius: (1-q)^3 q^3 on (0.5, 1],
+ * 2(1-q)^3 q^3 - 1/64 on [0, 0.5], 0 outside. The sign is the
+ * point: negative (repulsive, and small) at very short range,
+ * positive (attractive) through the mid range with its peak
+ * 1/64 at q = 0.5, and exactly 0 at q = 1 — a droplet is pulled
+ * together without a hard core that discrete integration can
+ * pump energy into.
+ */
+export function sphAkinciCohesionKernel(q: number): number {
+  if (!(q >= 0) || q >= 1) return 0;
+  const omq = 1 - q;
+  const base = omq * omq * omq * q * q * q;
+  return q <= 0.5 ? 2.0 * base - 0.015625 : base;
+}
+
+/**
+ * Scale on the Akinci kernel inside the force sum. The kernel
+ * peaks at 1/64, so x32 puts one sample's largest pull at 0.5 —
+ * the same order as one legacy cohesion sample ((offset / h) * w
+ * is at most 1). Chosen against the legacy sum's magnitude, NOT
+ * against the pressure gain: the Phase AB lesson is that gains
+ * in this family stay gentle and separated (the shader applies
+ * the finished sum at strength * dt * 1.0, like the AB term).
+ */
+export const SPH_AKINCI_COHESION_SCALE = 32.0;
+
+/**
+ * Gain on the curvature term. At the default radius (h = 40)
+ * the term's surface value (-lap x gate^2, see below) is ~0.05,
+ * so x8 lands it at ~0.4 — a gentle bias under the cohesion
+ * sum, never near the x15 pressure gain. History: the first
+ * Phase 24 real-GPU gate round ran gain 25 with an unweighted
+ * Laplacian and a linear gate, and the live sim heated
+ * intermittently (one run contracted 19%, the next expanded
+ * 15% past the no-tension control): a sample crossing the
+ * kernel boundary kicked the constant-per-sample Laplacian,
+ * and the sampled neighbourhood changes discontinuously. The
+ * shipped form mollifies the Laplacian with the colour kernel
+ * itself (samples fade at the boundary instead of kicking),
+ * squares the gate, and cuts the gain to 8.
+ */
+export const SPH_AKINCI_CURVATURE_GAIN = 8.0;
+
+/**
+ * Hard cap on the length of the finished Akinci sum (cohesion
+ * + curvature) before the strength is applied. Added in Phase
+ * 24 gate round 3: at strength 3.0 one run in two still blew
+ * up in the late window (+39% spread past the control) while
+ * strength 1.5 was stable across three runs — the tail of the
+ * sum (a dense clump whose samples align) is what explicit
+ * integration pumps, so the sum is clamped to 3.0, well above
+ * its typical operating magnitude (~1) and far under the
+ * theoretical per-sample bound. A bounded force cannot pump
+ * energy without limit in one step; this is the same
+ * discipline as the separated gains, applied to the tail.
+ */
+export const SPH_AKINCI_FORCE_CAP = 3.0;
+
+/**
+ * Akinci two-term surface tension sum for one particle — the
+ * TS twin of the GLSL accumulation in the SPH sample loop
+ * (components/gpgpuShaderSimulationVelocityMainSphGrains.ts,
+ * sphAkinci variant). Same discrete form, same accumulation
+ * order (per neighbour: cohesion, colour gradient, Laplacian),
+ * so the two can be held bit-comparable. The shader applies
+ * the returned sum at strength * dt * 1.0, additively with the
+ * legacy cohesion sum; `strength` here only gates the zero
+ * case, exactly like sphSurfaceTensionForce's tension.
+ *
+ * Term 1 — cohesion: unit vector toward each neighbour times
+ * the Akinci kernel (see sphAkinciCohesionKernel), x32.
+ *
+ * Term 2 — curvature: the colour field of the shared kernel
+ * w = max(0, 1-q^2) has gradient gradC = sum of -2r / h^2 over
+ * the samples (r = self - neighbour); its exact Laplacian is
+ * the constant -6/h^2 per sample, accumulated here MOLLIFIED
+ * by w itself (lapC = sum of -6w / h^2) so a sample fades as
+ * it crosses the kernel boundary instead of kicking the sum
+ * — the first Phase 24 gate round showed the unweighted form
+ * heating the live sim intermittently. gradC is the surface
+ * normal: it points toward the bulk and cancels for an
+ * interior particle. The mean curvature estimate is the CSF
+ * identity kappa = -lapC / |gradC| (divergence of the
+ * normalised gradient, Hessian term dropped), and the force
+ * is kappa x |gradC| x gate^2 along the inward normal — i.e.
+ * -lapC along the normal, gated by |gradC| itself (the CSF
+ * interface delta, in units of the radius: gate =
+ * clamp(|gradC| * h * 0.25, 0, 1), applied squared so the
+ * noisy mid-gate region contributes least). Inside the
+ * droplet |gradC| ~ 0, so the term vanishes there; the
+ * product is bounded by 6 * samples / h^2 x gain regardless
+ * of how small |gradC| gets, so the term cannot spike.
+ */
+export function sphSurfaceTensionAkinciForce(
+  selfPos: Vec3Like,
+  neighbours: ReadonlyArray<{ pos: Vec3Like }>,
+  radius: number,
+  strength: number,
+): Vec3Like {
+  const out = { x: 0, y: 0, z: 0 };
+  if (clampSphSurfaceTension(strength) <= 0) return out;
+  const h = Math.max(0.001, radius);
+  const h2 = h * h;
+  let cohX = 0;
+  let cohY = 0;
+  let cohZ = 0;
+  let gradX = 0;
+  let gradY = 0;
+  let gradZ = 0;
+  let lap = 0;
+  for (const other of neighbours) {
+    const dx = other.pos.x - selfPos.x;
+    const dy = other.pos.y - selfPos.y;
+    const dz = other.pos.z - selfPos.z;
+    const r2 = dx * dx + dy * dy + dz * dz;
+    if (r2 >= h2 || r2 <= 0.001) continue;
+    const rl = Math.sqrt(r2);
+    const q = rl / h;
+    const kA = sphAkinciCohesionKernel(q) * SPH_AKINCI_COHESION_SCALE;
+    cohX += (dx / rl) * kA;
+    cohY += (dy / rl) * kA;
+    cohZ += (dz / rl) * kA;
+    // r = self - neighbour = -(d), accumulated in the same
+    // expression shape as the shader's (-2.0 * r) / h2.
+    gradX += (-2.0 * -dx) / h2;
+    gradY += (-2.0 * -dy) / h2;
+    gradZ += (-2.0 * -dz) / h2;
+    lap += (-6.0 / h2) * Math.max(0, 1 - q * q);
+  }
+  const gradLen = Math.sqrt(gradX * gradX + gradY * gradY + gradZ * gradZ);
+  let curvX = 0;
+  let curvY = 0;
+  let curvZ = 0;
+  if (gradLen > 0.000001) {
+    const kappa = -lap / gradLen;
+    const gate = Math.min(1, Math.max(0, gradLen * h * 0.25));
+    const scale = kappa * gradLen * gate * gate * SPH_AKINCI_CURVATURE_GAIN;
+    curvX = (gradX / gradLen) * scale;
+    curvY = (gradY / gradLen) * scale;
+    curvZ = (gradZ / gradLen) * scale;
+  }
+  out.x = cohX + curvX;
+  out.y = cohY + curvY;
+  out.z = cohZ + curvZ;
+  const sumLen = Math.sqrt(out.x * out.x + out.y * out.y + out.z * out.z);
+  if (sumLen > SPH_AKINCI_FORCE_CAP) {
+    const s = SPH_AKINCI_FORCE_CAP / sumLen;
+    out.x *= s;
+    out.y *= s;
+    out.z *= s;
+  }
+  return out;
+}

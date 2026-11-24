@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import type { ParticleConfig } from "../types";
 import { VOLUMETRIC_FRAG, VOLUMETRIC_VERT, buildGeomFrag, buildGeomVert } from "./gpgpuShaders";
-import { vellumCrackVariantOn } from "./useGpgpuDrawAssets";
+import { shadowMapVariantOn, vellumCrackVariantOn } from "./useGpgpuDrawAssets";
 import { buildObjGeomBaseData } from "../lib/objMesh";
 import { compileCheckShader } from "../lib/glslInjection";
 import {
@@ -74,22 +74,24 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
   // status store (the shared injection fallback rule). Disabled /
   // empty keeps the stock strings, byte-identical.
   const gl = useThree((state) => state.gl);
-  // Phase 19 gate fix: the GEOM string variant (Vellum crack)
-  // rides the same swap path as the custom GLSL — the applied
-  // ref tracks code + variant, the initial state already carries
-  // the initial config's variant, and an empty snippet resolves
-  // to the variant base string (default = v2.00 GEOM_VERT).
-  const [geomVertShader, setGeomVertShader] = useState(() => buildGeomVert('', { vellumCrack: vellumCrackVariantOn(config) }));
-  const [geomFragShader, setGeomFragShader] = useState(() => buildGeomFrag('', { vellumCrack: vellumCrackVariantOn(config) }));
+  // Phase 19 gate fix: the GEOM string variants (Vellum crack,
+  // and Phase 24's shadow-map receiving) ride the same swap
+  // path as the custom GLSL — the applied ref tracks code +
+  // variants, the initial state already carries the initial
+  // config's variants, and an empty snippet resolves to the
+  // variant base string (default = v2.00 GEOM_VERT).
+  const [geomVertShader, setGeomVertShader] = useState(() => buildGeomVert('', { vellumCrack: vellumCrackVariantOn(config), shadowMap: shadowMapVariantOn(config) }));
+  const [geomFragShader, setGeomFragShader] = useState(() => buildGeomFrag('', { vellumCrack: vellumCrackVariantOn(config), shadowMap: shadowMapVariantOn(config) }));
   const appliedGeomVertCodeRef = useRef<string | null>(null);
   const appliedGeomFragCodeRef = useRef<string | null>(null);
   useEffect(() => {
     const code = config.gpgpuGeomCustomVertexEnabled ? config.gpgpuGeomCustomVertexCode : '';
     const crack = vellumCrackVariantOn(config);
-    const appliedKey = `${code}\n${crack ? 1 : 0}`;
+    const smap = shadowMapVariantOn(config);
+    const appliedKey = `${code}\n${crack ? 1 : 0}\n${smap ? 1 : 0}`;
     if (!code.trim()) {
       if (appliedGeomVertCodeRef.current !== appliedKey) {
-        setGeomVertShader(buildGeomVert('', { vellumCrack: crack }));
+        setGeomVertShader(buildGeomVert('', { vellumCrack: crack, shadowMap: smap }));
         appliedGeomVertCodeRef.current = appliedKey;
       }
       setGeomCustomVertexGlslStatus({ state: 'inactive' });
@@ -110,17 +112,18 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       setGeomCustomVertexGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
       return;
     }
-    setGeomVertShader(buildGeomVert(code, { vellumCrack: crack }));
+    setGeomVertShader(buildGeomVert(code, { vellumCrack: crack, shadowMap: smap }));
     appliedGeomVertCodeRef.current = appliedKey;
     setGeomCustomVertexGlslStatus({ state: 'active' });
-  }, [config.gpgpuGeomCustomVertexEnabled, config.gpgpuGeomCustomVertexCode, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, gl]);
+  }, [config.gpgpuGeomCustomVertexEnabled, config.gpgpuGeomCustomVertexCode, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuShadowMapStrength, gl]);
   useEffect(() => {
     const code = config.gpgpuGeomCustomFragmentEnabled ? config.gpgpuGeomCustomFragmentCode : '';
     const crack = vellumCrackVariantOn(config);
-    const appliedKey = `${code}\n${crack ? 1 : 0}`;
+    const smap = shadowMapVariantOn(config);
+    const appliedKey = `${code}\n${crack ? 1 : 0}\n${smap ? 1 : 0}`;
     if (!code.trim()) {
       if (appliedGeomFragCodeRef.current !== appliedKey) {
-        setGeomFragShader(buildGeomFrag('', { vellumCrack: crack }));
+        setGeomFragShader(buildGeomFrag('', { vellumCrack: crack, shadowMap: smap }));
         appliedGeomFragCodeRef.current = appliedKey;
       }
       setGeomCustomFragmentGlslStatus({ state: 'inactive' });
@@ -141,10 +144,10 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       setGeomCustomFragmentGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
       return;
     }
-    setGeomFragShader(buildGeomFrag(code, { vellumCrack: crack }));
+    setGeomFragShader(buildGeomFrag(code, { vellumCrack: crack, shadowMap: smap }));
     appliedGeomFragCodeRef.current = appliedKey;
     setGeomCustomFragmentGlslStatus({ state: 'active' });
-  }, [config.gpgpuGeomCustomFragmentEnabled, config.gpgpuGeomCustomFragmentCode, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, gl]);
+  }, [config.gpgpuGeomCustomFragmentEnabled, config.gpgpuGeomCustomFragmentCode, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuShadowMapStrength, gl]);
 
   const instGeo = useMemo(() => {
     if (config.gpgpuGeomMode === 'point') return null;
@@ -200,6 +203,21 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       uVellumStateTex:     { value: null },
       uVellumMode:         { value: 0 },
       uTexSizeF:           { value: texSize },
+      // True shadow map (Phase 24, wiring stage 3): same names
+      // and inert defaults as the points draw (Phase 23 stage
+      // 2) — texture null, ready 0, bias 0.001 / softness 1
+      // mirroring the key defaults. These uniforms exist on
+      // the material from creation so the per-frame sync never
+      // has to add them; the shader variant that declares
+      // them is only assembled while gpgpuShadowMapStrength
+      // > 0 (the string swap above rebuilds this material,
+      // and the sync re-supplies every value after a rebuild).
+      uShadowMapTex:      { value: null },
+      uLightViewProj:     { value: new THREE.Matrix4() },
+      uShadowMapBias:     { value: 0.001 },
+      uShadowMapSoftness: { value: 1 },
+      uShadowMapReady:    { value: 0 },
+      uShadowMapStrength: { value: 0 },
     },
     vertexShader: geomVertShader, fragmentShader: geomFragShader,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,

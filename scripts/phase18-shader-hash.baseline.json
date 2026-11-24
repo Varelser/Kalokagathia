@@ -1,169 +1,209 @@
 {
-  "version": 1,
-  "parts": {
-    "SIM_VEL_FRAG": {
-      "length": 85344,
-      "sha256": "f55fe995582251261a963657d510a8735dc7ead7395428bacb2b802219cc30a4"
-    },
-    "VEL_FRAG_PREAMBLE": {
-      "length": 14685,
-      "sha256": "295c890dfc26f6da8523547acac2bafec69136d4d216705b6952470fd9671bfd"
-    },
-    "VEL_FRAG_HELPERS": {
-      "length": 16205,
-      "sha256": "2f369819be25e22fe7b6c2ab77c2d8c85177f6055febe16225027d2ee31dad87"
-    },
-    "VEL_FRAG_MAIN_FORCES": {
-      "length": 26526,
-      "sha256": "840e33524e74e5385bb4d71ed5913d6db32f23dcbc80267ec4c954ec7bd0b402"
-    },
-    "VEL_FRAG_MAIN_SPH_GRAINS": {
-      "length": 10218,
-      "sha256": "d6ca5aff6e24c4c7781f06f20112b58705a96de29b7aae59c11b9b755475e466"
-    },
-    "VEL_FRAG_MAIN_TAIL": {
-      "length": 17710,
-      "sha256": "643cf4434508e31acee1b805ed08a0e81875f9fef7ce96c249428e5bf11c22a1"
-    },
-    "SIM_POS_FRAG": {
-      "length": 26372,
-      "sha256": "ad63f0793b7f37c0be282765e47a9fad7060a0821db223aa1b19e5d8aeae81af"
-    },
-    "buildVelocityFragment(empty)": {
-      "length": 85344,
-      "sha256": "f55fe995582251261a963657d510a8735dc7ead7395428bacb2b802219cc30a4"
-    },
-    "SIM_VEL_FRAG_PHASE19": {
-      "length": 94958,
-      "sha256": "2b4c3beb4ed746417e4190957821f6c4596a920653fd64a0b4ec820a7fdec828"
-    },
-    "VEL_FRAG_PREAMBLE_PHASE19": {
-      "length": 19385,
-      "sha256": "b5faa6aba11d26e3192cc0b159b422484fd96d8178474d6a74cb1e270a256a05"
-    },
-    "VEL_FRAG_MAIN_SPH_GRAINS_PHASE19": {
-      "length": 13940,
-      "sha256": "2e3a3220aacd927723fbf896ac2ee0ba86c3ea63709751e8161765ba5e4f080a"
-    },
-    "VEL_FRAG_MAIN_TAIL_PHASE19": {
-      "length": 18902,
-      "sha256": "ee5650ee9a552fe982cd23e97e19cd86da28dc918a706b75c44813b8974cb46a"
-    },
-    "SIM_POS_FRAG_PHASE19": {
-      "length": 28709,
-      "sha256": "ddcc90fcd515582fcbd3d09bc80c18afeb8aac3c61ebbe20c0c7a280eb5ca407"
-    },
-    "SIM_POS_FRAG_PHASE19_CELL": {
-      "length": 31864,
-      "sha256": "ad83b69c14d4565ecd46ab66235f80bc7674cf48e681145ac68a158bee3289f2"
-    },
-    "DRAW_VERT": {
-      "length": 17668,
-      "sha256": "24ad38d4b2840ab2a41d4b9ee7e40727b6ded006a3cd8ac525ad2367b780b529"
-    },
-    "DRAW_VERT_PHASE19": {
-      "length": 19049,
-      "sha256": "7cd85d79ae5182eb2a47c632bd422fb94257ec035c0bc1788b6fa0a5fa8e71d4"
-    },
-    "DRAW_FRAG": {
-      "length": 21405,
-      "sha256": "ca59f9933380321e9a686f7bd664409f96055bdf32f5e88ce1d01b9b606ad56c"
-    },
-    "DRAW_FRAG_PHASE19": {
-      "length": 21644,
-      "sha256": "652c327402f5ed5289bdcb5dda2a25b252470163213a672ac067b502655dcaed"
-    },
-    "DRAW_VERT_PHASE20": {
-      "length": 18865,
-      "sha256": "1d72339eda42c9ba5d4e72530031b202948375e33355bf3072f739c1b82b1893"
-    },
-    "DRAW_FRAG_PHASE20": {
-      "length": 21814,
-      "sha256": "db3335c11691b2aa347ed4b6447bb61decb1fb6eac836e0d23591c543a10c32d"
-    },
-    "buildDrawVert(phase19+phase20)": {
-      "length": 20246,
-      "sha256": "98c12f4147cfa9e4bf448bcb882f1e48dd7d476c2d07a06f904614e1e125a6e7"
-    },
-    "buildDrawFrag(phase19+phase20)": {
-      "length": 22053,
-      "sha256": "7eb2ea7a5b185121f13d59ded3b0a827f1f0db6c38dd2f643e4bf1727bb217f3"
-    },
-    "DRAW_VERT_PHASE23": {
-      "length": 19320,
-      "sha256": "3a4e56842e2f0e9f1c9b8afdd26a0b7317f63540109ccad72e8ae8d22fc44980"
-    },
-    "DRAW_FRAG_PHASE23": {
-      "length": 22445,
-      "sha256": "3f4c070f6523678ca063b896d98f53f853f8e79287d38aff59f698b880b97729"
-    },
-    "buildDrawVert(shadowMap)": {
-      "length": 19320,
-      "sha256": "3a4e56842e2f0e9f1c9b8afdd26a0b7317f63540109ccad72e8ae8d22fc44980"
-    },
-    "buildDrawFrag(shadowMap)": {
-      "length": 22445,
-      "sha256": "3f4c070f6523678ca063b896d98f53f853f8e79287d38aff59f698b880b97729"
-    },
-    "GEOM_VERT": {
-      "length": 7470,
-      "sha256": "3123bc1869559b312371f2c821248d7fa836410ee6a2b11ce16c10b3ecc669fe"
-    },
-    "GEOM_VERT_PHASE19": {
-      "length": 8445,
-      "sha256": "5c272b4bd47a96a7787d7ea0089f7b28a62564e3d36f21a11e44ed7cc78a1465"
-    },
-    "GEOM_FRAG": {
-      "length": 3465,
-      "sha256": "d7a45aa4346ebb72c14a67de5fbf7c7304f76acdf3661c084b3e4bc09806acc3"
-    },
-    "GEOM_FRAG_PHASE19": {
-      "length": 3645,
-      "sha256": "ca46925597bf7cc39135c1131437ee01d0572d8bcc9fb3959a575224632efe65"
-    },
-    "buildVelocityFragment(phase19)": {
-      "length": 94958,
-      "sha256": "2b4c3beb4ed746417e4190957821f6c4596a920653fd64a0b4ec820a7fdec828"
-    },
-    "VEL_FRAG_PREAMBLE_PHASE20": {
-      "length": 20270,
-      "sha256": "e2d18ca1e05bf71c6f89c69c20141fd03f18e33955e53bd96e4bca427b8c4885"
-    },
-    "SIM_VEL_FRAG_PHASE20": {
-      "length": 99825,
-      "sha256": "384b6fe59ae531ce4c06f25a1adbfdca4998df6150b07e1c9939e03319c1d356"
-    },
-    "buildVelocityFragment(phase20)": {
-      "length": 99825,
-      "sha256": "384b6fe59ae531ce4c06f25a1adbfdca4998df6150b07e1c9939e03319c1d356"
-    },
-    "buildVelocityFragment(steering-only)": {
-      "length": 90211,
-      "sha256": "c453e209fb0c0bb94fc27862810d48a6886361630d1d580fbac33fd0828b0ba8"
-    },
-    "buildPositionFragment(phase19)": {
-      "length": 28709,
-      "sha256": "ddcc90fcd515582fcbd3d09bc80c18afeb8aac3c61ebbe20c0c7a280eb5ca407"
-    },
-    "buildPositionFragment(phase19-cell)": {
-      "length": 31864,
-      "sha256": "ad83b69c14d4565ecd46ab66235f80bc7674cf48e681145ac68a158bee3289f2"
-    },
-    "AUX_VEL_FRAG": {
-      "length": 7860,
-      "sha256": "9bdf0c431b4330df19bfb24aa96016e6b5d312fd13c5105cc960b56c2df1653e"
-    },
-    "AUX_POS_FRAG": {
-      "length": 5846,
-      "sha256": "cfe2304d5b8aa3958fb975c8e35f4aa882cbe7a518e2ed096bc59c238aebab3b"
-    },
-    "AUX_VEL_FRAG_PHASE20": {
-      "length": 10655,
-      "sha256": "1babcc8745ba643ef91244170bf109272ef86571a626a6606e4bc91def87a41b"
-    },
-    "AUX_POS_FRAG_PHASE20": {
-      "length": 8641,
-      "sha256": "a24dde6d9ef9a47db847ec501562ccf48e0e60226346ebf6560032c26c77a89f"
-    }
+ "version": 1,
+ "parts": {
+  "SIM_VEL_FRAG": {
+   "length": 85344,
+   "sha256": "f55fe995582251261a963657d510a8735dc7ead7395428bacb2b802219cc30a4"
+  },
+  "VEL_FRAG_PREAMBLE": {
+   "length": 14685,
+   "sha256": "295c890dfc26f6da8523547acac2bafec69136d4d216705b6952470fd9671bfd"
+  },
+  "VEL_FRAG_HELPERS": {
+   "length": 16205,
+   "sha256": "2f369819be25e22fe7b6c2ab77c2d8c85177f6055febe16225027d2ee31dad87"
+  },
+  "VEL_FRAG_MAIN_FORCES": {
+   "length": 26526,
+   "sha256": "840e33524e74e5385bb4d71ed5913d6db32f23dcbc80267ec4c954ec7bd0b402"
+  },
+  "VEL_FRAG_MAIN_SPH_GRAINS": {
+   "length": 10218,
+   "sha256": "d6ca5aff6e24c4c7781f06f20112b58705a96de29b7aae59c11b9b755475e466"
+  },
+  "VEL_FRAG_MAIN_TAIL": {
+   "length": 17710,
+   "sha256": "643cf4434508e31acee1b805ed08a0e81875f9fef7ce96c249428e5bf11c22a1"
+  },
+  "SIM_POS_FRAG": {
+   "length": 26372,
+   "sha256": "ad63f0793b7f37c0be282765e47a9fad7060a0821db223aa1b19e5d8aeae81af"
+  },
+  "buildVelocityFragment(empty)": {
+   "length": 85344,
+   "sha256": "f55fe995582251261a963657d510a8735dc7ead7395428bacb2b802219cc30a4"
+  },
+  "SIM_VEL_FRAG_PHASE19": {
+   "length": 94958,
+   "sha256": "2b4c3beb4ed746417e4190957821f6c4596a920653fd64a0b4ec820a7fdec828"
+  },
+  "VEL_FRAG_PREAMBLE_PHASE19": {
+   "length": 19385,
+   "sha256": "b5faa6aba11d26e3192cc0b159b422484fd96d8178474d6a74cb1e270a256a05"
+  },
+  "VEL_FRAG_MAIN_SPH_GRAINS_PHASE19": {
+   "length": 13940,
+   "sha256": "2e3a3220aacd927723fbf896ac2ee0ba86c3ea63709751e8161765ba5e4f080a"
+  },
+  "VEL_FRAG_MAIN_TAIL_PHASE19": {
+   "length": 18902,
+   "sha256": "ee5650ee9a552fe982cd23e97e19cd86da28dc918a706b75c44813b8974cb46a"
+  },
+  "SIM_POS_FRAG_PHASE19": {
+   "length": 28709,
+   "sha256": "ddcc90fcd515582fcbd3d09bc80c18afeb8aac3c61ebbe20c0c7a280eb5ca407"
+  },
+  "SIM_POS_FRAG_PHASE19_CELL": {
+   "length": 31864,
+   "sha256": "ad83b69c14d4565ecd46ab66235f80bc7674cf48e681145ac68a158bee3289f2"
+  },
+  "DRAW_VERT": {
+   "length": 17668,
+   "sha256": "24ad38d4b2840ab2a41d4b9ee7e40727b6ded006a3cd8ac525ad2367b780b529"
+  },
+  "DRAW_VERT_PHASE19": {
+   "length": 19049,
+   "sha256": "7cd85d79ae5182eb2a47c632bd422fb94257ec035c0bc1788b6fa0a5fa8e71d4"
+  },
+  "DRAW_FRAG": {
+   "length": 21405,
+   "sha256": "ca59f9933380321e9a686f7bd664409f96055bdf32f5e88ce1d01b9b606ad56c"
+  },
+  "DRAW_FRAG_PHASE19": {
+   "length": 21644,
+   "sha256": "652c327402f5ed5289bdcb5dda2a25b252470163213a672ac067b502655dcaed"
+  },
+  "DRAW_VERT_PHASE20": {
+   "length": 18865,
+   "sha256": "1d72339eda42c9ba5d4e72530031b202948375e33355bf3072f739c1b82b1893"
+  },
+  "DRAW_FRAG_PHASE20": {
+   "length": 21814,
+   "sha256": "db3335c11691b2aa347ed4b6447bb61decb1fb6eac836e0d23591c543a10c32d"
+  },
+  "buildDrawVert(phase19+phase20)": {
+   "length": 20246,
+   "sha256": "98c12f4147cfa9e4bf448bcb882f1e48dd7d476c2d07a06f904614e1e125a6e7"
+  },
+  "buildDrawFrag(phase19+phase20)": {
+   "length": 22053,
+   "sha256": "7eb2ea7a5b185121f13d59ded3b0a827f1f0db6c38dd2f643e4bf1727bb217f3"
+  },
+  "DRAW_VERT_PHASE23": {
+   "length": 19320,
+   "sha256": "3a4e56842e2f0e9f1c9b8afdd26a0b7317f63540109ccad72e8ae8d22fc44980"
+  },
+  "DRAW_FRAG_PHASE23": {
+   "length": 22445,
+   "sha256": "3f4c070f6523678ca063b896d98f53f853f8e79287d38aff59f698b880b97729"
+  },
+  "buildDrawVert(shadowMap)": {
+   "length": 19320,
+   "sha256": "3a4e56842e2f0e9f1c9b8afdd26a0b7317f63540109ccad72e8ae8d22fc44980"
+  },
+  "buildDrawFrag(shadowMap)": {
+   "length": 22445,
+   "sha256": "3f4c070f6523678ca063b896d98f53f853f8e79287d38aff59f698b880b97729"
+  },
+  "GEOM_VERT": {
+   "length": 7470,
+   "sha256": "3123bc1869559b312371f2c821248d7fa836410ee6a2b11ce16c10b3ecc669fe"
+  },
+  "GEOM_VERT_PHASE19": {
+   "length": 8445,
+   "sha256": "5c272b4bd47a96a7787d7ea0089f7b28a62564e3d36f21a11e44ed7cc78a1465"
+  },
+  "GEOM_FRAG": {
+   "length": 3465,
+   "sha256": "d7a45aa4346ebb72c14a67de5fbf7c7304f76acdf3661c084b3e4bc09806acc3"
+  },
+  "GEOM_FRAG_PHASE19": {
+   "length": 3645,
+   "sha256": "ca46925597bf7cc39135c1131437ee01d0572d8bcc9fb3959a575224632efe65"
+  },
+  "GEOM_VERT_PHASE24": {
+   "length": 9228,
+   "sha256": "d8ff894d34eefe3b487394496c2f690be7847f88df8708657e1837377ad4b6c5"
+  },
+  "GEOM_FRAG_PHASE24": {
+   "length": 4546,
+   "sha256": "875a9c0f6af757864d0f950eeefd2246eea2bd18c16ba34135972f180d684d43"
+  },
+  "buildGeomVertShader(shadowMap)": {
+   "length": 9228,
+   "sha256": "d8ff894d34eefe3b487394496c2f690be7847f88df8708657e1837377ad4b6c5"
+  },
+  "buildGeomFragShader(shadowMap)": {
+   "length": 4546,
+   "sha256": "875a9c0f6af757864d0f950eeefd2246eea2bd18c16ba34135972f180d684d43"
+  },
+  "buildVelocityFragment(phase19)": {
+   "length": 94958,
+   "sha256": "2b4c3beb4ed746417e4190957821f6c4596a920653fd64a0b4ec820a7fdec828"
+  },
+  "VEL_FRAG_PREAMBLE_PHASE20": {
+   "length": 20270,
+   "sha256": "e2d18ca1e05bf71c6f89c69c20141fd03f18e33955e53bd96e4bca427b8c4885"
+  },
+  "SIM_VEL_FRAG_PHASE20": {
+   "length": 99825,
+   "sha256": "384b6fe59ae531ce4c06f25a1adbfdca4998df6150b07e1c9939e03319c1d356"
+  },
+  "buildVelocityFragment(phase20)": {
+   "length": 99825,
+   "sha256": "384b6fe59ae531ce4c06f25a1adbfdca4998df6150b07e1c9939e03319c1d356"
+  },
+  "buildVelocityFragment(steering-only)": {
+   "length": 90211,
+   "sha256": "c453e209fb0c0bb94fc27862810d48a6886361630d1d580fbac33fd0828b0ba8"
+  },
+  "VEL_FRAG_PREAMBLE_PHASE24": {
+   "length": 20601,
+   "sha256": "84be9682209e8c70b99740dc5073009a77dc22f4b958fced49b48ea64728226d"
+  },
+  "VEL_FRAG_MAIN_SPH_GRAINS_PHASE24": {
+   "length": 17919,
+   "sha256": "34d3a5d57d9ade9f9b56933e14d128ee26d3c25c46cbfb4477cf163e83adc2fd"
+  },
+  "SIM_VEL_FRAG_PHASE24": {
+   "length": 104135,
+   "sha256": "7cf97ed5c6f2e472829030216271b802ca0c9c91c83eab9b6d4f124197ee8f3f"
+  },
+  "buildVelocityFragment(phase24)": {
+   "length": 103174,
+   "sha256": "699f3ffd923116f757986ab1e5b36011458481cc7136d5eb78bc43231e3cc9ef"
+  },
+  "buildVelocityFragment(akinci-only)": {
+   "length": 88693,
+   "sha256": "267c80f7f1cac64713dd84835c515ccbf93b37d3912fc123704a22a1d2f80b1c"
+  },
+  "buildVelocitySphGrains(akinci-only)": {
+   "length": 13236,
+   "sha256": "d4adbc0ae416f103c03024dd2238ffe81a68945bb84c683d7999a502df8ecfc9"
+  },
+  "buildPositionFragment(phase19)": {
+   "length": 28709,
+   "sha256": "ddcc90fcd515582fcbd3d09bc80c18afeb8aac3c61ebbe20c0c7a280eb5ca407"
+  },
+  "buildPositionFragment(phase19-cell)": {
+   "length": 31864,
+   "sha256": "ad83b69c14d4565ecd46ab66235f80bc7674cf48e681145ac68a158bee3289f2"
+  },
+  "AUX_VEL_FRAG": {
+   "length": 7860,
+   "sha256": "9bdf0c431b4330df19bfb24aa96016e6b5d312fd13c5105cc960b56c2df1653e"
+  },
+  "AUX_POS_FRAG": {
+   "length": 5846,
+   "sha256": "cfe2304d5b8aa3958fb975c8e35f4aa882cbe7a518e2ed096bc59c238aebab3b"
+  },
+  "AUX_VEL_FRAG_PHASE20": {
+   "length": 10655,
+   "sha256": "1babcc8745ba643ef91244170bf109272ef86571a626a6606e4bc91def87a41b"
+  },
+  "AUX_POS_FRAG_PHASE20": {
+   "length": 8641,
+   "sha256": "a24dde6d9ef9a47db847ec501562ccf48e0e60226346ebf6560032c26c77a89f"
   }
+ }
 }

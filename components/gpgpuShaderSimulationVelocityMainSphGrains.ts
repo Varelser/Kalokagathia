@@ -4,7 +4,7 @@
 // of the original SIM_VEL_FRAG template literal. The shell
 // module concatenates all five chunks in order; the assembled
 // string is pinned byte-for-byte by phaseav_test.mjs.
-const VEL_FRAG_SPH_GRAINS_HEAD = /* glsl */ `    // SPH Fluid Simulation
+const VEL_FRAG_SPH_GRAINS_HEAD_A = /* glsl */ `    // SPH Fluid Simulation
     if (uSphEnabled) {
       float density = 0.0;
       vec3 pressureForce = vec3(0.0);
@@ -12,7 +12,21 @@ const VEL_FRAG_SPH_GRAINS_HEAD = /* glsl */ `    // SPH Fluid Simulation
       // Surface tension (Phase AB, cohesion approximation): the
       // accumulated pull toward neighbours, kernel-weighted.
       vec3 cohesionForce = vec3(0.0);
-      float h2 = uSphRadius * uSphRadius;
+`;
+// Surface tension, Akinci form (Phase 24): the extra
+// accumulators of the two-term model. Spliced in only behind
+// the sphAkinci builder option, in the Phase 19 manner — the
+// stock HEAD (A + B + C + D below) is byte-identical to v2.05.
+const VEL_FRAG_SPH_AKINCI_DECL = /* glsl */ `      // Surface tension, Akinci form (Phase 24): the cohesion
+      // sum with the Akinci spline kernel, and the colour-field
+      // gradient / Laplacian pair the curvature term is built
+      // from (TS twin: sphSurfaceTensionAkinciForce in
+      // lib/gpgpuLifecycle.ts).
+      vec3 akinciCohesionForce = vec3(0.0);
+      vec3 akinciColorGrad = vec3(0.0);
+      float akinciColorLap = 0.0;
+`;
+const VEL_FRAG_SPH_GRAINS_HEAD_B = /* glsl */ `      float h2 = uSphRadius * uSphRadius;
       float stride = uTexSizeF / float(uNBodySamples);
       for (int i = 0; i < 64; i++) {
         if (i >= uNBodySamples) break;
@@ -38,7 +52,37 @@ const VEL_FRAG_SPH_GRAINS_HEAD = /* glsl */ `    // SPH Fluid Simulation
             // expanded the cloud on the Phase AB real-GPU gate.
             cohesionForce += (oPos - pos) * (w / uSphRadius);
           }
-        }
+`;
+// Akinci per-sample accumulation: still inside the sample's
+// range test, directly after the legacy cohesion accumulation.
+const VEL_FRAG_SPH_AKINCI_ACCUM = /* glsl */ `          if (uSphSurfaceTensionAkinci > 0.0) {
+            // Term 1 — cohesion with the Akinci spline kernel:
+            // negative (repulsive, and small) at very short
+            // range, positive (attractive) through the mid
+            // range, zero at q = 1. Scaled by 32 so the peak
+            // (1/64 at q = 0.5) lands at 0.5 per sample — the
+            // legacy cohesion sample's order, NOT the x15
+            // pressure gain (the Phase AB heating lesson; the
+            // constants' rationale lives in the TS twin).
+            float rl = sqrt(r2);
+            float omq = 1.0 - q;
+            float kA = omq * omq * omq * q * q * q;
+            if (q <= 0.5) kA = 2.0 * kA - 0.015625;
+            akinciCohesionForce += ((oPos - pos) / rl) * (kA * 32.0);
+            // Term 2 accumulators — the colour field of the
+            // shared kernel w = max(0, 1-q^2): its gradient is
+            // the exact per-sample sum of -2r / h^2 (r = pos -
+            // oPos); its Laplacian (the constant -6 / h^2 per
+            // sample) is accumulated mollified by w itself, so
+            // a sample fades at the kernel boundary instead of
+            // kicking the sum — the first Phase 24 gate round
+            // showed the unweighted form heating the live sim
+            // intermittently (rationale in the TS twin).
+            akinciColorGrad += (-2.0 * r) / h2;
+            akinciColorLap += (-6.0 / h2) * w;
+          }
+`;
+const VEL_FRAG_SPH_GRAINS_HEAD_C = /* glsl */ `        }
       }
       vel += (pressureForce + viscForce) * uDelta * 15.0;
       if (uSphSurfaceTension > 0.0) {
@@ -57,7 +101,45 @@ const VEL_FRAG_SPH_GRAINS_HEAD = /* glsl */ `    // SPH Fluid Simulation
         float selFactor = mix(1.0, deficit, clamp(uSphSurfaceSelectivity, 0.0, 1.0));
         vel += cohesionForce * selFactor * uSphSurfaceTension * uDelta * 1.0;
       }
-    }
+`;
+// Akinci application: additive with the legacy cohesion above
+// — the two models are independent and zero independently.
+const VEL_FRAG_SPH_AKINCI_APPLY = /* glsl */ `      if (uSphSurfaceTensionAkinci > 0.0) {
+        // Curvature term: the colour gradient is the surface
+        // normal (toward the bulk; it cancels for an interior
+        // particle), kappa = -lap / |grad| is the CSF curvature
+        // estimate (divergence of the normalised gradient,
+        // Hessian term dropped), and the force is kappa x
+        // |grad| x gate along that normal — the |grad| factor
+        // is the CSF interface delta, and the gate (in radius
+        // units, applied squared so the noisy mid-gate region
+        // contributes least) keeps the term off the interior,
+        // where |grad| ~ 0. The product is bounded by
+        // 6 * samples / h^2 x gain however small |grad| gets.
+        // Gain 8 (Phase 24 gate round 2): round 1 ran gain 25
+        // with a linear gate and heated intermittently on the
+        // real GPU; 8 keeps the term a gentle bias under the
+        // cohesion sum, and the finished sum is applied at
+        // x1.0 like the AB term.
+        float akinciGradLen = length(akinciColorGrad);
+        vec3 akinciNormal = akinciGradLen > 0.000001 ? akinciColorGrad / akinciGradLen : vec3(0.0);
+        float akinciKappa = akinciGradLen > 0.000001 ? -akinciColorLap / akinciGradLen : 0.0;
+        float akinciGate = clamp(akinciGradLen * uSphRadius * 0.25, 0.0, 1.0);
+        vec3 akinciCurvatureForce = akinciNormal * (akinciKappa * akinciGradLen * akinciGate * akinciGate * 8.0);
+        // Force cap (Phase 24 gate round 3): the finished sum
+        // is clamped to length 3.0 before the strength applies
+        // — at strength 3.0 the unclamped tail (a dense clump
+        // whose samples align) still pumped one run in two
+        // past the control in the late window, while 1.5 was
+        // stable. The cap sits well above the sum's typical
+        // magnitude (~1); rationale in the TS twin.
+        vec3 akinciSum = akinciCohesionForce + akinciCurvatureForce;
+        float akinciSumLen = length(akinciSum);
+        if (akinciSumLen > 3.0) akinciSum *= 3.0 / akinciSumLen;
+        vel += akinciSum * uSphSurfaceTensionAkinci * uDelta * 1.0;
+      }
+`;
+const VEL_FRAG_SPH_GRAINS_HEAD_D = /* glsl */ `    }
 
     // Grains (Phase AQ): DEM-style grain contact. A separate
     // subsample loop from SPH above (the SPH loop accumulates
@@ -276,6 +358,22 @@ const VEL_FRAG_SPH_GRAINS_TAIL_POST = /* glsl */ `      vel += pushForce * uGrai
 // strings (both pinned by scripts/phase18-shader-hash.mjs).
 export interface VelocitySphGrainsVariantOptions {
   grainsFullScan?: boolean;
+  // Phase 24: the Akinci surface-tension chunks (declaration,
+  // per-sample accumulation, application) splice into the SPH
+  // head only behind this option — with it off, the composed
+  // head is the v2.05 HEAD byte-for-byte.
+  sphAkinci?: boolean;
+}
+
+function buildVelocitySphGrainsHead(options?: VelocitySphGrainsVariantOptions): string {
+  const akinci = !!options?.sphAkinci;
+  return VEL_FRAG_SPH_GRAINS_HEAD_A
+    + (akinci ? VEL_FRAG_SPH_AKINCI_DECL : '')
+    + VEL_FRAG_SPH_GRAINS_HEAD_B
+    + (akinci ? VEL_FRAG_SPH_AKINCI_ACCUM : '')
+    + VEL_FRAG_SPH_GRAINS_HEAD_C
+    + (akinci ? VEL_FRAG_SPH_AKINCI_APPLY : '')
+    + VEL_FRAG_SPH_GRAINS_HEAD_D;
 }
 
 const VEL_FRAG_SPH_GRAINS_CELL_OPEN = /* glsl */ `      // Cell sort (Phase 19 fix2): while the passes resolved
@@ -312,8 +410,9 @@ const VEL_FRAG_SPH_GRAINS_CELL_CLOSE = /* glsl */ `      }
 
 export function buildVelocitySphGrains(options?: VelocitySphGrainsVariantOptions): string {
   const full = !!options?.grainsFullScan;
+  const head = buildVelocitySphGrainsHead(options);
   if (!full) {
-    return VEL_FRAG_SPH_GRAINS_HEAD
+    return head
       + VEL_FRAG_SPH_GRAINS_COMMENT_LEGACY
       + VEL_FRAG_SPH_GRAINS_MID_A
       + VEL_FRAG_SPH_GRAINS_SCAN_LEGACY
@@ -323,7 +422,7 @@ export function buildVelocitySphGrains(options?: VelocitySphGrainsVariantOptions
       + VEL_FRAG_SPH_GRAINS_TAIL_CORE
       + VEL_FRAG_SPH_GRAINS_TAIL_POST;
   }
-  return VEL_FRAG_SPH_GRAINS_HEAD
+  return head
     + VEL_FRAG_SPH_GRAINS_COMMENT_PHASE19
     + VEL_FRAG_SPH_GRAINS_MID_A
     + VEL_FRAG_SPH_GRAINS_SCAN_PHASE19
@@ -340,3 +439,4 @@ export function buildVelocitySphGrains(options?: VelocitySphGrainsVariantOptions
 
 export const VEL_FRAG_MAIN_SPH_GRAINS = buildVelocitySphGrains();
 export const VEL_FRAG_MAIN_SPH_GRAINS_PHASE19 = buildVelocitySphGrains({ grainsFullScan: true });
+export const VEL_FRAG_MAIN_SPH_GRAINS_PHASE24 = buildVelocitySphGrains({ grainsFullScan: true, sphAkinci: true });

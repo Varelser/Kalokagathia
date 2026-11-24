@@ -127,7 +127,7 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   if (config.gpgpuCollisionKill || (config.gpgpuCollisionLifeLoss || 0) > 0) features.push('collision-life');
   if ((config.gpgpuMaxSpeed || 0) > 0 || Math.abs((config.gpgpuDrag ?? 1.1) - 1.1) > 1e-9) features.push('global-velocity-limit');
   if (config.gpgpuParticleLifeEnabled && (config.gpgpuParticleLifeAvoid || 0) > 0) features.push('particle-life-avoid');
-  if (config.gpgpuSphEnabled && (config.gpgpuSphSurfaceTension || 0) > 0) features.push('sph-surface-tension');
+  if (config.gpgpuSphEnabled && ((config.gpgpuSphSurfaceTension || 0) > 0 || (config.gpgpuSphSurfaceTensionAkinci || 0) > 0)) features.push('sph-surface-tension');
   // Phase AC signal & time grammar: the sim age curves
   // (velocity / force) and a non-legacy curl evolution speed live
   // in the WebGL passes only — same treatment as Phase AB above.

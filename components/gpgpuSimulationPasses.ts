@@ -984,6 +984,7 @@ export function runSimulationPasses(args: {
   velSimMat.uniforms.uSphRestDensity.value = config.gpgpuSphRestDensity;
   if (velSimMat.uniforms.uSphSurfaceTension) velSimMat.uniforms.uSphSurfaceTension.value = Math.max(0, config.gpgpuSphSurfaceTension || 0);
   if (velSimMat.uniforms.uSphSurfaceSelectivity) velSimMat.uniforms.uSphSurfaceSelectivity.value = Math.min(1, Math.max(0, config.gpgpuSphSurfaceSelectivity || 0));
+  if (velSimMat.uniforms.uSphSurfaceTensionAkinci) velSimMat.uniforms.uSphSurfaceTensionAkinci.value = Math.max(0, config.gpgpuSphSurfaceTensionAkinci || 0);
   // Grains (Phase AQ): guarded like the surface tension — stack
   // materials built before this phase simply lack the uniforms.
   if (velSimMat.uniforms.uGrainsEnabled) {

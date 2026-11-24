@@ -831,8 +831,12 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
           <Slider label="Rest Density" value={config.gpgpuSphRestDensity} min={0.1} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuSphRestDensity', v)} />
           <Slider label="Surface Tension （表面張力・近似）" value={config.gpgpuSphSurfaceTension} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuSphSurfaceTension', v)} />
           <Slider label="Surface Selectivity （表面選択性）" value={config.gpgpuSphSurfaceSelectivity} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSphSurfaceSelectivity', v)} />
+          <Slider label="Surface Tension Akinci （表面張力・Akinci型）" value={config.gpgpuSphSurfaceTensionAkinci} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuSphSurfaceTensionAkinci', v)} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             表面選択性は、凝集の引き寄せを「近傍密度が不足している粒子（＝表面）」にだけ効かせる重みです。0 の間は従来の等方的な凝集と完全一致します。
+          </div>
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            Akinci型は、近距離で弱く反発し中距離で引く凝集カーネルと、カラー場の曲率補正を合わせた別の表面張力です。上の近似とは加算で併用でき、それぞれ独立に 0 にできます。0 の間は従来と完全一致します。
           </div>
         </>
       )}

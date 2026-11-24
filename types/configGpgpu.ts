@@ -338,6 +338,17 @@ export interface ParticleConfigGpgpu {
   // droplet's surface instead of isotropically everywhere.
   // 0 (default) = the Phase AB isotropic cohesion, bit-identical.
   gpgpuSphSurfaceSelectivity: number;
+  // Surface tension, Akinci form (Phase 24, design §9-1
+  // candidate E): a two-term model in the same SPH sample loop —
+  // the Akinci spline-kernel cohesion (weakly repulsive at very
+  // short range, attractive through the mid range) plus a
+  // curvature term from the colour field (its gradient is the
+  // surface normal, its Laplacian over the gradient magnitude
+  // the curvature estimate). Adds to the AB cohesion above;
+  // each model zeroes independently. 0 (default) = off: the
+  // Akinci chunks exist only in the variant shader string, so
+  // the stock velocity shader stays byte-identical.
+  gpgpuSphSurfaceTensionAkinci: number;
   // Grains (Phase AQ): a DEM-style penalty contact + Coulomb
   // friction solver in the velocity pass — grain-grain contact
   // resolved as forces over the same statistical subsample

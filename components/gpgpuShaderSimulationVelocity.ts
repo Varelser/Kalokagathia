@@ -45,6 +45,10 @@ export interface VelocityFragmentVariantOptions {
   // its preamble uniform set), spliced in in the Phase 19
   // manner — only while the steer-seek keys are on.
   steeringSeek?: boolean;
+  // Phase 24: Akinci surface tension (preamble uniform +
+  // SPH-head chunks), spliced in in the same manner — only
+  // while the Akinci strength key is above zero.
+  sphAkinci?: boolean;
 }
 
 export const SIM_VEL_FRAG_PHASE19 =
@@ -63,6 +67,17 @@ export const SIM_VEL_FRAG_PHASE20 =
   VEL_FRAG_HELPERS +
   buildMainForcesFragment(undefined, { steeringSeek: true }) +
   buildVelocitySphGrains({ grainsFullScan: true }) +
+  buildVelocityTail({ flip3dCouple: true });
+
+// Phase 24: the full Phase 24 string — every Phase 20 variant
+// plus the Akinci surface-tension additions (preamble uniform
+// and the SPH-head chunks). The default, Phase 19 and Phase 20
+// strings above are unchanged.
+export const SIM_VEL_FRAG_PHASE24 =
+  buildVelocityPreamble({ grainsFullScan: true, flip3dCouple: true, steeringSeek: true, sphAkinci: true }) +
+  VEL_FRAG_HELPERS +
+  buildMainForcesFragment(undefined, { steeringSeek: true }) +
+  buildVelocitySphGrains({ grainsFullScan: true, sphAkinci: true }) +
   buildVelocityTail({ flip3dCouple: true });
 
 // Builds the effective velocity fragment shader with a user's custom GLSL
@@ -89,7 +104,7 @@ export function buildVelocityFragment(customCode: string, forceOrder?: string, o
   // Phase 19 gate fix: a Phase 19 variant option rebuilds the
   // affected chunks in their variant form. With no variant on,
   // the historical paths above are untouched.
-  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek;
+  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci;
   const base = !hasVariant && (!forceOrder || isDefaultGpgpuForceOrder(forceOrder))
     ? SIM_VEL_FRAG
     : buildVelocityPreamble(options) + VEL_FRAG_HELPERS + buildMainForcesFragment(forceOrder, options)

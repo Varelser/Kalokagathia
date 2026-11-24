@@ -59,6 +59,12 @@ export function velocityVariantOptions(config: ParticleConfig): VelocityFragment
     // Phase 20 stage 2: the steering chunk + uniforms exist in
     // the built string only while the steer-seek keys are on.
     steeringSeek: resolveSteeringSeek(config).active,
+    // Phase 24: the Akinci surface-tension chunks exist in the
+    // built string only while the Akinci strength key is above
+    // zero (and SPH itself is on — the chunks live inside the
+    // SPH block either way, this keeps the string stock for
+    // non-SPH configs that carry a stale strength value).
+    sphAkinci: !!config.gpgpuSphEnabled && (config.gpgpuSphSurfaceTensionAkinci || 0) > 0,
   };
 }
 
@@ -220,6 +226,9 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSphRestDensity:  { value: 2.0 },
       uSphSurfaceTension: { value: 0 },
       uSphSurfaceSelectivity: { value: 0 },
+      // Phase 24: declared in the shader only in the sphAkinci
+      // variant string; the entry itself is inert otherwise.
+      uSphSurfaceTensionAkinci: { value: 0 },
       // Grains (Phase AQ): disabled is the exact legacy path.
       uGrainsEnabled:     { value: false },
       uGrainsSize:        { value: 8.0 },
@@ -1210,7 +1219,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // config's variant), so a variant-only change swaps the shader
   // through this same path and the mount behaviour is unchanged.
   const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
-    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}`;
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}`;
   const appliedForceCodeRef = useRef<string | null>(
     `\n\n${variantKeyOf(velocityVariantOptions(config))}`,
   );

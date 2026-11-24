@@ -204,6 +204,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSphSurfaceTension: 0,
   // Surface selectivity (Phase 15): 0 = isotropic cohesion (AB).
   gpgpuSphSurfaceSelectivity: 0,
+  // Surface tension, Akinci form (Phase 24): 0 = off. An
+  // independent second model beside the AB cohesion above —
+  // the two add, and each can be zeroed on its own.
+  gpgpuSphSurfaceTensionAkinci: 0,
   // Grains (Phase AQ, DEM-style contact solver): disabled = off.
   gpgpuGrainsEnabled: false,
   gpgpuGrainsSize: 8.0,

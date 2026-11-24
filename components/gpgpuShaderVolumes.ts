@@ -3,6 +3,7 @@ import {
   validateGeomCustomVertexGlslCode,
 } from "../lib/geomCustomGlsl";
 import { IBL_GLSL_HELPERS } from "../lib/iblGlsl";
+import { LIGHT_SHADOW_GLSL } from "../lib/lightShadowMap";
 
 // ── Volumetric sphere sprite vertex ──
 export const VOLUMETRIC_VERT = /* glsl */ `
@@ -140,6 +141,13 @@ const GEOM_VERT_MID_A = /* glsl */ `  varying vec3 vNormal;
 `;
 const GEOM_VERT_CRACK_VARYING = /* glsl */ `  varying float vCrack;
 `;
+const GEOM_VERT_SHADOWMAP_VARYING = /* glsl */ `  // True shadow map (Phase 24, wiring stage 3): the raw
+  // light-viewpoint depth factor at the instance vertex's
+  // world position (1 = lit, also 1 while the capture is not
+  // ready or the vertex is outside the shadow frustum). The
+  // fragment mixes it in by the shadow-map strength.
+  varying float vShadowMapMul;
+`;
 const GEOM_VERT_MID_B = /* glsl */ `  // Image-based lighting (Phase AL): world-space normal / position
   // for the equirect sampling in GEOM_FRAG. Written always, read
   // only inside the IBL branch, so the legacy look is untouched.
@@ -274,6 +282,13 @@ const GEOM_VERT_CRACK_COMPUTE = /* glsl */ `    vCrack = 0.0;
       vCrack = dead;
     }
 `;
+const GEOM_VERT_SHADOWMAP_COMPUTE = /* glsl */ `    // True shadow map (Phase 24, wiring stage 3): sample the
+    // light-viewpoint depth at vWorldPos as the mid chunk
+    // left it — a custom vertex snippet spliced at the seam
+    // inside the mid chunk moves vWorldPos first, so the
+    // sampled position follows the drawn surface.
+    vShadowMapMul = kaloShadowFactor(vWorldPos);
+`;
 const GEOM_VERT_TAIL = /* glsl */ `    gl_Position = projectionMatrix * modelViewMatrix * vec4(instancePos + local, 1.0);
   }
 `;
@@ -288,21 +303,34 @@ const GEOM_VERT_TAIL = /* glsl */ `    gl_Position = projectionMatrix * modelVie
 // strings (both pinned by scripts/phase18-shader-hash.mjs).
 export interface GeomShaderVariantOptions {
   vellumCrack?: boolean;
+  /** True shadow map (Phase 24, wiring stage 3): splices the
+   *  LIGHT_SHADOW_GLSL chunk (lib/lightShadowMap.ts) into the
+   *  vertex, computes kaloShadowFactor(vWorldPos) there and
+   *  passes it to the fragment as vShadowMapMul, which mixes
+   *  it in by uShadowMapStrength. Off (the default) assembles
+   *  the Phase 19 strings byte-identically — the chunk is
+   *  never part of the stock strings. */
+  shadowMap?: boolean;
 }
 
 export function buildGeomVertShader(options?: GeomShaderVariantOptions): string {
   const crack = !!options?.vellumCrack;
+  const shadowMap = !!options?.shadowMap;
   return GEOM_VERT_HEAD
     + (crack ? GEOM_VERT_CRACK_UNIFORMS : '')
     + GEOM_VERT_MID_A
     + (crack ? GEOM_VERT_CRACK_VARYING : '')
+    + (shadowMap ? GEOM_VERT_SHADOWMAP_VARYING : '')
+    + (shadowMap ? LIGHT_SHADOW_GLSL : '')
     + GEOM_VERT_MID_B
     + (crack ? GEOM_VERT_CRACK_COMPUTE : '')
+    + (shadowMap ? GEOM_VERT_SHADOWMAP_COMPUTE : '')
     + GEOM_VERT_TAIL;
 }
 
 export const GEOM_VERT = buildGeomVertShader();
 export const GEOM_VERT_PHASE19 = buildGeomVertShader({ vellumCrack: true });
+export const GEOM_VERT_PHASE24 = buildGeomVertShader({ shadowMap: true });
 
 // ── Instanced geometry fragment (Lambert + specular) ──
 const GEOM_FRAG_HEAD = /* glsl */ `
@@ -330,6 +358,15 @@ const GEOM_FRAG_HEAD = /* glsl */ `
   varying float vDensityMul;
 `;
 const GEOM_FRAG_CRACK_VARYING = /* glsl */ `  varying float vCrack;
+`;
+const GEOM_FRAG_SHADOWMAP_VARYING = /* glsl */ `  // True shadow map (Phase 24, wiring stage 3): the vertex
+  // factor (lib/lightShadowMap.ts kaloShadowFactor) and the
+  // strength it is mixed by. The remaining shadow-map
+  // uniforms live in the vertex only (the factor is computed
+  // there); this stage declares just what the apply below
+  // consumes.
+  varying float vShadowMapMul;
+  uniform float uShadowMapStrength;
 `;
 const GEOM_FRAG_MID = IBL_GLSL_HELPERS + /* glsl */ `
   void main() {
@@ -381,6 +418,19 @@ const GEOM_FRAG_CRACK_DARKEN = /* glsl */ `    // Vellum crack (Phase 19 stage 3
     // darken like the points draw. vCrack is 0 unless flagged.
     col *= 1.0 - 0.45 * vCrack;
 `;
+const GEOM_FRAG_SHADOWMAP_APPLY = /* glsl */ `    // True shadow map (Phase 24, wiring stage 3): the union
+    // with the Phase Z occlusion factor, in the same form as
+    // the points receiver (Phase 23 stage 2). The GEOM
+    // fragment carries no Phase Z term of its own, so its Z
+    // brightness is exactly 1.0 and the union 1 - (1-a)(1-b)
+    // reduces to the strength-mixed shadow-map brightness
+    // alone — the TS twin is combineShadowBrightness(1.0, f, s)
+    // === mix(1.0, f, s) in lib/lightShadowMap.ts. The factor
+    // is exactly 1.0 while the capture is not ready, and the
+    // mix is exactly 1.0 at strength 0, so this multiply is
+    // then a bit-exact identity.
+    col *= mix(1.0, vShadowMapMul, uShadowMapStrength);
+`;
 const GEOM_FRAG_TAIL = /* glsl */ `    gl_FragColor = vec4(col, uOpacity * vDensityMul);
   }
 `;
@@ -395,15 +445,19 @@ const GEOM_FRAG_TAIL = /* glsl */ `    gl_FragColor = vec4(col, uOpacity * vDens
 // strings (both pinned by scripts/phase18-shader-hash.mjs).
 export function buildGeomFragShader(options?: GeomShaderVariantOptions): string {
   const crack = !!options?.vellumCrack;
+  const shadowMap = !!options?.shadowMap;
   return GEOM_FRAG_HEAD
     + (crack ? GEOM_FRAG_CRACK_VARYING : '')
+    + (shadowMap ? GEOM_FRAG_SHADOWMAP_VARYING : '')
     + GEOM_FRAG_MID
     + (crack ? GEOM_FRAG_CRACK_DARKEN : '')
+    + (shadowMap ? GEOM_FRAG_SHADOWMAP_APPLY : '')
     + GEOM_FRAG_TAIL;
 }
 
 export const GEOM_FRAG = buildGeomFragShader();
 export const GEOM_FRAG_PHASE19 = buildGeomFragShader({ vellumCrack: true });
+export const GEOM_FRAG_PHASE24 = buildGeomFragShader({ shadowMap: true });
 
 // ── GEOM custom GLSL builders (Phase 16 stage 4) ──
 //

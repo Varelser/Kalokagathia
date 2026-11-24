@@ -528,6 +528,28 @@ export function syncVisualUniforms(args: {
     if (geomMat.uniforms.uVellumStateTex) geomMat.uniforms.uVellumStateTex.value = args.vellumStateTexture ?? null;
     if (geomMat.uniforms.uVellumMode) geomMat.uniforms.uVellumMode.value = config.gpgpuVellumMode === 'shell' ? 1 : 0;
   }
+  // True shadow map (Phase 24, wiring stage 3): the GEOM
+  // instances receive from the same shared store as the
+  // points receiver above, with the same guarded writes and
+  // the same not-ready contract (no source → ready 0 →
+  // kaloShadowFactor returns exactly 1.0). The uniform
+  // entries always exist on the geom material (the stock
+  // shader simply declares none of them).
+  if (geomMat.uniforms.uShadowMapTex) {
+    const smapSource = getLightShadowSource();
+    if (smapSource) {
+      geomMat.uniforms.uShadowMapTex.value = smapSource.texture;
+      if (geomMat.uniforms.uLightViewProj) {
+        (geomMat.uniforms.uLightViewProj.value as THREE.Matrix4).copy(smapSource.viewProj);
+      }
+      if (geomMat.uniforms.uShadowMapReady) geomMat.uniforms.uShadowMapReady.value = 1;
+    } else {
+      if (geomMat.uniforms.uShadowMapReady) geomMat.uniforms.uShadowMapReady.value = 0;
+    }
+    if (geomMat.uniforms.uShadowMapBias) geomMat.uniforms.uShadowMapBias.value = config.gpgpuShadowMapBias;
+    if (geomMat.uniforms.uShadowMapSoftness) geomMat.uniforms.uShadowMapSoftness.value = config.gpgpuShadowMapSoftness;
+    if (geomMat.uniforms.uShadowMapStrength) geomMat.uniforms.uShadowMapStrength.value = Math.min(1, Math.max(0, config.gpgpuShadowMapStrength));
+  }
   if (drawMat.uniforms.uPointShape) drawMat.uniforms.uPointShape.value = { soft: 0, sphere: 1, ring: 2, star: 3, hexagon: 4, diamond: 5, flare: 6, cloud: 7, bokeh: 8, crosshair: 9, iris: 10, lightning: 11 }[config.gpgpuPointShape] ?? 0;
   drawMat.uniforms.uSortEnabled.value = config.gpgpuSortEnabled && finalSortTex !== null;
   drawMat.uniforms.uSortTex.value = finalSortTex;
