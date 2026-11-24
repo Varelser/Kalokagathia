@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import type { ParticleConfig } from "../types";
-import { VOLUMETRIC_FRAG, VOLUMETRIC_VERT, buildGeomFrag, buildGeomVert } from "./gpgpuShaders";
+import { buildGeomFrag, buildGeomVert, buildVolumetricFrag, buildVolumetricVert } from "./gpgpuShaders";
 import { shadowMapVariantOn, vellumCrackVariantOn } from "./useGpgpuDrawAssets";
 import { buildObjGeomBaseData } from "../lib/objMesh";
 import { compileCheckShader } from "../lib/glslInjection";
@@ -325,11 +325,34 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       uFogSelfShadow:  { value: 0 },
       uFogShadowSteps: { value: 4 },
       uLightPos:       { value: new THREE.Vector3(0, 0, 0) },
+      // True shadow map (Phase 30 stage 3): entries always exist
+      // (the stock shaders declare none of them); synced from
+      // the shared store with guarded writes, strings swapped
+      // when the strength's sign flips — the receivers' contract.
+      uShadowMapTex: { value: null },
+      uLightViewProj: { value: new THREE.Matrix4() },
+      uShadowMapBias: { value: 0.001 },
+      uShadowMapSoftness: { value: 1 },
+      uShadowMapReady: { value: 0 },
+      uShadowMapStrength: { value: 0 },
     },
-    vertexShader: VOLUMETRIC_VERT, fragmentShader: VOLUMETRIC_FRAG,
+    vertexShader: buildVolumetricVert({ shadowMap: shadowMapVariantOn(config) }), fragmentShader: buildVolumetricFrag({ shadowMap: shadowMapVariantOn(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
+
+  // Phase 30 stage 3: swap the volumetric strings when the
+  // shadow-map variant condition flips (creation already used
+  // the initial config's variant).
+  const volumetricVariantRef = useRef({ shadowMap: shadowMapVariantOn(config) });
+  useEffect(() => {
+    const shadowMap = shadowMapVariantOn(config);
+    if (volumetricVariantRef.current.shadowMap === shadowMap) return;
+    volumetricVariantRef.current = { shadowMap };
+    volumetricMat.vertexShader = buildVolumetricVert({ shadowMap });
+    volumetricMat.fragmentShader = buildVolumetricFrag({ shadowMap });
+    volumetricMat.needsUpdate = true;
+  }, [config.gpgpuShadowMapStrength, volumetricMat]);
 
   const volumetricMeshObj = useMemo(() => {
     const mesh = new THREE.Mesh(volumetricGeo, volumetricMat);

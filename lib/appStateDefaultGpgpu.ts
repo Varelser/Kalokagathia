@@ -736,6 +736,7 @@ f 8 1 105`,
   gpgpuMorphTerrainErosionSeed: 0,
   // Erosion mask (Phase 20 stage 3): off by default (identity).
   gpgpuMorphTerrainErosionMaskMode: 'off' as const,
+  gpgpuMorphTerrainErosionMaskImageGrid: [],
   gpgpuMorphTerrainErosionMaskStrength: 1,
   gpgpuMorphTerrainErosionMaskInvert: false,
   gpgpuMorphTerrainErosionMaskLow: 0,
@@ -856,6 +857,10 @@ f 8 1 105`,
   gpgpuObjMeshRepeatMode: 'grid' as const,
   gpgpuObjMeshRepeatRotation: 0,
   gpgpuObjMeshRepeatScaleStep: 1,
+  gpgpuObjMeshDeformMode: 'off' as const,
+  gpgpuObjMeshDeformAmount: 0.4,
+  gpgpuObjMeshDeformFrequency: 1,
+  gpgpuObjMeshDeformSpeed: 0.5,
   // Verlet Integration
   gpgpuVerletEnabled: false,
   // Vellum constraint solver (Phase AR): all defaults keep the

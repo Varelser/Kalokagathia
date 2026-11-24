@@ -75,6 +75,7 @@ import { drainRigidContactEvents, resolveRigid, stepRigidBodies, writeRigidBodyT
 import { fireEventRulesLive, getEventRuleActionPerformer } from '../lib/eventRules';
 import { getTerrainHeightfield } from '../lib/terrainHeightfield';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
+import { getLightShadowSource } from '../lib/lightShadowMap';
 import { getDeterministicRotationFrame, isDeterministicJobActive } from '../lib/sceneRotationDeterminism';
 import {
   MAX_MULTI_POINTERS,
@@ -108,6 +109,29 @@ type GpgpuSystemProps = {
 // texture is irrelevant here). Raw sim positions are used (a
 // ring-offset scene reads the un-offset cloud — recorded
 // approximation of this stage).
+
+// True shadow map (Phase 30 stage 3): sync one aux draw
+// material from the shared light-shadow store — the same
+// guarded writes and not-ready contract as the points / geom
+// blocks in gpgpuVisualUpdates (no source -> ready 0 ->
+// kaloShadowFactor returns exactly 1.0).
+function syncAuxShadowMapUniforms(mat: THREE.ShaderMaterial, config: ParticleConfig): void {
+  if (!mat.uniforms.uShadowMapTex) return;
+  const smapSource = getLightShadowSource();
+  if (smapSource) {
+    mat.uniforms.uShadowMapTex.value = smapSource.texture;
+    if (mat.uniforms.uLightViewProj) {
+      (mat.uniforms.uLightViewProj.value as THREE.Matrix4).copy(smapSource.viewProj);
+    }
+    if (mat.uniforms.uShadowMapReady) mat.uniforms.uShadowMapReady.value = 1;
+  } else {
+    if (mat.uniforms.uShadowMapReady) mat.uniforms.uShadowMapReady.value = 0;
+  }
+  if (mat.uniforms.uShadowMapBias) mat.uniforms.uShadowMapBias.value = config.gpgpuShadowMapBias;
+  if (mat.uniforms.uShadowMapSoftness) mat.uniforms.uShadowMapSoftness.value = config.gpgpuShadowMapSoftness;
+  if (mat.uniforms.uShadowMapStrength) mat.uniforms.uShadowMapStrength.value = Math.min(1, Math.max(0, config.gpgpuShadowMapStrength));
+}
+
 const SHINE_DENSITY_SPLAT_VERT = /* glsl */ `
 attribute vec2 aTexCoord;
 uniform sampler2D uPosTex;
@@ -1447,6 +1471,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       auxDrawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
       auxDrawMat.uniforms.uAuxSize.value = config.gpgpuAuxSize;
       auxDrawMat.blending = config.gpgpuBlendMode === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
+      syncAuxShadowMapUniforms(auxDrawMat, config);
       auxDrawGeo.setDrawRange(0, Math.max(0, Math.min(16384, Math.round(config.gpgpuAuxCount))));
 
       // Aux chain (Phase W1): levels 2 and 3 run the same two-pass
@@ -1485,6 +1510,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         aux2DrawMat.uniforms.uColor.value.setStyle(resolveAuxLevelColor(config, 2));
         aux2DrawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
         aux2DrawMat.uniforms.uAuxSize.value = level2.size;
+        syncAuxShadowMapUniforms(aux2DrawMat, config);
         aux2DrawMat.blending = auxDrawMat.blending;
 
         const level3 = chainLevels.find((l) => l.level === 3);
@@ -1515,6 +1541,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           aux3DrawMat.uniforms.uColor.value.setStyle(resolveAuxLevelColor(config, 3));
           aux3DrawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
           aux3DrawMat.uniforms.uAuxSize.value = level3.size;
+          syncAuxShadowMapUniforms(aux3DrawMat, config);
           aux3DrawMat.blending = auxDrawMat.blending;
         }
       }

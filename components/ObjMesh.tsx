@@ -7,6 +7,11 @@ import {
   objMeshWorldScale,
 } from '../lib/objMesh';
 import { STANDARD_FIXED_PBR } from '../lib/materialGrammar';
+import { useFrame } from '@react-three/fiber';
+import {
+  buildObjDeformOnBeforeCompile,
+  createObjDeformUniforms,
+} from '../lib/objMeshDeform';
 
 // OBJ Mesh (Phase V, Mir-style mesh side of the OBJ import): the
 // polygon counterpart to the Phase J/O morph point cloud. The
@@ -55,6 +60,25 @@ export const ObjMesh: React.FC<{ config: ParticleConfig }> = ({ config }) => {
   const repeatMode = config.gpgpuObjMeshRepeatMode;
   const repeatRotation = config.gpgpuObjMeshRepeatRotation;
   const repeatScaleStep = config.gpgpuObjMeshRepeatScaleStep;
+
+  // Vertex deformation (Phase 30): shared uniform objects the
+  // injected shader reads; amount / frequency / speed follow
+  // the config, time advances per frame. With mode 'off' no
+  // hook is built and the materials stay stock.
+  const deformMode = config.gpgpuObjMeshDeformMode;
+  const deformUniforms = React.useRef(createObjDeformUniforms());
+  deformUniforms.current.uObjDeformAmount.value = config.gpgpuObjMeshDeformAmount;
+  deformUniforms.current.uObjDeformFreq.value = config.gpgpuObjMeshDeformFrequency;
+  deformUniforms.current.uObjDeformSpeed.value = config.gpgpuObjMeshDeformSpeed;
+  const deformHook = React.useMemo(
+    () => buildObjDeformOnBeforeCompile(deformMode, deformUniforms.current),
+    [deformMode],
+  );
+  useFrame((state) => {
+    if (deformMode !== 'off') {
+      deformUniforms.current.uObjDeformTime.value = state.clock.elapsedTime;
+    }
+  });
   const copies = React.useMemo(() => {
     if (!enabled || !geometry) return null;
     return objMeshRepeatTransforms(repeat, repeatMode, repeatRotation, repeatScaleStep);
@@ -90,7 +114,12 @@ export const ObjMesh: React.FC<{ config: ParticleConfig }> = ({ config }) => {
         return display === 'solid' ? (
           <mesh key={i} geometry={geometry} position={position} rotation={[0, copyRotY, 0]} scale={copyScale}>
             <meshStandardMaterial
+              key={'solid-' + deformMode}
               color={color}
+              {...(deformHook ? {
+                onBeforeCompile: deformHook,
+                customProgramCacheKey: () => 'objdeform-solid-' + deformMode,
+              } : {})}
               roughness={STANDARD_FIXED_PBR.obj.roughness}
               metalness={STANDARD_FIXED_PBR.obj.metalness}
               envMapIntensity={STANDARD_FIXED_PBR.obj.envMapIntensity}
@@ -102,8 +131,13 @@ export const ObjMesh: React.FC<{ config: ParticleConfig }> = ({ config }) => {
         ) : (
           <mesh key={i} geometry={geometry} position={position} rotation={[0, copyRotY, 0]} scale={copyScale}>
             <meshBasicMaterial
+              key={'wire-' + deformMode}
               color={color}
               wireframe
+              {...(deformHook ? {
+                onBeforeCompile: deformHook,
+                customProgramCacheKey: () => 'objdeform-wire-' + deformMode,
+              } : {})}
               transparent={transparent}
               opacity={opacity}
               side={THREE.DoubleSide}

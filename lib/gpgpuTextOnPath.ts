@@ -130,8 +130,9 @@ export const TEXT_GLYPH_LUMA_THRESHOLD = 0.3;
 export interface TextOnPathVerticalUnit {
   /** The cell's text (a run's whole string for tate-chu-yoko). */
   text: string;
-  /** Font scale of the cell (tate-chu-yoko runs), if any. */
-  scale?: number;
+  /** Horizontal squeeze of the cell (tate-chu-yoko runs,
+   *  Phase 30), if any. */
+  squeeze?: number;
   /** Ruby annotation of this unit's parent group, if any. */
   ruby?: string;
   /** Column (段) index, 0 = the head column (rightmost on a page). */
@@ -163,7 +164,7 @@ export function planVerticalTextOnPath(
   columns.forEach((tokens, column) => {
     tokens.forEach((token, index) => {
       const unit: TextOnPathVerticalUnit = { text: token.text, column, index };
-      if (token.scale !== undefined) unit.scale = token.scale;
+      if (token.squeeze !== undefined) unit.squeeze = token.squeeze;
       if (token.ruby !== undefined) unit.ruby = token.ruby;
       units.push(unit);
     });

@@ -1,5 +1,5 @@
-import { verticalGlyphPlacements, type TextLayoutOptions } from '../lib/textColumnLayout';
-import { pagedVerticalGlyphPlacements } from '../lib/textPageLayout';
+import { fitVerticalTextMetrics, verticalGlyphPlacements, type TextLayoutOptions } from '../lib/textColumnLayout';
+import { pagedVerticalGlyphPlacements, textColumnsPerPage } from '../lib/textPageLayout';
 
 export const MEDIA_SAMPLE_SIZE = 64;
 
@@ -65,7 +65,7 @@ export function extractTextLumaMap(
     // the shared pure layout (lib/textColumnLayout.ts) — columns
     // right → left, glyphs top → bottom, all upright. Draws
     // identically to rasterizeTextCanvas' vertical branch.
-    const textMetrics = {
+    const rawTextMetrics = {
       width,
       height,
       padding: clampedPadding,
@@ -74,6 +74,16 @@ export function extractTextLumaMap(
       letterSpacing: layout.letterSpacing,
     };
     const textAdjustments = { kinsoku: layout.kinsoku, yakumono: layout.yakumono, tatechuyoko: layout.tatechuyoko, ruby: layout.ruby };
+    // Phase 30: the same fit correction as rasterizeTextCanvas
+    // (lib/mapSourceSupply.ts) — the pair stay identical.
+    const textMetrics = fitVerticalTextMetrics(
+      text || 'TEXT',
+      layout.columnLength,
+      rawTextMetrics,
+      textAdjustments,
+      layout.pageEnabled ? textColumnsPerPage(rawTextMetrics) : undefined,
+    );
+    const fittedPxSize = textMetrics.pxSize;
     // Text pages (Phase 17): same page branch as
     // rasterizeTextCanvas — only the selected page's columns,
     // resolving to the legacy placements when one page suffices.
@@ -88,12 +98,19 @@ export function extractTextLumaMap(
     // rasterizeTextCanvas (lib/mapSourceSupply.ts) — a placement
     // with a font scale swaps the font for its own draw and
     // restores it; scale-free placements draw exactly as before.
-    const baseFont = ctx.font;
     const scaledWeight = Math.max(100, Math.min(900, fontWeight || 700));
     const scaledFamily = fontFamily || 'Arial';
+    const baseFont = `${scaledWeight} ${fittedPxSize}px ${scaledFamily}`;
+    ctx.font = baseFont;
     placements.forEach((placement) => {
-      if (placement.scale !== undefined && placement.scale !== 1) {
-        ctx.font = `${scaledWeight} ${pxSize * placement.scale}px ${scaledFamily}`;
+      if (placement.squeeze !== undefined && placement.squeeze !== 1) {
+        ctx.save();
+        ctx.translate(placement.x, placement.y);
+        ctx.scale(placement.squeeze, 1);
+        ctx.fillText(placement.glyph, 0, 0);
+        ctx.restore();
+      } else if (placement.scale !== undefined && placement.scale !== 1) {
+        ctx.font = `${scaledWeight} ${fittedPxSize * placement.scale}px ${scaledFamily}`;
         ctx.fillText(placement.glyph, placement.x, placement.y);
         ctx.font = baseFont;
       } else {

@@ -104,13 +104,15 @@ export function buildTerrainMeshGeometryData(
   const { terrain, seed, worldScale, tunnel } = options;
   const res = Math.max(8, Math.min(256, Math.floor(options.resolution ?? TERRAIN_MESH_RESOLUTION)));
   const fieldSeed = terrainFieldSeedFor(seed, terrain.seed);
-  // Terrain erosion (Phase AP): the plane mesh reads the eroded
-  // field, so the polygon landscape is the carved one the points
-  // and the collider describe. The tunnel keeps the analytic
-  // field verbatim (its cross-fade tiling needs the pure
-  // function, and the config-side builders strip the erosion
-  // options in tunnel mode anyway).
-  const erodedField = tunnel ? null : getErodedTerrainField(terrain, fieldSeed);
+  // Terrain erosion (Phase AP + Phase 30): the mesh reads the
+  // eroded field in both shapes, so the polygon landscape is
+  // the carved one the points and the collider describe. In
+  // tunnel mode the field was baked from the cross-fade tiled
+  // base with wrapped droplets (wrapX), so its edge columns
+  // agree and the tunnel branch below can sample the grid
+  // directly — the grid form of the same seamless wrap the
+  // analytic path gets from tiledHeightAt.
+  const erodedField = getErodedTerrainField(terrain, fieldSeed);
   const extent = TERRAIN_MESH_EXTENT;
   const vertsPerAxis = res + 1;
   const vertexCount = vertsPerAxis * vertsPerAxis;
@@ -142,8 +144,18 @@ export function buildTerrainMeshGeometryData(
         positions[idx * 3 + 2] = fz * worldScale;
       } else {
         // Wrap x around the circumference and tile z along the
-        // depth so both joins are seamless.
-        const h = tiledHeightAt(fx, fz, terrain, fieldSeed, true, true);
+        // depth so both joins are seamless. With erosion the
+        // grid (baked from the tiled base, wrapX droplets) is
+        // sampled directly; without it the analytic field is
+        // cross-fade tiled on the fly, as before.
+        // The grid is only sampled when it was baked FOR the
+        // tunnel (wrapX): a plane-baked field's edge columns
+        // disagree, which would step the seam. Callers that
+        // attach erosion without the wrap keep the analytic
+        // tiled path verbatim.
+        const h = erodedField && terrain.erosion?.wrapX === true
+          ? sampleErodedField(erodedField, fx, fz)
+          : tiledHeightAt(fx, fz, terrain, fieldSeed, true, true);
         const theta = u * Math.PI * 2;
         const r = tunnelRadius - h * worldScale;
         positions[idx * 3] = Math.cos(theta) * r;

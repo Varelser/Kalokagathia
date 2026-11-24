@@ -245,7 +245,12 @@ export function buildCpuMorphData(
       terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
       // Terrain erosion (Phase AP): plane mode only — stripped
       // in tunnel mode (the collider / slope-force precedent).
-      erosion: config.gpgpuTerrainMeshTunnel ? undefined : {
+      erosion: {
+      // Tunnel wrap (Phase 30): erosion is no longer stripped
+      // in tunnel mode — the droplet sim wraps in x (wrapX)
+      // and the consumers tile the eroded field like the
+      // analytic one. Plane mode passes wrapX false and keeps
+      // the Phase AP behaviour verbatim.
         water: config.gpgpuMorphTerrainErosionWater,
         droplets: config.gpgpuMorphTerrainErosionDroplets,
         deposit: config.gpgpuMorphTerrainErosionDeposit,
@@ -261,7 +266,9 @@ export function buildCpuMorphData(
           invert: config.gpgpuMorphTerrainErosionMaskInvert,
           low: config.gpgpuMorphTerrainErosionMaskLow,
           high: config.gpgpuMorphTerrainErosionMaskHigh,
+        imageGrid: config.gpgpuMorphTerrainErosionMaskImageGrid,
         },
+        wrapX: config.gpgpuTerrainMeshTunnel,
       },
     },
     // Terrain scatter grammar (Phase AI): top-level bake option,

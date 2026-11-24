@@ -1,3 +1,5 @@
+import { LIGHT_SHADOW_GLSL } from '../lib/lightShadowMap';
+
 // Aux event emission shaders (Kinetix integration B3).
 //
 // A second, fixed-size GPU particle pool (128x128 texels, of which
@@ -632,14 +634,29 @@ export const AUX_CHAIN_POS_FRAG = /* glsl */ `
 `;
 
 // ── Aux draw ──
-export const AUX_DRAW_VERT = /* glsl */ `
+// ── Aux draw vertex (builder form, Phase 30 stage 3): the stock
+// string is the builder with no options — the shadow variant
+// splices the LIGHT_SHADOW_GLSL chunk + a varying + the factor
+// compute at the world position, mirroring the GPGPU points
+// draw (Phase 23). Off (the default) assembles the stock
+// string byte-identically.
+export interface AuxDrawShaderVariantOptions {
+  shadowMap?: boolean;
+}
+
+const AUX_DRAW_VERT_HEAD = /* glsl */ `
   precision highp float;
   uniform sampler2D uAuxPosTex;
   uniform sampler2D uAuxVelTex;
   uniform float uAuxSize;
   attribute vec2 aTexCoord;
   varying float vAlpha;
-  void main() {
+`;
+
+const AUX_DRAW_VERT_SHADOWMAP_VARYING = /* glsl */ `  varying float vShadowMapMul;
+`;
+
+const AUX_DRAW_VERT_BODY_A = /* glsl */ `  void main() {
     vec4 posData = texture2D(uAuxPosTex, aTexCoord);
     float life = texture2D(uAuxVelTex, aTexCoord).w;
     float age = posData.w;
@@ -647,23 +664,76 @@ export const AUX_DRAW_VERT = /* glsl */ `
     float t = life > 0.001 ? clamp(age / life, 0.0, 1.0) : 1.0;
     vAlpha = isActive ? smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.55, 1.0, t)) : 0.0;
     vec3 worldPos = isActive ? posData.xyz : vec3(0.0, -99999.0, 0.0);
-    vec4 mvPos = modelViewMatrix * vec4(worldPos, 1.0);
+`;
+
+const AUX_DRAW_VERT_SHADOWMAP_COMPUTE = /* glsl */ `    // True shadow map (Phase 30 stage 3): sample the
+    // light-viewpoint depth at the same worldPos the draw
+    // uses — nothing moves worldPos in between.
+    vShadowMapMul = kaloShadowFactor(worldPos);
+`;
+
+const AUX_DRAW_VERT_BODY_B = /* glsl */ `    vec4 mvPos = modelViewMatrix * vec4(worldPos, 1.0);
     float dist = -mvPos.z;
     gl_PointSize = max(0.5, uAuxSize * (dist > 0.5 ? min(4.0, 500.0 / dist) : 1.0));
     gl_Position = projectionMatrix * mvPos;
   }
 `;
 
-export const AUX_DRAW_FRAG = /* glsl */ `
+export function buildAuxDrawVert(options?: AuxDrawShaderVariantOptions): string {
+  const shadowMap = !!options?.shadowMap;
+  return AUX_DRAW_VERT_HEAD
+    + (shadowMap ? AUX_DRAW_VERT_SHADOWMAP_VARYING : '')
+    + (shadowMap ? LIGHT_SHADOW_GLSL : '')
+    + AUX_DRAW_VERT_BODY_A
+    + (shadowMap ? AUX_DRAW_VERT_SHADOWMAP_COMPUTE : '')
+    + AUX_DRAW_VERT_BODY_B;
+}
+
+export const AUX_DRAW_VERT = buildAuxDrawVert();
+
+export const AUX_DRAW_VERT_PHASE30 = buildAuxDrawVert({ shadowMap: true });
+
+
+const AUX_DRAW_FRAG_HEAD = /* glsl */ `
   precision highp float;
   uniform vec3 uColor;
   uniform float uOpacity;
   varying float vAlpha;
-  void main() {
+`;
+
+const AUX_DRAW_FRAG_SHADOWMAP_VARYING = /* glsl */ `  varying float vShadowMapMul;
+  uniform float uShadowMapStrength;
+`;
+
+const AUX_DRAW_FRAG_BODY_A = /* glsl */ `  void main() {
     vec2 pc = gl_PointCoord - 0.5;
     float d = length(pc);
     if (d > 0.5) discard;
     float shapeAlpha = smoothstep(0.5, 0.12, d);
-    gl_FragColor = vec4(uColor, shapeAlpha * uOpacity * vAlpha);
-  }
 `;
+
+const AUX_DRAW_FRAG_WRITE = /* glsl */ `    gl_FragColor = vec4(uColor, shapeAlpha * uOpacity * vAlpha);
+`;
+
+const AUX_DRAW_FRAG_SHADOWMAP_WRITE = /* glsl */ `    // True shadow map (Phase 30 stage 3): the shadow factor
+    // scales the colour exactly like the GPGPU points draw.
+    vec3 auxCol = uColor * mix(1.0, vShadowMapMul, uShadowMapStrength);
+    gl_FragColor = vec4(auxCol, shapeAlpha * uOpacity * vAlpha);
+`;
+
+const AUX_DRAW_FRAG_BODY_B = /* glsl */ `  }
+`;
+
+export function buildAuxDrawFrag(options?: AuxDrawShaderVariantOptions): string {
+  const shadowMap = !!options?.shadowMap;
+  return AUX_DRAW_FRAG_HEAD
+    + (shadowMap ? AUX_DRAW_FRAG_SHADOWMAP_VARYING : '')
+    + AUX_DRAW_FRAG_BODY_A
+    + (shadowMap ? AUX_DRAW_FRAG_SHADOWMAP_WRITE : AUX_DRAW_FRAG_WRITE)
+    + AUX_DRAW_FRAG_BODY_B;
+}
+
+export const AUX_DRAW_FRAG = buildAuxDrawFrag();
+
+export const AUX_DRAW_FRAG_PHASE30 = buildAuxDrawFrag({ shadowMap: true });
+

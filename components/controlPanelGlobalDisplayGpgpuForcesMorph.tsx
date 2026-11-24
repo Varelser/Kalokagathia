@@ -19,6 +19,7 @@ import {
 import { clampFractureCells } from '../lib/voronoiFracture';
 import { PcgGraphEditorBlock } from './controlPanelPcgGraphEditor';
 import { ErosionRebakeBlock } from './controlPanelErosionRebake';
+import { ErosionMaskImageBlock } from './controlPanelErosionMaskImage';
 
 // Mesh SDF bake status (Phase BY): the bake runs async on the
 // CPU; this line polls while it is in flight so the user can see
@@ -353,17 +354,20 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
               <Slider label="Talus （タラス角）" value={config.gpgpuMorphTerrainErosionTalus} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionTalus', v)} />
               <Slider label="Thermal Passes （緩和パス）" value={config.gpgpuMorphTerrainErosionThermalPasses} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionThermalPasses', Math.round(v))} />
               <Slider label="Erosion Seed （侵食シード）" value={config.gpgpuMorphTerrainErosionSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionSeed', Math.round(v))} />
-              <Toggle label="Erosion Mask （侵食マスク）" value={config.gpgpuMorphTerrainErosionMaskMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Height （高度）', val: 'height' as const }, { label: 'Slope （斜度）', val: 'slope' as const }, { label: 'Curvature （曲率）', val: 'curvature' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskMode', v)} />
+              <Toggle label="Erosion Mask （侵食マスク）" value={config.gpgpuMorphTerrainErosionMaskMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Height （高度）', val: 'height' as const }, { label: 'Slope （斜度）', val: 'slope' as const }, { label: 'Curvature （曲率）', val: 'curvature' as const }, { label: 'Image （画像）', val: 'image' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskMode', v)} />
               {config.gpgpuMorphTerrainErosionMaskMode !== 'off' && (
                 <>
                   <Slider label="Mask Strength （マスクの深さ）" value={config.gpgpuMorphTerrainErosionMaskStrength} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskStrength', v)} />
                   <Slider label="Mask Low （帯の下限）" value={config.gpgpuMorphTerrainErosionMaskLow} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskLow', v)} />
                   <Slider label="Mask High （帯の上限）" value={config.gpgpuMorphTerrainErosionMaskHigh} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskHigh', v)} />
                   <Toggle label="Mask Invert （帯を反転）" value={config.gpgpuMorphTerrainErosionMaskInvert} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskInvert', v)} />
+                  {config.gpgpuMorphTerrainErosionMaskMode === 'image' && (
+                    <ErosionMaskImageBlock config={config} updateConfig={updateConfig} />
+                  )}
                 </>
               )}
               <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-                生成済みの高度場をベイク時に彫り直す侵食シミュレーションです（Phase AP）。Water は水滴が谷を刻む水力侵食、Thermal はタラス角を超えた斜面が崩れる熱侵食で、どちらも 0 のときは従来の地形と完全に同一です。侵食後の地形はモーフ・メッシュ・派生マップ・コライダ・影で共有されます。トンネル表示のときは平面前提が崩れるため侵食は無効です。
+                生成済みの高度場をベイク時に彫り直す侵食シミュレーションです（Phase AP）。Water は水滴が谷を刻む水力侵食、Thermal はタラス角を超えた斜面が崩れる熱侵食で、どちらも 0 のときは従来の地形と完全に同一です。侵食後の地形はモーフ・メッシュ・派生マップ・コライダ・影で共有されます。トンネル表示のときは、水滴が継ぎ目を循環する形で侵食が適用されます。
               </div>
               <ErosionRebakeBlock config={config} />
               <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Terrain Scatter （地形散布）</div>
@@ -544,17 +548,20 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Slider label="Talus （タラス角）" value={config.gpgpuMorphTerrainErosionTalus} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionTalus', v)} />
           <Slider label="Thermal Passes （緩和パス）" value={config.gpgpuMorphTerrainErosionThermalPasses} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionThermalPasses', Math.round(v))} />
           <Slider label="Erosion Seed （侵食シード）" value={config.gpgpuMorphTerrainErosionSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionSeed', Math.round(v))} />
-          <Toggle label="Erosion Mask （侵食マスク）" value={config.gpgpuMorphTerrainErosionMaskMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Height （高度）', val: 'height' as const }, { label: 'Slope （斜度）', val: 'slope' as const }, { label: 'Curvature （曲率）', val: 'curvature' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskMode', v)} />
+          <Toggle label="Erosion Mask （侵食マスク）" value={config.gpgpuMorphTerrainErosionMaskMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Height （高度）', val: 'height' as const }, { label: 'Slope （斜度）', val: 'slope' as const }, { label: 'Curvature （曲率）', val: 'curvature' as const }, { label: 'Image （画像）', val: 'image' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskMode', v)} />
           {config.gpgpuMorphTerrainErosionMaskMode !== 'off' && (
             <>
               <Slider label="Mask Strength （マスクの深さ）" value={config.gpgpuMorphTerrainErosionMaskStrength} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskStrength', v)} />
               <Slider label="Mask Low （帯の下限）" value={config.gpgpuMorphTerrainErosionMaskLow} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskLow', v)} />
               <Slider label="Mask High （帯の上限）" value={config.gpgpuMorphTerrainErosionMaskHigh} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskHigh', v)} />
               <Toggle label="Mask Invert （帯を反転）" value={config.gpgpuMorphTerrainErosionMaskInvert} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskInvert', v)} />
+                  {config.gpgpuMorphTerrainErosionMaskMode === 'image' && (
+                    <ErosionMaskImageBlock config={config} updateConfig={updateConfig} />
+                  )}
             </>
           )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は地形専用画像が優先され、未設定時は Horizon 背景画像を流用します。Repeat / Offset は全テクスチャ種に効く UV 変換です。Tunnel Speed は地形の位相スクロールによる前進表現で、カメラ自体は動きません。速度 0 では従来の静止トンネルと完全に同一です。侵食（Phase AP）はベイク時に高度場を彫り直すシミュレーションで、Water／Thermal とも 0 では従来と完全に同一です。トンネル表示では侵食は無効です。
+            高度場で変位させたポリゴンメッシュに頂点法線の陰影を付けます（Trapcode Mir 型）。高度場はモーフ地形（terrain目標）と共有するため、点地形とメッシュ地形は同じ地形になります。トンネルは円筒内面に巻いた形状で、高度場は継ぎ目なく周期化されます。テクスチャの Image は地形専用画像が優先され、未設定時は Horizon 背景画像を流用します。Repeat / Offset は全テクスチャ種に効く UV 変換です。Tunnel Speed は地形の位相スクロールによる前進表現で、カメラ自体は動きません。速度 0 では従来の静止トンネルと完全に同一です。侵食（Phase AP）はベイク時に高度場を彫り直すシミュレーションで、Water／Thermal とも 0 では従来と完全に同一です。トンネル表示では、水滴が継ぎ目を循環する形で侵食が適用されます。
           </div>
           <TerrainDerivedMapsBlock config={config} updateConfig={updateConfig} />
         </>

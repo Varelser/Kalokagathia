@@ -1,3 +1,4 @@
+import { getLightShadowSource } from '../lib/lightShadowMap';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { getLayerRuntimeGhostTrailSnapshot, getLayerRuntimeSdfSnapshot } from '../lib/sceneRenderRouting';
@@ -81,6 +82,25 @@ export function applyParticleSdfUniforms(
     if (mat.uniforms.uIblYaw) {
       mat.uniforms.uIblYaw.value = horizonEquirectYawRadians(config.backgroundEquirectYaw);
     }
+  }
+  // True shadow map (Phase 30 stage 3): all layers receive
+  // from the shared store — the same guarded writes and
+  // not-ready contract as the other receivers (no source ->
+  // ready 0 -> kaloShadowFactor returns exactly 1.0).
+  if (mat.uniforms.uShadowMapTex) {
+    const smapSource = getLightShadowSource();
+    if (smapSource) {
+      mat.uniforms.uShadowMapTex.value = smapSource.texture;
+      if (mat.uniforms.uLightViewProj) {
+        (mat.uniforms.uLightViewProj.value as THREE.Matrix4).copy(smapSource.viewProj);
+      }
+      if (mat.uniforms.uShadowMapReady) mat.uniforms.uShadowMapReady.value = 1;
+    } else {
+      if (mat.uniforms.uShadowMapReady) mat.uniforms.uShadowMapReady.value = 0;
+    }
+    if (mat.uniforms.uShadowMapBias) mat.uniforms.uShadowMapBias.value = config.gpgpuShadowMapBias;
+    if (mat.uniforms.uShadowMapSoftness) mat.uniforms.uShadowMapSoftness.value = config.gpgpuShadowMapSoftness;
+    if (mat.uniforms.uShadowMapStrength) mat.uniforms.uShadowMapStrength.value = Math.min(1, Math.max(0, config.gpgpuShadowMapStrength));
   }
 }
 

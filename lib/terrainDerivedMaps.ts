@@ -56,6 +56,8 @@ import {
   resolveTerrainErosion,
   terrainFieldSeedFor,
   terrainHeightAt,
+  tiledTerrainHeightAt,
+  erosionMaskImageGridHash,
   type GpgpuMorphTerrainOptions,
   type TerrainErosionMeasure,
 } from './gpgpuMorphTargets';
@@ -116,14 +118,6 @@ export function buildTerrainHeightGrid(
   const extent = TERRAIN_MESH_EXTENT;
   const step = (extent * 2) / (n - 1);
   const fieldSeed = terrainFieldSeedFor(seed, terrain.seed);
-  const heights = new Float32Array(n * n);
-  for (let j = 0; j < n; j++) {
-    const fz = -extent + j * step;
-    for (let i = 0; i < n; i++) {
-      const fx = -extent + i * step;
-      heights[j * n + i] = terrainHeightAt(fx, fz, terrain, fieldSeed);
-    }
-  }
   // Terrain erosion (Phase AP): the derived bakes differentiate
   // the ERODED grid, so the normal / slope / curvature maps, the
   // slope-force gradient and the collider all describe the same
@@ -132,7 +126,19 @@ export function buildTerrainHeightGrid(
   // the result agrees cell for cell with the eroded field.
   // Phase 20 stage 3: the run also carries a read-only measure
   // (flow / deposit / erosion totals) for the new derived kinds.
+  // Phase 30: the resolution moves above the sampling because
+  // wrapX changes the BASE grid (the cross-fade tiled field).
   const erosion = resolveTerrainErosion(terrain.erosion);
+  const heights = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) {
+    const fz = -extent + j * step;
+    for (let i = 0; i < n; i++) {
+      const fx = -extent + i * step;
+      heights[j * n + i] = erosion?.wrapX
+        ? tiledTerrainHeightAt(fx, fz, terrain, fieldSeed)
+        : terrainHeightAt(fx, fz, terrain, fieldSeed);
+    }
+  }
   const erosionMeasure = erosion ? createTerrainErosionMeasure(n) : null;
   if (erosion) {
     erodeHeightGridInPlace(heights, n, step, erosion, erosionRngSeedFor(fieldSeed, erosion.seed), erosionMeasure);
@@ -370,11 +376,14 @@ export function terrainOptionsFromConfig(config: ParticleConfig): GpgpuMorphTerr
     seed: config.gpgpuMorphTerrainSeed,
     kind: config.gpgpuMorphTerrainKind,
     terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
-    // Terrain erosion (Phase AP): plane mode only — in tunnel
-    // mode the erosion options are stripped here, exactly like
-    // the collider / slope force turn off (the wrapped field has
-    // no single planar height field to erode).
-    erosion: config.gpgpuTerrainMeshTunnel ? undefined : {
+    // Terrain erosion (Phase AP + Phase 30): the options are
+    // carried in BOTH modes now. Plane mode is the Phase AP
+    // behaviour verbatim; tunnel mode sets wrapX (below) so
+    // the droplet sim circulates across the seam instead of
+    // the options being stripped. (The collider / slope force
+    // still turn off in tunnel mode — they need a planar
+    // downhill, a different question from the height field.)
+    erosion: {
       water: config.gpgpuMorphTerrainErosionWater,
       droplets: config.gpgpuMorphTerrainErosionDroplets,
       deposit: config.gpgpuMorphTerrainErosionDeposit,
@@ -390,7 +399,9 @@ export function terrainOptionsFromConfig(config: ParticleConfig): GpgpuMorphTerr
         invert: config.gpgpuMorphTerrainErosionMaskInvert,
         low: config.gpgpuMorphTerrainErosionMaskLow,
         high: config.gpgpuMorphTerrainErosionMaskHigh,
+        imageGrid: config.gpgpuMorphTerrainErosionMaskImageGrid,
       },
+      wrapX: config.gpgpuTerrainMeshTunnel,
     },
   };
 }
@@ -422,6 +433,10 @@ function derivedCacheKey(config: ParticleConfig): string {
     config.gpgpuMorphTerrainErosionMaskInvert,
     config.gpgpuMorphTerrainErosionMaskLow,
     config.gpgpuMorphTerrainErosionMaskHigh,
+    // Phase 30: the mask image content re-carves too.
+    config.gpgpuMorphTerrainErosionMaskMode === 'image'
+      ? erosionMaskImageGridHash(config.gpgpuMorphTerrainErosionMaskImageGrid)
+      : 'noimg',
     config.gpgpuSeed,
   ].join('|');
 }

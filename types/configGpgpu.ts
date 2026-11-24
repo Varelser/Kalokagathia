@@ -682,7 +682,12 @@ export interface ParticleConfigGpgpu {
   // band over the pre-erosion height / slope / curvature that
   // scales erosion per cell. Mode 'off' (default) = no mask and
   // the Phase AP landscape stays bit-identical.
-  gpgpuMorphTerrainErosionMaskMode: 'off' | 'height' | 'slope' | 'curvature';
+  gpgpuMorphTerrainErosionMaskMode: 'off' | 'height' | 'slope' | 'curvature' | 'image';
+  /** Erosion mask image (Phase 30): the luma grid the panel
+   *  captured on assignment (129x129, row 0 = the fz = -E side,
+   *  values 0..1). Empty = no image; mode 'image' without a
+   *  valid grid resolves to no mask. */
+  gpgpuMorphTerrainErosionMaskImageGrid: number[];
   gpgpuMorphTerrainErosionMaskStrength: number;
   gpgpuMorphTerrainErosionMaskInvert: boolean;
   gpgpuMorphTerrainErosionMaskLow: number;
@@ -972,6 +977,17 @@ export interface ParticleConfigGpgpu {
   gpgpuObjMeshRepeatMode: 'grid' | 'radial';
   gpgpuObjMeshRepeatRotation: number;
   gpgpuObjMeshRepeatScaleStep: number;
+  // OBJ vertex deformation (Phase 30, §11-3 T4,
+  // lib/objMeshDeform.ts): analytic deformation injected into
+  // the mesh materials. 'off' (default) injects nothing and
+  // the mesh renders exactly as before.
+  gpgpuObjMeshDeformMode: 'off' | 'wave' | 'twist' | 'bend';
+  /** Deformation depth 0..1 (per-mode mapping in the lib). */
+  gpgpuObjMeshDeformAmount: number;
+  /** Spatial frequency multiplier 0..3. */
+  gpgpuObjMeshDeformFrequency: number;
+  /** Phase speed 0..2; 0 = a static deformed shape. */
+  gpgpuObjMeshDeformSpeed: number;
   // Verlet Integration
   gpgpuVerletEnabled: boolean;
   // Vellum constraint solver (Phase AR): a PBD-family distance-

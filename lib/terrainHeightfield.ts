@@ -31,8 +31,13 @@
  *
  * Publication is conditional by construction: the field exists
  * only while the erosion grammar is active (Water or Thermal
- * above 0, plane mode — tunnel mode strips the erosion options
- * in terrainOptionsFromConfig, exactly like the derived maps).
+ * above 0, plane mode). Tunnel mode is withheld HERE even
+ * after Phase 30 taught the erosion consumers (mesh, derived
+ * maps, particle collider, shadow) to erode with the x wrap:
+ * this publication is a FLAT floor surface for the rigid-body
+ * floor, and the tunnel's surface is the cylinder interior —
+ * a flat eroded field would misrepresent it, so the floor
+ * keeps its flat-plane fallback while the tunnel is on.
  * With no baked field this module returns null and consumers
  * fall back to whatever they did before (the RBD floor falls
  * back to the flat plane at gpgpuFloorY). The analytic
@@ -74,13 +79,17 @@ let wrapperCache: { field: ErodedTerrainField; worldScale: number; wrapped: Terr
 
 /**
  * The published heightfield for a config, or null when no baked
- * field exists (erosion grammar off, or tunnel mode). The
+ * field exists (erosion grammar off, or tunnel mode — see the
+ * header for the Phase 30 exception). The
  * underlying ErodedTerrainField is itself single-entry cached in
  * gpgpuMorphTargets, so resolving per frame is a cache hit; the
  * world-unit copy is rebuilt only when the field object or the
  * world scale changes.
  */
 export function getTerrainHeightfield(config: ParticleConfig): TerrainHeightfield | null {
+  // Phase 30: the tunnel exception lives here now (the shared
+  // options builder no longer strips erosion in tunnel mode).
+  if (config.gpgpuTerrainMeshTunnel) return null;
   const terrain = terrainOptionsFromConfig(config);
   const fieldSeed = terrainFieldSeedFor(config.gpgpuSeed, terrain.seed);
   const field = getErodedTerrainField(terrain, fieldSeed);

@@ -94,12 +94,16 @@ export const ParticleSystem: React.FC<{
   // (layers 2/3 only; layer 1 and aux keep the stock pair).
   const iblActive = (layerIndex === 2 && config.layer2IblIntensity > 0.001)
     || (layerIndex === 3 && config.layer3IblIntensity > 0.001);
+  // True shadow map (Phase 30 stage 3): the layer receiver's
+  // variant predicate is the shared strength key's sign (all
+  // layers), mirroring shadowMapVariantOn for the GPGPU draws.
+  const shadowActive = (config.gpgpuShadowMapStrength ?? 0) > 0;
   const [vertexShader, setVertexShader] = useState(PARTICLE_VERTEX_SHADER);
   const appliedVertexCodeRef = useRef<string | null>(null);
   useEffect(() => {
     const code = config.particlePointsVertexGlslEnabled ? config.particlePointsVertexGlslCode : '';
-    const applyKey = `${iblActive ? 'ibl' : 'stock'}|${code}`;
-    if (!code.trim() && !iblActive) {
+    const applyKey = `${iblActive ? 'ibl' : 'stock'}${shadowActive ? '+smap' : ''}|${code}`;
+    if (!code.trim() && !iblActive && !shadowActive) {
       if (appliedVertexCodeRef.current !== null) {
         setVertexShader(PARTICLE_VERTEX_SHADER);
         appliedVertexCodeRef.current = null;
@@ -109,7 +113,7 @@ export const ParticleSystem: React.FC<{
     }
     if (appliedVertexCodeRef.current === applyKey) return;
     if (!code.trim()) {
-      setVertexShader(buildParticleVertexShader('', true));
+      setVertexShader(buildParticleVertexShader('', iblActive, shadowActive));
       appliedVertexCodeRef.current = applyKey;
       setParticlePointsVertexGlslStatus({ state: 'inactive' });
       return;
@@ -128,10 +132,10 @@ export const ParticleSystem: React.FC<{
       setParticlePointsVertexGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
       return;
     }
-    setVertexShader(buildParticleVertexShader(code, iblActive));
+    setVertexShader(buildParticleVertexShader(code, iblActive, shadowActive));
     appliedVertexCodeRef.current = applyKey;
     setParticlePointsVertexGlslStatus({ state: 'active' });
-  }, [config.particlePointsVertexGlslEnabled, config.particlePointsVertexGlslCode, gl, iblActive]);
+  }, [config.particlePointsVertexGlslEnabled, config.particlePointsVertexGlslCode, gl, iblActive, shadowActive]);
 
   // Particle points fragment GLSL (Phase CE): the same
   // validate + compile-check + swap flow as the vertex point
@@ -144,8 +148,8 @@ export const ParticleSystem: React.FC<{
   const appliedFragmentCodeRef = useRef<string | null>(null);
   useEffect(() => {
     const code = config.particlePointsFragmentGlslEnabled ? config.particlePointsFragmentGlslCode : '';
-    const applyKey = `${iblActive ? 'ibl' : 'stock'}|${code}`;
-    if (!code.trim() && !iblActive) {
+    const applyKey = `${iblActive ? 'ibl' : 'stock'}${shadowActive ? '+smap' : ''}|${code}`;
+    if (!code.trim() && !iblActive && !shadowActive) {
       if (appliedFragmentCodeRef.current !== null) {
         setFragmentShader(FRAGMENT_SHADER);
         appliedFragmentCodeRef.current = null;
@@ -155,7 +159,7 @@ export const ParticleSystem: React.FC<{
     }
     if (appliedFragmentCodeRef.current === applyKey) return;
     if (!code.trim()) {
-      setFragmentShader(buildParticleFragmentShader('', true));
+      setFragmentShader(buildParticleFragmentShader('', iblActive, shadowActive));
       appliedFragmentCodeRef.current = applyKey;
       setParticlePointsFragmentGlslStatus({ state: 'inactive' });
       return;
@@ -174,10 +178,10 @@ export const ParticleSystem: React.FC<{
       setParticlePointsFragmentGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
       return;
     }
-    setFragmentShader(buildParticleFragmentShader(code, iblActive));
+    setFragmentShader(buildParticleFragmentShader(code, iblActive, shadowActive));
     appliedFragmentCodeRef.current = applyKey;
     setParticlePointsFragmentGlslStatus({ state: 'active' });
-  }, [config.particlePointsFragmentGlslEnabled, config.particlePointsFragmentGlslCode, gl, iblActive]);
+  }, [config.particlePointsFragmentGlslEnabled, config.particlePointsFragmentGlslCode, gl, iblActive, shadowActive]);
 
   const maxGhost = 8;
   const ghostMats = useMemo(

@@ -156,7 +156,7 @@ try {
     const tcy = m.planVerticalTextOnPath('西暦2026年', 0, { tatechuyoko: true });
     check('(f) tate-chu-yoko run is one unit', tcy.units.length === 4, JSON.stringify(tcy.units.map((u) => u.text)));
     const run = tcy.units.find((u) => u.text === '2026');
-    check('(f) run unit carries its scale', !!run && run.scale === 0.5, JSON.stringify(run));
+    check('(f) run unit carries its squeeze (Phase 30: full-height horizontal squeeze, fixed advance model)', !!run && run.squeeze === 1 / 2.24, JSON.stringify(run));
     const ruby = m.planVerticalTextOnPath('｜星屑《ほしくず》の海', 0, { ruby: true });
     check('(f) ruby parent glyphs stay plain units',
       sameJson(ruby.units.map((u) => u.text), ['星', '屑', 'の', '海']),

@@ -37,7 +37,7 @@ export function rigidClusterColorVariantOn(config: ParticleConfig): boolean {
 export function shadowMapVariantOn(config: ParticleConfig): boolean {
   return (config.gpgpuShadowMapStrength ?? 0) > 0;
 }
-import { AUX_DRAW_FRAG, AUX_DRAW_VERT, AUX_TEX_SIZE } from "./gpgpuShaderAux";
+import { AUX_TEX_SIZE, buildAuxDrawFrag, buildAuxDrawVert } from "./gpgpuShaderAux";
 import { WW_DRAW_FRAG, WW_DRAW_VERT, WW_TEX_SIZE } from "./gpgpuShaderWhitewater";
 
 export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
@@ -295,8 +295,20 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uColor:     { value: new THREE.Color(config.gpgpuColor) },
       uOpacity:   { value: config.gpgpuOpacity },
       uAuxSize:   { value: config.gpgpuAuxSize },
+      // True shadow map (Phase 30 stage 3): the uniform entries
+      // always exist on the aux materials (the stock shaders
+      // declare none of them); the scene loop syncs them from
+      // the shared store with guarded writes, and the variant
+      // strings are swapped when the strength's sign flips —
+      // the same contract as the points / geom receivers.
+      uShadowMapTex: { value: null },
+      uLightViewProj: { value: new THREE.Matrix4() },
+      uShadowMapBias: { value: 0.001 },
+      uShadowMapSoftness: { value: 1 },
+      uShadowMapReady: { value: 0 },
+      uShadowMapStrength: { value: 0 },
     },
-    vertexShader: AUX_DRAW_VERT, fragmentShader: AUX_DRAW_FRAG,
+    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -313,8 +325,20 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uColor:     { value: new THREE.Color(config.gpgpuColor) },
       uOpacity:   { value: config.gpgpuOpacity },
       uAuxSize:   { value: config.gpgpuAux2Size },
+      // True shadow map (Phase 30 stage 3): the uniform entries
+      // always exist on the aux materials (the stock shaders
+      // declare none of them); the scene loop syncs them from
+      // the shared store with guarded writes, and the variant
+      // strings are swapped when the strength's sign flips —
+      // the same contract as the points / geom receivers.
+      uShadowMapTex: { value: null },
+      uLightViewProj: { value: new THREE.Matrix4() },
+      uShadowMapBias: { value: 0.001 },
+      uShadowMapSoftness: { value: 1 },
+      uShadowMapReady: { value: 0 },
+      uShadowMapStrength: { value: 0 },
     },
-    vertexShader: AUX_DRAW_VERT, fragmentShader: AUX_DRAW_FRAG,
+    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -326,11 +350,39 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uColor:     { value: new THREE.Color(config.gpgpuColor) },
       uOpacity:   { value: config.gpgpuOpacity },
       uAuxSize:   { value: config.gpgpuAux2Size },
+      // True shadow map (Phase 30 stage 3): the uniform entries
+      // always exist on the aux materials (the stock shaders
+      // declare none of them); the scene loop syncs them from
+      // the shared store with guarded writes, and the variant
+      // strings are swapped when the strength's sign flips —
+      // the same contract as the points / geom receivers.
+      uShadowMapTex: { value: null },
+      uLightViewProj: { value: new THREE.Matrix4() },
+      uShadowMapBias: { value: 0.001 },
+      uShadowMapSoftness: { value: 1 },
+      uShadowMapReady: { value: 0 },
+      uShadowMapStrength: { value: 0 },
     },
-    vertexShader: AUX_DRAW_VERT, fragmentShader: AUX_DRAW_FRAG,
+    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
+
+  // Phase 30 stage 3: swap the aux draw strings when the
+  // shadow-map variant condition flips (creation already used
+  // the initial config's variant). All three aux levels share
+  // the draw shaders, so all three materials swap together.
+  const auxVariantRef = useRef({ shadowMap: shadowMapVariantOn(config) });
+  useEffect(() => {
+    const shadowMap = shadowMapVariantOn(config);
+    if (auxVariantRef.current.shadowMap === shadowMap) return;
+    auxVariantRef.current = { shadowMap };
+    for (const m of [auxDrawMat, aux2DrawMat, aux3DrawMat]) {
+      m.vertexShader = buildAuxDrawVert({ shadowMap });
+      m.fragmentShader = buildAuxDrawFrag({ shadowMap });
+      m.needsUpdate = true;
+    }
+  }, [config.gpgpuShadowMapStrength, auxDrawMat, aux2DrawMat, aux3DrawMat]);
 
   const auxDrawGeo = useMemo(() => {
     const count = AUX_TEX_SIZE * AUX_TEX_SIZE;

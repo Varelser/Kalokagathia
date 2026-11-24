@@ -38,6 +38,8 @@ export {
 export {
   VOLUMETRIC_VERT,
   VOLUMETRIC_FRAG,
+  buildVolumetricFrag,
+  buildVolumetricVert,
   GEOM_VERT,
   GEOM_VERT_PHASE19,
   GEOM_VERT_PHASE24,

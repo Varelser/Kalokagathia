@@ -361,7 +361,8 @@ export interface ShadowSceneConfig {
   gpgpuMorphTerrainErosionThermalPasses: number;
   gpgpuMorphTerrainErosionSeed: number;
   // Erosion mask (Phase 20 stage 3).
-  gpgpuMorphTerrainErosionMaskMode: 'off' | 'height' | 'slope' | 'curvature';
+  gpgpuMorphTerrainErosionMaskMode: 'off' | 'height' | 'slope' | 'curvature' | 'image';
+  gpgpuMorphTerrainErosionMaskImageGrid: number[];
   gpgpuMorphTerrainErosionMaskStrength: number;
   gpgpuMorphTerrainErosionMaskInvert: boolean;
   gpgpuMorphTerrainErosionMaskLow: number;
@@ -435,7 +436,12 @@ export function buildShadowScene(config: ShadowSceneConfig): ShadowScene {
       terraceSteps: config.gpgpuMorphTerrainTerraceSteps,
       // Terrain erosion (Phase AP): the occluder follows the
       // carved field; stripped in tunnel mode (plane only).
-      erosion: config.gpgpuTerrainMeshTunnel ? undefined : {
+      erosion: {
+      // Tunnel wrap (Phase 30): erosion is no longer stripped
+      // in tunnel mode — the droplet sim wraps in x (wrapX)
+      // and the consumers tile the eroded field like the
+      // analytic one. Plane mode passes wrapX false and keeps
+      // the Phase AP behaviour verbatim.
         water: config.gpgpuMorphTerrainErosionWater,
         droplets: config.gpgpuMorphTerrainErosionDroplets,
         deposit: config.gpgpuMorphTerrainErosionDeposit,
@@ -451,7 +457,9 @@ export function buildShadowScene(config: ShadowSceneConfig): ShadowScene {
           invert: config.gpgpuMorphTerrainErosionMaskInvert,
           low: config.gpgpuMorphTerrainErosionMaskLow,
           high: config.gpgpuMorphTerrainErosionMaskHigh,
+        imageGrid: config.gpgpuMorphTerrainErosionMaskImageGrid,
         },
+        wrapX: config.gpgpuTerrainMeshTunnel,
       },
     },
     seed: config.gpgpuSeed,

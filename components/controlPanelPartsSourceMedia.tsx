@@ -407,7 +407,7 @@ export const SourceMediaSettings: React.FC<MediaSourceSettingsProps> = ({
           {onTextVerticalChange && textVertical && (
             <>
               <div className="mb-3 rounded border border-white/10 bg-white/5 p-2 text-[10px] text-white/55">
-                縦書きは字形を正立のまま上から下へ、段は右から左へ配置します。禁則は最小集合、約物は位置補正のみ。縦中横は半角英数字の2〜4字まで、ルビは青空文庫式の記法で親文字の右側に置きます（段間に重なることがあります）。
+                縦書きは字形を正立のまま上から下へ、段は右から左へ配置します。禁則は最小集合、約物は位置補正のみ。縦中横は半角英数字の2〜4字まで（全高のまま横に圧縮して1字分に収めます）、ルビは青空文庫式の記法で親文字の右側に置きます（ルビ使用時は段間が自動で広がります）。段がラスタに収まらないときは、収まるように字の大きさが自動で調整されます。
               </div>
               {onTextColumnLengthChange && (
                 <Slider label="Column Length (0 = Auto)" value={textColumnLength ?? 0} min={0} max={40} step={1} onChange={(value) => onTextColumnLengthChange(value)} />

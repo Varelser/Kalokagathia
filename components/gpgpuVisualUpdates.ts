@@ -550,6 +550,24 @@ export function syncVisualUniforms(args: {
     if (geomMat.uniforms.uShadowMapSoftness) geomMat.uniforms.uShadowMapSoftness.value = config.gpgpuShadowMapSoftness;
     if (geomMat.uniforms.uShadowMapStrength) geomMat.uniforms.uShadowMapStrength.value = Math.min(1, Math.max(0, config.gpgpuShadowMapStrength));
   }
+  // True shadow map (Phase 30 stage 3): the VOLUMETRIC sprites
+  // receive from the same shared store, same guarded writes,
+  // same not-ready contract.
+  if (volumetricMat.uniforms.uShadowMapTex) {
+    const smapSource = getLightShadowSource();
+    if (smapSource) {
+      volumetricMat.uniforms.uShadowMapTex.value = smapSource.texture;
+      if (volumetricMat.uniforms.uLightViewProj) {
+        (volumetricMat.uniforms.uLightViewProj.value as THREE.Matrix4).copy(smapSource.viewProj);
+      }
+      if (volumetricMat.uniforms.uShadowMapReady) volumetricMat.uniforms.uShadowMapReady.value = 1;
+    } else {
+      if (volumetricMat.uniforms.uShadowMapReady) volumetricMat.uniforms.uShadowMapReady.value = 0;
+    }
+    if (volumetricMat.uniforms.uShadowMapBias) volumetricMat.uniforms.uShadowMapBias.value = config.gpgpuShadowMapBias;
+    if (volumetricMat.uniforms.uShadowMapSoftness) volumetricMat.uniforms.uShadowMapSoftness.value = config.gpgpuShadowMapSoftness;
+    if (volumetricMat.uniforms.uShadowMapStrength) volumetricMat.uniforms.uShadowMapStrength.value = Math.min(1, Math.max(0, config.gpgpuShadowMapStrength));
+  }
   if (drawMat.uniforms.uPointShape) drawMat.uniforms.uPointShape.value = { soft: 0, sphere: 1, ring: 2, star: 3, hexagon: 4, diamond: 5, flare: 6, cloud: 7, bokeh: 8, crosshair: 9, iris: 10, lightning: 11 }[config.gpgpuPointShape] ?? 0;
   drawMat.uniforms.uSortEnabled.value = config.gpgpuSortEnabled && finalSortTex !== null;
   drawMat.uniforms.uSortTex.value = finalSortTex;

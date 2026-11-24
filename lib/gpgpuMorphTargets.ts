@@ -724,6 +724,36 @@ export function terrainHeightAt(
   }
 }
 
+/**
+ * Cross-fade tiled height (Phase 30): the tunnel presentation
+ * of the field — the field blended with its one-period-shifted
+ * copies so h(-E) == h(+E) on both axes and the wrapped mesh
+ * closes seamlessly. This is the same construct the mesh
+ * builder applies to the analytic function (lib/terrainMesh.ts
+ * tiledHeightAt with both wraps on); the grid bakes sample THIS
+ * form as their base while wrapX is set, so the eroded grid's
+ * edge columns agree and the tunnel mesh can read the grid
+ * directly. Extent 1.05 matches TERRAIN_EROSION / mesh extent.
+ */
+export function tiledTerrainHeightAt(
+  x: number,
+  z: number,
+  terrain: GpgpuMorphTerrainOptions,
+  fieldSeed: number,
+): number {
+  const extent = 1.05;
+  const period = extent * 2;
+  const tx = (x + extent) / period;
+  const tz = (z + extent) / period;
+  const h00 = terrainHeightAt(x, z, terrain, fieldSeed);
+  const h10 = terrainHeightAt(x - period, z, terrain, fieldSeed);
+  const h01 = terrainHeightAt(x, z - period, terrain, fieldSeed);
+  const h11 = terrainHeightAt(x - period, z - period, terrain, fieldSeed);
+  const top = h00 * (1 - tx) + h10 * tx;
+  const bottom = h01 * (1 - tx) + h11 * tx;
+  return top * (1 - tz) + bottom * tz;
+}
+
 // ---------------------------------------------------------------------------
 // Terrain scatter grammar (Phase AI)
 
@@ -980,7 +1010,7 @@ export function terrainScatterFinishNormal(
  * is baked, like the derived maps.
  */
 /** Which field of the PRE-erosion grid the erosion mask reads. */
-export type TerrainErosionMaskMode = 'off' | 'height' | 'slope' | 'curvature';
+export type TerrainErosionMaskMode = 'off' | 'height' | 'slope' | 'curvature' | 'image';
 
 /**
  * Erosion mask (Phase 20 stage 3): a per-cell coefficient grid
@@ -993,6 +1023,12 @@ export type TerrainErosionMaskMode = 'off' | 'height' | 'slope' | 'curvature';
  */
 export interface TerrainErosionMaskOptions {
   mode: TerrainErosionMaskMode;
+  /** Image mask (Phase 30): the captured luma grid (square,
+   *  row 0 = the fz = -E side, values 0..1) used as the mask
+   *  field while mode is 'image'. Captured by the panel at
+   *  129x129 and resampled to the working grid at build time.
+   *  Absent / invalid = the mask resolves to null (identity). */
+  imageGrid?: number[] | null;
   /** Mask depth 0..1: 1 = the window fully gates the sim,
    *  0 = no gating anywhere (mask value 1 at every cell). */
   strength: number;
@@ -1024,6 +1060,15 @@ export interface GpgpuMorphTerrainErosionOptions {
    *  builders, the tunnel strip) carries it unchanged. Absent
    *  / mode 'off' = no mask, the Phase AP sim verbatim. */
   mask?: TerrainErosionMaskOptions | null;
+  /** Tunnel wrap (Phase 30): while true the droplet sim treats
+   *  the grid's x axis as periodic with period (size - 1) — a
+   *  droplet leaving one edge re-enters at the other and its
+   *  sampling / deposits wrap with it, so erosion channels
+   *  cross the tunnel seam instead of dying at the edge. Set by
+   *  the config-side builders in tunnel mode (where erosion
+   *  used to be stripped entirely); absent / false = the Phase
+   *  AP sim verbatim. */
+  wrapX?: boolean;
 }
 
 export interface ResolvedTerrainErosionMask {
@@ -1032,6 +1077,10 @@ export interface ResolvedTerrainErosionMask {
   invert: boolean;
   low: number;
   high: number;
+  /** Image field (mode 'image'): the validated grid + its
+   *  side length, or null in every other mode. */
+  imageGrid: Float32Array | null;
+  imageSize: number;
 }
 
 export interface ResolvedTerrainErosion {
@@ -1047,6 +1096,8 @@ export interface ResolvedTerrainErosion {
   /** Resolved erosion mask, or null while the mask is off
    *  (the sim then never touches a mask grid — identity). */
   mask: ResolvedTerrainErosionMask | null;
+  /** Periodic-x droplet motion (tunnel mode). */
+  wrapX: boolean;
 }
 
 /**
@@ -1109,14 +1160,56 @@ export function resolveTerrainErosionMask(
 ): ResolvedTerrainErosionMask | null {
   const mask = erosion?.mask;
   if (!mask) return null;
-  if (mask.mode !== 'height' && mask.mode !== 'slope' && mask.mode !== 'curvature') return null;
+  if (mask.mode !== 'height' && mask.mode !== 'slope' && mask.mode !== 'curvature' && mask.mode !== 'image') return null;
+  // Image field (Phase 30): validate the captured grid (square,
+  // at least 2x2, finite values clamped to 0..1). An invalid or
+  // missing grid makes mode 'image' resolve to NO mask — the
+  // identity — rather than a wrong one.
+  let imageGrid: Float32Array | null = null;
+  let imageSize = 0;
+  if (mask.mode === 'image') {
+    const raw = mask.imageGrid;
+    if (Array.isArray(raw) && raw.length >= 4) {
+      const side = Math.round(Math.sqrt(raw.length));
+      if (side * side === raw.length) {
+        imageGrid = new Float32Array(raw.length);
+        for (let i = 0; i < raw.length; i++) {
+          const v = raw[i];
+          imageGrid[i] = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+        }
+        imageSize = side;
+      }
+    }
+    if (!imageGrid) return null;
+  }
   return {
     mode: mask.mode,
     strength: clampErosion01(mask.strength, 1),
     invert: !!mask.invert,
     low: clampErosion01(mask.low, 0),
     high: clampErosion01(mask.high, 1),
+    imageGrid,
+    imageSize,
   };
+}
+
+/**
+ * Content hash of a captured mask image grid (Phase 30), for
+ * the bake cache keys: a grid change must re-carve the field.
+ * FNV-1a over the values quantised to 1/4096 — cheap and
+ * deterministic; collisions only risk a stale field until the
+ * next parameter change, and the quantisation keeps float
+ * noise from busting the cache.
+ */
+export function erosionMaskImageGridHash(grid: readonly number[] | null | undefined): string {
+  if (!grid || grid.length === 0) return 'noimg';
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < grid.length; i++) {
+    const q = Math.round(Math.min(1, Math.max(0, grid[i] || 0)) * 4096);
+    h ^= q & 0xff; h = Math.imul(h, 16777619);
+    h ^= (q >> 8) & 0xff; h = Math.imul(h, 16777619);
+  }
+  return 'img' + grid.length + ':' + (h >>> 0).toString(36);
 }
 
 export function resolveTerrainErosion(
@@ -1150,6 +1243,7 @@ export function resolveTerrainErosion(
     thermalPasses,
     seed,
     mask: resolveTerrainErosionMask(erosion),
+    wrapX: !!erosion.wrapX,
   };
 }
 
@@ -1171,7 +1265,30 @@ export function buildErosionMaskGrid(
 ): Float32Array {
   const count = n * n;
   const field = new Float32Array(count);
-  if (mask.mode === 'height') {
+  if (mask.mode === 'image' && mask.imageGrid) {
+    // Image field (Phase 30): bilinear-resample the captured
+    // grid to the working size, corner-aligned (the capture is
+    // 129x129, the erosion grid size, so the common case is an
+    // exact copy). The band window / invert / strength tail
+    // below applies exactly as for the analytic fields.
+    const s = mask.imageSize;
+    const g = mask.imageGrid;
+    for (let j = 0; j < n; j++) {
+      const gz = n > 1 ? (j / (n - 1)) * (s - 1) : 0;
+      const j0 = Math.min(s - 2, Math.floor(gz));
+      const fz = Math.min(1, Math.max(0, gz - j0));
+      for (let i = 0; i < n; i++) {
+        const gx = n > 1 ? (i / (n - 1)) * (s - 1) : 0;
+        const i0 = Math.min(s - 2, Math.floor(gx));
+        const fx = Math.min(1, Math.max(0, gx - i0));
+        const a = g[j0 * s + i0];
+        const b = g[j0 * s + i0 + 1];
+        const c = g[(j0 + 1) * s + i0];
+        const d = g[(j0 + 1) * s + i0 + 1];
+        field[j * n + i] = (a * (1 - fx) + b * fx) * (1 - fz) + (c * (1 - fx) + d * fx) * fz;
+      }
+    }
+  } else if (mask.mode === 'height') {
     let min = Infinity;
     let max = -Infinity;
     for (let k = 0; k < count; k++) {
@@ -1296,10 +1413,19 @@ function erodeDropletsInPlace(
   const evaporateRate = 0.01;
   const gravity = -4;
   const maxLifetime = 30;
+  // Tunnel wrap (Phase 30): with wrapX the droplet's world is
+  // periodic in x with period (n - 1) — positions fold into
+  // [0, n - 1) and the bilinear cell follows, so a droplet
+  // crossing the seam keeps flowing on the other side. With
+  // wrapX off every expression below is the Phase AP original.
+  const wrapX = resolved.wrapX;
+  const periodX = n - 1;
+  const wrapPosX = (px: number): number => px - Math.floor(px / periodX) * periodX;
   const sampleAt = (px: number, pz: number): number => {
-    const ix = Math.max(0, Math.min(n - 2, Math.floor(px)));
+    const sx = wrapX ? wrapPosX(px) : px;
+    const ix = Math.max(0, Math.min(n - 2, Math.floor(sx)));
     const iz = Math.max(0, Math.min(n - 2, Math.floor(pz)));
-    const fx = Math.max(0, Math.min(1, px - ix));
+    const fx = Math.max(0, Math.min(1, sx - ix));
     const fz = Math.max(0, Math.min(1, pz - iz));
     const h00 = heights[iz * n + ix];
     const h10 = heights[iz * n + ix + 1];
@@ -1308,9 +1434,10 @@ function erodeDropletsInPlace(
     return (h00 * (1 - fx) + h10 * fx) * (1 - fz) + (h01 * (1 - fx) + h11 * fx) * fz;
   };
   const addAt = (px: number, pz: number, amount: number): void => {
-    const ix = Math.max(0, Math.min(n - 2, Math.floor(px)));
+    const sx = wrapX ? wrapPosX(px) : px;
+    const ix = Math.max(0, Math.min(n - 2, Math.floor(sx)));
     const iz = Math.max(0, Math.min(n - 2, Math.floor(pz)));
-    const fx = Math.max(0, Math.min(1, px - ix));
+    const fx = Math.max(0, Math.min(1, sx - ix));
     const fz = Math.max(0, Math.min(1, pz - iz));
     heights[iz * n + ix] += amount * (1 - fx) * (1 - fz);
     heights[iz * n + ix + 1] += amount * fx * (1 - fz);
@@ -1358,7 +1485,12 @@ function erodeDropletsInPlace(
       const oldZ = pz;
       px += dirX;
       pz += dirZ;
-      if (px < 0 || pz < 0 || px > n - 1 || pz > n - 1) break;
+      if (wrapX) {
+        // x never kills the droplet: it folds to the other
+        // edge. z still ends the run at the field borders.
+        if (pz < 0 || pz > n - 1) break;
+        px = wrapPosX(px);
+      } else if (px < 0 || pz < 0 || px > n - 1 || pz > n - 1) break;
       const newH = sampleAt(px, pz);
       const dh = newH - prevH;
       const capacity = Math.max(-dh * speed * waterVol * capacityFactor, minCapacity);
@@ -1467,6 +1599,23 @@ export function erodeHeightGridInPlace(
   if (mask && mask.every((v) => v === 1)) mask = null;
   erodeDropletsInPlace(heights, size, resolved, rngSeed, mask, measure ?? null);
   relaxThermalInPlace(heights, size, step, resolved, mask);
+  if (resolved.wrapX) {
+    // Seam closure (Phase 30): columns 0 and size-1 are the
+    // SAME physical line of the tunnel, held twice in the
+    // grid. The wrapped droplet traffic feeds the two copies
+    // almost — but not exactly — equally (a droplet's deposit
+    // splits by its approach side), leaving a visible step at
+    // the seam (measured 0.109 against a plane seam of 1.06).
+    // Averaging the pair into both copies closes the seam
+    // exactly and conserves the pair's total height.
+    for (let j = 0; j < size; j++) {
+      const a = j * size;
+      const b = j * size + size - 1;
+      const mean = (heights[a] + heights[b]) / 2;
+      heights[a] = mean;
+      heights[b] = mean;
+    }
+  }
 }
 
 /** The eroded height field: one baked grid + a bilinear sampler. */
@@ -1491,6 +1640,9 @@ function erodedFieldCacheKey(terrain: GpgpuMorphTerrainOptions, fieldSeed: numbe
     // parameters are part of the cache identity too (a miss
     // would serve the un-masked landscape against a masked one).
     m?.mode ?? 'off', m?.strength ?? 1, m?.invert ? 1 : 0, m?.low ?? 0, m?.high ?? 1,
+    m?.mode === 'image' ? erosionMaskImageGridHash(m.imageGrid) : 'noimg',
+    // Phase 30: the tunnel wrap re-carves the field too.
+    e?.wrapX ? 1 : 0,
     fieldSeed,
   ].join('|');
 }
@@ -1521,7 +1673,12 @@ export function getErodedTerrainField(
     const fz = -extent + j * step;
     for (let i = 0; i < n; i++) {
       const fx = -extent + i * step;
-      heights[j * n + i] = terrainHeightAt(fx, fz, terrain, fieldSeed);
+      // Tunnel wrap (Phase 30): the base grid is the cross-fade
+      // tiled field, so its edge columns agree before the sim
+      // runs (buildTerrainHeightGrid samples it the same way).
+      heights[j * n + i] = resolved.wrapX
+        ? tiledTerrainHeightAt(fx, fz, terrain, fieldSeed)
+        : terrainHeightAt(fx, fz, terrain, fieldSeed);
     }
   }
   erodeHeightGridInPlace(heights, n, step, resolved, erosionRngSeedFor(fieldSeed, resolved.seed));

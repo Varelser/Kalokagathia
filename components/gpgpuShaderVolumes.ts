@@ -6,7 +6,16 @@ import { IBL_GLSL_HELPERS } from "../lib/iblGlsl";
 import { LIGHT_SHADOW_GLSL } from "../lib/lightShadowMap";
 
 // ── Volumetric sphere sprite vertex ──
-export const VOLUMETRIC_VERT = /* glsl */ `
+// ── Volumetric sphere sprite vertex (builder form, Phase 30
+// stage 3): the stock string is the builder with no options —
+// the shadow variant splices the LIGHT_SHADOW_GLSL chunk + a
+// varying + the factor compute at the sphere centre, mirroring
+// the other receivers. Off assembles byte-identically.
+export interface VolumetricShaderVariantOptions {
+  shadowMap?: boolean;
+}
+
+const VOLUMETRIC_VERT_HEAD = /* glsl */ `
   precision highp float;
   attribute vec2 aTexCoord;
   uniform sampler2D uPosTex;
@@ -14,11 +23,24 @@ export const VOLUMETRIC_VERT = /* glsl */ `
   uniform float uRingOffsetZ;
   varying vec3 vWorldCenter;
   varying vec3 vQuadPos;
-  void main() {
+`;
+
+const VOLUMETRIC_VERT_SHADOWMAP_VARYING = /* glsl */ `  varying float vShadowMapMul;
+`;
+
+const VOLUMETRIC_VERT_BODY_A = /* glsl */ `  void main() {
     vec3 center = texture2D(uPosTex, aTexCoord).xyz;
     center.z -= uRingOffsetZ;
     vWorldCenter = center;
-    // Billboard: derive camera axes from cameraPosition
+`;
+
+const VOLUMETRIC_VERT_SHADOWMAP_COMPUTE = /* glsl */ `    // True shadow map (Phase 30 stage 3): sample the
+    // light-viewpoint depth at the sphere centre (after the
+    // ring offset — the centre the quad is drawn around).
+    vShadowMapMul = kaloShadowFactor(center);
+`;
+
+const VOLUMETRIC_VERT_BODY_B = /* glsl */ `    // Billboard: derive camera axes from cameraPosition
     vec3 toCamera = normalize(cameraPosition - center);
     vec3 up       = abs(toCamera.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
     vec3 right    = normalize(cross(toCamera, up));
@@ -29,8 +51,23 @@ export const VOLUMETRIC_VERT = /* glsl */ `
   }
 `;
 
+export function buildVolumetricVert(options?: VolumetricShaderVariantOptions): string {
+  const shadowMap = !!options?.shadowMap;
+  return VOLUMETRIC_VERT_HEAD
+    + (shadowMap ? VOLUMETRIC_VERT_SHADOWMAP_VARYING : '')
+    + (shadowMap ? LIGHT_SHADOW_GLSL : '')
+    + VOLUMETRIC_VERT_BODY_A
+    + (shadowMap ? VOLUMETRIC_VERT_SHADOWMAP_COMPUTE : '')
+    + VOLUMETRIC_VERT_BODY_B;
+}
+
+export const VOLUMETRIC_VERT = buildVolumetricVert();
+
+export const VOLUMETRIC_VERT_PHASE30 = buildVolumetricVert({ shadowMap: true });
+
+
 // ── Volumetric sphere sprite fragment (ray-marched density) ──
-export const VOLUMETRIC_FRAG = /* glsl */ `
+const VOLUMETRIC_FRAG_HEAD = /* glsl */ `
   precision highp float;
   uniform vec3  uColor;
   uniform float uRadius;
@@ -47,7 +84,13 @@ export const VOLUMETRIC_FRAG = /* glsl */ `
   uniform vec3  uLightPos;
   varying vec3 vWorldCenter;
   varying vec3 vQuadPos;
-  void main() {
+`;
+
+const VOLUMETRIC_FRAG_SHADOWMAP_VARYING = /* glsl */ `  varying float vShadowMapMul;
+  uniform float uShadowMapStrength;
+`;
+
+const VOLUMETRIC_FRAG_BODY_A = /* glsl */ `  void main() {
     vec3 rayDir = normalize(vQuadPos - cameraPosition);
     vec3 oc = cameraPosition - vWorldCenter;
     float b    = dot(oc, rayDir);
@@ -89,9 +132,33 @@ export const VOLUMETRIC_FRAG = /* glsl */ `
     }
     float alpha = (1.0 - exp(-accumulated * uDensity)) * uOpacity;
     if (alpha < 0.005) discard;
-    gl_FragColor = vec4(uColor, alpha);
-  }
 `;
+
+const VOLUMETRIC_FRAG_WRITE = /* glsl */ `    gl_FragColor = vec4(uColor, alpha);
+`;
+
+const VOLUMETRIC_FRAG_SHADOWMAP_WRITE = /* glsl */ `    // True shadow map (Phase 30 stage 3): the centre's shadow
+    // factor scales the colour, like the other receivers.
+    vec3 volCol = uColor * mix(1.0, vShadowMapMul, uShadowMapStrength);
+    gl_FragColor = vec4(volCol, alpha);
+`;
+
+const VOLUMETRIC_FRAG_BODY_B = /* glsl */ `  }
+`;
+
+export function buildVolumetricFrag(options?: VolumetricShaderVariantOptions): string {
+  const shadowMap = !!options?.shadowMap;
+  return VOLUMETRIC_FRAG_HEAD
+    + (shadowMap ? VOLUMETRIC_FRAG_SHADOWMAP_VARYING : '')
+    + VOLUMETRIC_FRAG_BODY_A
+    + (shadowMap ? VOLUMETRIC_FRAG_SHADOWMAP_WRITE : VOLUMETRIC_FRAG_WRITE)
+    + VOLUMETRIC_FRAG_BODY_B;
+}
+
+export const VOLUMETRIC_FRAG = buildVolumetricFrag();
+
+export const VOLUMETRIC_FRAG_PHASE30 = buildVolumetricFrag({ shadowMap: true });
+
 
 // ── Instanced geometry vertex ──
 const GEOM_VERT_HEAD = /* glsl */ `

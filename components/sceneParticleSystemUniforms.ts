@@ -161,6 +161,17 @@ export function createParticleUniforms(config: ParticleConfig, isAux: boolean) {
     uIblMap: { value: null as THREE.Texture | null },
     uIblIntensity: { value: 0 },
     uIblYaw: { value: 0 },
+    // True shadow map (Phase 30 stage 3): consumed only by the
+    // shadow shader variant (all layers). The uniforms exist in
+    // the shared dict always (three ignores undeclared ones);
+    // the variant itself is only built while the strength key
+    // is positive.
+    uShadowMapTex: { value: null as THREE.Texture | null },
+    uLightViewProj: { value: new THREE.Matrix4() },
+    uShadowMapBias: { value: 0.001 },
+    uShadowMapSoftness: { value: 1 },
+    uShadowMapReady: { value: 0 },
+    uShadowMapStrength: { value: 0 },
     uLayerGradLut: { value: createGradientLutTexture(
       getKinetixGradientPreset('sumie')?.start ?? '#0f172a',
       getKinetixGradientPreset('sumie')?.mid ?? '#334155',

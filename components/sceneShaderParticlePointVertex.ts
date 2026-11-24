@@ -1,3 +1,4 @@
+import { LIGHT_SHADOW_GLSL } from '../lib/lightShadowMap';
 import { PHYSICS_LOGIC } from './scenePhysicsLogic';
 
 export const PARTICLE_VERTEX_SHADER = `
@@ -337,8 +338,9 @@ export const PARTICLE_VERTEX_SHADER = `
 // the offset to both keeps the trail/streak delta measuring the
 // particle's own motion (Phase CD decision). An empty snippet
 // yields the stock shader unchanged.
-export function buildParticleVertexShader(customCode: string, ibl = false): string {
-  const base = ibl ? buildParticleVertexIblVariant() : PARTICLE_VERTEX_SHADER;
+export function buildParticleVertexShader(customCode: string, ibl = false, shadowMap = false): string {
+  let base = ibl ? buildParticleVertexIblVariant() : PARTICLE_VERTEX_SHADER;
+  if (shadowMap) base = buildParticleVertexShadowVariant(base);
   const snippet = customCode.trim();
   if (!snippet) return base;
   return base.replace(
@@ -355,6 +357,33 @@ export function buildParticleVertexShader(customCode: string, ibl = false): stri
  * included). At IBL intensity 0 the stock string is used
  * verbatim.
  */
+
+/**
+ * True-shadow variant (Phase 30 stage 3): adds the
+ * vShadowMapMul varying + the LIGHT_SHADOW_GLSL chunk and
+ * computes the factor at the final `pos` (after the custom-GLSL
+ * seam, so user displacement is included — the same placement
+ * as the IBL world position). Composes with the IBL variant:
+ * every anchor exists in both bases. Built only while
+ * gpgpuShadowMapStrength is positive; at 0 the stock / IBL
+ * strings are used verbatim.
+ */
+export function buildParticleVertexShadowVariant(base: string): string {
+  return base
+    .replace(
+      'varying float vBurst;',
+      'varying float vBurst; varying float vShadowMapMul;',
+    )
+    .replace(
+      '  void main() {',
+      LIGHT_SHADOW_GLSL + '  void main() {',
+    )
+    .replace(
+      '    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);',
+      '    vShadowMapMul = kaloShadowFactor((modelMatrix * vec4(pos, 1.0)).xyz);\n    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);',
+    );
+}
+
 export function buildParticleVertexIblVariant(): string {
   return PARTICLE_VERTEX_SHADER
     .replace(

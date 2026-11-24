@@ -196,8 +196,9 @@ export const FRAGMENT_SHADER = `
 // finalColor / alpha, run the snippet, split the result back.
 // An empty snippet yields the stock shader unchanged (the
 // marker comments are inert), so the defaults stay identical.
-export function buildParticleFragmentShader(customCode: string, ibl = false): string {
-  const base = ibl ? buildParticleFragmentIblVariant() : FRAGMENT_SHADER;
+export function buildParticleFragmentShader(customCode: string, ibl = false, shadowMap = false): string {
+  let base = ibl ? buildParticleFragmentIblVariant() : FRAGMENT_SHADER;
+  if (shadowMap) base = buildParticleFragmentShadowVariant(base);
   const snippet = customCode.trim();
   if (!snippet) return base;
   const block = `{ // particle points fragment (user GLSL)\n    vec4 color = vec4(finalColor, alpha);\n${snippet}\n    finalColor = color.rgb;\n    alpha = color.a;\n    }`;
@@ -223,6 +224,31 @@ export function buildParticleFragmentShader(customCode: string, ibl = false): st
  * Other shapes (ring / star / hexagon / Kinetix masks) have no
  * normals and are untouched.
  */
+
+/**
+ * True-shadow variant (Phase 30 stage 3): the fragment side of
+ * the layer receiver. Declares the varying + strength uniform
+ * and multiplies finalColor by the shadow factor immediately
+ * before BOTH custom-GLSL seams (each seam sits after the
+ * colour is fully determined and just before a write, so both
+ * the Kinetix mask branch's early write and the final write
+ * are covered exactly once). Composes with the IBL variant.
+ */
+export function buildParticleFragmentShadowVariant(base: string): string {
+  return base
+    .replace(
+      '  uniform float uSdfAmbient;\n',
+      '  uniform float uSdfAmbient;\n'
+        + '  // True shadow map (Phase 30 stage 3).\n'
+        + '  uniform float uShadowMapStrength;\n'
+        + '  varying float vShadowMapMul;\n',
+    )
+    .replace(
+      /^(\s*)\/\/ __CUSTOM_PARTICLE_FRAGMENT__/gm,
+      '$1finalColor *= mix(1.0, vShadowMapMul, uShadowMapStrength);\n$1// __CUSTOM_PARTICLE_FRAGMENT__',
+    );
+}
+
 export function buildParticleFragmentIblVariant(): string {
   return FRAGMENT_SHADER
     .replace(

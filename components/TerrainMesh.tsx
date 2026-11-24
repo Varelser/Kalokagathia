@@ -92,6 +92,7 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
       mask: {
         mode: erosionMaskMode, strength: erosionMaskStrength, invert: erosionMaskInvert,
         low: erosionMaskLow, high: erosionMaskHigh,
+        imageGrid: config.gpgpuMorphTerrainErosionMaskImageGrid,
       },
     },
     TERRAIN_EROSION_DEBOUNCE_MS,
@@ -156,7 +157,10 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
     const data = buildTerrainMeshGeometryData({
       terrain: {
         amplitude: amp, frequency: freq, octaves, seed: terrainSeed, kind: terrainKind, terraceSteps: terrainTerraceSteps,
-        erosion: tunnel ? undefined : erosionSettled,
+        // Tunnel wrap (Phase 30): the settled erosion now runs
+        // in tunnel mode too — the sim wraps in x and the mesh
+        // samples the eroded field through the tiled sampler.
+        erosion: erosionSettled ? { ...erosionSettled, wrapX: tunnel } : undefined,
       },
       seed,
       worldScale,

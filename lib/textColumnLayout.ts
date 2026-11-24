@@ -43,6 +43,24 @@
  *   measurement, so the bake is environment-independent, the
  *   same reasoning as BK's yakumono). A run never splits across
  *   columns.
+ * Phase 30 corrects three defects the BP starters exposed
+ * (judged 見切れ・不自然 on 2026-11-22):
+ * - Fit: `fitVerticalTextMetrics` shrinks the glyph size when
+ *   the column block would overflow the raster's usable box
+ *   (a 5-cell column at the starter metrics measured 172.8px
+ *   against a 128px canvas — the end glyphs fell off-canvas).
+ * - Ruby clearance: while ruby is on, the same helper raises
+ *   the column gap to RUBY_MIN_COLUMN_GAP so a ruby column
+ *   (right edge at centre + 1.0em) clears the neighbouring
+ *   column's glyphs (left edge at centre + step − 0.5em).
+ * - Tate-chu-yoko runs are drawn at FULL glyph height with a
+ *   horizontal squeeze (the CSS text-combine-upright model)
+ *   instead of a uniform font shrink, and the squeeze comes
+ *   from a fixed per-class advance model (digits 0.56em etc.)
+ *   — the old flat 0.5em model under-measured real advances
+ *   (Arial digits are 0.556em, capitals up to 0.94em), so runs
+ *   rendered up to ~44% wider than their cell.
+ *
  * - Ruby (ルビ): Aozora-bunko markup — ｜親文字《るび》, or the
  *   abbreviated 親《るび》 whose parent is exactly the one
  *   preceding glyph — is parsed per newline segment. The parent
@@ -198,6 +216,31 @@ export const TATECHUYOKO_GLYPHS = new Set(splitTextGlyphs(
 ));
 /** Longest tate-chu-yoko run folded into one cell (Phase BP). */
 export const TATECHUYOKO_MAX_RUN = 4;
+/**
+ * Fixed advance model for tate-chu-yoko runs (Phase 30, in
+ * em): digits and the decimal point 0.56 (Arial digits measure
+ * 0.556em; the point's real advance is smaller, so the fit
+ * errs on the safe side), capitals 0.75 (Arial averages ~0.72;
+ * W at 0.94 remains a documented outlier that can still
+ * overflow), lowercase 0.58. Like every metric in this file
+ * the model is FIXED — no font measurement — so the bake is
+ * environment-independent.
+ */
+export function tatechuyokoModelAdvance(glyph: string): number {
+  if ((glyph >= '0' && glyph <= '9') || glyph === '.') return 0.56;
+  if (glyph >= 'A' && glyph <= 'Z') return 0.75;
+  return 0.58;
+}
+
+/** Horizontal squeeze that fits a run into its 1em cell under
+ *  the fixed advance model; 1 when the run already fits. */
+export function tatechuyokoRunSqueeze(runText: string): number {
+  let width = 0;
+  for (const glyph of splitTextGlyphs(runText)) width += tatechuyokoModelAdvance(glyph);
+  if (width <= 0) return 1;
+  return Math.min(1, 1 / width);
+}
+
 /** Fixed ruby glyph scale (Phase BP; deliberately not a key). */
 export const RUBY_SCALE = 0.5;
 /** Ruby offset from the parent column centre, in em: the parent
@@ -291,7 +334,10 @@ export function parseRubyMarkup(segment: string): RubyParseResult {
  */
 export interface LayoutToken {
   text: string;
-  scale?: number;
+  /** Tate-chu-yoko run only (Phase 30): horizontal squeeze
+   *  factor (0..1) the drawing paths apply via a canvas
+   *  transform; the run keeps the full glyph height. */
+  squeeze?: number;
   groupId?: number;
   ruby?: string;
 }
@@ -329,9 +375,10 @@ export function tokenizeSegment(glyphs: string[], annotations: RubyAnnotation[],
       let pos = i;
       let remaining = end - i;
       while (remaining > TATECHUYOKO_MAX_RUN) {
+        const runText = glyphs.slice(pos, pos + TATECHUYOKO_MAX_RUN).join('');
         tokens.push({
-          text: glyphs.slice(pos, pos + TATECHUYOKO_MAX_RUN).join(''),
-          scale: Math.min(1, 2 / TATECHUYOKO_MAX_RUN),
+          text: runText,
+          squeeze: tatechuyokoRunSqueeze(runText),
         });
         pos += TATECHUYOKO_MAX_RUN;
         remaining -= TATECHUYOKO_MAX_RUN;
@@ -339,9 +386,10 @@ export function tokenizeSegment(glyphs: string[], annotations: RubyAnnotation[],
       if (remaining === 1) {
         tokens.push({ text: glyphs[pos] });
       } else if (remaining >= 2) {
+        const runText = glyphs.slice(pos, pos + remaining).join('');
         tokens.push({
-          text: glyphs.slice(pos, pos + remaining).join(''),
-          scale: Math.min(1, 2 / remaining),
+          text: runText,
+          squeeze: tatechuyokoRunSqueeze(runText),
         });
       }
       i = end;
@@ -557,11 +605,14 @@ export interface VerticalGlyphPlacement {
   y: number;
   column: number;
   index: number;
-  /** Phase BP: font scale for this placement (a tate-chu-yoko
-   *  run, or a ruby glyph at RUBY_SCALE); omitted means 1. The
-   *  drawing paths swap the font only when this is present and
-   *  not 1. */
+  /** Phase BP: font scale for this placement (a ruby glyph at
+   *  RUBY_SCALE); omitted means 1. The drawing paths swap the
+   *  font only when this is present and not 1. */
   scale?: number;
+  /** Phase 30: horizontal squeeze for a tate-chu-yoko run
+   *  placement (the run draws at full glyph height under a
+   *  canvas transform); omitted means 1. */
+  squeeze?: number;
   /** Phase BP: this placement is a ruby annotation glyph. Its
    *  `index` is the parent group's first cell index. */
   ruby?: boolean;
@@ -657,7 +708,7 @@ export function verticalGlyphPlacementsFromTokenColumns(
         column: columnIndex,
         index: tokenIndex,
       };
-      if (token.scale !== undefined) placement.scale = token.scale;
+      if (token.squeeze !== undefined) placement.squeeze = token.squeeze;
       placements.push(placement);
     });
     // Ruby annotations of this column: one placement per ruby
@@ -689,4 +740,79 @@ export function verticalGlyphPlacementsFromTokenColumns(
     }
   });
   return placements;
+}
+
+/**
+ * Minimum column gap (em ratio) while ruby is on (Phase 30):
+ * a ruby column's right edge sits at the parent centre +
+ * 1.0em (RUBY_OFFSET_EM 0.75 + the ruby half width 0.25),
+ * and the neighbouring column's glyphs start at centre +
+ * step − 0.5em. A step of 1.6em (gap 0.6) leaves a 0.1em
+ * clearance; the BP default gap 0.4 (step 1.4em) overlapped
+ * the neighbour by 0.1em.
+ */
+export const RUBY_MIN_COLUMN_GAP = 0.6;
+
+/**
+ * Fit a vertical raster's metrics to its text (Phase 30): the
+ * shared correction both drawing paths apply before placing
+ * glyphs, so their pictures stay identical by construction.
+ *
+ * 1. Ruby clearance: with ruby on, the column gap is raised
+ *    to at least RUBY_MIN_COLUMN_GAP (see above).
+ * 2. Block fit: when the tallest column is higher than the
+ *    usable height, or the drawn column block is wider than
+ *    the usable width, pxSize shrinks by the exact factor
+ *    that makes the block fit. Content that already fits
+ *    returns the metrics object UNCHANGED (identity) — the
+ *    correction only ever touches layouts that previously
+ *    overflowed off-canvas.
+ *
+ * `maxDrawnColumns` bounds the width fit for the paged path
+ * (a page draws at most that many columns); omit it when the
+ * whole column list is drawn. The cell counts come from the
+ * same split the placements use (tokens while a BP adjustment
+ * is on, glyphs otherwise; kinsoku pull-ins included, since
+ * the real split is measured).
+ */
+export function fitVerticalTextMetrics(
+  text: string,
+  columnLength: number,
+  metrics: VerticalTextMetrics,
+  adjustments?: TextColumnAdjustments,
+  maxDrawnColumns?: number,
+): VerticalTextMetrics {
+  let fitted = metrics;
+  if (adjustments?.ruby === true && normalizeRatio(metrics.columnGap) < RUBY_MIN_COLUMN_GAP) {
+    fitted = { ...fitted, columnGap: RUBY_MIN_COLUMN_GAP };
+  }
+  const tokenMode = adjustments?.tatechuyoko === true || adjustments?.ruby === true;
+  const columns = tokenMode
+    ? layoutTextColumnsTokenized(text, columnLength, adjustments)
+    : layoutTextColumns(text, columnLength, adjustments?.kinsoku === true)
+      .map((column) => splitTextGlyphs(column));
+  if (columns.length === 0) return fitted;
+  const maxCells = columns.reduce((max, column) => Math.max(max, column.length), 0);
+  const drawnColumns = Math.max(1, Math.min(
+    columns.length,
+    maxDrawnColumns !== undefined && Number.isFinite(maxDrawnColumns) && maxDrawnColumns >= 1
+      ? Math.floor(maxDrawnColumns)
+      : columns.length,
+  ));
+  const padding = Number.isFinite(fitted.padding) ? fitted.padding : 0;
+  const usableHeight = fitted.height * (1 - padding * 2);
+  const usableWidth = fitted.width * (1 - padding * 2);
+  let scale = 1;
+  const columnHeight = verticalColumnHeight(maxCells, fitted);
+  if (columnHeight > usableHeight && columnHeight > 0) {
+    scale = Math.min(scale, usableHeight / columnHeight);
+  }
+  const blockWidth = verticalColumnsWidth(drawnColumns, fitted);
+  if (blockWidth > usableWidth && blockWidth > 0) {
+    scale = Math.min(scale, usableWidth / blockWidth);
+  }
+  if (scale < 1) {
+    fitted = { ...fitted, pxSize: Math.max(1, fitted.pxSize * scale) };
+  }
+  return fitted;
 }

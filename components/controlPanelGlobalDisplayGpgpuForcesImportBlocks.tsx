@@ -273,6 +273,14 @@ export const ObjMeshBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config
           <Toggle label="Repeat Mode （反復配置）" value={config.gpgpuObjMeshRepeatMode} options={[{ label: 'Grid', val: 'grid' as const }, { label: 'Radial', val: 'radial' as const }]} onChange={(v) => updateConfig('gpgpuObjMeshRepeatMode', v)} />
           <Slider label="Repeat Rotation （反復ごとの回転°）" value={config.gpgpuObjMeshRepeatRotation} min={-180} max={180} step={5} onChange={(v) => updateConfig('gpgpuObjMeshRepeatRotation', v)} />
           <Slider label="Repeat Scale Step （反復ごとの拡縮比）" value={config.gpgpuObjMeshRepeatScaleStep} min={0.5} max={1.5} step={0.05} onChange={(v) => updateConfig('gpgpuObjMeshRepeatScaleStep', v)} />
+          <Toggle label="Deform （頂点変形・Phase 30)" value={config.gpgpuObjMeshDeformMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Wave （波）', val: 'wave' as const }, { label: 'Twist （ねじり）', val: 'twist' as const }, { label: 'Bend （曲げ）', val: 'bend' as const }]} onChange={(v) => updateConfig('gpgpuObjMeshDeformMode', v)} />
+          {config.gpgpuObjMeshDeformMode !== 'off' && (
+            <>
+              <Slider label="Deform Amount （変形の深さ）" value={config.gpgpuObjMeshDeformAmount} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuObjMeshDeformAmount', v)} />
+              <Slider label="Deform Frequency （周波数）" value={config.gpgpuObjMeshDeformFrequency} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuObjMeshDeformFrequency', v)} />
+              <Slider label="Deform Speed （位相速度）" value={config.gpgpuObjMeshDeformSpeed} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuObjMeshDeformSpeed', v)} />
+            </>
+          )}
           <Slider label="Scale （大きさ）" value={config.gpgpuObjMeshScale} min={0.25} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuObjMeshScale', v)} />
           <Slider label="Position X" value={config.gpgpuObjMeshPosX} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuObjMeshPosX', v)} />
           <Slider label="Position Y" value={config.gpgpuObjMeshPosY} min={-200} max={200} step={1} onChange={(v) => updateConfig('gpgpuObjMeshPosY', v)} />

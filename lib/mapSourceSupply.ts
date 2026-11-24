@@ -64,8 +64,8 @@ import * as THREE from 'three';
 import { parseSvgPathGeometry, type PathGeometry } from './pathGeometry';
 import type { MapImageTextureState } from './mapImageTexture';
 import type { ParticleConfig } from '../types';
-import { verticalGlyphPlacements } from './textColumnLayout';
-import { pagedVerticalGlyphPlacements } from './textPageLayout';
+import { fitVerticalTextMetrics, verticalGlyphPlacements } from './textColumnLayout';
+import { pagedVerticalGlyphPlacements, textColumnsPerPage } from './textPageLayout';
 import {
   clampNoiseFieldSupplyTime,
   clampNoiseMapEvolve,
@@ -272,7 +272,7 @@ export function rasterizeTextCanvas(settings: TextRasterSettings, size: number):
     // the shared pure layout (lib/textColumnLayout.ts) — columns
     // right → left, glyphs top → bottom, all upright. Draws
     // identically to extractTextLumaMap's vertical branch.
-    const textMetrics = {
+    const rawTextMetrics = {
       width,
       height,
       padding: clampedPadding,
@@ -281,6 +281,18 @@ export function rasterizeTextCanvas(settings: TextRasterSettings, size: number):
       letterSpacing: settings.letterSpacing,
     };
     const textAdjustments = { kinsoku: settings.kinsoku, yakumono: settings.yakumono, tatechuyoko: settings.tatechuyoko, ruby: settings.ruby };
+    // Phase 30: fit the column block into the raster (and
+    // raise the column gap while ruby is on) — the shared
+    // correction in lib/textColumnLayout.ts. Content that
+    // already fits keeps the raw metrics object untouched.
+    const textMetrics = fitVerticalTextMetrics(
+      settings.text || 'TEXT',
+      settings.columnLength,
+      rawTextMetrics,
+      textAdjustments,
+      settings.pageEnabled ? textColumnsPerPage(rawTextMetrics) : undefined,
+    );
+    const fittedPxSize = textMetrics.pxSize;
     // Text pages (Phase 17): while paging is on, only the
     // selected page's columns are drawn (the page layer resolves
     // to the legacy placements verbatim when everything fits on
@@ -295,12 +307,24 @@ export function rasterizeTextCanvas(settings: TextRasterSettings, size: number):
     // Phase BP: a placement with a font scale (a tate-chu-yoko
     // run or a ruby glyph) swaps the font for its own draw and
     // restores it; scale-free placements draw exactly as before.
-    const baseFont = ctx.font;
     const fontWeight = Math.max(100, Math.min(900, settings.fontWeight || 700));
     const fontFamily = settings.fontFamily || 'Arial';
+    // The base font follows the FITTED size (Phase 30); with
+    // unfitted metrics this string is identical to the one set
+    // above the branch.
+    const baseFont = `${fontWeight} ${fittedPxSize}px ${fontFamily}`;
+    ctx.font = baseFont;
     placements.forEach((placement) => {
-      if (placement.scale !== undefined && placement.scale !== 1) {
-        ctx.font = `${fontWeight} ${pxSize * placement.scale}px ${fontFamily}`;
+      if (placement.squeeze !== undefined && placement.squeeze !== 1) {
+        // Tate-chu-yoko run (Phase 30): full glyph height,
+        // horizontally squeezed into its cell.
+        ctx.save();
+        ctx.translate(placement.x, placement.y);
+        ctx.scale(placement.squeeze, 1);
+        ctx.fillText(placement.glyph, 0, 0);
+        ctx.restore();
+      } else if (placement.scale !== undefined && placement.scale !== 1) {
+        ctx.font = `${fontWeight} ${fittedPxSize * placement.scale}px ${fontFamily}`;
         ctx.fillText(placement.glyph, placement.x, placement.y);
         ctx.font = baseFont;
       } else {
