@@ -77,7 +77,7 @@ check('outside texels flagged from slice index', src.includes('select(0.0, 1.0, 
 check('eleven pipelines created', (src.match(/makeFlipPipeline\(FLIP3D_/g) || []).length === 11);
 check('grid lazily created (null at init)', src.includes('flipGrid: null,') && src.includes('function ensureFlip3dGrid'));
 check('grid recreated on resolution change', src.includes('state.flipGrid.resolution === resolution') && src.includes('destroyFlip3dGrid(state.flipGrid)'));
-check('VEL uniform buffer 608 (Phase 27 appended attractor2; was 592)', src.includes('const VEL_UNIFORM_BYTES = 608;'));
+check('VEL uniform buffer 624 (Phase 28 appended the steering state pair + pads; 608 through Phase 27)', src.includes('const VEL_UNIFORM_BYTES = 624;'));
 check('velocity bindings 10/11 are textures, 12 is uniform', velWgsl.includes('@binding(10) var flipVelTex : texture_2d<f32>;') && velWgsl.includes('@binding(11) var flipBaseTex : texture_2d<f32>;') && velWgsl.includes('@binding(12) var<uniform>'));
 check('velocity stage storage buffers stay within the default limit of 8', (velWgsl.match(/var<storage/g) || []).length === 8, `count ${(velWgsl.match(/var<storage/g) || []).length}`);
 check('couple pair published via copyBufferToTexture', stepSrc.includes('enc.copyBufferToTexture(') && stepSrc.includes('{ texture: f3Grid.coupleVelTex }') && stepSrc.includes('{ texture: f3Grid.coupleBaseTex }'));

@@ -194,8 +194,17 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // the same conditions as 'attr-force' / 'attr-group' above,
   // so the gap is named in the capability report instead of
   // being dropped silently.
+  // Phase 28 (9-5): the steering state mode is a sim-side
+  // attribute consumer too — it reads the bake from the
+  // mirrored WGSL texture. The STATIC bake is exact on the
+  // WebGPU route now, but when a dynamic stage (feedback /
+  // chain / sim vars / ext slots) would change the values the
+  // WebGL pass reads, the config must route to WebGL like the
+  // other sim consumers, so the state mode counts in every
+  // declaration below.
+  const steerStateConsumerActive = !!config.gpgpuSteerSeekEnabled && config.gpgpuSteerSeekMode === 'state';
   if (config.gpgpuAttrFeedbackEnabled
-    && ((config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) || groupConsumerActive)) {
+    && ((config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0) || groupConsumerActive || steerStateConsumerActive)) {
     features.push('attr-feedback');
   }
   // Phase 18 stage 1 declarations (same discipline: the draw
@@ -212,7 +221,8 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   //   is a WebGL-route supply; its pass outputs reach sim-side
   //   consumers on that route only.
   const attrSimConsumerActive = (config.gpgpuAttrForceSlot >= 0 && config.gpgpuAttrForceAmount !== 0)
-    || groupConsumerActive;
+    || groupConsumerActive
+    || steerStateConsumerActive;
   if (config.gpgpuAttrChainEnabled
     && normalizeAttrExprs(config.gpgpuAttrChainExprs).some((expr) => expr.trim().length > 0)
     && attrSimConsumerActive) {

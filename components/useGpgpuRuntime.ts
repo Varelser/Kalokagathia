@@ -35,6 +35,7 @@ import {
   initWebGPUCompute,
   destroyWebGPUCompute,
   updateWebGPUMorphData,
+  updateWebGPUAttrData,
   updateWebGPUMorphNormalData,
 } from '../lib/webgpuCompute';
 import type { WebGPUComputeState } from '../lib/webgpuCompute';
@@ -908,6 +909,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphTexRef = useRef<THREE.DataTexture | null>(null);
   const morphNormalTexRef = useRef<THREE.DataTexture | null>(null);
   const attrTexRef = useRef<THREE.DataTexture | null>(null);
+  // Phase 28 (9-5): the latest attribute bake copy (the exact
+  // array bound as the WebGL texture) awaiting / mirroring the
+  // WebGPU attribute texture. The bake effect stores it here;
+  // the WebGPU init completion uploads from it, which covers
+  // the state landing after the bake ran.
+  const wgAttrDataRef = useRef<Float32Array | null>(null);
   // Ext attribute texture (Phase 18 stage 1): slots 4..7, built
   // only while an enabled pass reads an ext slot name.
   const attrTex2Ref = useRef<THREE.DataTexture | null>(null);
@@ -1237,6 +1244,12 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     initWebGPUCompute(texSize, wgPos, wgVel, wgMorph ? wgMorph.data : null, wgMorph ? wgMorph.normalData : null).then((state) => {
       noteGpgpuBackendSettled(getSceneGeneration());
       webgpuStateRef.current = state;
+      // Phase 28 (9-5): hand the new state the current attribute
+      // bake, if one exists — the bake effect may have run while
+      // this init was in flight.
+      if (state && wgAttrDataRef.current) {
+        updateWebGPUAttrData(state, wgAttrDataRef.current);
+      }
       webgpuPingIsARef.current = true;
       if (state) {
         const dt = new THREE.DataTexture(
@@ -2292,7 +2305,20 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   useEffect(() => {
     attrTexRef.current?.dispose();
     attrTexRef.current = null;
-    if (!attrSignature || !initDataRef.current) return;
+    if (!attrSignature || !initDataRef.current) {
+      // Phase 28 (9-5): no bake — the WGSL mirror must read
+      // zeros again (the WebGL passes see a null texture and
+      // attrData = 0). Zero the live texture and drop the
+      // stored copy so a later init does not resurrect it.
+      wgAttrDataRef.current = null;
+      if (webgpuStateRef.current) {
+        updateWebGPUAttrData(
+          webgpuStateRef.current,
+          new Float32Array(webgpuStateRef.current.texSize * webgpuStateRef.current.texSize * 4),
+        );
+      }
+      return;
+    }
     const sources = normalizeAttrSources(config.gpgpuAttrSources);
     const needsTarget = sources.includes('target');
     const bake = needsTarget ? buildMorphBakeData(config, texSize) : null;
@@ -2348,6 +2374,14 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     const tex = new THREE.DataTexture(texData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
     attrTexRef.current = tex;
+    // Phase 28 (9-5): mirror the same array into the WebGPU
+    // attribute texture (the WGSL steering state mode reads
+    // it). If the state has not landed yet, the init
+    // completion uploads from wgAttrDataRef instead.
+    wgAttrDataRef.current = texData;
+    if (webgpuStateRef.current) {
+      updateWebGPUAttrData(webgpuStateRef.current, texData);
+    }
     return () => {
       tex.dispose();
       if (attrTexRef.current === tex) attrTexRef.current = null;

@@ -139,9 +139,9 @@ struct Uniforms {
   // Crowd steering (Phase 20 stage 2): buffer indices 99-113,
   // the path array at 116 (vec3f arrays are 16-byte aligned).
   // The WGSL twin of lib/steering.ts — seek / arrive / path.
-  // Mode 3 (state) has no attribute texture in this pass, so
-  // it resolves to state 0 (seek the target) here; the state
-  // slot reading itself is WebGL-side (see the GLSL chunk).
+  // Mode 3 (state) joined in Phase 28 (9-5): the slot value is
+  // read from the attribute texture at binding 13, and the
+  // slot / threshold ride at indices 152-153 (struct tail).
   steerEnabled : f32,
   steerMode : i32,
   steerStrength : f32,
@@ -169,6 +169,18 @@ struct Uniforms {
   attractor2Type : i32,
   attractor2Strength : f32,
   attractor2Scale : f32,
+  // Steering state mode (Phase 28, 9-5): buffer indices
+  // 152-153, appended at the very end so every earlier field
+  // offset is unchanged.
+  steerStateSlot : i32,
+  steerStateThreshold : f32,
+  // Two pads close the struct at 624 bytes: WGSL rounds a
+  // uniform struct's size up to its largest member alignment
+  // (16, from the vec3f path array), so 616 would under-size
+  // the bound buffer and invalidate the pipeline — the
+  // Phase 28 gate's first round proved exactly that.
+  steerStatePad0 : f32,
+  steerStatePad1 : f32,
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -228,6 +240,16 @@ struct Flip3dUniforms {
 @group(0) @binding(10) var flipVelTex : texture_2d<f32>;
 @group(0) @binding(11) var flipBaseTex : texture_2d<f32>;
 @group(0) @binding(12) var<uniform>            f3u : Flip3dUniforms;
+
+// Named-attribute bake (Phase 28, 9-5): the same RGBA float
+// data the WebGL passes read as uAttrTex, mirrored into a
+// WebGPU texture by updateWebGPUAttrData. A texture, not a
+// storage buffer, for the same reason as the FLIP couple
+// above: the velocity stage's 8 storage buffers are all bound.
+// Only the steering state mode loads it in this pass (the
+// force-drive / group consumers still route to WebGL under
+// their own capability declarations).
+@group(0) @binding(13) var attrTex : texture_2d<f32>;
 
 fn flipTexelXY(cellRaw: vec3f, gridN: f32, tilesX: f32) -> vec2i {
   let c = clamp(cellRaw, vec3f(0.0), vec3f(gridN - 1.0));
@@ -507,12 +529,27 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   // (desired = normalize(target - pos) * maxSpeed, arrive ramps
   // inside the slowing radius, steer = desired - vel clamped
   // to maxForce when > 0; application * strength * delta * 60).
-  // Mode 3 (state) resolves to state 0 in this pass — the
-  // attribute texture the slot reading needs is not bound here.
+  // Mode 3 (state) reads the attribute slot from the mirrored
+  // bake at binding 13 (Phase 28, 9-5), exactly as the GLSL
+  // chunk reads the head's attrData fetch: state 0 seeks the
+  // target, state 1 arrives at the second target. With no
+  // bake the texture is all zeros, which reads as state 0 —
+  // the same result the WebGL pass gets from attrData = 0
+  // while uAttrEnabled is off (a threshold of 0 flips both
+  // routes to state 1 identically).
   if (u.steerEnabled > 0.5) {
     var sTarget = vec3f(u.steerTargetX, u.steerTargetY, u.steerTargetZ);
     var sMode = u.steerMode;
-    if (sMode == 3) { sMode = 0; }
+    if (sMode == 3) {
+      let attrData = textureLoad(attrTex, vec2i(i32(idx % texSizeU), i32(idx / texSizeU)), 0);
+      var slotValue = attrData.r;
+      if (u.steerStateSlot == 1) { slotValue = attrData.g; }
+      else if (u.steerStateSlot == 2) { slotValue = attrData.b; }
+      else if (u.steerStateSlot >= 3) { slotValue = attrData.a; }
+      let isState1 = slotValue >= u.steerStateThreshold;
+      sTarget = select(vec3f(u.steerTargetX, u.steerTargetY, u.steerTargetZ), vec3f(u.steerTarget1X, u.steerTarget1Y, u.steerTarget1Z), isState1);
+      sMode = select(0, 1, isState1);
+    }
     var sApply = true;
     if (sMode == 2) {
       if (u.steerPathCount <= 0) {
@@ -1821,6 +1858,9 @@ export type WebGPUComputeState = {
    * bindings while no grid exists (never loaded: couple is 0). */
   flipDummyTex: GPUTexture;
   flipGrid: Flip3dGridState | null;
+  /** Named-attribute bake mirror (Phase 28, 9-5): rgba32float,
+   * texSize x texSize; zeros until the first bake upload. */
+  attrTexture: GPUTexture;
 };
 
 type Flip3dPipelines = {
@@ -1874,7 +1914,7 @@ type Flip3dGridState = {
 
 // Vel uniform buffer: 98 f32 slots (see the WGSL Uniforms struct
 // field order; int fields are written through an Int32Array view).
-const VEL_UNIFORM_BYTES = 608;
+const VEL_UNIFORM_BYTES = 624;
 // Pos uniform buffer: 21 f32 slots.
 const POS_UNIFORM_BYTES = 128;
 
@@ -1971,6 +2011,7 @@ export async function initWebGPUCompute(
       { binding: 10, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
       { binding: 11, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
       { binding: 12, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+      { binding: 13, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
     ],
   });
   const posBGL = device.createBindGroupLayout({
@@ -2056,6 +2097,22 @@ export async function initWebGPUCompute(
   const flipUData = new Float32Array(new ArrayBuffer(FLIP3D_UNIFORM_STRIDE * FLIP3D_UNIFORM_SLOTS));
   const flipVelUBuf = device.createBuffer({ size: FLIP3D_VEL_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const flipVelUData = new Float32Array(new ArrayBuffer(FLIP3D_VEL_UNIFORM_BYTES));
+  // Named-attribute bake mirror (Phase 28, 9-5): created
+  // zero-filled at the full texSize so the velocity bind group
+  // is always valid; the runtime uploads the bake through
+  // updateWebGPUAttrData whenever it (re)builds.
+  const attrTexture = device.createTexture({
+    size: { width: texSize, height: texSize },
+    format: 'rgba32float',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  device.queue.writeTexture(
+    { texture: attrTexture },
+    new Float32Array(texSize * texSize * 4),
+    { bytesPerRow: texSize * 16, rowsPerImage: texSize },
+    { width: texSize, height: texSize },
+  );
+
   const flipDummyTex = device.createTexture({
     size: [1, 1, 1],
     format: 'rgba32float',
@@ -2074,6 +2131,7 @@ export async function initWebGPUCompute(
     fluidABuf: null, fluidBBuf: null, fluidPingIsA: true,
     flip3dPipelines, flipUBuf, flipUData, flipVelUBuf, flipVelUData,
     flipDummyTex,
+    attrTexture,
     flipGrid: null,
   };
 }
@@ -2184,6 +2242,24 @@ export function updateWebGPUMorphNormalData(state: WebGPUComputeState, normalDat
   state.device.queue.writeBuffer(state.morphNormalBuf, 0, normalData.buffer as ArrayBuffer, normalData.byteOffset, normalData.byteLength);
 }
 
+/** Mirror the named-attribute bake into the velocity pass's
+ * attribute texture (Phase 28, 9-5): the exact Float32Array the
+ * WebGL passes bind as uAttrTex (the group-gate-adjusted copy),
+ * uploaded verbatim so the WGSL steering state mode reads the
+ * same slot values as the GLSL chunk. A size mismatch (stale
+ * bake from a previous texSize) is ignored — the init path
+ * re-uploads the current bake when the state lands. */
+export function updateWebGPUAttrData(state: WebGPUComputeState, attrData: Float32Array): void {
+  const byteSize = state.texSize * state.texSize * 16;
+  if (attrData.byteLength !== byteSize) return;
+  state.device.queue.writeTexture(
+    { texture: state.attrTexture },
+    attrData.buffer as ArrayBuffer,
+    { bytesPerRow: state.texSize * 16, rowsPerImage: state.texSize },
+    { width: state.texSize, height: state.texSize },
+  );
+}
+
 /** Per-frame morph parameters for stepWebGPUCompute (Phase R;
  * the kick fields joined in Phase X3). */
 export interface WebGPUMorphParams {
@@ -2230,9 +2306,9 @@ export interface WebGPUForceParams {
   ageEnabled: boolean; ageMax: number; ageReplicaCount: number; ageReplicaStep: number; replicaAgeBase: number;
   emitLightEnabled: boolean; emitLightPos: { x: number; y: number; z: number };
   // Crowd steering (Phase 20 stage 2): structurally the
-  // SteeringSeekResolved of lib/steering.ts (stateSlot /
-  // stateThreshold ride along unused — the WGSL pass has no
-  // attribute texture, so mode 3 resolves to state 0 there).
+  // SteeringSeekResolved of lib/steering.ts. Phase 28 (9-5)
+  // put stateSlot / stateThreshold to work: mode 3 reads the
+  // mirrored attribute bake at binding 13.
   steeringSeek: WebGPUSteeringParams | null;
 }
 
@@ -2280,6 +2356,8 @@ export interface WebGPUSteeringParams {
   target: { x: number; y: number; z: number };
   target1: { x: number; y: number; z: number };
   slowingRadius: number;
+  stateSlot: number;
+  stateThreshold: number;
   path: readonly { x: number; y: number; z: number }[];
   pathPacked: Float32Array;
   pathLookAhead: number;
@@ -2437,6 +2515,9 @@ export function stepWebGPUCompute(
   velI[149] = f ? f.attractor2Type : 0;
   velU[150] = f ? f.attractor2Strength : 0;
   velU[151] = f ? f.attractor2Scale : 0;
+  // Steering state mode (Phase 28, 9-5): indices 152-153.
+  velI[152] = st ? st.stateSlot : 0;
+  velU[153] = st ? st.stateThreshold : 0.5;
   new Uint32Array(velU.buffer)[0] = texSize; // texSizeはu32なのでUint32Arrayビューで書く
   device.queue.writeBuffer(velUBuf, 0, velU);
 
@@ -2712,6 +2793,7 @@ export function stepWebGPUCompute(
       { binding: 10, resource: (f3Grid ? f3Grid.coupleVelTex : state.flipDummyTex).createView() },
       { binding: 11, resource: (f3Grid ? f3Grid.coupleBaseTex : state.flipDummyTex).createView() },
       { binding: 12, resource: { buffer: state.flipVelUBuf } },
+      { binding: 13, resource: state.attrTexture.createView() },
     ],
   });
   const velPass = enc.beginComputePass();
@@ -2842,5 +2924,6 @@ export function destroyWebGPUCompute(state: WebGPUComputeState): void {
   state.flipUBuf.destroy();
   state.flipVelUBuf.destroy();
   state.flipDummyTex.destroy();
+  state.attrTexture.destroy();
   if (state.flipGrid) destroyFlip3dGrid(state.flipGrid);
 }
