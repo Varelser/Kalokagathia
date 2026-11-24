@@ -1,0 +1,39 @@
+# Auto-approve + auto-merge for the repository owner's own pull requests.
+#
+# Purpose: remove the manual "Approve" click and the manual merge click for
+# routine PRs opened by the repo owner (Varelser). PRs from anyone else are
+# NOT auto-approved and still need a human review.
+#
+# Requirements (repo settings, one-time):
+#   Settings -> General -> Pull Requests -> "Allow auto-merge" must be ON,
+#   otherwise the "Enable auto-merge" step fails visibly in the run log.
+# Branch protection is intentionally NOT configured by this file: direct
+# pushes to main (e.g. via the iMac deploy-key route) keep working.
+name: Auto approve and merge owner PRs
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-approve-merge:
+    # Owner-only, non-draft PRs. Change the login here if the account changes.
+    if: >-
+      github.event.pull_request.user.login == 'Varelser' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto-approve
+        uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge (squash)
+        run: gh pr merge "$PR_URL" --squash --auto
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
