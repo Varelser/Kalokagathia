@@ -19,6 +19,19 @@ permissions:
   contents: write
   pull-requests: write
 
+# Anti-jam measures (added 2026-11-24, user instruction):
+# - Runs for the SAME PR are queued per-PR (duplicate events do not pile up).
+#   A single global queue was avoided on purpose: GitHub keeps only one
+#   pending run per concurrency group and cancels older pending runs, which
+#   could silently drop a PR under a submission rush.
+# - Each run waits a deterministic stagger of 0-4 minutes derived from the
+#   PR number, so simultaneous submissions spread out.
+# - Enabling auto-merge retries with growing backoff (30/60/90s) if a race
+#   makes the first attempt fail.
+concurrency:
+  group: auto-merge-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   auto-approve-merge:
     # Owner-only, non-draft PRs. Change the login here if the account changes.
@@ -27,13 +40,26 @@ jobs:
       github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
+      - name: Stagger start (spread simultaneous PRs)
+        run: sleep $(( (${{ github.event.pull_request.number }} % 5) * 60 ))
+
       - name: Auto-approve
         uses: hmarr/auto-approve-action@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Enable auto-merge (squash)
-        run: gh pr merge "$PR_URL" --squash --auto
+      - name: Enable auto-merge (squash, retry with backoff)
+        run: |
+          for i in 1 2 3 4; do
+            if gh pr merge "$PR_URL" --squash --auto; then
+              echo "Auto-merge enabled on attempt $i"
+              exit 0
+            fi
+            echo "Attempt $i failed; backing off..."
+            sleep $(( i * 30 ))
+          done
+          echo "Failed to enable auto-merge after 4 attempts"
+          exit 1
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
