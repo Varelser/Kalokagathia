@@ -22,7 +22,7 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 await build({
   stdin: {
     contents: `
-      export { effectiveGrainsFriction, grainsReposeActive, resolveGrainsProjection, grainsProjectionActive, grainsNeighborhoodMode, grainsScanPlan, grainsScanIndices, grainsNeighborsBruteForce, grainsNeighborsViaScan, grainsProjectionCorrection, GRAINS_SCAN_BUDGET, grainsCellGrid, grainsCellCoords, grainsCellKey, grainsCellSortActive, grainsNeighborsBruteForceUv, grainsNeighborsViaCellSearch, GRAINS_CELL_MAX_DIM, grainsPileActive, resolveGrainsPilePlan, grainsLatticeRho0, grainsPoly6, grainsXsphGate, grainsComputeDensityLambdas, grainsDensityCorrection, grainsNeighborsWithin, GRAINS_PILE_STIFFNESS } from './lib/gpgpuGrains.ts';
+      export { effectiveGrainsFriction, grainsReposeActive, resolveGrainsProjection, grainsProjectionActive, grainsNeighborhoodMode, grainsScanPlan, grainsScanIndices, grainsNeighborsBruteForce, grainsNeighborsViaScan, grainsProjectionCorrection, GRAINS_SCAN_BUDGET, grainsCellGrid, grainsCellCoords, grainsCellKey, grainsCellSortActive, grainsNeighborsBruteForceUv, grainsNeighborsViaCellSearch, GRAINS_CELL_MAX_DIM, grainsPileActive, resolveGrainsPilePlan, grainsLatticeRho0, grainsPoly6, grainsXsphGate, grainsComputeDensityLambdas, grainsDensityCorrection, grainsNeighborsWithin, GRAINS_PILE_STIFFNESS, resolveGrainsVelocityBlend, grainsReconstructVelocity, grainsApplyVelocityUpdate, GRAINS_VELOCITY_DAMPING, GRAINS_VELOCITY_DENSE_DAMP, grainsVelocityDenseFactor } from './lib/gpgpuGrains.ts';
     `,
     resolveDir: ROOT, loader: 'ts',
   },
@@ -39,6 +39,8 @@ const {
   grainsPileActive, resolveGrainsPilePlan, grainsLatticeRho0, grainsPoly6,
   grainsXsphGate, grainsComputeDensityLambdas, grainsDensityCorrection,
   grainsNeighborsWithin, GRAINS_PILE_STIFFNESS,
+  resolveGrainsVelocityBlend, grainsReconstructVelocity, grainsApplyVelocityUpdate,
+  GRAINS_VELOCITY_DAMPING, GRAINS_VELOCITY_DENSE_DAMP, grainsVelocityDenseFactor,
 } = lib;
 
 const cfg = (over = {}) => ({
@@ -439,6 +441,94 @@ const cfg = (over = {}) => ({
     }
     check('correction clamped to half a diameter', maxLen <= gd / 2 + 1e-9, `maxLen=${maxLen}`);
   }
+}
+
+// --- Velocity update (Stage C follow-up): plan resolution -------------
+{
+  const on = { gpgpuGrainsEnabled: true, gpgpuGrainsPileEnabled: true };
+  check('velocity blend defaults to 1', near(resolveGrainsVelocityBlend(cfg()), 1));
+  check('velocity blend clamps to 0..1',
+    near(resolveGrainsVelocityBlend(cfg({ gpgpuGrainsVelocityBlend: 5 })), 1) &&
+    near(resolveGrainsVelocityBlend(cfg({ gpgpuGrainsVelocityBlend: -2 })), 0));
+  check('velocity update active with pile on',
+    resolveGrainsPilePlan(cfg(on)).velocityUpdateActive === true);
+  check('velocity update off at blend 0',
+    resolveGrainsPilePlan(cfg({ ...on, gpgpuGrainsVelocityBlend: 0 })).velocityUpdateActive === false);
+  check('velocity update off while pile off',
+    resolveGrainsPilePlan(cfg({ gpgpuGrainsEnabled: true })).velocityUpdateActive === false);
+  check('velocity update off under Verlet (v1 guard)',
+    resolveGrainsPilePlan(cfg({ ...on, gpgpuVerletEnabled: true })).velocityUpdateActive === false);
+  check('velocity update off under rigid bodies (v1 guard)',
+    resolveGrainsPilePlan(cfg({ ...on, gpgpuRigidEnabled: true })).velocityUpdateActive === false);
+  check('plan carries the blend', near(resolveGrainsPilePlan(cfg(on)).velocityBlend, 1));
+}
+
+// --- Velocity update: reconstruction units ------------------------------
+{
+  const disp = { x: 3, y: -6, z: 0.5 };
+  const at60 = grainsReconstructVelocity(disp, 1 / 60, 1);
+  check('recon = displacement at dt 1/60, speed 1 (prototype identity)',
+    near(at60.x, 3) && near(at60.y, -6) && near(at60.z, 0.5), JSON.stringify(at60));
+  const at30 = grainsReconstructVelocity(disp, 1 / 30, 1);
+  check('recon halves at dt 1/30', near(at30.x, 1.5) && near(at30.y, -3));
+  const fast = grainsReconstructVelocity(disp, 1 / 60, 2);
+  check('recon halves at speed 2', near(fast.x, 1.5) && near(fast.y, -3));
+}
+
+// --- Velocity update: blend and masks -----------------------------------
+{
+  const dt = 1 / 60;
+  const vel = { x: 10, y: 0, z: 0 };
+  const start = { x: 0, y: 0, z: 0, age: 1 };
+  const endFall = { x: 0, y: -2, z: 0, age: 1 + dt };
+  const opts = { dt, speed: 1, blend: 1, grainsSize: 8 };
+  const full = grainsApplyVelocityUpdate(vel, start, endFall, opts);
+  check('blend 1: velocity = displacement x damping (prototype finish)',
+    near(full.x, 0) && near(full.y, -2 * GRAINS_VELOCITY_DAMPING) && near(full.z, 0),
+    JSON.stringify(full));
+  const half = grainsApplyVelocityUpdate(vel, start, endFall, { ...opts, blend: 0.5 });
+  check('blend 0.5: midpoint between old and reconstructed',
+    near(half.x, 5) && near(half.y, -GRAINS_VELOCITY_DAMPING), JSON.stringify(half));
+  const zero = grainsApplyVelocityUpdate(vel, start, endFall, { ...opts, blend: 0 });
+  check('blend 0: velocity unchanged', near(zero.x, 10) && near(zero.y, 0));
+  const still = grainsApplyVelocityUpdate(vel, start, { ...endFall, y: 0 }, opts);
+  check('zero displacement kills the velocity (settle mechanism)',
+    near(still.x, 0) && near(still.y, 0) && near(still.z, 0));
+  // Masks: each must return the input velocity untouched.
+  const masked = (name, s, e) => {
+    const r = grainsApplyVelocityUpdate(vel, s, e, opts);
+    check(`mask: ${name}`, near(r.x, 10) && near(r.y, 0) && near(r.z, 0), JSON.stringify(r));
+  };
+  masked('parked at start', { ...start, y: -99999 }, endFall);
+  masked('parked at end', start, { ...endFall, y: -99999 });
+  masked('age wrapped (respawn)', start, { ...endFall, age: 0.001 });
+  masked('age jumped (reset)', start, { ...endFall, age: 1 + 10 * dt });
+  masked('teleport-scale displacement', start, { ...endFall, x: 100, age: 1 + dt });
+  // A normal fast fall (below the teleport threshold) still updates.
+  const fall = grainsApplyVelocityUpdate(vel, start, { x: 0, y: -40, z: 0, age: 1 + dt }, opts);
+  check('fast fall below teleport threshold still updates',
+    near(fall.y, -40 * GRAINS_VELOCITY_DAMPING), JSON.stringify(fall));
+  // 案E dense damping: the density factor ramps from 1 at
+  // rho/rho0 = 0.8 to GRAINS_VELOCITY_DENSE_DAMP at 1.1, and the
+  // twin applies it to the reconstructed velocity only when a
+  // density is supplied.
+  check('dense factor is 1 below the ramp', near(grainsVelocityDenseFactor(0.5), 1));
+  check('dense factor is 1 at the ramp start', near(grainsVelocityDenseFactor(0.8), 1));
+  check('dense factor is full at the ramp end',
+    near(grainsVelocityDenseFactor(1.1), GRAINS_VELOCITY_DENSE_DAMP));
+  check('dense factor stays full above the ramp',
+    near(grainsVelocityDenseFactor(2), GRAINS_VELOCITY_DENSE_DAMP));
+  check('dense factor is the smooth midpoint at 0.95',
+    near(grainsVelocityDenseFactor(0.95), 1 + (GRAINS_VELOCITY_DENSE_DAMP - 1) * 0.5),
+    String(grainsVelocityDenseFactor(0.95)));
+  const rho0 = 0.003;
+  const denseHit = grainsApplyVelocityUpdate(vel, start, endFall, { ...opts, rho: rho0 * 1.5, rho0 });
+  check('dense interior: reconstruction scaled by the dense factor',
+    near(denseHit.y, -2 * GRAINS_VELOCITY_DAMPING * GRAINS_VELOCITY_DENSE_DAMP),
+    JSON.stringify(denseHit));
+  const sparseHit = grainsApplyVelocityUpdate(vel, start, endFall, { ...opts, rho: rho0 * 0.4, rho0 });
+  check('sparse surface: no dense damping',
+    near(sparseHit.y, -2 * GRAINS_VELOCITY_DAMPING), JSON.stringify(sparseHit));
 }
 
 console.log(failures === 0 ? 'ALL PASS' : `${failures} FAILURES`);

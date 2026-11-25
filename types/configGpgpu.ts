@@ -424,6 +424,14 @@ export interface ParticleConfigGpgpu {
   // XSPH smoothing strength (0..1); 0 disables XSPH even while
   // the pile solver is on. The settle gate itself is automatic.
   gpgpuGrainsXsphStrength: number;
+  // Velocity-update blend (0..1, default 1): after the pile
+  // iterations, the velocity texture is blended toward the
+  // velocity reconstructed from the frame's actual displacement
+  // (PBF-style), so the position solve's energy removal reaches
+  // the velocity field. 0 disables the update. Inactive while
+  // Verlet or rigid bodies are on. Resolved in
+  // resolveGrainsPilePlan (lib/gpgpuGrains.ts).
+  gpgpuGrainsVelocityBlend: number;
   // Pyro (Phase AS): a particle-side temperature / buoyancy
   // solver in the velocity pass. Each particle's temperature is
   // derived deterministically from its normalised age —

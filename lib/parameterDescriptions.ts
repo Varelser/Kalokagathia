@@ -423,6 +423,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuGrainsSupportScale: '支持半径の倍率。支持半径 h = 粒径 × この値（既定2.0）。密度と XSPH の届く範囲で、セル探索のセルサイズも h になる',
   gpgpuGrainsRestDensityFactor: '目標密度 ρ0 の倍率。ρ0 = 触れ合う FCC 格子のカーネル密度（粒径と h から計算）× この値。既定1.1。大きくすると山は締まり、小さくすると緩む',
   gpgpuGrainsXsphStrength: 'XSPH（近傍平均速度への平滑化）の強さ。近傍の動きが落ち着いた粒子にだけ自動で効く（落下中は効かない）。0で無効',
+  gpgpuGrainsVelocityBlend: '速度更新のブレンド（0〜1、既定1）。山ソルバの反復後に、実際の変位から再構成した速度へ速度テクスチャを寄せ、位置の拘束解決が消したエネルギーを速度側からも消す。0で速度更新だけを無効化。Verlet／剛体が有効な間は働かない',
   gpgpuPyroEnabled: 'Pyroソルバ（粒子側の温度・浮力・攪拌。Off で従来同一）',
   gpgpuPyroTemperature: '放出温度（生まれた直後の粒子の温度。年齢とともに周囲温度0へ冷える）',
   gpgpuPyroBuoyancy: '浮力（重力と同じ単位系。温度×浮力が上向き加速度になる）',

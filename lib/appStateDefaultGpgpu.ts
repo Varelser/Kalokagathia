@@ -258,6 +258,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGrainsSupportScale: 2.0,
   gpgpuGrainsRestDensityFactor: 1.1,
   gpgpuGrainsXsphStrength: 0.5,
+  gpgpuGrainsVelocityBlend: 1.0,
   // Pyro (Phase AS, particle-side temperature / buoyancy solver):
   // disabled = off. Buoyancy is in gravity units (1.2 at full
   // temperature out-lifts the default gravity 0.2 and gravity 1.0

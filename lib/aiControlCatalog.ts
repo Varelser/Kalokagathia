@@ -428,6 +428,7 @@ const NUMS: NumDef[] = [
   ['gpgpuGrainsSupportScale', '山ソルバの支持半径倍率（h = 粒径 × この値、既定2.0）'],
   ['gpgpuGrainsRestDensityFactor', '山ソルバの目標密度ρ0倍率（格子密度 × この値、既定1.1）'],
   ['gpgpuGrainsXsphStrength', '山ソルバのXSPH強さ（静穏時に自動で効く、0で無効）'],
+  ['gpgpuGrainsVelocityBlend', '山ソルバの速度更新ブレンド（変位から速度を再構成、既定1、0で無効、Verlet／剛体時は無効）'],
   ['gpgpuFlipEnabled', 'FLIP層（2D平面グリッド圧力解法＋粒子⇔グリッド転送）のON/OFF（流体フィールドONが前提、OFFで従来同一）'],
   ['gpgpuFlipBlend', 'FLIPのG2Pブレンド（0=PIC、1=FLIP）'],
   ['gpgpuFlipPressureIterations', 'FLIP圧力投影のJacobi反復回数（0〜32）'],

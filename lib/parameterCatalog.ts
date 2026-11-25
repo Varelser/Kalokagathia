@@ -181,6 +181,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuGrainsSupportScale', label: "Grain Support Scale (h / Size)", tab: 'global', min: 1, max: 3, step: 0.1 },
   { key: 'gpgpuGrainsRestDensityFactor', label: "Grain Rest Density Factor (ρ0)", tab: 'global', min: 0.8, max: 1.4, step: 0.01 },
   { key: 'gpgpuGrainsXsphStrength', label: "Grain XSPH Strength", tab: 'global', min: 0, max: 1, step: 0.05 },
+  { key: 'gpgpuGrainsVelocityBlend', label: "Grain Velocity Blend", tab: 'global', min: 0, max: 1, step: 0.05 },
   { key: 'gpgpuPyroTemperature', label: "Pyro Temperature", tab: 'global', min: 0, max: 3, step: 0.05 },
   { key: 'gpgpuPyroBuoyancy', label: "Pyro Buoyancy", tab: 'global', min: 0, max: 4, step: 0.05 },
   { key: 'gpgpuPyroCooling', label: "Pyro Cooling", tab: 'global', min: 0, max: 4, step: 0.05 },

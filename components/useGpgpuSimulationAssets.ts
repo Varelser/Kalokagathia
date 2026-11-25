@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLIP_VORTICITY_CURL_FRAG, FLIP_VORTICITY_FORCE_FRAG, FLUID_ADVECT_FRAG, GRAINS_CELL_KEY_FRAG, GRAINS_PILE_DELTA_FRAG, GRAINS_PILE_LAMBDA_FRAG, SIM_VERT, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildPositionFragment, buildVelocityFragment } from "./gpgpuShaders";
+import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLIP_VORTICITY_CURL_FRAG, FLIP_VORTICITY_FORCE_FRAG, FLUID_ADVECT_FRAG, GRAINS_CELL_KEY_FRAG, GRAINS_PILE_DELTA_FRAG, GRAINS_PILE_LAMBDA_FRAG, GRAINS_VELOCITY_UPDATE_FRAG, SIM_VERT, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildPositionFragment, buildVelocityFragment } from "./gpgpuShaders";
 import type { VelocityFragmentVariantOptions } from "./gpgpuShaderSimulationVelocity";
 import { grainsNeighborhoodMode, grainsPileActive, grainsProjectionActive, resolveGrainsXsphStrength } from "../lib/gpgpuGrains";
 import { flip3dActive } from "../lib/flip3d";
@@ -916,6 +916,29 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     vertexShader: SIM_VERT, fragmentShader: GRAINS_PILE_DELTA_FRAG,
   }), []);
 
+  // Grains velocity update (Stage C follow-up): the PBF-style
+  // velocity reconstruction that runs once after the pile
+  // iterations while the plan's velocity update is active. The
+  // uniforms are rewritten per frame; the pass renders into the
+  // shared spare target and is blitted back over velOut.
+  const grainsVelocityUpdateMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex:     { value: null },
+      uPosInTex:   { value: null },
+      uVelTex:     { value: null },
+      uDt:         { value: 0.016 },
+      uSpeed:      { value: 1 },
+      uBlend:      { value: 1 },
+      uGrainsSize: { value: 8 },
+      uDensityTex: { value: null },
+      uRho0:       { value: 0.003 },
+      uDenseDamp:  { value: 0.8 },
+      uDenseLo:    { value: 0.8 },
+      uDenseHi:    { value: 1.1 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: GRAINS_VELOCITY_UPDATE_FRAG,
+  }), []);
+
   const fluidAdvectMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
       uFluidIn:       { value: null },
@@ -1449,6 +1472,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     grainsCellKeyMat,
     grainsPileLambdaMat,
     grainsPileDeltaMat,
+    grainsVelocityUpdateMat,
     fluidAdvectMat,
     flipSplatMat,
     flipCompositeMat,

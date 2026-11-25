@@ -529,6 +529,106 @@ export function resolveGrainsXsphStrength(config: ParticleConfig): number {
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5;
 }
 
+/** Velocity-update blend resolved from the key: 0..1, default 1. */
+export function resolveGrainsVelocityBlend(config: ParticleConfig): number {
+  const v = config.gpgpuGrainsVelocityBlend ?? 1;
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+}
+
+/** Per-frame damping of the reconstructed velocity (prototype). */
+export const GRAINS_VELOCITY_DAMPING = 0.995;
+/** Parked-particle sentinel: positions at or below this y are parked. */
+export const GRAINS_PARKED_Y = -90000;
+/** Teleport mask: displacements beyond grains size x this are not velocity. */
+export const GRAINS_VELOCITY_TELEPORT_SCALE = 8;
+/**
+ * 案E dense damping: the reconstructed velocity is scaled by an
+ * extra factor that engages only where the local density (the
+ * pile lambda pass's rho, relative to rho0) marks the particle
+ * as pile interior. The factor ramps from 1 at rho/rho0 =
+ * GRAINS_VELOCITY_DENSE_LO to GRAINS_VELOCITY_DENSE_DAMP at
+ * GRAINS_VELOCITY_DENSE_HI, so the surface and the falling
+ * stream keep the plain 案A behaviour while the interior —
+ * whose residual speed2 floor (~2.29 in gate round 2) is fed
+ * by neighbour coupling, not by free motion — is damped every
+ * frame. Gate round 3 (案C) proved the post-solve position
+ * cannot be the reconstruction source at any cap, so 案E keeps
+ * the 案A pre-solve source and adds only this factor.
+ */
+export const GRAINS_VELOCITY_DENSE_DAMP = 0.8;
+/** Density ratio where the dense damping starts to engage. */
+export const GRAINS_VELOCITY_DENSE_LO = 0.8;
+/** Density ratio where the dense damping is fully engaged. */
+export const GRAINS_VELOCITY_DENSE_HI = 1.1;
+
+/** 案E density factor for a rho/rho0 ratio (smoothstep ramp). */
+export function grainsVelocityDenseFactor(rhoRatio: number): number {
+  const lo = GRAINS_VELOCITY_DENSE_LO;
+  const hi = GRAINS_VELOCITY_DENSE_HI;
+  const t = Math.min(1, Math.max(0, (rhoRatio - lo) / (hi - lo)));
+  const s = t * t * (3 - 2 * t);
+  return 1 + (GRAINS_VELOCITY_DENSE_DAMP - 1) * s;
+}
+
+export interface GrainsVec3 { x: number; y: number; z: number }
+
+/**
+ * Reconstruct the velocity from the frame's actual displacement,
+ * inverting the product's (non-Verlet) integration
+ * pos += vel x dt x speed x 60. At dt = 1/60 and speed = 1 the
+ * reconstruction is the displacement itself — the prototype's
+ * finish-frame rule.
+ */
+export function grainsReconstructVelocity(
+  disp: GrainsVec3, dt: number, speed: number,
+): GrainsVec3 {
+  const denom = Math.max(dt * 60 * speed, 1e-9);
+  return { x: disp.x / denom, y: disp.y / denom, z: disp.z / denom };
+}
+
+/**
+ * TS twin of the velocity-update pass (GRAINS_VELOCITY_UPDATE_FRAG):
+ * blend the velocity texture value toward the reconstructed
+ * velocity x damping, unless a mask marks the texel as not-a-move:
+ * parked sentinel on either side, an age discontinuity (respawn /
+ * reset: age wrapped backwards, or the age advance differs from dt
+ * by more than 2dt), or a teleport-scale displacement. Returns the
+ * input velocity unchanged for masked texels and for blend 0.
+ * The posOut argument is the position-pass output (the pile base
+ * snapshot), NOT the post-solve position: gate rounds 1 and 3
+ * proved that reconstructing from the solved position turns the
+ * solve's saturated push-out into an ejection pump at any
+ * displacement cap. When opts.rho / opts.rho0 are supplied （案E）,
+ * the reconstructed velocity is additionally scaled by
+ * grainsVelocityDenseFactor(rho / rho0) — see that constant's
+ * comment. Without them the factor is 1 (plain 案A).
+ */
+export function grainsApplyVelocityUpdate(
+  vel: GrainsVec3,
+  posIn: GrainsVec3 & { age: number },
+  posOut: GrainsVec3 & { age: number },
+  opts: { dt: number; speed: number; blend: number; grainsSize: number; rho?: number; rho0?: number },
+): GrainsVec3 {
+  const { dt, speed, blend, grainsSize } = opts;
+  if (!(blend > 0) || !(dt > 0)) return vel;
+  if (posIn.y <= GRAINS_PARKED_Y || posOut.y <= GRAINS_PARKED_Y) return vel;
+  if (posOut.age < posIn.age) return vel;
+  if (Math.abs(posOut.age - posIn.age - dt) > 2 * dt) return vel;
+  const disp = { x: posOut.x - posIn.x, y: posOut.y - posIn.y, z: posOut.z - posIn.z };
+  const dist = Math.hypot(disp.x, disp.y, disp.z);
+  if (dist > Math.max(0.001, grainsSize) * GRAINS_VELOCITY_TELEPORT_SCALE) return vel;
+  const recon = grainsReconstructVelocity(disp, dt, speed);
+  const dense = (opts.rho !== undefined && opts.rho0 !== undefined && opts.rho0 > 0)
+    ? grainsVelocityDenseFactor(opts.rho / opts.rho0)
+    : 1;
+  const d = GRAINS_VELOCITY_DAMPING * dense;
+  return {
+    x: vel.x + (recon.x * d - vel.x) * blend,
+    y: vel.y + (recon.y * d - vel.y) * blend,
+    z: vel.z + (recon.z * d - vel.z) * blend,
+  };
+}
+
 /** Poly6 kernel W(d, h) = 315 / (64 pi h^9) x (h^2 - d^2)^3, 0 outside h. */
 export function grainsPoly6(dist: number, support: number): number {
   const h = Math.max(support, 0.001);
@@ -587,6 +687,15 @@ export interface GrainsPilePlan {
   xsphStrength: number;
   /** Density stiffness x the legacy projection strength key. */
   stiffness: number;
+  /** Velocity-update blend (0..1) from the key. */
+  velocityBlend: number;
+  /**
+   * True while the velocity-update pass runs: pile active, blend
+   * above 0, and neither Verlet nor rigid bodies on (both own
+   * their velocity semantics; the design keeps them exclusive in
+   * v1). Single resolution point, like the rest of the plan.
+   */
+  velocityUpdateActive: boolean;
 }
 
 /**
@@ -607,6 +716,12 @@ export function resolveGrainsPilePlan(config: ParticleConfig): GrainsPilePlan {
     rho0: grainsEffectiveRho0(config),
     xsphStrength: resolveGrainsXsphStrength(config),
     stiffness: GRAINS_PILE_STIFFNESS * resolveGrainsProjection(config),
+    velocityBlend: resolveGrainsVelocityBlend(config),
+    velocityUpdateActive:
+      grainsPileActive(config) &&
+      resolveGrainsVelocityBlend(config) > 0 &&
+      !config.gpgpuVerletEnabled &&
+      !config.gpgpuRigidEnabled,
   };
 }
 

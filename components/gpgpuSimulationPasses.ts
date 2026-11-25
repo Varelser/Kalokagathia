@@ -8,7 +8,7 @@ import {
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
 import { resolveVellum } from '../lib/gpgpuVellum';
 import { XPBD_JACOBI_RELAXATION } from '../lib/xpbdConstraints';
-import { effectiveGrainsFriction, grainsCellGrid, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsPilePlan, resolveGrainsProjection, type GrainsCellGrid } from '../lib/gpgpuGrains';
+import { effectiveGrainsFriction, grainsCellGrid, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsPilePlan, resolveGrainsProjection, GRAINS_VELOCITY_DENSE_DAMP, GRAINS_VELOCITY_DENSE_HI, GRAINS_VELOCITY_DENSE_LO, type GrainsCellGrid } from '../lib/gpgpuGrains';
 import { resolveGrainsCellSortActive, resolveGrainsNeighborhoodMode } from '../lib/flip3dAtlasDowngrade';
 import { getMaxTextureImageUnits } from '../lib/gpuDiagnostics';
 import { resolveRigid } from '../lib/rigidBodies';
@@ -515,6 +515,7 @@ export function runSimulationPasses(args: {
   // extras skip the pile iterations entirely.
   grainsPileLambdaMat?: THREE.ShaderMaterial;
   grainsPileDeltaMat?: THREE.ShaderMaterial;
+  grainsVelocityUpdateMat?: THREE.ShaderMaterial;
   grainsLambdaRT?: THREE.WebGLRenderTarget | null;
   grainsPileBaseRT?: THREE.WebGLRenderTarget | null;
   grainsPileSpareRT?: THREE.WebGLRenderTarget | null;
@@ -1457,6 +1458,47 @@ export function runSimulationPasses(args: {
       gl.setRenderTarget(posOut);
       gl.render(simScene, simCamera);
     }
+  }
+
+  // Grains velocity update (Stage C follow-up, 案E): while the
+  // plan's velocity update is active, blend velOut toward the
+  // velocity reconstructed from the frame's displacement
+  // through the POSITION PASS (pile base snapshot - posIn),
+  // with a density-gated extra damping. Gate history
+  // (2026-11-26): rounds 1 and 3 proved the post-solve
+  // position cannot be the source at any displacement cap —
+  // the solve's saturated push-out becomes an ejection pump
+  // once it is velocity (round 1 launched to height ~300;
+  // round 3's capped variant boiled the pile apart). 案A
+  // (round 2, this pre-solve source) stopped the launch and
+  // held the shape, leaving an interior speed2 floor of 2.29;
+  // 案E adds the density factor on top: the lambda target's
+  // rho (.y) relative to the plan's rho0 marks the interior,
+  // where the reconstructed velocity is damped harder every
+  // frame. Renders into the pile spare and blits back over
+  // velOut, following the XPBD reconstruction below. The
+  // dt > 0 guard keeps stopped and reverse playback untouched.
+  if (pilePlan.velocityUpdateActive && args.dt > 0 && args.grainsVelocityUpdateMat && args.grainsPileBaseRT && args.grainsLambdaRT && args.grainsPileSpareRT && args.blitMat) {
+    const vuU = args.grainsVelocityUpdateMat.uniforms;
+    vuU.uPosTex.value = args.grainsPileBaseRT.texture;
+    vuU.uPosInTex.value = posIn.texture;
+    vuU.uVelTex.value = velOut.texture;
+    vuU.uDensityTex.value = args.grainsLambdaRT.texture;
+    vuU.uDt.value = args.dt;
+    vuU.uSpeed.value = config.gpgpuSpeed;
+    vuU.uBlend.value = pilePlan.velocityBlend;
+    vuU.uGrainsSize.value = Math.max(0.001, config.gpgpuGrainsSize || 0);
+    vuU.uRho0.value = pilePlan.rho0;
+    vuU.uDenseDamp.value = GRAINS_VELOCITY_DENSE_DAMP;
+    vuU.uDenseLo.value = GRAINS_VELOCITY_DENSE_LO;
+    vuU.uDenseHi.value = GRAINS_VELOCITY_DENSE_HI;
+    simMesh.material = args.grainsVelocityUpdateMat;
+    gl.setRenderTarget(args.grainsPileSpareRT);
+    gl.render(simScene, simCamera);
+    args.blitMat.uniforms.uTex.value = args.grainsPileSpareRT.texture;
+    simMesh.material = args.blitMat;
+    gl.setRenderTarget(velOut);
+    gl.render(simScene, simCamera);
   }
 
   // Vellum (Phase AR): tear state update + constraint projection
