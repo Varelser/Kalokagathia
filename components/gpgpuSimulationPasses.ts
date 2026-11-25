@@ -8,7 +8,9 @@ import {
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
 import { resolveVellum } from '../lib/gpgpuVellum';
 import { XPBD_JACOBI_RELAXATION } from '../lib/xpbdConstraints';
-import { effectiveGrainsFriction, grainsCellGrid, grainsCellSortActive, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsProjection, type GrainsCellGrid } from '../lib/gpgpuGrains';
+import { effectiveGrainsFriction, grainsCellGrid, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsProjection, type GrainsCellGrid } from '../lib/gpgpuGrains';
+import { resolveGrainsCellSortActive, resolveGrainsNeighborhoodMode } from '../lib/flip3dAtlasDowngrade';
+import { getMaxTextureImageUnits } from '../lib/gpuDiagnostics';
 import { resolveRigid } from '../lib/rigidBodies';
 import { resolveSteeringSeek } from '../lib/steering';
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
@@ -768,7 +770,7 @@ export function runSimulationPasses(args: {
   // uniform writes below resolve uGrainsCellSort false, so
   // the shaders keep their scan fallback.
   const grainsGrid = grainsCellGrid(config.gpgpuBounceRadius, Math.max(0.001, config.gpgpuGrainsSize || 0));
-  const grainsCellTex = grainsCellSortActive(config) && args.grainsCellKeyMat && args.grainsBitonicMat && args.grainsSortRTA && args.grainsSortRTB
+  const grainsCellTex = resolveGrainsCellSortActive(config, getMaxTextureImageUnits()) && args.grainsCellKeyMat && args.grainsBitonicMat && args.grainsSortRTA && args.grainsSortRTB
     ? runGrainsCellSortPass({
       gl,
       simScene,
@@ -1204,7 +1206,7 @@ export function runSimulationPasses(args: {
     posSimMat.uniforms.uGrainsProjEnabled.value = grainsProjectionActive(config);
     posSimMat.uniforms.uGrainsSize.value = Math.max(0.001, config.gpgpuGrainsSize || 0);
     posSimMat.uniforms.uGrainsProjection.value = resolveGrainsProjection(config);
-    if (posSimMat.uniforms.uGrainsNeighborhood) posSimMat.uniforms.uGrainsNeighborhood.value = grainsNeighborhoodMode(config);
+    if (posSimMat.uniforms.uGrainsNeighborhood) posSimMat.uniforms.uGrainsNeighborhood.value = resolveGrainsNeighborhoodMode(config, getMaxTextureImageUnits());
     if (posSimMat.uniforms.uGrainsSamples) posSimMat.uniforms.uGrainsSamples.value = Math.max(2, Math.min(64, config.gpgpuNBodySampleCount));
     // Cell sort (Phase 19 fix2): the projection segment
     // consumes the same sorted index the velocity pass used

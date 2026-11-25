@@ -108,10 +108,12 @@ const countSamplers = (frag) => (frag.match(/uniform\s+sampler(?:2D|3D)\s+\w+\s*
 // which is exactly why the §4.3 downgrade has to exist.
 const expectedRawCount = (grainsFullScan) => 16 + (grainsFullScan ? 1 : 0);
 // Resolved expectation (velocityVariantOptions on the
-// stubbed 16-unit GPU, design §3.3/§3.4/§4.3): the full scan
-// survives resolution only when flip3d is off; with flip3d
-// standing, the downgrade resolves it to subsample.
-const expectedResolvedCount = (grainsFullScan, flip3dCouple) => 16 + (grainsFullScan && !flip3dCouple ? 1 : 0);
+// stubbed 16-unit GPU, design §3.3/§3.4/§4.3 as generalised
+// by E3, Grains Stage B): the full scan never survives
+// resolution on a 16-unit GPU — the variant needs 17 units
+// with or without flip3d, so the downgrade resolves it to
+// subsample in both cases.
+const expectedResolvedCount = (grainsFullScan, flip3dCouple) => 16;
 // The config velocityVariantOptions resolves each requested
 // combination from. Every resolved dimension is driven by
 // its own config keys, mirroring how the product builds it.
@@ -164,16 +166,18 @@ console.log(`\nMeasured sampler counts (${combos} combinations, raw = before var
 for (const line of measured) console.log(`  ${line}`);
 
 // The resolution rule itself, pinned directly: on the
-// 16-unit GPU the full scan is resolved away exactly when
-// flip3d stands, and kept otherwise.
+// 16-unit GPU the full scan is resolved away whether or not
+// flip3d stands (§4.3 downgrade as generalised by E3 — the
+// pre-E3 rule kept the full scan without flip3d, which left
+// the plain mode-1 program invalid on 16-unit GPUs).
 {
   const on = velocityVariantOptions(configFor(true, true, false, false, {}));
   check('resolution: flip3d+grains on 16 units resolves grainsFullScan off (§4.3 downgrade)',
     on.grainsFullScan === false && on.flip3dCouple === true,
     JSON.stringify(on));
   const off = velocityVariantOptions(configFor(true, false, false, false, {}));
-  check('resolution: grains without flip3d keeps the full scan',
-    off.grainsFullScan === true && off.flip3dCouple === false,
+  check('resolution: grains without flip3d on 16 units resolves grainsFullScan off (E3)',
+    off.grainsFullScan === false && off.flip3dCouple === false,
     JSON.stringify(off));
 }
 

@@ -86,7 +86,8 @@ import {
   attrExprsReferenceDensity,
 } from '../lib/gpgpuAttributes';
 import { evaluateGpgpuGroup, parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
-import { grainsCellSortActive } from '../lib/gpgpuGrains';
+import { resolveGrainsCellSortActive } from '../lib/flip3dAtlasDowngrade';
+import { getMaxTextureImageUnits } from '../lib/gpuDiagnostics';
 import { setLastAttrBake } from '../lib/gpgpuGroupBridge';
 
 // The GPGPU tex-size caps (MAX_GPGPU_TEX_SIZE / GPGPU_TEX_SIZE_CAPS /
@@ -1413,7 +1414,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // identity guarantee, the same discipline as the FLIP 3D
   // targets above. The passes rebuild the index from the
   // frame-start positions every frame while the pair exists.
-  const grainsCellOn = grainsCellSortActive(config);
+  const grainsCellOn = resolveGrainsCellSortActive(config, getMaxTextureImageUnits());
   useEffect(() => {
     grainsSortRTARef.current?.dispose();
     grainsSortRTARef.current = null;

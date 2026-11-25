@@ -35,7 +35,7 @@ await build({
   stdin: {
     contents: `
       export { applyFlip3dCoupleUniforms } from './components/gpgpuFlip3dPasses.ts';
-      export { flip3dGrainsDowngradeApplies, TEXTURE_UNIT_FLOOR } from './lib/flip3dAtlasDowngrade.ts';
+      export { flip3dGrainsDowngradeApplies, grainsFullScanDowngradeApplies, resolveGrainsNeighborhoodMode, resolveGrainsCellSortActive, TEXTURE_UNIT_FLOOR } from './lib/flip3dAtlasDowngrade.ts';
       export { pyroGridMergedLayout } from './lib/pyroGrid.ts';
       export { grainsNeighborhoodMode } from './lib/gpgpuGrains.ts';
       export { flip3dActive } from './lib/flip3d.ts';
@@ -46,7 +46,7 @@ await build({
   bundle: true, platform: 'node', format: 'esm', outfile: BUNDLE, logLevel: 'silent',
 });
 const {
-  applyFlip3dCoupleUniforms, flip3dGrainsDowngradeApplies, TEXTURE_UNIT_FLOOR,
+  applyFlip3dCoupleUniforms, flip3dGrainsDowngradeApplies, grainsFullScanDowngradeApplies, resolveGrainsNeighborhoodMode, resolveGrainsCellSortActive, TEXTURE_UNIT_FLOOR,
   pyroGridMergedLayout, grainsNeighborhoodMode, flip3dActive, buildVelocityFragment,
 } = await import(pathToFileURL(BUNDLE).href);
 unlinkSync(BUNDLE);
@@ -154,10 +154,38 @@ check('downgrade: flip disabled does not fire',
 check('downgrade: fluid disabled does not fire',
   flip3dGrainsDowngradeApplies({ ...CFG_3D, gpgpuFluidEnabled: false }, 16) === false);
 
+// --- E3 generalised downgrade rule (Grains Stage B) -----------------------
+check('E3 downgrade: plain full scan + 16 units fires without FLIP',
+  grainsFullScanDowngradeApplies({ ...CFG_3D, gpgpuFlipEnabled: false, gpgpuFluidEnabled: false }, 16) === true);
+check('E3 downgrade: plain full scan + 8 units fires',
+  grainsFullScanDowngradeApplies({ ...CFG_3D, gpgpuFlipEnabled: false }, 8) === true);
+check('E3 downgrade: full scan + 32 units does not fire',
+  grainsFullScanDowngradeApplies({ ...CFG_3D, gpgpuFlipEnabled: false }, 32) === false);
+check('E3 downgrade: unknown unit count (null) never fires',
+  grainsFullScanDowngradeApplies({ ...CFG_3D, gpgpuFlipEnabled: false }, null) === false);
+check('E3 downgrade: subsample neighbourhood (mode 0) does not fire',
+  grainsFullScanDowngradeApplies({ ...CFG_3D, gpgpuGrainsNeighborhood: 0 }, 16) === false);
+check('E3 downgrade: flip3d case still fires through the generalised rule',
+  grainsFullScanDowngradeApplies(CFG_3D, 16) === true);
+check('E3 resolved mode: mode 1 on 16 units resolves to subsample (0)',
+  resolveGrainsNeighborhoodMode({ ...CFG_3D, gpgpuFlipEnabled: false }, 16) === 0);
+check('E3 resolved mode: mode 1 on 32 units stays complete (1)',
+  resolveGrainsNeighborhoodMode({ ...CFG_3D, gpgpuFlipEnabled: false }, 32) === 1);
+check('E3 resolved mode: mode 0 stays 0 on any unit count',
+  resolveGrainsNeighborhoodMode({ ...CFG_3D, gpgpuGrainsNeighborhood: 0 }, 16) === 0);
+check('E3 resolved mode: unknown unit count (null) keeps mode 1',
+  resolveGrainsNeighborhoodMode({ ...CFG_3D, gpgpuFlipEnabled: false }, null) === 1);
+check('E3 resolved cell sort: grains on + mode 1 on 16 units resolves off',
+  resolveGrainsCellSortActive({ gpgpuGrainsEnabled: true, gpgpuGrainsNeighborhood: 1 }, 16) === false);
+check('E3 resolved cell sort: grains on + mode 1 on 32 units stays on',
+  resolveGrainsCellSortActive({ gpgpuGrainsEnabled: true, gpgpuGrainsNeighborhood: 1 }, 32) === true);
+check('E3 resolved cell sort: grains off stays off on 32 units',
+  resolveGrainsCellSortActive({ gpgpuGrainsEnabled: false, gpgpuGrainsNeighborhood: 1 }, 32) === false);
+
 // --- resolved assembly path sampler counts ------------------------------
 const countSamplers = (frag) => (frag.match(/uniform\s+sampler(?:2D|3D)\s+\w+\s*;/g) || []).length;
 const resolvedOpts = (config, units) => ({
-  grainsFullScan: grainsNeighborhoodMode(config) === 1 && !flip3dGrainsDowngradeApplies(config, units),
+  grainsFullScan: grainsNeighborhoodMode(config) === 1 && !grainsFullScanDowngradeApplies(config, units),
   flip3dCouple: flip3dActive(config),
 });
 check('resolved path: flip3d+grains on 16 units assembles to 16 samplers',
@@ -168,14 +196,20 @@ check('resolved path: flip3d+grains on 32 units keeps the full scan (17 samplers
   `actual=${countSamplers(buildVelocityFragment('', undefined, resolvedOpts(CFG_3D, 32)))}`);
 check('resolved path: flip3d alone assembles to 16 samplers',
   countSamplers(buildVelocityFragment('', undefined, resolvedOpts({ ...CFG_3D, gpgpuGrainsNeighborhood: 0 }, 16))) === 16);
+check('resolved path: plain full scan on 16 units assembles to 16 samplers (E3)',
+  countSamplers(buildVelocityFragment('', undefined, resolvedOpts({ ...CFG_3D, gpgpuFlipEnabled: false, gpgpuFluidEnabled: false }, 16))) === 16,
+  `actual=${countSamplers(buildVelocityFragment('', undefined, resolvedOpts({ ...CFG_3D, gpgpuFlipEnabled: false, gpgpuFluidEnabled: false }, 16)))}`);
+check('resolved path: plain full scan on 32 units keeps the full scan (17 samplers, E3)',
+  countSamplers(buildVelocityFragment('', undefined, resolvedOpts({ ...CFG_3D, gpgpuFlipEnabled: false, gpgpuFluidEnabled: false }, 32))) === 17,
+  `actual=${countSamplers(buildVelocityFragment('', undefined, resolvedOpts({ ...CFG_3D, gpgpuFlipEnabled: false, gpgpuFluidEnabled: false }, 32)))}`);
 
 // --- wiring (structural, S1 style) ---------------------------------------
 {
   const assets = readFileSync(join(ROOT, 'components/useGpgpuSimulationAssets.ts'), 'utf8');
   check('velocityVariantOptions resolves grainsFullScan through the downgrade rule',
-    assets.includes('flip3dGrainsDowngradeApplies(config, getMaxTextureImageUnits())'));
+    assets.includes('grainsFullScanDowngradeApplies(config, getMaxTextureImageUnits())'));
   check('assets mirror the downgrade into the notice store',
-    assets.includes('setFlip3dGrainsDowngrade(flip3dGrainsDowngradeApplies(config, getMaxTextureImageUnits()))'));
+    assets.includes('setFlip3dGrainsDowngrade(grainsFullScanDowngradeApplies(config, getMaxTextureImageUnits()))'));
   const layout = readFileSync(join(ROOT, 'components/AppRootLayout.tsx'), 'utf8');
   check('root layout renders the downgrade notice from the store',
     layout.includes('useFlip3dGrainsDowngrade') && layout.includes('FLIP3D_GRAINS_DOWNGRADE_NOTICE'));

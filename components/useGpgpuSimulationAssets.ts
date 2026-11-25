@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLIP_VORTICITY_CURL_FRAG, FLIP_VORTICITY_FORCE_FRAG, FLUID_ADVECT_FRAG, GRAINS_CELL_KEY_FRAG, SIM_VERT, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildPositionFragment, buildVelocityFragment } from "./gpgpuShaders";
 import type { VelocityFragmentVariantOptions } from "./gpgpuShaderSimulationVelocity";
-import { grainsCellSortActive, grainsNeighborhoodMode, grainsProjectionActive } from "../lib/gpgpuGrains";
+import { grainsNeighborhoodMode, grainsProjectionActive } from "../lib/gpgpuGrains";
 import { flip3dActive } from "../lib/flip3d";
-import { flip3dGrainsDowngradeApplies, setFlip3dGrainsDowngrade } from "../lib/flip3dAtlasDowngrade";
+import { grainsFullScanDowngradeApplies, resolveGrainsCellSortActive, setFlip3dGrainsDowngrade } from "../lib/flip3dAtlasDowngrade";
 import { getMaxTextureImageUnits } from "../lib/gpuDiagnostics";
 import { resolveSteeringSeek } from "../lib/steering";
 import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG, SIM_VELLUM_VEL_FRAG, SIM_VELLUM_VOLUME_APPLY_FRAG, SIM_VELLUM_VOLUME_PROJ_FRAG, SIM_VELLUM_VOLUME_REDUCE_FRAG, SIM_VELLUM_XPBD_CLEAR_FRAG, SIM_VELLUM_XPBD_LAMBDA_FRAG, SIM_VELLUM_XPBD_PROJ_FRAG, SIM_VELLUM_XPBD_VEL_FRAG } from "./gpgpuShaderSimulationVellum";
@@ -57,15 +57,16 @@ import type { ParticleConfig } from "../types";
 // both off the built string is byte-identical to v2.00.
 export function velocityVariantOptions(config: ParticleConfig): VelocityFragmentVariantOptions {
   return {
-    // 案D downgrade (design §4.3): with the FLIP 3D coupling
-    // standing, a <=16-texture-unit GPU cannot also carry the
-    // Grains complete scan (17 units), so the neighbourhood
-    // resolves to subsample and the full-scan variant is not
-    // built. The rule itself lives in
+    // 案D downgrade, generalised by E3 (Grains Stage B): a
+    // <=16-texture-unit GPU cannot carry the Grains complete
+    // scan (17 units with or without the FLIP 3D coupling —
+    // the resident preamble already fills all 16), so the
+    // neighbourhood resolves to subsample and the full-scan
+    // variant is not built. The rule itself lives in
     // lib/flip3dAtlasDowngrade.ts; the unit count is probed
     // once via lib/gpuDiagnostics.ts.
     grainsFullScan: grainsNeighborhoodMode(config) === 1
-      && !flip3dGrainsDowngradeApplies(config, getMaxTextureImageUnits()),
+      && !grainsFullScanDowngradeApplies(config, getMaxTextureImageUnits()),
     flip3dCouple: flip3dActive(config),
     // Phase 20 stage 2: the steering chunk + uniforms exist in
     // the built string only while the steer-seek keys are on.
@@ -531,7 +532,7 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uGroupHigh:    { value: 0.75 },
       uGroupInvert:  { value: false },
     },
-    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: grainsCellSortActive(config) }),
+    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()) }),
   });
 }
 
@@ -1273,11 +1274,12 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // material. On any failure the previously working shader stays active
   // and the panel shows the error via the custom-force status store.
   const gl = useThree((state) => state.gl);
-  // 案D downgrade notice (design §4.3): the downgrade resolved
-  // in velocityVariantOptions is never silent — mirror its
-  // state into the notice store the root layout renders.
+  // Downgrade notice (design §4.3, generalised by E3): the
+  // downgrade resolved in velocityVariantOptions is never
+  // silent — mirror its state into the notice store the root
+  // layout renders.
   useEffect(() => {
-    setFlip3dGrainsDowngrade(flip3dGrainsDowngradeApplies(config, getMaxTextureImageUnits()));
+    setFlip3dGrainsDowngrade(grainsFullScanDowngradeApplies(config, getMaxTextureImageUnits()));
   }, [config]);
   // Phase 19 gate fix: the applied-key ref also tracks the Phase
   // 19 string variant, and it starts at the creation key (the
@@ -1340,7 +1342,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // (Grains on + complete neighbourhood) — while it holds, the
   // projection segment searches the sorted cell index instead
   // of walking the whole texture.
-  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${grainsCellSortActive(c)}`;
+  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${resolveGrainsCellSortActive(c, getMaxTextureImageUnits())}`;
   const posProjectionRef = useRef(posVariantKey(config));
   useEffect(() => {
     const key = posVariantKey(config);
@@ -1348,7 +1350,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     posProjectionRef.current = key;
     posSimMat.fragmentShader = buildPositionFragment({
       grainsProjection: grainsProjectionActive(config),
-      grainsCellSort: grainsCellSortActive(config),
+      grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()),
     });
     posSimMat.needsUpdate = true;
   }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, posSimMat]);
