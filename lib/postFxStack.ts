@@ -214,8 +214,78 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   return Array.from(active);
 }
 
+// Phase 35 (TD §7 stage 3): a user-declared stage order.
+// The postFxStackOrder key ('' = profile order) holds a
+// comma-separated list of stage ids. Correction is total,
+// mirroring lib/gpgpuForceOrder.ts: unknown ids and
+// duplicates are dropped, and any stage the list omits is
+// appended in profile order, so the result is always a
+// permutation of the full 27-stage set over the selected
+// profile's order. With the key unset, resolution returns
+// the profile order itself and behaviour is unchanged.
+
+export function getPostFxProfileOrder(profile?: PostFxStackProfile | null): PostFxStageId[] {
+  return [...(STACK_ORDERS[profile ?? 'manual'] ?? STACK_ORDERS.manual)];
+}
+
+const POST_FX_STAGE_IDS = new Set<PostFxStageId>(STACK_ORDERS.manual);
+
+/** Normalise any order input into a full permutation over the base order. */
+export function normalizePostFxStackOrder(
+  order: string | readonly string[] | null | undefined,
+  baseOrder: readonly PostFxStageId[],
+): PostFxStageId[] {
+  const raw = typeof order === 'string'
+    ? order.split(',')
+    : Array.isArray(order)
+      ? order
+      : [];
+  const seen = new Set<PostFxStageId>();
+  const result: PostFxStageId[] = [];
+  for (const entry of raw) {
+    const name = String(entry).trim() as PostFxStageId;
+    if (!name || !POST_FX_STAGE_IDS.has(name) || seen.has(name)) continue;
+    seen.add(name);
+    result.push(name);
+  }
+  for (const name of baseOrder) {
+    if (!seen.has(name)) result.push(name);
+  }
+  return result;
+}
+
+/** The full stage order in effect for a config (custom order wins). */
+export function resolvePostFxStackOrder(config: ParticleConfig): PostFxStageId[] {
+  const base = getPostFxProfileOrder(config.postFxStackProfile);
+  if (typeof config.postFxStackOrder !== 'string' || config.postFxStackOrder.trim() === '') {
+    return base;
+  }
+  return normalizePostFxStackOrder(config.postFxStackOrder, base);
+}
+
+/** True when the input denotes the profile order (including '' / unset). */
+export function isProfilePostFxStackOrder(
+  order: string | readonly string[] | null | undefined,
+  profile?: PostFxStackProfile | null,
+): boolean {
+  if (order == null) return true;
+  if (typeof order === 'string' && order.trim() === '') return true;
+  const base = getPostFxProfileOrder(profile);
+  const names = normalizePostFxStackOrder(order, base);
+  return names.every((name, index) => name === base[index]);
+}
+
+/** Serialise a (possibly partial) order back to the canonical key form. */
+export function serializePostFxStackOrder(
+  order: string | readonly string[] | null | undefined,
+  profile?: PostFxStackProfile | null,
+): string {
+  if (isProfilePostFxStackOrder(order, profile)) return '';
+  return normalizePostFxStackOrder(order, getPostFxProfileOrder(profile)).join(',');
+}
+
 export function getOrderedActivePostFxStageIds(config: ParticleConfig): PostFxStageId[] {
   const active = new Set(getActivePostFxStageIds(config));
-  const preferredOrder = STACK_ORDERS[config.postFxStackProfile] ?? STACK_ORDERS.manual;
+  const preferredOrder = resolvePostFxStackOrder(config);
   return preferredOrder.filter((stage) => active.has(stage));
 }

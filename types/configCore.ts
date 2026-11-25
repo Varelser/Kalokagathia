@@ -157,6 +157,9 @@ export interface ParticleConfigCore {
 
   // Post Processing
   postFxStackProfile: 'manual' | 'touch-feedback' | 'particular-glow' | 'retro-feedback' | 'dream-smear';
+  // Phase 35 (TD §7 stage 3): user-declared PostFx stage
+  // order, comma-separated stage ids; '' = profile order.
+  postFxStackOrder: string;
   postBloomEnabled: boolean;
   postBloomIntensity: number;
   postBloomRadius: number;

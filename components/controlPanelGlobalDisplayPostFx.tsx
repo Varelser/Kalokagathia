@@ -5,12 +5,31 @@ import { buildPostFxStackPatch, getPostFxStackBundleById, POST_FX_STACK_BUNDLES,
 import { getOrderedActivePostFxStageIds } from '../lib/postFxStack';
 import { Slider, Toggle } from './controlPanelParts';
 import { CustomPostGlslBlock } from './controlPanelGlobalDisplayPostFxCustom';
+import { PostFxStackGraph } from './controlPanelPostFxStackGraph';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
+
+// TD §7 stage 3 (Phase 35): the PostFx unit coexists as
+// the classic slider section (節) and the stage-order
+// graph (グラフ), switched here at the unit level.
+const POSTFX_VIEW_STORAGE_KEY = 'kalokagathia.postFxView.v1';
+type PostFxView = 'panel' | 'graph';
+const loadPostFxView = (): PostFxView => {
+  try {
+    return localStorage.getItem(POSTFX_VIEW_STORAGE_KEY) === 'graph' ? 'graph' : 'panel';
+  } catch {
+    return 'panel';
+  }
+};
 
 export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
   updateConfig,
 }) => {
+  const [view, setView] = React.useState<PostFxView>(loadPostFxView);
+  const changeView = (next: PostFxView) => {
+    setView(next);
+    try { localStorage.setItem(POSTFX_VIEW_STORAGE_KEY, next); } catch { /* storage unavailable */ }
+  };
   const activePostStackBundle = getPostFxStackBundleById(inferPostFxStackBundleId(config));
   const activePostStages = getOrderedActivePostFxStageIds(config).map((stage) => stage.replace(/-/g, ' '));
 
@@ -28,6 +47,27 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
     <>
       <div className="mt-5 rounded border border-white/10 bg-white/5 p-3">
         <div className="mb-3 text-[10px] uppercase tracking-widest font-bold text-white/70">Post Processing</div>
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-widest text-white/45">PostFx 表示</span>
+          <span className="flex items-center gap-1 rounded-md bg-[#171717] p-1" title="PostFx 節の表示: 節（スライダ）/ グラフ（段の順序）">
+            {(['panel', 'graph'] as PostFxView[]).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => changeView(v)}
+                className={`rounded px-2.5 py-1 text-[10px] tracking-wider transition-colors ${
+                  view === v ? 'bg-white/[0.14] text-white' : 'text-[#a3a3a3] hover:text-white'
+                }`}
+              >
+                {v === 'panel' ? '節' : 'グラフ'}
+              </button>
+            ))}
+          </span>
+        </div>
+        {view === 'graph' ? (
+          <PostFxStackGraph config={config} updateConfig={updateConfig} />
+        ) : (
+          <>
         <Toggle
           label="Stack Profile"
           value={config.postFxStackProfile}
@@ -579,6 +619,8 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
           </>
         )}
         <CustomPostGlslBlock config={config} updateConfig={updateConfig} />
+          </>
+        )}
       </div>
     </>
   );

@@ -15,6 +15,7 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
 
   // Post Processing
   postFxStackProfile: 'manual' as const,
+  postFxStackOrder: '',
   postBloomEnabled: false,
   postBloomIntensity: 1.0,
   postBloomRadius: 0.4,

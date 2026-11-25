@@ -1,8 +1,8 @@
 {
   "version": 1,
   "algorithm": "sha256(sorted keys joined by newline)",
-  "fingerprint": "2651b1602365d6fb9a94e1d973f37f1fc11d968342b3f8d1062fb55955f77c04",
-  "keyCount": 1508,
+  "fingerprint": "2e19f6f2b4bc41810081089d73c5695004d08d4010268c8f6d00d1c702a4a95f",
+  "keyCount": 1509,
   "keys": [
     "ambientBaseSize",
     "ambientColor",
@@ -1405,6 +1405,7 @@
     "postFractalKind",
     "postFractalMix",
     "postFractalZoom",
+    "postFxStackOrder",
     "postFxStackProfile",
     "postGlitchAmount",
     "postGlitchBands",
@@ -1513,5 +1514,5 @@
     "volumeFogGlslCode",
     "volumeFogGlslEnabled"
   ],
-  "recordedAt": "2026-11-25T11:44:21.323Z"
+  "recordedAt": "2026-11-25T12:38:06.911Z"
 }
