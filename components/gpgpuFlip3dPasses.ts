@@ -53,6 +53,18 @@ export type Flip3dTargets = {
   baseVelTexture: THREE.Texture | null;
   // Phi texture of the latest step (whitewater 3D's source).
   phiTexture: THREE.Texture | null;
+  // FLIP WebGL atlas merge (案B, S1): one atlas holding the
+  // projected velocity in its first tile half and the
+  // pre-projection base in its second half (offset
+  // baseTileOffset). Written by the merge draws at the end of
+  // every step; applyFlip3dCoupleUniforms binds it into the
+  // velocity material's dead uFlipBaseTex slot (S3).
+  atlasVelBase: THREE.WebGLRenderTarget;
+  mergedTilesX: number;
+  mergedTilesY: number;
+  mergedAtlasWidth: number;
+  mergedAtlasHeight: number;
+  baseTileOffset: number;
   resolution: number;
   atlasWidth: number;
   atlasHeight: number;
@@ -77,6 +89,9 @@ export type Flip3dMaterials = {
   flip3dCurlMat: THREE.ShaderMaterial;
   flip3dVorticityForceMat: THREE.ShaderMaterial;
   flip3dClearMat: THREE.ShaderMaterial;
+  // Atlas merge copy (案B, S1): half-writing pass-through copy
+  // (uniforms uSrcTex / uHalf) into targets.atlasVelBase.
+  flip3dAtlasCopyMat: THREE.ShaderMaterial;
 };
 
 function setFlip3dCommonUniforms(mat: THREE.ShaderMaterial, targets: Flip3dTargets): void {
@@ -287,6 +302,27 @@ export function runFlip3dPasses(args: {
   }
 
   targets.velPingIsA = projected === targets.velA;
+
+  // 9. Atlas merge (案B, S1): copy this step's (projected, base)
+  // pair into the merged atlas — Vel into the first tile half,
+  // Base into the second. This must stay AFTER the subtract
+  // draw above and nowhere else: at this point the pair is in
+  // its final form for the step (baseVelTexture was recorded
+  // pre-projection and nothing overwrites velLive afterwards),
+  // and the copy completes before the next step can overwrite
+  // either source. applyFlip3dCoupleUniforms reads it (S3).
+  {
+    const mat = materials.flip3dAtlasCopyMat;
+    mat.uniforms.uSrcTex.value = projected.texture;
+    mat.uniforms.uHalf.value = 0;
+    drawInto(mat, targets.atlasVelBase);
+    if (targets.baseVelTexture) {
+      mat.uniforms.uSrcTex.value = targets.baseVelTexture;
+      mat.uniforms.uHalf.value = 1;
+      drawInto(mat, targets.atlasVelBase);
+    }
+  }
+
   targets.framesStepped += 1;
   setFlip3dRuntimeStatus({
     active: true,
@@ -318,6 +354,7 @@ export function disposeFlip3dTargets(targets: Flip3dTargets | null): void {
   targets.phiB.dispose();
   targets.scratch.dispose();
   targets.curv.dispose();
+  targets.atlasVelBase.dispose();
 }
 
 // G2P coupling (the FLIP pattern, on all three components):
@@ -349,14 +386,23 @@ export function applyFlip3dCoupleUniforms(args: {
   const t = targets as Flip3dTargets;
   const halfExtent = flip3dHalfExtent(config);
   u.uFlip3dCouple.value = true;
-  u.uFlip3dVelTex.value = flip3dCurrentVelTexture(t);
-  u.uFlip3dBaseTex.value = t.baseVelTexture;
+  // Atlas merge (案B, S3): both fields are read from the ONE
+  // merged atlas, bound through the 2D FLIP slot uFlipBaseTex
+  // (dead in 3D mode — the S0 invariant). Vel is the first
+  // tile half (offset 0 in the shader), Base the second half
+  // (uFlip3dBaseTileOffset). uFlip3dVelTex / uFlip3dBaseTex
+  // are no longer assigned: the shader does not declare them
+  // any more and their uniform entries stay inert. The
+  // !active branch above must NOT touch uFlipBaseTex — the
+  // 2D pipeline owns that slot whenever it runs.
+  u.uFlipBaseTex.value = t.atlasVelBase.texture;
   u.uFlip3dBlend.value = config.gpgpuFlipBlend;
   u.uFlip3dTransfer.value = config.gpgpuFlipTransfer;
   u.uFlip3dVelScale.value = pyroGridVelScale(halfExtent, t.resolution);
   (u.uFlip3dBounds.value as THREE.Vector4).set(0, 0, 0, halfExtent);
   u.uFlip3dGridN.value = t.resolution;
-  (u.uFlip3dAtlasSize.value as THREE.Vector2).set(t.atlasWidth, t.atlasHeight);
-  (u.uFlip3dAtlasTiles.value as THREE.Vector2).set(t.tilesX, t.tilesY);
+  (u.uFlip3dAtlasSize.value as THREE.Vector2).set(t.mergedAtlasWidth, t.mergedAtlasHeight);
+  (u.uFlip3dAtlasTiles.value as THREE.Vector2).set(t.mergedTilesX, t.mergedTilesY);
+  u.uFlip3dBaseTileOffset.value = t.baseTileOffset;
   u.uFlip3dManualTrilinear.value = !t.floatLinear;
 }

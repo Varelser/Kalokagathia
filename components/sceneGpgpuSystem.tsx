@@ -179,6 +179,17 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     let aov: DiagnosticAovRenderer | null = null;
     let aovTexSize = 0;
     let hashGrid: HashGridSampler | null = null;
+    // Grains spike (Phase 31 prep): previous captureGrainsMetrics
+    // snapshot, kept inside the hook closure so a second call can
+    // report the neighbour-set delta (metric A6) without shipping
+    // raw pair lists to the caller. Null until the first call.
+    let grainsPrev: {
+      count: number;
+      pairCount: number;
+      pairKeys: Set<number>;
+      pairKeysTruncated: boolean;
+      ages: Float32Array;
+    } | null = null;
     const hook = {
       captureState: () => {
         const ctx = diagFrameRef.current;
@@ -393,6 +404,213 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           interior: { count: iCount, meanSpeed: round(iCount > 0 ? iSpeed / iCount : 0) },
         };
       },
+      // Grains spike (Phase 31 prep): aggregate metrics for the
+      // angle-of-repose investigation (GRAINS_SPIKE_PREP §2).
+      // One synchronous position readback; the neighbour set is
+      // the TS twin's ground truth (grainsNeighborsBruteForceUv):
+      // contact window dist^2 < gd^2 and dist^2 > 0.0001, minus
+      // the shader's own self-exclusion (candidates inside the
+      // 3x3 texel block around the seeker are skipped). This is
+      // the ACTUAL overlap field, not the solver's mode-0
+      // subsample perception — record it as such. Neighbours are
+      // found with ONE bulk pass over a uniform cell grid (cell =
+      // gd, 27-cell search), never by calling the twin per
+      // particle. Returns aggregates only: A7 overlap mean/max,
+      // a y-distribution summary for floor-reach judgement, an
+      // age summary, and a hashed neighbour-set summary. A second
+      // call also returns deltaSincePrev — the A6 change count
+      // against the previous call, with pairs touching a
+      // respawned texel (age went backwards) excluded from both
+      // sides, per the prep record. Stored pair keys are capped
+      // (PAIR_KEY_LIMIT below) so an ultra-dense pile cannot
+      // overflow the JS Set limit; when the cap is hit the
+      // aggregates are still exact but deltaSincePrev is null
+      // and the result carries pairKeysTruncated: true. Callers pass the config's
+      // gpgpuGrainsSize as gd and, when known, gpgpuFloorY.
+      captureGrainsMetrics: (gd: number, floorY?: number) => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        const t = ctx.texSize;
+        const count = t * t;
+        if (!diagPosBufRef.current || diagPosBufRef.current.length !== count * 4) {
+          diagPosBufRef.current = new Float32Array(count * 4);
+        }
+        gl.readRenderTargetPixels(ctx.posOut, 0, 0, t, t, diagPosBufRef.current);
+        const pos = diagPosBufRef.current;
+        const d = Math.max(0.001, Number.isFinite(gd) ? gd : 0);
+        const gd2 = d * d;
+        const round = (v: number) => Math.round(v * 10000) / 10000;
+        // y and age summaries (position texture RGBA = xyz, age).
+        let yMin = Infinity; let yMax = -Infinity; let ySum = 0;
+        let ageMin = Infinity; let ageMax = -Infinity; let ageSum = 0;
+        const ys = new Float32Array(count);
+        const ages = new Float32Array(count);
+        for (let i = 0; i < count; i++) {
+          const y = pos[i * 4 + 1];
+          const a = pos[i * 4 + 3];
+          ys[i] = y; ages[i] = a;
+          if (y < yMin) yMin = y;
+          if (y > yMax) yMax = y;
+          ySum += y;
+          if (a < ageMin) ageMin = a;
+          if (a > ageMax) ageMax = a;
+          ageSum += a;
+        }
+        const sortedY = Array.from(ys).sort((a, b) => a - b);
+        const pct = (p: number) => sortedY[Math.min(count - 1, Math.floor(p * count))] ?? 0;
+        let bottomLayer = 0;
+        let floorHalf = 0;
+        let floorOne = 0;
+        const hasFloor = typeof floorY === 'number' && Number.isFinite(floorY);
+        for (let i = 0; i < count; i++) {
+          if (ys[i] <= yMin + d) bottomLayer++;
+          if (hasFloor) {
+            if (ys[i] <= (floorY as number) + d * 0.5) floorHalf++;
+            if (ys[i] <= (floorY as number) + d) floorOne++;
+          }
+        }
+        // Uniform cell grid, cell size = gd (so any contact lies
+        // in the seeker's cell or one of the 26 adjacent cells).
+        const cellOf = (v: number) => Math.floor(v / d);
+        const grid = new Map<string, number[]>();
+        for (let i = 0; i < count; i++) {
+          const key = `${cellOf(pos[i * 4])},${cellOf(pos[i * 4 + 1])},${cellOf(pos[i * 4 + 2])}`;
+          const bucket = grid.get(key);
+          if (bucket) bucket.push(i);
+          else grid.set(key, [i]);
+        }
+        // Pair scan: each unordered pair once (j > i), folded in
+        // canonical (i, then j ascending) order into two 32-bit
+        // hashes so callers can compare neighbour sets across
+        // calls without receiving the raw pair list.
+        let pairCount = 0;
+        let overlapSum = 0;
+        let overlapMax = 0;
+        const inContact = new Uint8Array(count);
+        // Pair keys are kept only so the NEXT call can compute
+        // the A6 delta. JS Sets hard-fail past ~16.7M entries
+        // (RangeError: Set maximum size exceeded), which an
+        // ultra-dense pile (projection 0 + full-scan neighbours)
+        // can exceed. Cap the stored keys well below that: once
+        // the cap is hit, later keys are simply not stored and
+        // the delta is reported as not computable. The pair
+        // aggregates above/below never touch this Set and are
+        // computed in full regardless of the cap.
+        const PAIR_KEY_LIMIT = 2000000;
+        const pairKeys = new Set<number>();
+        let pairKeysTruncated = false;
+        let h1 = 0x811c9dc5;
+        let h2 = 0x9e3779b9;
+        const mix1 = (h: number, v: number) => {
+          h ^= v & 0xff; h = Math.imul(h, 0x01000193);
+          h ^= (v >>> 8) & 0xff; h = Math.imul(h, 0x01000193);
+          h ^= (v >>> 16) & 0xff; h = Math.imul(h, 0x01000193);
+          h ^= (v >>> 24) & 0xff; h = Math.imul(h, 0x01000193);
+          return h >>> 0;
+        };
+        const candidates: number[] = [];
+        for (let i = 0; i < count; i++) {
+          const px = pos[i * 4]; const py = pos[i * 4 + 1]; const pz = pos[i * 4 + 2];
+          const ix = i % t; const iy = Math.floor(i / t);
+          const gx = cellOf(px); const gy = cellOf(py); const gz = cellOf(pz);
+          candidates.length = 0;
+          for (let ax = gx - 1; ax <= gx + 1; ax++) {
+            for (let ay = gy - 1; ay <= gy + 1; ay++) {
+              for (let az = gz - 1; az <= gz + 1; az++) {
+                const bucket = grid.get(`${ax},${ay},${az}`);
+                if (!bucket) continue;
+                for (const j of bucket) {
+                  if (j <= i) continue;
+                  const jx = j % t; const jy = Math.floor(j / t);
+                  const du = jx - ix; const dv = jy - iy;
+                  if (du * du + dv * dv < 2.25) continue;
+                  const dx = px - pos[j * 4]; const dy = py - pos[j * 4 + 1]; const dz = pz - pos[j * 4 + 2];
+                  const d2 = dx * dx + dy * dy + dz * dz;
+                  if (d2 < gd2 && d2 > 0.0001) candidates.push(j);
+                }
+              }
+            }
+          }
+          if (candidates.length === 0) continue;
+          candidates.sort((a, b) => a - b);
+          inContact[i] = 1;
+          for (const j of candidates) {
+            const dx = px - pos[j * 4]; const dy = py - pos[j * 4 + 1]; const dz = pz - pos[j * 4 + 2];
+            const overlap = d - Math.sqrt(dx * dx + dy * dy + dz * dz);
+            pairCount++;
+            overlapSum += overlap;
+            if (overlap > overlapMax) overlapMax = overlap;
+            inContact[j] = 1;
+            if (pairKeys.size < PAIR_KEY_LIMIT) pairKeys.add(i * count + j);
+            else pairKeysTruncated = true;
+            h1 = mix1(h1, i); h1 = mix1(h1, j);
+            h2 = (Math.imul(h2 ^ i, 33) ^ j) >>> 0;
+          }
+        }
+        let contactParticles = 0;
+        for (let i = 0; i < count; i++) if (inContact[i]) contactParticles++;
+        // A6 delta against the previous call (see header comment).
+        // Not computable when either side's key set was truncated
+        // by the cap above: deltaSincePrev then stays null and the
+        // result carries pairKeysTruncated: true instead.
+        let deltaSincePrev: Record<string, unknown> | null = null;
+        if (grainsPrev && grainsPrev.count === count && !grainsPrev.pairKeysTruncated && !pairKeysTruncated) {
+          const respawned = new Uint8Array(count);
+          let respawnedCount = 0;
+          for (let i = 0; i < count; i++) {
+            if (ages[i] < grainsPrev.ages[i] - 0.0001) { respawned[i] = 1; respawnedCount++; }
+          }
+          const touchesRespawned = (k: number) => {
+            const i = Math.floor(k / count);
+            return respawned[i] === 1 || respawned[k - i * count] === 1;
+          };
+          let prevKept = 0; let common = 0;
+          for (const k of grainsPrev.pairKeys) {
+            if (touchesRespawned(k)) continue;
+            prevKept++;
+            if (pairKeys.has(k)) common++;
+          }
+          let curKept = 0;
+          for (const k of pairKeys) {
+            if (touchesRespawned(k)) continue;
+            curKept++;
+          }
+          const changed = (prevKept - common) + (curKept - common);
+          deltaSincePrev = {
+            prevPairCount: grainsPrev.pairCount,
+            prevKeptPairCount: prevKept,
+            curKeptPairCount: curKept,
+            commonPairCount: common,
+            changedPairCount: changed,
+            a6: prevKept > 0 ? round(changed / prevKept) : 0,
+            respawnedCount,
+          };
+        }
+        grainsPrev = { count, pairCount, pairKeys, pairKeysTruncated, ages };
+        return {
+          texSize: t,
+          count,
+          gd: d,
+          pairCount,
+          meanOverlap: round(pairCount > 0 ? overlapSum / pairCount : 0),
+          maxOverlap: round(overlapMax),
+          contactParticleCount: contactParticles,
+          isolatedParticleCount: count - contactParticles,
+          pairHash: [(h1 >>> 0).toString(16).padStart(8, '0'), (h2 >>> 0).toString(16).padStart(8, '0')],
+          y: {
+            min: round(yMin), max: round(yMax), mean: round(ySum / count),
+            p10: round(pct(0.1)), p25: round(pct(0.25)), p50: round(pct(0.5)),
+            p75: round(pct(0.75)), p90: round(pct(0.9)),
+            bottomLayerCount: bottomLayer,
+          },
+          floor: hasFloor
+            ? { floorY, withinHalfDiameter: floorHalf, withinOneDiameter: floorOne }
+            : null,
+          age: { min: round(ageMin), max: round(ageMax), mean: round(ageSum / count) },
+          pairKeysTruncated,
+          deltaSincePrev,
+        };
+      },
     };
     (window as unknown as { __kaloDiag?: typeof hook }).__kaloDiag = hook;
     return () => {
@@ -585,6 +803,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     flip3dCurlMat,
     flip3dVorticityForceMat,
     flip3dClearMat,
+    flip3dAtlasCopyMat,
     ww3VelMat,
     ww3PosMat,
     drawGeo,
@@ -1366,6 +1585,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           flip3dCurlMat,
           flip3dVorticityForceMat,
           flip3dClearMat,
+          flip3dAtlasCopyMat,
         },
         simMesh: simMeshRef.current,
         gl: glCtx,

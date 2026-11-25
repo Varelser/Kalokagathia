@@ -64,7 +64,11 @@ const {
     const h = createHash('sha256').update(readFileSync(join(ROOT, rel))).digest('hex');
     check(`solver file untouched: ${rel}`, h === expected, h);
   };
-  pin('lib/pyroGrid.ts', '4b80d0a7b78a43053706f2b56a18a74683e75d402fae3595e42318b5c9962faa');
+  // lib/pyroGrid.ts pin updated 2026-11-25 (FLIP atlas S1): the
+  // only change is the additive pyroGridMergedLayout helper
+  // (merged Vel/Base atlas layout); solver math untouched.
+  // Record: ~/workspace/kalokagathia-pro/PIN_RERECORD_20261125_FLIP3D.md
+  pin('lib/pyroGrid.ts', '2ac816c55090a2bf339daf18051aa871d21eac2e59c9667fe5992ab7cb1b1801');
   pin('components/gpgpuShaderPyroGrid.ts', 'ba4603f66a3454a983120add1a0e94101351eb3cb76f2a9073bec5028911968f');
   pin('components/gpgpuPyroGridPasses.ts', '12e3e32b5e44cebf6c7fb3cfe8c0c34d85c0a636c2eb7033cc26fb6abcced3b6');
 }

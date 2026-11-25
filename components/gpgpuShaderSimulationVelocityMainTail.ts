@@ -333,8 +333,8 @@ const VEL_FRAG_TAIL_FLIP3D_COUPLE = /* glsl */ `    // FLIP 3D coupling (Phase 1
       vec3 cellPos = flip3dCellOfWorld(pos);
       float fade = flip3dDomainFade(cellPos);
       if (fade > 0.0) {
-        vec3 gridVel = flip3dSample(uFlip3dVelTex, cellPos).xyz;
-        vec3 baseVel = flip3dSample(uFlip3dBaseTex, cellPos).xyz;
+        vec3 gridVel = flip3dSample(uFlipBaseTex, cellPos, 0.0).xyz;
+        vec3 baseVel = flip3dSample(uFlipBaseTex, cellPos, uFlip3dBaseTileOffset).xyz;
         vec3 picVel = gridVel * uFlip3dVelScale;
         vec3 flipVel = vel + (gridVel - baseVel) * uFlip3dVelScale;
         vec3 target = mix(picVel, flipVel, uFlip3dBlend);

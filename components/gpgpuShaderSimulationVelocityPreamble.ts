@@ -379,8 +379,6 @@ const VEL_FRAG_PREAMBLE_FLIP3D = /* glsl */ `  // FLIP 3D coupling (Phase 19 sta
   // by applyFlip3dCoupleUniforms; off, the block in the main
   // tail never runs.
   uniform bool  uFlip3dCouple;
-  uniform sampler2D uFlip3dVelTex;
-  uniform sampler2D uFlip3dBaseTex;
   uniform float uFlip3dBlend;
   uniform float uFlip3dTransfer;
   uniform float uFlip3dVelScale;
@@ -388,34 +386,46 @@ const VEL_FRAG_PREAMBLE_FLIP3D = /* glsl */ `  // FLIP 3D coupling (Phase 19 sta
   uniform float uFlip3dGridN;
   uniform vec2  uFlip3dAtlasSize;
   uniform vec2  uFlip3dAtlasTiles;
+  // Atlas merge (案B): the projected and base fields live in
+  // ONE merged atlas bound through the (otherwise dead) 2D
+  // FLIP slot uFlipBaseTex — Vel in the first tile half, Base
+  // offset by uFlip3dBaseTileOffset tiles (the single-layout
+  // tile capacity, cols x rows). The offset enters ONLY here,
+  // in the UV generation layer: grid-space clamp / floor /
+  // fraction are settled before it, so the interpolation
+  // weights and the domain fade keep their meaning, and the
+  // manual trilinear path and the hardware path share the
+  // same transform.
+  uniform float uFlip3dBaseTileOffset;
   uniform bool  uFlip3dManualTrilinear;
-  vec2 flip3dUvOfCell(vec3 cell) {
-    vec2 tile = vec2(mod(cell.z, uFlip3dAtlasTiles.x), floor(cell.z / uFlip3dAtlasTiles.x));
+  vec2 flip3dUvOfCell(vec3 cell, float zOff) {
+    float z = cell.z + zOff;
+    vec2 tile = vec2(mod(z, uFlip3dAtlasTiles.x), floor(z / uFlip3dAtlasTiles.x));
     return (tile * uFlip3dGridN + cell.xy + 0.5) / uFlip3dAtlasSize;
   }
-  vec4 flip3dFetch(sampler2D tex, vec3 cell) {
+  vec4 flip3dFetch(sampler2D tex, vec3 cell, float zOff) {
     vec3 c = clamp(cell, vec3(0.0), vec3(uFlip3dGridN - 1.0));
-    return texture2D(tex, flip3dUvOfCell(c));
+    return texture2D(tex, flip3dUvOfCell(c, zOff));
   }
-  vec4 flip3dSample(sampler2D tex, vec3 p) {
+  vec4 flip3dSample(sampler2D tex, vec3 p, float zOff) {
     vec3 pc = clamp(p, vec3(0.0), vec3(uFlip3dGridN - 1.0));
     vec3 b = floor(pc);
     vec3 f = pc - b;
     if (uFlip3dManualTrilinear) {
-      vec4 c000 = flip3dFetch(tex, b);
-      vec4 c100 = flip3dFetch(tex, b + vec3(1.0, 0.0, 0.0));
-      vec4 c010 = flip3dFetch(tex, b + vec3(0.0, 1.0, 0.0));
-      vec4 c110 = flip3dFetch(tex, b + vec3(1.0, 1.0, 0.0));
-      vec4 c001 = flip3dFetch(tex, b + vec3(0.0, 0.0, 1.0));
-      vec4 c101 = flip3dFetch(tex, b + vec3(1.0, 0.0, 1.0));
-      vec4 c011 = flip3dFetch(tex, b + vec3(0.0, 1.0, 1.0));
-      vec4 c111 = flip3dFetch(tex, b + vec3(1.0, 1.0, 1.0));
+      vec4 c000 = flip3dFetch(tex, b, zOff);
+      vec4 c100 = flip3dFetch(tex, b + vec3(1.0, 0.0, 0.0), zOff);
+      vec4 c010 = flip3dFetch(tex, b + vec3(0.0, 1.0, 0.0), zOff);
+      vec4 c110 = flip3dFetch(tex, b + vec3(1.0, 1.0, 0.0), zOff);
+      vec4 c001 = flip3dFetch(tex, b + vec3(0.0, 0.0, 1.0), zOff);
+      vec4 c101 = flip3dFetch(tex, b + vec3(1.0, 0.0, 1.0), zOff);
+      vec4 c011 = flip3dFetch(tex, b + vec3(0.0, 1.0, 1.0), zOff);
+      vec4 c111 = flip3dFetch(tex, b + vec3(1.0, 1.0, 1.0), zOff);
       return mix(mix(mix(c000, c100, f.x), mix(c010, c110, f.x), f.y),
                  mix(mix(c001, c101, f.x), mix(c011, c111, f.x), f.y), f.z);
     }
     float z1 = min(b.z + 1.0, uFlip3dGridN - 1.0);
-    vec2 tile0 = vec2(mod(b.z, uFlip3dAtlasTiles.x), floor(b.z / uFlip3dAtlasTiles.x));
-    vec2 tile1 = vec2(mod(z1, uFlip3dAtlasTiles.x), floor(z1 / uFlip3dAtlasTiles.x));
+    vec2 tile0 = vec2(mod(b.z + zOff, uFlip3dAtlasTiles.x), floor((b.z + zOff) / uFlip3dAtlasTiles.x));
+    vec2 tile1 = vec2(mod(z1 + zOff, uFlip3dAtlasTiles.x), floor((z1 + zOff) / uFlip3dAtlasTiles.x));
     vec2 xy = pc.xy + 0.5;
     vec4 s0 = texture2D(tex, (tile0 * uFlip3dGridN + xy) / uFlip3dAtlasSize);
     vec4 s1 = texture2D(tex, (tile1 * uFlip3dGridN + xy) / uFlip3dAtlasSize);

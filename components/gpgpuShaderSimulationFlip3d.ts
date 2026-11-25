@@ -298,3 +298,22 @@ void main() {
   gl_FragColor = vec4(vel, 1.0);
 }
 `;
+
+// Atlas merge copy (FLIP WebGL 案B, S1): a half-writing
+// pass-through copy into the merged Vel+Base atlas. uHalf 0
+// writes the source into the first tile half, 1 into the
+// second; the other half's fragments discard, so two draws fill
+// the whole merged target with no viewport/scissor state. The
+// sample is a texel-centre pass-through under NoBlending on a
+// FloatType target — no arithmetic, so the copy is bit-exact.
+export const FLIP3D_ATLAS_COPY_FRAG = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uSrcTex;
+  uniform float uHalf;
+  varying vec2 vUv;
+  void main() {
+    float y = vUv.y * 2.0 - uHalf;
+    if (y < 0.0 || y >= 1.0) discard;
+    gl_FragColor = texture2D(uSrcTex, vec2(vUv.x, y));
+  }
+`;

@@ -54,6 +54,7 @@ import { getAttrPointCloud, useAttrPointCloud } from '../lib/attrPointCloud';
 import {
   PYRO_GRID_LAYOUTS,
   pyroGridAtlasSize,
+  pyroGridMergedLayout,
   resolvePyroGridResolution,
 } from '../lib/pyroGrid';
 import {
@@ -233,7 +234,8 @@ function createFlip3dTargets(
 ): Flip3dTargets | null {
   const layout = PYRO_GRID_LAYOUTS[resolution];
   const size = pyroGridAtlasSize(resolution);
-  if (!layout || !size) return null;
+  const merged = pyroGridMergedLayout(resolution);
+  if (!layout || !size || !merged) return null;
   const targets: Flip3dTargets = {
     velA: makePyroFieldRT(size.width, size.height, floatLinear),
     velB: makePyroFieldRT(size.width, size.height, floatLinear),
@@ -244,6 +246,12 @@ function createFlip3dTargets(
     phiB: makePyroFieldRT(size.width, size.height, floatLinear),
     scratch: makePyroFieldRT(size.width, size.height, floatLinear),
     curv: makePyroFieldRT(size.width, size.height, false),
+    atlasVelBase: makePyroFieldRT(merged.mergedWidth, merged.mergedHeight, floatLinear),
+    mergedTilesX: merged.cols,
+    mergedTilesY: merged.mergedRows,
+    mergedAtlasWidth: merged.mergedWidth,
+    mergedAtlasHeight: merged.mergedHeight,
+    baseTileOffset: merged.baseOffset,
     baseVelTexture: null,
     phiTexture: null,
     resolution,
@@ -266,7 +274,7 @@ function createFlip3dTargets(
   copyMat.blending = THREE.NoBlending;
   const copyMesh = new THREE.Mesh(copyGeo, copyMat);
   copyScene.add(copyMesh);
-  for (const rt of [targets.velA, targets.velB, targets.presA, targets.presB, targets.transfer, targets.phiA, targets.phiB, targets.scratch, targets.curv]) {
+  for (const rt of [targets.velA, targets.velB, targets.presA, targets.presB, targets.transfer, targets.phiA, targets.phiB, targets.scratch, targets.curv, targets.atlasVelBase]) {
     gl.setRenderTarget(rt);
     gl.render(copyScene, copyCam);
   }

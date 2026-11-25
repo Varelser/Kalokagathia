@@ -4,6 +4,7 @@ import { AppScene } from './AppScene';
 import { CpuFallbackScene } from './CpuFallbackScene';
 import { setCpuFallbackSetting, useCpuFallback } from '../lib/cpuFallback';
 import { bootSafeMode, resetSafeMode, useSafeMode } from '../lib/safeMode';
+import { FLIP3D_GRAINS_DOWNGRADE_NOTICE, useFlip3dGrainsDowngrade } from '../lib/flip3dAtlasDowngrade';
 import { AppComparePreview } from './AppComparePreview';
 import { AppExecutionDiagnosticsOverlay } from './AppExecutionDiagnosticsOverlay';
 import { CanvasStreamWidget } from './canvasStreamWidget';
@@ -102,6 +103,7 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
   // reached its survival point advances the ladder one step.
   bootSafeMode();
   const safeMode = useSafeMode();
+  const flip3dGrainsDowngrade = useFlip3dGrainsDowngrade();
   const [cinema, setCinema] = React.useState(false);
   const [hint, setHint] = React.useState(false);
   const [cursorIdle, setCursorIdle] = React.useState(false);
@@ -175,6 +177,14 @@ export const AppRootLayout: React.FC<AppRootLayoutProps> = ({
     }}
     style={config.backgroundHex ? { backgroundColor: config.backgroundHex } : undefined}
     className={`mg-root relative w-full h-screen ${config.backgroundColor === 'white' ? 'bg-white' : 'bg-black'}${cinema ? ' mg-cinema' : ''}${cinema && cursorIdle ? ' cursor-none' : ''}`}>
+    {flip3dGrainsDowngrade.active && (
+      <div
+        className="absolute left-1/2 z-[999] flex -translate-x-1/2 items-center gap-3 rounded border border-sky-300/40 bg-black/85 px-3 py-1.5 text-[11px] text-sky-200"
+        style={{ top: safeMode.level > 0 ? 44 : 8 }}
+      >
+        <span>{FLIP3D_GRAINS_DOWNGRADE_NOTICE}</span>
+      </div>
+    )}
     {safeMode.level > 0 && (
       <div className="absolute left-1/2 top-2 z-[999] flex -translate-x-1/2 items-center gap-3 rounded border border-amber-300/40 bg-black/85 px-3 py-1.5 text-[11px] text-amber-200">
         <span>

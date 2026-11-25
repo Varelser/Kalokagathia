@@ -23,6 +23,34 @@ export function isSoftwareRenderer(renderer: string | null): boolean {
   return renderer !== null && SOFTWARE_RENDERER_PATTERN.test(renderer);
 }
 
+let maxTextureImageUnitsCache: number | null | undefined;
+
+/**
+ * Fragment-shader texture unit count (MAX_TEXTURE_IMAGE_UNITS),
+ * probed once on a throwaway context in the same style as
+ * collectGpuDiagnostics above and cached. Returns null where
+ * no WebGL context can be created (including non-browser
+ * environments) — callers must treat null as "unknown", never
+ * as a small value.
+ */
+export function getMaxTextureImageUnits(): number | null {
+  if (maxTextureImageUnitsCache !== undefined) return maxTextureImageUnitsCache;
+  maxTextureImageUnitsCache = null;
+  if (typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas');
+    const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as
+      | WebGL2RenderingContext
+      | WebGLRenderingContext
+      | null;
+    if (gl) {
+      const value = Number(gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)) || null;
+      maxTextureImageUnitsCache = value;
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
+  }
+  return maxTextureImageUnitsCache;
+}
+
 interface GpuAdapterLike {
   info?: { vendor?: string; architecture?: string; description?: string };
 }

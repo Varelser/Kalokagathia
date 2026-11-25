@@ -44,6 +44,42 @@ export const PYRO_GRID_TIER_DEFAULTS: Readonly<Record<GpuTier, number>> = {
   flagship: 64,
 };
 
+// FLIP WebGL atlas merge (案B): the merged layout packs the
+// velocity field and its pre-projection base into ONE atlas —
+// same column count as the single layout, twice the rows. The
+// Vel tiles occupy the first half, the Base tiles start at tile
+// offset cols*rows (the single layout's tile capacity — NOT the
+// resolution: at 96 the capacity is 100, and offsetting by 96
+// would collide with Vel's spare tiles). The velocity shader
+// (S2/S3) reads the merged atlas through the dead uFlipBaseTex
+// slot; this helper is the single JS home of the arithmetic.
+export type PyroGridMergedLayout = {
+  cols: number;
+  rows: number;
+  mergedRows: number;
+  baseOffset: number;
+  width: number;
+  height: number;
+  mergedWidth: number;
+  mergedHeight: number;
+};
+
+export function pyroGridMergedLayout(n: number): PyroGridMergedLayout | null {
+  const layout = PYRO_GRID_LAYOUTS[n];
+  const size = pyroGridAtlasSize(n);
+  if (!layout || !size) return null;
+  return {
+    cols: layout.cols,
+    rows: layout.rows,
+    mergedRows: layout.rows * 2,
+    baseOffset: layout.cols * layout.rows,
+    width: size.width,
+    height: size.height,
+    mergedWidth: size.width,
+    mergedHeight: size.height * 2,
+  };
+}
+
 export function pyroGridAtlasSize(n: number): { width: number; height: number } | null {
   const layout = PYRO_GRID_LAYOUTS[n];
   if (!layout) return null;

@@ -34,20 +34,20 @@
       "sha256": "f55fe995582251261a963657d510a8735dc7ead7395428bacb2b802219cc30a4"
     },
     "SIM_VEL_FRAG_PHASE19": {
-      "length": 94958,
-      "sha256": "2b4c3beb4ed746417e4190957821f6c4596a920653fd64a0b4ec820a7fdec828"
+      "length": 95660,
+      "sha256": "82c62f7abf0f83590dc64f989abe40292d91bd225e62df563367a01372f930f8"
     },
     "VEL_FRAG_PREAMBLE_PHASE19": {
-      "length": 19385,
-      "sha256": "b5faa6aba11d26e3192cc0b159b422484fd96d8178474d6a74cb1e270a256a05"
+      "length": 20062,
+      "sha256": "26b329866dc50ccb15c26c7306110d1bcd6ab410db92aeddfe572591c03fc3c2"
     },
     "VEL_FRAG_MAIN_SPH_GRAINS_PHASE19": {
       "length": 13940,
       "sha256": "2e3a3220aacd927723fbf896ac2ee0ba86c3ea63709751e8161765ba5e4f080a"
     },
     "VEL_FRAG_MAIN_TAIL_PHASE19": {
-      "length": 18902,
-      "sha256": "ee5650ee9a552fe982cd23e97e19cd86da28dc918a706b75c44813b8974cb46a"
+      "length": 18927,
+      "sha256": "b39058d2ef6ae7de67d9bc65c6cac1fbc0d72411ee3dc01b0bd85811b418fa0a"
     },
     "SIM_POS_FRAG_PHASE19": {
       "length": 28709,
@@ -138,68 +138,68 @@
       "sha256": "875a9c0f6af757864d0f950eeefd2246eea2bd18c16ba34135972f180d684d43"
     },
     "buildVelocityFragment(phase19)": {
-      "length": 94958,
-      "sha256": "2b4c3beb4ed746417e4190957821f6c4596a920653fd64a0b4ec820a7fdec828"
+      "length": 95660,
+      "sha256": "82c62f7abf0f83590dc64f989abe40292d91bd225e62df563367a01372f930f8"
     },
     "VEL_FRAG_PREAMBLE_PHASE20": {
-      "length": 20270,
-      "sha256": "e2d18ca1e05bf71c6f89c69c20141fd03f18e33955e53bd96e4bca427b8c4885"
+      "length": 20947,
+      "sha256": "bf81d9eb3e423928d5287f29baf9ab5193eb352f0659c1a86b5a952c75ce0f19"
     },
     "SIM_VEL_FRAG_PHASE20": {
-      "length": 99825,
-      "sha256": "384b6fe59ae531ce4c06f25a1adbfdca4998df6150b07e1c9939e03319c1d356"
+      "length": 100527,
+      "sha256": "55d297b31c34d701273e65812035694cb89734f82e6f2e6cdbd24d221b24c00d"
     },
     "buildVelocityFragment(phase20)": {
-      "length": 99825,
-      "sha256": "384b6fe59ae531ce4c06f25a1adbfdca4998df6150b07e1c9939e03319c1d356"
+      "length": 100527,
+      "sha256": "55d297b31c34d701273e65812035694cb89734f82e6f2e6cdbd24d221b24c00d"
     },
     "buildVelocityFragment(steering-only)": {
       "length": 90211,
       "sha256": "c453e209fb0c0bb94fc27862810d48a6886361630d1d580fbac33fd0828b0ba8"
     },
     "VEL_FRAG_PREAMBLE_PHASE24": {
-      "length": 20601,
-      "sha256": "84be9682209e8c70b99740dc5073009a77dc22f4b958fced49b48ea64728226d"
+      "length": 21278,
+      "sha256": "b87e376394cb9d84171fd95cdcbb44382ecc52397edebe4098e0ba321c12f84a"
     },
     "VEL_FRAG_MAIN_SPH_GRAINS_PHASE24": {
       "length": 17919,
       "sha256": "34d3a5d57d9ade9f9b56933e14d128ee26d3c25c46cbfb4477cf163e83adc2fd"
     },
     "SIM_VEL_FRAG_PHASE24": {
-      "length": 104135,
-      "sha256": "7cf97ed5c6f2e472829030216271b802ca0c9c91c83eab9b6d4f124197ee8f3f"
+      "length": 104837,
+      "sha256": "e256dbb3eb9f8bc26f259649f59e19fdb38be8d2463e8cae0a8aba0539f02a4b"
     },
     "buildVelocityFragment(phase24)": {
-      "length": 104135,
-      "sha256": "7cf97ed5c6f2e472829030216271b802ca0c9c91c83eab9b6d4f124197ee8f3f"
+      "length": 104837,
+      "sha256": "e256dbb3eb9f8bc26f259649f59e19fdb38be8d2463e8cae0a8aba0539f02a4b"
     },
     "VEL_FRAG_PREAMBLE_PHASE27": {
-      "length": 21029,
-      "sha256": "6459a8b26618507178a1a7d54a74cae8f152e99e36a644db38e37883762e5821"
+      "length": 21706,
+      "sha256": "3398eca575342c489e8f7acd66543431d2b82afbae073e12e30924d60becc2fa"
     },
     "SIM_VEL_FRAG_PHASE27": {
-      "length": 109211,
-      "sha256": "b46914fdfb62b7686086a196fa964c457c8cf073c1cb0e2b6dde83ab9cd4d8be"
+      "length": 109913,
+      "sha256": "60aaaa410971e4aac85ccfd023b71082b6e5272e76806b638eaaef04961756f9"
     },
     "buildVelocityFragment(phase27)": {
-      "length": 109211,
-      "sha256": "b46914fdfb62b7686086a196fa964c457c8cf073c1cb0e2b6dde83ab9cd4d8be"
+      "length": 109913,
+      "sha256": "60aaaa410971e4aac85ccfd023b71082b6e5272e76806b638eaaef04961756f9"
     },
     "buildVelocityFragment(attractor2-only)": {
       "length": 90420,
       "sha256": "16f7e2513f7c1a28913d2ca1965922873e74025689f2bc9244bd4498f71a657a"
     },
     "VEL_FRAG_PREAMBLE_PHASE29": {
-      "length": 21884,
-      "sha256": "cadea589b3e490f5c64eb94ebaa54c0c8e0562a33e1838b3aaef4569299a2721"
+      "length": 22561,
+      "sha256": "767493719ea2a80af9cdfa0295f60aae59309e37a89858606f39617a3acb8c04"
     },
     "SIM_VEL_FRAG_PHASE29": {
-      "length": 119362,
-      "sha256": "83b3c8252510586a4787c46a98a0bcf298572b4d85d216effe3f8309203dc7f6"
+      "length": 120064,
+      "sha256": "a008cfa91fb248bc8b0f2e892820712cdb537246ff2e622fa4c07f281690b83c"
     },
     "buildVelocityFragment(phase29)": {
-      "length": 119362,
-      "sha256": "83b3c8252510586a4787c46a98a0bcf298572b4d85d216effe3f8309203dc7f6"
+      "length": 120064,
+      "sha256": "a008cfa91fb248bc8b0f2e892820712cdb537246ff2e622fa4c07f281690b83c"
     },
     "buildVelocityFragment(attractor3-only)": {
       "length": 90419,
