@@ -774,6 +774,7 @@ const DESCRIPTIONS: Record<string, string> = {
   audioBendScale: '音量で粒子配置が曲がる量',
   audioCameraScale: '音量でカメラが動く量',
   audioHueShiftScale: '音量で色相がずれる量',
+  audioRoutingGraph: '音の配線グラフ（JSON文字列。解析レベルから粒子への効きへの接続と重み。空＝既定の配線＝従来の固定配線）',
   audioLineScale: '音量で線の出方が変わる量',
   audioWarpScale: '音量で放射状に歪む量',
   audioTwistScale: '音量でねじれが加わる量',

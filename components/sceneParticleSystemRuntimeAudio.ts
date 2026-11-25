@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
+import { resolveAudioRoutingGraph, resolveAudioRoutingInputs } from '../lib/audioRouting';
 import type { ParticleSystemAudioRef } from './sceneParticleSystemRuntimeTypes';
 
 export function applyParticleAudioUniforms(
@@ -12,16 +13,25 @@ export function applyParticleAudioUniforms(
   prevAudioEnabledRef.current = config.audioEnabled;
 
   if (config.audioEnabled) {
-    const bassInput = audioRef.current.bass * config.audioBeatScale;
-    const trebleInput = audioRef.current.treble * config.audioJitterScale;
-    const pulseInput = audioRef.current.pulse * config.audioPulseScale;
-    const morphInput = audioRef.current.pulse * config.audioMorphScale;
-    const shatterInput = (trebleInput * 0.75 + pulseInput * 0.35) * config.audioShatterScale;
-    const twistInput = (bassInput * 0.6 + pulseInput * 0.9) * config.audioTwistScale;
-    const bendInput = (trebleInput * 0.55 + pulseInput * 0.7) * config.audioBendScale;
-    const warpInput = (bassInput * 0.35 + trebleInput * 0.35 + pulseInput) * config.audioWarpScale;
-    const bandAInput = audioRef.current.bandA;
-    const bandBInput = audioRef.current.bandB;
+    // TD §7 stage 1: the wiring lives in lib/audioRouting.ts
+    // as data (config key audioRoutingGraph; '' = the default
+    // graph, which reproduces the legacy fixed formulas
+    // bit-identically — pinned by the phase33 test).
+    const inputs = resolveAudioRoutingInputs(
+      resolveAudioRoutingGraph(config.audioRoutingGraph),
+      audioRef.current,
+      config,
+    );
+    const bassInput = inputs.bass;
+    const trebleInput = inputs.treble;
+    const pulseInput = inputs.pulse;
+    const morphInput = inputs.morph;
+    const shatterInput = inputs.shatter;
+    const twistInput = inputs.twist;
+    const bendInput = inputs.bend;
+    const warpInput = inputs.warp;
+    const bandAInput = inputs.bandA;
+    const bandBInput = inputs.bandB;
 
     mat.uniforms.uAudioBass.value = bassInput;
     mat.uniforms.uAudioTreble.value = trebleInput;

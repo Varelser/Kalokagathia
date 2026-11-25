@@ -26,6 +26,10 @@ export interface ParticleConfigAudio {
   audioLineScale: number;
   audioCameraScale: number;
   audioHueShiftScale: number;
+  // Audio routing graph (TD §7 stage 1): JSON wiring for the
+  // central particle audio inputs; '' = the default graph,
+  // which is the legacy fixed wiring.
+  audioRoutingGraph: string;
   // Custom Frequency Bands
   audioBandALowHz: number;
   audioBandAHighHz: number;

@@ -8,6 +8,7 @@ import { PlayTabContent } from './controlPanelPlayTab';
 // loads, the content area is briefly empty (Suspense fallback below).
 const AmbientTabContent = React.lazy(() => import('./controlPanelTabsAudio').then((m) => ({ default: m.AmbientTabContent })));
 const AudioTabContent = React.lazy(() => import('./controlPanelTabsAudio').then((m) => ({ default: m.AudioTabContent })));
+const AudioRoutingGraphContent = React.lazy(() => import('./controlPanelAudioRoutingGraph').then((m) => ({ default: m.AudioRoutingGraphContent })));
 const GlobalTabContent = React.lazy(() => import('./controlPanelTabsGlobal').then((m) => ({ default: m.GlobalTabContent })));
 const Layer1TabContent = React.lazy(() => import('./controlPanelTabsLayers').then((m) => ({ default: m.Layer1TabContent })));
 const Layer2TabContent = React.lazy(() => import('./controlPanelTabsLayers').then((m) => ({ default: m.Layer2TabContent })));
@@ -36,6 +37,18 @@ const loadFolds = (): FoldMap => {
   }
 };
 
+// TD §7 stage 1: per-tab panel/graph view. Only the audio tab
+// has a graph view in this stage; the choice is remembered.
+export const TAB_VIEW_STORAGE_KEY = 'kalokagathia.tabView.v1';
+export type TabView = 'panel' | 'graph';
+export const loadAudioView = (): TabView => {
+  try {
+    return localStorage.getItem(TAB_VIEW_STORAGE_KEY) === 'graph' ? 'graph' : 'panel';
+  } catch {
+    return 'panel';
+  }
+};
+
 export const DECK_MODE_STORAGE_KEY = 'kalokagathia.deckMode.v1';
 export type DeckMode = 'basic' | 'pro';
 export const loadDeckMode = (): DeckMode => {
@@ -51,6 +64,11 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
   const { activeTab, isPublicLibrary, config, activePresetId, isPresetTransitioning } = props;
   const rootRef = React.useRef<HTMLDivElement>(null);
   const [changedOnly, setChangedOnly] = React.useState(false);
+  const [audioView, setAudioView] = React.useState<TabView>(loadAudioView);
+  const changeAudioView = (view: TabView) => {
+    setAudioView(view);
+    try { localStorage.setItem(TAB_VIEW_STORAGE_KEY, view); } catch { /* storage unavailable */ }
+  };
   const [ownDeckMode] = React.useState<DeckMode>(loadDeckMode);
   // Four-edge layout: the mode state is lifted to ControlPanel (the top
   // header switches it at any time). The local state is only the
@@ -756,6 +774,22 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
         >
           すべて閉じる
         </button>
+        {activeTab === 'audio' && (
+          <span className="flex items-center gap-1 rounded-md bg-[#171717] p-1" title="Audio タブの表示: 節（スライダ）/ グラフ（配線）">
+            {(['panel', 'graph'] as TabView[]).map((view) => (
+              <button
+                key={view}
+                type="button"
+                onClick={() => changeAudioView(view)}
+                className={`rounded px-2.5 py-1 text-[10px] tracking-wider transition-colors ${
+                  audioView === view ? 'bg-white/[0.14] text-white' : 'text-[#a3a3a3] hover:text-white'
+                }`}
+              >
+                {view === 'panel' ? '節' : 'グラフ'}
+              </button>
+            ))}
+          </span>
+        )}
         <span className="flex-1" />
         <button
           type="button"
@@ -780,7 +814,9 @@ export const ControlPanelContent: React.FC<ControlPanelContentProps> = (props) =
           {activeTab === 'layer2' && <Layer2TabContent {...props} />}
           {activeTab === 'layer3' && <Layer3TabContent {...props} />}
           {activeTab === 'ambient' && <AmbientTabContent {...props} />}
-          {activeTab === 'audio' && <AudioTabContent {...props} />}
+          {activeTab === 'audio' && (audioView === 'graph'
+            ? <AudioRoutingGraphContent {...props} />
+            : <AudioTabContent {...props} />)}
           {activeTab === 'ai' && <AiTabContent {...props} />}
         </React.Suspense>
       </div>
