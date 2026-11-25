@@ -249,6 +249,15 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGrainsProjection: 1,
   // Neighbourhood scan (Phase 19): 0 = legacy subsample.
   gpgpuGrainsNeighborhood: 0,
+  // Pile solver (Grains Stage C): off by default — the H8
+  // density recipe (iterations 3, h = 2 x grain size, rho0 =
+  // FCC lattice density x 1.1, XSPH 0.5 with the settle gate)
+  // runs only while this is on AND Grains itself is on.
+  gpgpuGrainsPileEnabled: false,
+  gpgpuGrainsIterations: 3,
+  gpgpuGrainsSupportScale: 2.0,
+  gpgpuGrainsRestDensityFactor: 1.1,
+  gpgpuGrainsXsphStrength: 0.5,
   // Pyro (Phase AS, particle-side temperature / buoyancy solver):
   // disabled = off. Buoyancy is in gravity units (1.2 at full
   // temperature out-lifts the default gravity 0.2 and gravity 1.0

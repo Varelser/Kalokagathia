@@ -404,6 +404,26 @@ export interface ParticleConfigGpgpu {
   // stride beyond it. Applies to the Grains contact loop and the
   // projection segment only; SPH keeps the subsample either way.
   gpgpuGrainsNeighborhood: number;
+  // Pile solver (Grains Stage C): the density-constraint recipe
+  // ported from the H8 prototype — support radius h = Size x
+  // SupportScale, rest density rho0 = the touching-FCC-lattice
+  // kernel density at that h, times RestDensityFactor, tangential
+  // friction inside every solver iteration of the position stage,
+  // and XSPH velocity smoothing gated on the neighbourhood having
+  // settled. Enabled false (default) = no pile passes run, no
+  // variant string is built and every legacy path is verbatim.
+  // The single resolution point is resolveGrainsPilePlan in
+  // lib/gpgpuGrains.ts.
+  gpgpuGrainsPileEnabled: boolean;
+  // Solver iterations of the pile position stage (1..6).
+  gpgpuGrainsIterations: number;
+  // Support-radius factor: h = gpgpuGrainsSize x this (1..3).
+  gpgpuGrainsSupportScale: number;
+  // Rest-density factor: rho0 = lattice density x this (0.8..1.4).
+  gpgpuGrainsRestDensityFactor: number;
+  // XSPH smoothing strength (0..1); 0 disables XSPH even while
+  // the pile solver is on. The settle gate itself is automatic.
+  gpgpuGrainsXsphStrength: number;
   // Pyro (Phase AS): a particle-side temperature / buoyancy
   // solver in the velocity pass. Each particle's temperature is
   // derived deterministically from its normalised age —

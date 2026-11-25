@@ -468,6 +468,21 @@ const VEL_FRAG_PREAMBLE_AKINCI = /* glsl */ `  // Surface tension, Akinci form (
   // stock preamble carries no trace of it.
   uniform float uSphSurfaceTensionAkinci;
 `;
+const VEL_FRAG_PREAMBLE_PILE = /* glsl */ `  // XSPH (Grains Stage C): the pile solver's velocity
+  // smoothing — strength + support radius, and the Poly6
+  // kernel the segment weights by (TS twin: grainsPoly6 in
+  // lib/gpgpuGrains.ts). Spliced in only behind the
+  // grainsPileXsph option, in the Phase 19 manner — the stock
+  // preamble carries no trace of it.
+  uniform float uGrainsXsphStrength;
+  uniform float uGrainsSupport;
+  float grainsXsphW(float d, float h) {
+    if (d >= h) return 0.0;
+    float coef = 315.0 / (64.0 * 3.14159265 * pow(h, 9.0));
+    float t = h * h - d * d;
+    return coef * t * t * t;
+  }
+`;
 // Phase 29 (9-6 stage 2): the attractor unit preamble blocks
 // are generated, one per replicated unit. The generator's
 // unit-2 output reproduces the historical Phase 27 literal
@@ -511,6 +526,9 @@ export interface VelocityPreambleVariantOptions {
   // Phase 24: the Akinci surface-tension uniform. Same
   // discipline — the default preamble stays byte-identical.
   sphAkinci?: boolean;
+  // Grains Stage C: the XSPH uniform set + kernel. Same
+  // discipline — the default preamble stays byte-identical.
+  grainsPileXsph?: boolean;
   // Phase 27: the attractor unit-2 uniform set. Same
   // discipline — the default preamble stays byte-identical.
   attractor2?: boolean;
@@ -527,6 +545,7 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
     + (options?.flip3dCouple ? VEL_FRAG_PREAMBLE_FLIP3D : '')
     + (options?.steeringSeek ? VEL_FRAG_PREAMBLE_STEERING : '')
     + (options?.sphAkinci ? VEL_FRAG_PREAMBLE_AKINCI : '')
+    + (options?.grainsPileXsph ? VEL_FRAG_PREAMBLE_PILE : '')
     + (options?.attractor2 ? VEL_FRAG_PREAMBLE_ATTRACTOR2 : '')
     + (options?.attractor3 ? VEL_FRAG_PREAMBLE_ATTRACTOR3 : '')
     + (options?.attractor4 ? VEL_FRAG_PREAMBLE_ATTRACTOR4 : '')

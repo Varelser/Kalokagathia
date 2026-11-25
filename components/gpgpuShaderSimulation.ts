@@ -4,6 +4,7 @@ export type { VelocityFragmentVariantOptions } from "./gpgpuShaderSimulationVelo
 export { SIM_POS_FRAG, SIM_POS_FRAG_PHASE19, SIM_POS_FRAG_PHASE19_CELL, buildPositionFragment } from "./gpgpuShaderSimulationPosition";
 export type { PositionFragmentVariantOptions } from "./gpgpuShaderSimulationPosition";
 export { SORT_DEPTH_FRAG, SORT_BITONIC_FRAG, GRAINS_CELL_KEY_FRAG } from "./gpgpuShaderSimulationSort";
+export { GRAINS_PILE_LAMBDA_FRAG, GRAINS_PILE_DELTA_FRAG } from "./gpgpuShaderSimulationGrainsPile";
 export {
   FLUID_ADVECT_FRAG,
   FLIP_SPLAT_VERT,

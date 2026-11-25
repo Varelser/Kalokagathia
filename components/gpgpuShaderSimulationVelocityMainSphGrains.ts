@@ -363,6 +363,11 @@ export interface VelocitySphGrainsVariantOptions {
   // head only behind this option — with it off, the composed
   // head is the v2.05 HEAD byte-for-byte.
   sphAkinci?: boolean;
+  // Grains Stage C: the XSPH segment (pile solver velocity
+  // smoothing with the settle gate) splices in after the
+  // Grains block only behind this option — with it off, the
+  // composed chunk is byte-identical to the pre-Stage-C build.
+  grainsPileXsph?: boolean;
 }
 
 function buildVelocitySphGrainsHead(options?: VelocitySphGrainsVariantOptions): string {
@@ -408,9 +413,98 @@ const VEL_FRAG_SPH_GRAINS_CELL_ELSE = /* glsl */ `          }
 const VEL_FRAG_SPH_GRAINS_CELL_CLOSE = /* glsl */ `      }
 `;
 
+// ── XSPH (Grains Stage C): velocity smoothing toward the
+// neighbourhood mean, gated per particle on the neighbourhood
+// having settled — the user's chosen form of the prototype's
+// "after the pile forms" timing (run 7 showed unconditional
+// early XSPH flattening the forming pile; run 10's late
+// application held the shape and cut the residual motion to
+// about a fifth). The gate reads the kernel-weighted mean
+// speed of the neighbours (frame-start velocities): fully open
+// at or below 2.0, closed at or above 4.5, smoothstep between
+// (TS twin: grainsXsphGate). The band was recalibrated at the
+// Stage C real-GPU gate (2026-11-26): the prototype band
+// (0.75/1.75) never opened in the product, whose settled pile
+// sits at a mean speed of ~2.3 while the falling stream runs
+// at ~8 and above. The correction
+// is the prototype's delta = strength x gate x
+// sum_j w_j (v_j - v_i) / (W(0) + sum_j w_j), with v_i the
+// velocity accumulated so far this pass and v_j the
+// frame-start velocities — the product's velocity is an
+// independent texture, so a Jacobi read is the only option
+// (documented in the Stage C design).
+// Candidate source follows the resolved neighbourhood: with
+// the complete scan built, the cell sort / complete walk over
+// the h window; otherwise the legacy subsample (the gate and
+// the mean are statistical quantities, so a sampled
+// neighbourhood prices them the same way the SPH loop does).
+const VEL_FRAG_SPH_GRAINS_XSPH_HEAD = /* glsl */ `    // XSPH (Grains Stage C): see the builder note in the
+    // source module — settle-gated velocity smoothing.
+    if (uGrainsEnabled && uGrainsXsphStrength > 0.0) {
+      float hX = max(uGrainsSupport, 0.001);
+      float hX2 = hX * hX;
+      vec3 xsphWVelSum = vec3(0.0);
+      float xsphWSum = 0.0;
+      float xsphSpeedWSum = 0.0;
+`;
+// The body carries its candidate loop's closing brace, like
+// the shared TAIL_CORE — the cell / scan / sampled loop opens
+// differ, the close is common.
+const VEL_FRAG_SPH_GRAINS_XSPH_BODY = /* glsl */ `        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
+        vec3 oPosX = texture2D(uPosTex, sUv).xyz;
+        vec3 rX = pos - oPosX;
+        float r2X = dot(rX, rX);
+        if (r2X < hX2 && r2X > 0.000000000001) {
+          float wX = grainsXsphW(sqrt(r2X), hX);
+          vec3 oVelX = texture2D(uVelTex, sUv).xyz;
+          xsphWVelSum += oVelX * wX;
+          xsphWSum += wX;
+          xsphSpeedWSum += length(oVelX) * wX;
+        }
+      }
+`;
+const VEL_FRAG_SPH_GRAINS_XSPH_SCAN_OPEN = /* glsl */ `        float spanX = uTexSizeF * uTexSizeF;
+        float strideX2 = spanX > 65536.0 ? ceil(spanX / 65536.0) : 1.0;
+        float countX = ceil(spanX / strideX2);
+        for (int i = 0; i < 65536; i++) {
+          if (float(i) >= countX) break;
+          float si = float(i) * strideX2;
+          vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
+`;
+const VEL_FRAG_SPH_GRAINS_XSPH_SAMPLED = /* glsl */ `      float strideX = uTexSizeF / float(uNBodySamples);
+      for (int i = 0; i < 64; i++) {
+        if (i >= uNBodySamples) break;
+        float si = float(i) * strideX;
+        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
+` + VEL_FRAG_SPH_GRAINS_XSPH_BODY;
+const VEL_FRAG_SPH_GRAINS_XSPH_APPLY = /* glsl */ `      if (xsphWSum > 0.0) {
+        float meanSpeedX = xsphSpeedWSum / xsphWSum;
+        float gateX = 1.0 - smoothstep(2.0, 4.5, meanSpeedX);
+        if (gateX > 0.0) {
+          float wSelfX = grainsXsphW(0.0, hX);
+          vel += uGrainsXsphStrength * gateX * (xsphWVelSum - vel * xsphWSum) / (wSelfX + xsphWSum);
+        }
+      }
+    }
+
+`;
+
 export function buildVelocitySphGrains(options?: VelocitySphGrainsVariantOptions): string {
   const full = !!options?.grainsFullScan;
   const head = buildVelocitySphGrainsHead(options);
+  const xsph = !!options?.grainsPileXsph;
+  const xsphChunk = !xsph
+    ? ''
+    : VEL_FRAG_SPH_GRAINS_XSPH_HEAD
+      + (full
+        ? VEL_FRAG_SPH_GRAINS_CELL_OPEN
+          + VEL_FRAG_SPH_GRAINS_XSPH_BODY
+          + VEL_FRAG_SPH_GRAINS_CELL_ELSE
+          + VEL_FRAG_SPH_GRAINS_XSPH_SCAN_OPEN
+          + VEL_FRAG_SPH_GRAINS_XSPH_BODY
+          + VEL_FRAG_SPH_GRAINS_CELL_CLOSE
+        : VEL_FRAG_SPH_GRAINS_XSPH_SAMPLED)
+      + VEL_FRAG_SPH_GRAINS_XSPH_APPLY;
   if (!full) {
     return head
       + VEL_FRAG_SPH_GRAINS_COMMENT_LEGACY
@@ -420,7 +514,8 @@ export function buildVelocitySphGrains(options?: VelocitySphGrainsVariantOptions
       + VEL_FRAG_SPH_GRAINS_LOOP_LEGACY
       + VEL_FRAG_SPH_GRAINS_TAIL_SUV
       + VEL_FRAG_SPH_GRAINS_TAIL_CORE
-      + VEL_FRAG_SPH_GRAINS_TAIL_POST;
+      + VEL_FRAG_SPH_GRAINS_TAIL_POST
+      + xsphChunk;
   }
   return head
     + VEL_FRAG_SPH_GRAINS_COMMENT_PHASE19
@@ -434,7 +529,8 @@ export function buildVelocitySphGrains(options?: VelocitySphGrainsVariantOptions
     + VEL_FRAG_SPH_GRAINS_TAIL_SUV
     + VEL_FRAG_SPH_GRAINS_TAIL_CORE
     + VEL_FRAG_SPH_GRAINS_CELL_CLOSE
-    + VEL_FRAG_SPH_GRAINS_TAIL_POST;
+    + VEL_FRAG_SPH_GRAINS_TAIL_POST
+    + xsphChunk;
 }
 
 export const VEL_FRAG_MAIN_SPH_GRAINS = buildVelocitySphGrains();

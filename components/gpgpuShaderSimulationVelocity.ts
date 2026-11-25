@@ -58,6 +58,11 @@ export interface VelocityFragmentVariantOptions {
   // in identically while their enable keys are on.
   attractor3?: boolean;
   attractor4?: boolean;
+  // Grains Stage C: XSPH velocity smoothing (preamble uniform
+  // set + the segment after the Grains block), spliced in in
+  // the same manner — only while the pile plan is active with
+  // a positive XSPH strength.
+  grainsPileXsph?: boolean;
 }
 
 export const SIM_VEL_FRAG_PHASE19 =
@@ -136,7 +141,7 @@ export function buildVelocityFragment(customCode: string, forceOrder?: string, o
   // Phase 19 gate fix: a Phase 19 variant option rebuilds the
   // affected chunks in their variant form. With no variant on,
   // the historical paths above are untouched.
-  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci || !!options?.attractor2 || !!options?.attractor3 || !!options?.attractor4;
+  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci || !!options?.attractor2 || !!options?.attractor3 || !!options?.attractor4 || !!options?.grainsPileXsph;
   const base = !hasVariant && (!forceOrder || isDefaultGpgpuForceOrder(forceOrder))
     ? SIM_VEL_FRAG
     : buildVelocityPreamble(options) + VEL_FRAG_HELPERS + buildMainForcesFragment(forceOrder, options)

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLIP_VORTICITY_CURL_FRAG, FLIP_VORTICITY_FORCE_FRAG, FLUID_ADVECT_FRAG, GRAINS_CELL_KEY_FRAG, SIM_VERT, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildPositionFragment, buildVelocityFragment } from "./gpgpuShaders";
+import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLIP_VORTICITY_CURL_FRAG, FLIP_VORTICITY_FORCE_FRAG, FLUID_ADVECT_FRAG, GRAINS_CELL_KEY_FRAG, GRAINS_PILE_DELTA_FRAG, GRAINS_PILE_LAMBDA_FRAG, SIM_VERT, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildPositionFragment, buildVelocityFragment } from "./gpgpuShaders";
 import type { VelocityFragmentVariantOptions } from "./gpgpuShaderSimulationVelocity";
-import { grainsNeighborhoodMode, grainsProjectionActive } from "../lib/gpgpuGrains";
+import { grainsNeighborhoodMode, grainsPileActive, grainsProjectionActive, resolveGrainsXsphStrength } from "../lib/gpgpuGrains";
 import { flip3dActive } from "../lib/flip3d";
 import { grainsFullScanDowngradeApplies, resolveGrainsCellSortActive, setFlip3dGrainsDowngrade } from "../lib/flip3dAtlasDowngrade";
 import { getMaxTextureImageUnits } from "../lib/gpuDiagnostics";
@@ -84,6 +84,10 @@ export function velocityVariantOptions(config: ParticleConfig): VelocityFragment
     // Phase 29 (9-6 stage 2): units 3 and 4, same discipline.
     attractor3: !!config.gpgpuAttractor3Enabled,
     attractor4: !!config.gpgpuAttractor4Enabled,
+    // Grains Stage C: the XSPH segment + uniforms exist in the
+    // built string only while the pile plan is active with a
+    // positive XSPH strength.
+    grainsPileXsph: grainsPileActive(config) && resolveGrainsXsphStrength(config) > 0,
   };
 }
 
@@ -283,6 +287,11 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       // declares none of these, so the entries stay inert there.
       uGrainsSortTex:     { value: null },
       uGrainsCellSort:    { value: false },
+      // XSPH (Stage C): written by the passes while the pile
+      // plan is active; the stock shader string declares
+      // neither, so the entries stay inert there.
+      uGrainsXsphStrength: { value: 0 },
+      uGrainsSupport:      { value: 16 },
       uGrainsCellOrigin:  { value: 0 },
       uGrainsCellSize:    { value: 1 },
       uGrainsCellDims:    { value: new THREE.Vector3(1, 1, 1) },
@@ -864,6 +873,49 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     vertexShader: SIM_VERT, fragmentShader: GRAINS_CELL_KEY_FRAG,
   }), []);
 
+  // Grains pile solver (Stage C): the lambda + delta materials
+  // of the density-constraint iterations. The passes drive them
+  // only while the runtime's pile targets exist (pile plan
+  // active); the uniforms are rewritten per frame / iteration.
+  const grainsPileLambdaMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex:          { value: null },
+      uTexSizeF:        { value: texSize },
+      uGrainsSize:      { value: 8 },
+      uGrainsSupport:   { value: 16 },
+      uGrainsRho0:      { value: 0.003 },
+      uGrainsSortTex:   { value: null },
+      uGrainsCellSort:  { value: false },
+      uGrainsCellOrigin: { value: 0 },
+      uGrainsCellSize:   { value: 1 },
+      uGrainsCellDims:   { value: new THREE.Vector3(1, 1, 1) },
+    },
+    vertexShader: SIM_VERT, fragmentShader: GRAINS_PILE_LAMBDA_FRAG,
+  }), []);
+  const grainsPileDeltaMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uPosTex:          { value: null },
+      uLambdaTex:       { value: null },
+      uBasePosTex:      { value: null },
+      uVelTex:          { value: null },
+      uTexSizeF:        { value: texSize },
+      uGrainsSize:      { value: 8 },
+      uGrainsSupport:   { value: 16 },
+      uGrainsRho0:      { value: 0.003 },
+      uGrainsStiffness: { value: 0.25 },
+      uGrainsFriction:  { value: 0.6 },
+      uBounceRadius:    { value: 300 },
+      uFloorEnabled:    { value: false },
+      uFloorY:          { value: -110 },
+      uGrainsSortTex:   { value: null },
+      uGrainsCellSort:  { value: false },
+      uGrainsCellOrigin: { value: 0 },
+      uGrainsCellSize:   { value: 1 },
+      uGrainsCellDims:   { value: new THREE.Vector3(1, 1, 1) },
+    },
+    vertexShader: SIM_VERT, fragmentShader: GRAINS_PILE_DELTA_FRAG,
+  }), []);
+
   const fluidAdvectMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
       uFluidIn:       { value: null },
@@ -1287,7 +1339,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // config's variant), so a variant-only change swaps the shader
   // through this same path and the mount behaviour is unchanged.
   const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
-    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}`;
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}`;
   const appliedForceCodeRef = useRef<string | null>(
     `\n\n${variantKeyOf(velocityVariantOptions(config))}`,
   );
@@ -1331,7 +1383,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     velSimMat.needsUpdate = true;
     appliedForceCodeRef.current = appliedKey;
     setCustomForceStatus({ state: 'active' });
-  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, config.gpgpuAttractor2Enabled, gl, velSimMat]);
+  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuGrainsPileEnabled, config.gpgpuGrainsXsphStrength, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, config.gpgpuAttractor2Enabled, gl, velSimMat]);
 
   // Phase 19 gate fix: the position material's string variant
   // follows the Grains projection activity (the same condition
@@ -1395,6 +1447,8 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     sortDepthMat,
     bitonicMat,
     grainsCellKeyMat,
+    grainsPileLambdaMat,
+    grainsPileDeltaMat,
     fluidAdvectMat,
     flipSplatMat,
     flipCompositeMat,

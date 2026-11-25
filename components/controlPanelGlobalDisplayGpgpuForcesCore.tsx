@@ -923,6 +923,18 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
           <Slider label="Cohesion （凝集）" value={config.gpgpuGrainsCohesion} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsCohesion', v)} />
           <Slider label="Restitution （反発）" value={config.gpgpuGrainsRestitution} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsRestitution', v)} />
           <Slider label="Rest Damping （静止減衰）" value={config.gpgpuGrainsRestDamping} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsRestDamping', v)} />
+          <Toggle label="Pile Solver （山ソルバ・密度拘束型）" value={config.gpgpuGrainsPileEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGrainsPileEnabled', v)} />
+          {config.gpgpuGrainsPileEnabled && (
+            <>
+              <Slider label="Pile Iterations （反復回数）" value={config.gpgpuGrainsIterations} min={1} max={6} step={1} onChange={(v) => updateConfig('gpgpuGrainsIterations', v)} />
+              <Slider label="Support Scale （支持半径 h = 粒径 × この値）" value={config.gpgpuGrainsSupportScale} min={1} max={3} step={0.1} onChange={(v) => updateConfig('gpgpuGrainsSupportScale', v)} />
+              <Slider label="Rest Density Factor （目標密度 ρ0 = 格子密度 × この値）" value={config.gpgpuGrainsRestDensityFactor} min={0.8} max={1.4} step={0.01} onChange={(v) => updateConfig('gpgpuGrainsRestDensityFactor', v)} />
+              <Slider label="XSPH Strength （静穏時に自動で効く平滑化）" value={config.gpgpuGrainsXsphStrength} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsXsphStrength', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                山ソルバ On の間、近傍は完全探索として解決されます（テクスチャ上限の GPU では間引きに縮退します）。XSPH は近傍の動きが落ち着いた粒子にだけ自動で効きます。
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

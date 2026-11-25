@@ -87,6 +87,7 @@ import {
 } from '../lib/gpgpuAttributes';
 import { evaluateGpgpuGroup, parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { resolveGrainsCellSortActive } from '../lib/flip3dAtlasDowngrade';
+import { grainsPileActive } from '../lib/gpgpuGrains';
 import { getMaxTextureImageUnits } from '../lib/gpuDiagnostics';
 import { setLastAttrBake } from '../lib/gpgpuGroupBridge';
 
@@ -485,6 +486,8 @@ export type GpgpuRuntimeRefs = {
   sortRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   grainsSortRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   grainsSortRTBRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
+  grainsLambdaRTRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
+  grainsPileBaseRTRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   auxRtRef: MutableRefObject<{
     posA: THREE.WebGLRenderTarget;
     posB: THREE.WebGLRenderTarget;
@@ -940,6 +943,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const sortRTBRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const grainsSortRTARef = useRef<THREE.WebGLRenderTarget | null>(null);
   const grainsSortRTBRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const grainsLambdaRTRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const grainsPileBaseRTRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const auxRtRef = useRef<{
     posA: THREE.WebGLRenderTarget;
     posB: THREE.WebGLRenderTarget;
@@ -1414,7 +1419,14 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // identity guarantee, the same discipline as the FLIP 3D
   // targets above. The passes rebuild the index from the
   // frame-start positions every frame while the pair exists.
-  const grainsCellOn = resolveGrainsCellSortActive(config, getMaxTextureImageUnits());
+  // Grains pile solver (Stage C): while the pile plan is active
+  // the sort pool also exists — the pile passes consume the
+  // index with their own materials (few samplers each), so the
+  // velocity shader's texture-unit downgrade does not gate
+  // them; the grid is then built with cell size = support
+  // radius h (see grainsCellGrid's support argument).
+  const grainsPileOn = grainsPileActive(config);
+  const grainsCellOn = resolveGrainsCellSortActive(config, getMaxTextureImageUnits()) || grainsPileOn;
   useEffect(() => {
     grainsSortRTARef.current?.dispose();
     grainsSortRTARef.current = null;
@@ -1430,6 +1442,27 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       grainsSortRTBRef.current = null;
     };
   }, [gl, texSize, grainsCellOn]);
+
+  // Grains pile targets (Stage C): the lambda target of the
+  // density solve and the pile-start position snapshot the
+  // friction term prices vel_now against. Allocated only while
+  // the pile plan is active, in the same dedicated-effect
+  // discipline as the sort pool above.
+  useEffect(() => {
+    grainsLambdaRTRef.current?.dispose();
+    grainsLambdaRTRef.current = null;
+    grainsPileBaseRTRef.current?.dispose();
+    grainsPileBaseRTRef.current = null;
+    if (!grainsPileOn) return;
+    grainsLambdaRTRef.current = makeRT(texSize);
+    grainsPileBaseRTRef.current = makeRT(texSize);
+    return () => {
+      grainsLambdaRTRef.current?.dispose();
+      grainsLambdaRTRef.current = null;
+      grainsPileBaseRTRef.current?.dispose();
+      grainsPileBaseRTRef.current = null;
+    };
+  }, [gl, texSize, grainsPileOn]);
 
   // Vellum tear state pool (Phase AR): a texSize ping-pong pair
   // holding link survival (.r = right link, .g = up link) and,
@@ -2509,6 +2542,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     sortRTBRef,
     grainsSortRTARef,
     grainsSortRTBRef,
+    grainsLambdaRTRef,
+    grainsPileBaseRTRef,
     auxRtRef,
     auxPingIsA,
     wwRtRef,

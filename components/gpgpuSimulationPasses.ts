@@ -8,7 +8,7 @@ import {
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
 import { resolveVellum } from '../lib/gpgpuVellum';
 import { XPBD_JACOBI_RELAXATION } from '../lib/xpbdConstraints';
-import { effectiveGrainsFriction, grainsCellGrid, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsProjection, type GrainsCellGrid } from '../lib/gpgpuGrains';
+import { effectiveGrainsFriction, grainsCellGrid, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsPilePlan, resolveGrainsProjection, type GrainsCellGrid } from '../lib/gpgpuGrains';
 import { resolveGrainsCellSortActive, resolveGrainsNeighborhoodMode } from '../lib/flip3dAtlasDowngrade';
 import { getMaxTextureImageUnits } from '../lib/gpuDiagnostics';
 import { resolveRigid } from '../lib/rigidBodies';
@@ -506,6 +506,18 @@ export function runSimulationPasses(args: {
   grainsBitonicMat?: THREE.ShaderMaterial;
   grainsSortRTA?: THREE.WebGLRenderTarget | null;
   grainsSortRTB?: THREE.WebGLRenderTarget | null;
+  // Grains pile solver (Stage C): the lambda / delta materials,
+  // the lambda target, the pile-start snapshot target and a
+  // spare target for the iteration ping-pong (the scene passes
+  // the Verlet previous-position RT, whose frame-start copy the
+  // position pass has already consumed — the same spare the
+  // Vellum iterations use, sequentially). All optional: absent
+  // extras skip the pile iterations entirely.
+  grainsPileLambdaMat?: THREE.ShaderMaterial;
+  grainsPileDeltaMat?: THREE.ShaderMaterial;
+  grainsLambdaRT?: THREE.WebGLRenderTarget | null;
+  grainsPileBaseRT?: THREE.WebGLRenderTarget | null;
+  grainsPileSpareRT?: THREE.WebGLRenderTarget | null;
   // Vellum XPBD (Phase 19 stage 3): the Δλ-solve extras — the
   // four new materials, the λ pair, the volume reduction chain
   // + 1×1 volume-λ target, and the baked volume gradient
@@ -769,8 +781,18 @@ export function runSimulationPasses(args: {
   // (replica stacks, mode 0) leaves grainsCellTex null and the
   // uniform writes below resolve uGrainsCellSort false, so
   // the shaders keep their scan fallback.
-  const grainsGrid = grainsCellGrid(config.gpgpuBounceRadius, Math.max(0.001, config.gpgpuGrainsSize || 0));
-  const grainsCellTex = resolveGrainsCellSortActive(config, getMaxTextureImageUnits()) && args.grainsCellKeyMat && args.grainsBitonicMat && args.grainsSortRTA && args.grainsSortRTB
+  // Grains pile plan (Stage C): the single resolution the sort
+  // grid, the velocity XSPH uniforms and the pile iterations
+  // below all share. While the plan is active the sort grid is
+  // built with cell size = support radius h (the pile passes'
+  // 27-cell search is then complete for the h window, and the
+  // legacy gd-window consumers stay complete inside the larger
+  // cells), and the sort is built even where the velocity
+  // shader's texture-unit downgrade applies — the pile
+  // materials carry few samplers and are not gated by it.
+  const pilePlan = resolveGrainsPilePlan(config);
+  const grainsGrid = grainsCellGrid(config.gpgpuBounceRadius, Math.max(0.001, config.gpgpuGrainsSize || 0), pilePlan.active ? pilePlan.supportRadius : undefined);
+  const grainsCellTex = (resolveGrainsCellSortActive(config, getMaxTextureImageUnits()) || pilePlan.active) && args.grainsCellKeyMat && args.grainsBitonicMat && args.grainsSortRTA && args.grainsSortRTB
     ? runGrainsCellSortPass({
       gl,
       simScene,
@@ -1068,6 +1090,16 @@ export function runSimulationPasses(args: {
     velSimMat.uniforms.uGrainsCohesion.value = Math.max(0, config.gpgpuGrainsCohesion || 0);
     velSimMat.uniforms.uGrainsRestitution.value = Math.max(0, config.gpgpuGrainsRestitution || 0);
     velSimMat.uniforms.uGrainsRestDamping.value = Math.max(0, config.gpgpuGrainsRestDamping || 0);
+    // XSPH (Stage C): the pile plan's strength + support
+    // radius; the uniforms exist in the material's dictionary
+    // always and are declared in the shader only behind the
+    // grainsPileXsph variant, so the writes are inert otherwise.
+    if (velSimMat.uniforms.uGrainsXsphStrength) {
+      velSimMat.uniforms.uGrainsXsphStrength.value = pilePlan.active ? pilePlan.xsphStrength : 0;
+    }
+    if (velSimMat.uniforms.uGrainsSupport) {
+      velSimMat.uniforms.uGrainsSupport.value = pilePlan.supportRadius;
+    }
     // Neighbourhood scan (Phase 19): 0 keeps the AQ subsample
     // plan bit-for-bit; 1 switches the Grains loop (only) to
     // the complete scan.
@@ -1368,6 +1400,64 @@ export function runSimulationPasses(args: {
   simMesh.material = posSimMat;
   gl.setRenderTarget(posOut);
   gl.render(simScene, simCamera);
+
+  // Grains pile solver (Stage C): density-constraint iterations
+  // over the position pass's output. Runs only while the pile
+  // plan is active AND the scene supplied the pile extras (the
+  // replica-stack runner passes none). The pile-start positions
+  // are snapshotted first (the friction term prices vel_now
+  // against them); each iteration is a lambda pass into the
+  // lambda target followed by a delta pass ping-ponging between
+  // posOut and the spare target, and an odd landing is blitted
+  // back so the frame ends with the solved positions in posOut,
+  // exactly like the Vellum iterations below (which run after
+  // the pile and reuse the same spare sequentially).
+  if (pilePlan.active && args.grainsPileLambdaMat && args.grainsPileDeltaMat && args.grainsLambdaRT && args.grainsPileBaseRT && args.grainsPileSpareRT && args.blitMat) {
+    args.blitMat.uniforms.uTex.value = posOut.texture;
+    simMesh.material = args.blitMat;
+    gl.setRenderTarget(args.grainsPileBaseRT);
+    gl.render(simScene, simCamera);
+    const lamU = args.grainsPileLambdaMat.uniforms;
+    const delU = args.grainsPileDeltaMat.uniforms;
+    for (const u of [lamU, delU]) {
+      u.uTexSizeF.value = texSize;
+      u.uGrainsSize.value = Math.max(0.001, config.gpgpuGrainsSize || 0);
+      u.uGrainsSupport.value = pilePlan.supportRadius;
+      u.uGrainsRho0.value = pilePlan.rho0;
+      u.uGrainsCellSort.value = !!grainsCellTex;
+      u.uGrainsSortTex.value = grainsCellTex;
+      u.uGrainsCellOrigin.value = grainsGrid.origin;
+      u.uGrainsCellSize.value = grainsGrid.cellSize;
+      (u.uGrainsCellDims.value as THREE.Vector3).set(grainsGrid.dimX, grainsGrid.dimY, grainsGrid.dimZ);
+    }
+    delU.uGrainsStiffness.value = pilePlan.stiffness;
+    delU.uGrainsFriction.value = effectiveGrainsFriction(config);
+    delU.uBounceRadius.value = config.gpgpuBounceRadius;
+    delU.uFloorEnabled.value = config.gpgpuFloorEnabled;
+    delU.uFloorY.value = config.gpgpuFloorY;
+    delU.uBasePosTex.value = args.grainsPileBaseRT.texture;
+    delU.uVelTex.value = velOut.texture;
+    delU.uLambdaTex.value = args.grainsLambdaRT.texture;
+    let cur: THREE.WebGLRenderTarget = posOut;
+    for (let iter = 0; iter < pilePlan.iterations; iter++) {
+      lamU.uPosTex.value = cur.texture;
+      simMesh.material = args.grainsPileLambdaMat;
+      gl.setRenderTarget(args.grainsLambdaRT);
+      gl.render(simScene, simCamera);
+      const next = cur === posOut ? args.grainsPileSpareRT : posOut;
+      delU.uPosTex.value = cur.texture;
+      simMesh.material = args.grainsPileDeltaMat;
+      gl.setRenderTarget(next);
+      gl.render(simScene, simCamera);
+      cur = next;
+    }
+    if (cur !== posOut) {
+      args.blitMat.uniforms.uTex.value = cur.texture;
+      simMesh.material = args.blitMat;
+      gl.setRenderTarget(posOut);
+      gl.render(simScene, simCamera);
+    }
+  }
 
   // Vellum (Phase AR): tear state update + constraint projection
   // iterations. Runs only while the solver is active AND the

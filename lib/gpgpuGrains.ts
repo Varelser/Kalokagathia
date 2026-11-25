@@ -299,13 +299,23 @@ export function grainsCellSortActive(config: ParticleConfig): boolean {
  * The sort grid for a bounce radius and grain diameter. Uniform
  * on all axes (the position bound is a sphere): dims are equal,
  * each <= GRAINS_CELL_MAX_DIM, and the maximum key is < 2^24.
+ *
+ * Pile solver (Stage C): while the pile plan is active the cell
+ * size is the support radius h instead of the grain diameter —
+ * `supportRadius` carries h in, and the grid margin grows to
+ * max(gd, h) so the boundary layer keeps a full cell of slack.
+ * With cell = h the 27-cell search is complete for the h window
+ * by the same argument as the header above (index distance
+ * < window / cell = 1). Without the argument the result is the
+ * legacy grid bit-for-bit.
  */
-export function grainsCellGrid(bounceRadius: number, grainDiameter: number): GrainsCellGrid {
+export function grainsCellGrid(bounceRadius: number, grainDiameter: number, supportRadius?: number): GrainsCellGrid {
   const gd = Math.max(Number.isFinite(grainDiameter) ? grainDiameter : 0, 0.001);
   const r = Math.max(0, Number.isFinite(bounceRadius) ? bounceRadius : 0);
-  const extent = r * 1.05 + gd;
+  const h = Number.isFinite(supportRadius) ? Math.max(gd, supportRadius as number) : gd;
+  const extent = r * 1.05 + h;
   const span = extent * 2;
-  const cellSize = Math.max(gd, span / GRAINS_CELL_MAX_DIM);
+  const cellSize = Math.max(h, span / GRAINS_CELL_MAX_DIM);
   const dim = Math.min(GRAINS_CELL_MAX_DIM, Math.max(1, Math.ceil(span / cellSize)));
   return { origin: -extent, extent, cellSize, dimX: dim, dimY: dim, dimZ: dim };
 }
@@ -438,4 +448,270 @@ export function effectiveGrainsFriction(config: ParticleConfig): number {
     return Math.tan((deg * Math.PI) / 180);
   }
   return Math.max(0, config.gpgpuGrainsFriction || 0);
+}
+
+/* ------------------------------------------------------------------ */
+/* Grains Stage C: the pile solver (H8 density recipe).                */
+/*                                                                     */
+/* The recipe the CPU/Taichi prototypes established (runs 5/9/10 +     */
+/* the 16,384-particle Colab production run):                          */
+/*                                                                     */
+/*   (1) support radius h = grain diameter x SupportScale (default     */
+/*       2.0) — at h = gd a resting lattice has NO neighbours inside   */
+/*       the window, so the density constraint cannot see a pile;      */
+/*   (2) rest density rho0 = the Poly6 kernel density of a touching    */
+/*       FCC lattice at that h, x RestDensityFactor (default 1.1;      */
+/*       gd 8 / h 16 gives 0.002749 x 1.1 = 0.003024);                 */
+/*   (3) tangential friction INSIDE every solver iteration (the        */
+/*       prototype's main finding — friction outside the iterations    */
+/*       left the pile with no holding mechanism);                     */
+/*   (4) XSPH velocity smoothing, gated per particle on the            */
+/*       neighbourhood having settled (the user's decision: on         */
+/*       automatically once the motion calms — early XSPH flattened    */
+/*       the forming pile in prototype run 7).                         */
+/*                                                                     */
+/* The solver is an addition, default OFF: while off, no pile pass     */
+/* runs, no pile variant string is built and every legacy path is      */
+/* verbatim. The functions below are the TS twins of the GLSL in       */
+/* gpgpuShaderSimulationGrainsPile.ts (lambda + delta passes) and      */
+/* the XSPH segment of the velocity shader; scripts/                   */
+/* phase19-grains.test.mjs pins them.                                  */
+/* ------------------------------------------------------------------ */
+
+/** Density-constraint stiffness of the prototype (per iteration). */
+export const GRAINS_PILE_STIFFNESS = 0.25;
+/** Lambda denominator epsilon of the prototype. */
+export const GRAINS_PILE_LAMBDA_EPS = 0.01;
+/**
+ * Settle gate: full XSPH at or below this neighbourhood mean speed.
+ * Recalibrated at the Stage C real-GPU gate (2026-11-26): the
+ * prototype band (0.75/1.75) never opened in the product, whose
+ * independent velocity texture leaves a settled pile at a mean
+ * speed of ~2.3 (meanSpeed2 ~6.7) while the falling stream runs
+ * at ~8 and above. The band now sits between those two measured
+ * regimes.
+ */
+export const GRAINS_XSPH_GATE_LOW = 2.0;
+/** Settle gate: no XSPH at or above this neighbourhood mean speed. */
+export const GRAINS_XSPH_GATE_HIGH = 4.5;
+
+/** True while the pile solver runs (Grains on AND pile on). */
+export function grainsPileActive(config: ParticleConfig): boolean {
+  return !!config.gpgpuGrainsEnabled && !!config.gpgpuGrainsPileEnabled;
+}
+
+/** Solver iterations resolved from the key: integer 1..6, default 3. */
+export function resolveGrainsIterations(config: ParticleConfig): number {
+  const v = Math.round(config.gpgpuGrainsIterations ?? 3);
+  return Number.isFinite(v) ? Math.min(6, Math.max(1, v)) : 3;
+}
+
+/** Support-radius factor resolved from the key: 1..3, default 2. */
+export function resolveGrainsSupportScale(config: ParticleConfig): number {
+  const v = config.gpgpuGrainsSupportScale ?? 2;
+  return Number.isFinite(v) ? Math.min(3, Math.max(1, v)) : 2;
+}
+
+/** Support radius h = grain diameter x the resolved factor. */
+export function grainsSupportRadius(config: ParticleConfig): number {
+  return Math.max(0.001, config.gpgpuGrainsSize || 0) * resolveGrainsSupportScale(config);
+}
+
+/** Rest-density factor resolved from the key: 0.8..1.4, default 1.1. */
+export function resolveGrainsRestDensityFactor(config: ParticleConfig): number {
+  const v = config.gpgpuGrainsRestDensityFactor ?? 1.1;
+  return Number.isFinite(v) ? Math.min(1.4, Math.max(0.8, v)) : 1.1;
+}
+
+/** XSPH strength resolved from the key: 0..1, default 0.5. */
+export function resolveGrainsXsphStrength(config: ParticleConfig): number {
+  const v = config.gpgpuGrainsXsphStrength ?? 0.5;
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5;
+}
+
+/** Poly6 kernel W(d, h) = 315 / (64 pi h^9) x (h^2 - d^2)^3, 0 outside h. */
+export function grainsPoly6(dist: number, support: number): number {
+  const h = Math.max(support, 0.001);
+  if (!(dist >= 0) || dist >= h) return 0;
+  const coef = 315 / (64 * Math.PI * Math.pow(h, 9));
+  const t = h * h - dist * dist;
+  return coef * t * t * t;
+}
+
+/**
+ * The kernel density of a touching FCC lattice at support h —
+ * the prototype's lattice_rho0(): lattice constant a = gd x
+ * sqrt(2), the four FCC basis points, shells out to |offset| 2,
+ * every lattice point strictly inside h (the self point at
+ * d = 0 included). gd 8 / h 16 gives 0.002749.
+ */
+export function grainsLatticeRho0(diameter: number, support: number): number {
+  const gd = Math.max(diameter, 0.001);
+  const h = Math.max(support, 0.001);
+  const a = gd * Math.SQRT2;
+  const basis: ReadonlyArray<readonly [number, number, number]> = [
+    [0, 0, 0], [0, 0.5, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 0],
+  ];
+  let rho = 0;
+  for (let i = -2; i <= 2; i++) {
+    for (let j = -2; j <= 2; j++) {
+      for (let k = -2; k <= 2; k++) {
+        for (const b of basis) {
+          const x = (i + b[0]) * a;
+          const y = (j + b[1]) * a;
+          const z = (k + b[2]) * a;
+          const d = Math.sqrt(x * x + y * y + z * z);
+          if (d < h - 1e-9) rho += grainsPoly6(d, h);
+        }
+      }
+    }
+  }
+  return rho;
+}
+
+/** Effective rest density: lattice density x the resolved factor. */
+export function grainsEffectiveRho0(config: ParticleConfig): number {
+  return grainsLatticeRho0(Math.max(0.001, config.gpgpuGrainsSize || 0), grainsSupportRadius(config))
+    * resolveGrainsRestDensityFactor(config);
+}
+
+export interface GrainsPilePlan {
+  active: boolean;
+  iterations: number;
+  supportScale: number;
+  /** Support radius h in world units. */
+  supportRadius: number;
+  restDensityFactor: number;
+  /** Effective rest density rho0 (lattice x factor). */
+  rho0: number;
+  xsphStrength: number;
+  /** Density stiffness x the legacy projection strength key. */
+  stiffness: number;
+}
+
+/**
+ * The single resolution every pile consumer shares (passes,
+ * runtime allocation, variant selection) — the Stage B residual
+ * lesson: consumers resolving separately is what desynchronised
+ * the projection from the contact loop there. Inactive plans
+ * still carry the resolved values, so callers never branch on
+ * the raw keys themselves.
+ */
+export function resolveGrainsPilePlan(config: ParticleConfig): GrainsPilePlan {
+  return {
+    active: grainsPileActive(config),
+    iterations: resolveGrainsIterations(config),
+    supportScale: resolveGrainsSupportScale(config),
+    supportRadius: grainsSupportRadius(config),
+    restDensityFactor: resolveGrainsRestDensityFactor(config),
+    rho0: grainsEffectiveRho0(config),
+    xsphStrength: resolveGrainsXsphStrength(config),
+    stiffness: GRAINS_PILE_STIFFNESS * resolveGrainsProjection(config),
+  };
+}
+
+/**
+ * The XSPH settle gate (TS twin of the velocity-shader segment):
+ * 1 while the neighbourhood mean speed is at or below GATE_LOW,
+ * 0 at or above GATE_HIGH, smoothstep between. Speeds are in
+ * per-frame displacement units — the product velocity integrates
+ * to one frame of travel at uSpeed 1, the prototype's scale
+ * (falling grains exceed 2; its settled creep measured ~0.4).
+ */
+export function grainsXsphGate(meanSpeed: number): number {
+  const v = Number.isFinite(meanSpeed) ? meanSpeed : 0;
+  const t = Math.min(1, Math.max(0, (v - GRAINS_XSPH_GATE_LOW) / (GRAINS_XSPH_GATE_HIGH - GRAINS_XSPH_GATE_LOW)));
+  return 1 - t * t * (3 - 2 * t);
+}
+
+/** Indices of every particle strictly inside `radius` of index (d > 0). */
+export function grainsNeighborsWithin(
+  positions: readonly GrainsVec3[], index: number, radius: number,
+): number[] {
+  const r = Math.max(radius, 0.001);
+  const r2 = r * r;
+  const p = positions[index];
+  const out: number[] = [];
+  for (let j = 0; j < positions.length; j++) {
+    if (j === index) continue;
+    const dx = p.x - positions[j].x;
+    const dy = p.y - positions[j].y;
+    const dz = p.z - positions[j].z;
+    const d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 < r2 && d2 > 0) out.push(j);
+  }
+  return out;
+}
+
+export interface GrainsDensityState { rho: number[]; lambda: number[] }
+
+/**
+ * Density + lambda for every particle (TS twin of the pile
+ * lambda pass): rho from the Poly6 sum (self term included),
+ * C = rho / rho0 - 1, lambda = -C / ((sum |grad C|^2 +
+ * |sum grad C|^2) / rho0^2 + eps), with the Spiky gradient.
+ * Particles with no neighbour inside h get lambda 0.
+ */
+export function grainsComputeDensityLambdas(
+  positions: readonly GrainsVec3[], support: number, rho0: number,
+): GrainsDensityState {
+  const h = Math.max(support, 0.001);
+  const r0 = Math.max(rho0, 1e-9);
+  const spikyCoef = -45 / (Math.PI * Math.pow(h, 6));
+  const rho: number[] = new Array(positions.length).fill(0);
+  const lambda: number[] = new Array(positions.length).fill(0);
+  for (let i = 0; i < positions.length; i++) {
+    let r = grainsPoly6(0, h);
+    let gsx = 0; let gsy = 0; let gsz = 0; let gsq = 0;
+    let cnt = 0;
+    for (const j of grainsNeighborsWithin(positions, i, h)) {
+      const dx = positions[i].x - positions[j].x;
+      const dy = positions[i].y - positions[j].y;
+      const dz = positions[i].z - positions[j].z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      cnt++;
+      r += grainsPoly6(d, h);
+      const gc = (spikyCoef * (h - d) * (h - d)) / d;
+      const gx = gc * dx; const gy = gc * dy; const gz = gc * dz;
+      gsx += gx; gsy += gy; gsz += gz;
+      gsq += gx * gx + gy * gy + gz * gz;
+    }
+    rho[i] = r;
+    if (cnt > 0) {
+      const denom = (gsq + gsx * gsx + gsy * gsy + gsz * gsz) / (r0 * r0) + GRAINS_PILE_LAMBDA_EPS;
+      lambda[i] = -(r / r0 - 1) / denom;
+    }
+  }
+  return { rho, lambda };
+}
+
+/**
+ * One Jacobi density correction for one particle (TS twin of
+ * the pile delta pass): stiffness x sum_j (lambda_i + lambda_j)
+ * / rho0 x grad W_ij, the total clamped to half a diameter —
+ * the prototype's anti-explosion bound.
+ */
+export function grainsDensityCorrection(
+  positions: readonly GrainsVec3[], index: number, support: number, rho0: number,
+  stiffness: number, lambdas: readonly number[], diameter: number,
+): GrainsVec3 {
+  const h = Math.max(support, 0.001);
+  const r0 = Math.max(rho0, 1e-9);
+  const gd = Math.max(diameter, 0.001);
+  const spikyCoef = -45 / (Math.PI * Math.pow(h, 6));
+  let cx = 0; let cy = 0; let cz = 0;
+  for (const j of grainsNeighborsWithin(positions, index, h)) {
+    const dx = positions[index].x - positions[j].x;
+    const dy = positions[index].y - positions[j].y;
+    const dz = positions[index].z - positions[j].z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const gc = (spikyCoef * (h - d) * (h - d)) / d;
+    const s = ((lambdas[index] + lambdas[j]) / r0) * gc;
+    cx += s * dx; cy += s * dy; cz += s * dz;
+  }
+  cx *= stiffness; cy *= stiffness; cz *= stiffness;
+  const len = Math.sqrt(cx * cx + cy * cy + cz * cz);
+  const cap = gd / 2;
+  if (len > cap) { const k = cap / len; cx *= k; cy *= k; cz *= k; }
+  return { x: cx, y: cy, z: cz };
 }
