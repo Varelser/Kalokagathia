@@ -432,6 +432,37 @@ export interface ParticleConfigGpgpu {
   // Verlet or rigid bodies are on. Resolved in
   // resolveGrainsPilePlan (lib/gpgpuGrains.ts).
   gpgpuGrainsVelocityBlend: number;
+  // Grains DEM engine (solver research stage 2-1): a force-based
+  // DEM solver with per-contact history, implemented as a WGSL
+  // compute path next to the position-based legacy solver above.
+  // Default OFF everywhere; no preset enables it. While DEM is
+  // active it owns the grains solve on the WebGPU route and the
+  // legacy position-solver keys (Stiffness / Cohesion /
+  // RestDamping / Projection / Neighborhood / Iterations /
+  // SupportScale / RestDensityFactor / XsphStrength /
+  // VelocityBlend / VelocityMode) plus Pile resolve off.
+  // Resolved in resolveGrainsDemPlan (lib/gpgpuGrains.ts);
+  // design of record: GRAINS_DEM_INTEGRATION_DESIGN.md.
+  gpgpuGrainsDemEnabled: boolean;
+  // Max DEM substeps per frame (8..128, default 64); the fixed
+  // substep is 1/(60*64) s and excess frame time is dropped.
+  gpgpuGrainsDemSubsteps: number;
+  // Multiplier on the DEM normal stiffness kn (default 1).
+  gpgpuGrainsDemStiffness: number;
+  // Tangential-to-normal stiffness ratio kt/kn (default 0.5).
+  gpgpuGrainsDemTangentialRatio: number;
+  // Rolling-resistance torque cap coefficient: the cap is
+  // coeff x R x normal force (dimensionless). Default 0.46 is
+  // the stage-1 spike's proven point rescaled to product units;
+  // final calibration is stage 2-2 work.
+  gpgpuGrainsDemRollingFriction: number;
+  // Cundall local (non-viscous) damping (default 0 = off).
+  gpgpuGrainsDemLocalDamping: number;
+  // Per-particle contact history slots K (4..16, default 12).
+  gpgpuGrainsDemHistorySlots: number;
+  // Auto quality: drop the substep cap 64 -> 48 -> 32 when the
+  // GPU frame time stays high (default on).
+  gpgpuGrainsDemAutoQuality: boolean;
   // Pyro (Phase AS): a particle-side temperature / buoyancy
   // solver in the velocity pass. Each particle's temperature is
   // derived deterministically from its normalised age —

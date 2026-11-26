@@ -8,7 +8,7 @@ import {
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
 import { resolveVellum } from '../lib/gpgpuVellum';
 import { XPBD_JACOBI_RELAXATION } from '../lib/xpbdConstraints';
-import { effectiveGrainsFriction, grainsCellGrid, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsPilePlan, resolveGrainsProjection, GRAINS_VELOCITY_DENSE_DAMP, GRAINS_VELOCITY_DENSE_HI, GRAINS_VELOCITY_DENSE_LO, type GrainsCellGrid } from '../lib/gpgpuGrains';
+import { effectiveGrainsFriction, grainsCellGrid, grainsDemConfigEpochValue, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsDemGrid, resolveGrainsDemPlan, resolveGrainsPilePlan, resolveGrainsProjection, GRAINS_VELOCITY_DENSE_DAMP, GRAINS_VELOCITY_DENSE_HI, GRAINS_VELOCITY_DENSE_LO, type GrainsCellGrid } from '../lib/gpgpuGrains';
 import { resolveGrainsCellSortActive, resolveGrainsNeighborhoodMode } from '../lib/flip3dAtlasDowngrade';
 import { getMaxTextureImageUnits } from '../lib/gpuDiagnostics';
 import { resolveRigid } from '../lib/rigidBodies';
@@ -760,6 +760,58 @@ export function runSimulationPasses(args: {
         fluidScale: config.gpgpuFluidScale,
         count: config.gpgpuCount,
       },
+      // Grains DEM (stage 2-1): the resolved plan + grid from
+      // the single resolution points in lib/gpgpuGrains.ts,
+      // plus the boundary / lifecycle values the DEM passes
+      // consume (the same derivations the force set above
+      // uses). While the plan is inactive the step receives
+      // active:false and the DEM group never engages.
+      (() => {
+        const demPlan = resolveGrainsDemPlan(config);
+        const demGrid = resolveGrainsDemGrid(Math.max(0.001, config.gpgpuGrainsSize || 0), config.gpgpuBounceRadius);
+        return {
+          active: demPlan.active,
+          radius: demPlan.radius,
+          mass: demPlan.mass,
+          inertia: demPlan.inertia,
+          kn: demPlan.kn,
+          kt: demPlan.kt,
+          cn: demPlan.cn,
+          ct: demPlan.ct,
+          muS: demPlan.muS,
+          muFloor: demPlan.muFloor,
+          rollingFriction: demPlan.rollingFriction,
+          localDamping: demPlan.localDamping,
+          historySlots: demPlan.historySlots,
+          maxSubsteps: demPlan.maxSubsteps,
+          autoQuality: demPlan.autoQuality,
+          cellSize: demGrid.cellSize,
+          gridDim: demGrid.dimX,
+          floorEnabled: config.gpgpuFloorEnabled,
+          floorY: config.gpgpuFloorY,
+          sdfEnabled: config.gpgpuSdfEnabled,
+          sdfShape: SDF_SHAPE_IDS[config.gpgpuSdfShape] ?? 0,
+          sdfX: config.gpgpuSdfX,
+          sdfY: config.gpgpuSdfY,
+          sdfZ: config.gpgpuSdfZ,
+          sdfSize: config.gpgpuSdfSize,
+          mouseEnabled: config.gpgpuMouseEnabled,
+          mousePos: mouseWorld,
+          mouseRadius: config.gpgpuMouseRadius,
+          mouseMode: MOUSE_MODE_IDS[config.gpgpuMouseMode] ?? 0,
+          mousePaintRate: config.gpgpuMousePaintRate,
+          ageEnabled: config.gpgpuAgeEnabled,
+          ageMax: config.gpgpuAgeMax,
+          ageReplicaCount: Math.max(1, Math.min(8, Math.round(config.gpgpuMorphReplicaCount))),
+          ageReplicaStep: config.gpgpuMorphEnabled && config.gpgpuMorphReplicaCount > 1
+            ? Math.max(0, Math.min(1, config.gpgpuMorphReplicaAgeStep))
+            : 0,
+          replicaAgeBase: 0,
+          emitLightEnabled: config.gpgpuEmitShape === 'light',
+          emitLightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ },
+          configEpoch: grainsDemConfigEpochValue(),
+        };
+      })(),
     );
     webgpuPingIsARef.current = !webgpuPingIsARef.current;
     if (webgpuPosTex) {

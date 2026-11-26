@@ -936,6 +936,21 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
               </div>
             </>
           )}
+          <Toggle label="DEM Engine （接触履歴つき・WebGPU経路）" value={config.gpgpuGrainsDemEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGrainsDemEnabled', v)} />
+          {config.gpgpuGrainsDemEnabled && (
+            <>
+              <Slider label="DEM Substeps （最大サブステップ数）" value={config.gpgpuGrainsDemSubsteps} min={8} max={128} step={1} onChange={(v) => updateConfig('gpgpuGrainsDemSubsteps', v)} />
+              <Slider label="DEM Stiffness （法線バネ剛性の倍率）" value={config.gpgpuGrainsDemStiffness} min={0.05} max={20} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsDemStiffness', v)} />
+              <Slider label="DEM Tangential Ratio （接線剛性比 kt/kn）" value={config.gpgpuGrainsDemTangentialRatio} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuGrainsDemTangentialRatio', v)} />
+              <Slider label="DEM Rolling Friction （転がり抵抗）" value={config.gpgpuGrainsDemRollingFriction} min={0} max={4} step={0.01} onChange={(v) => updateConfig('gpgpuGrainsDemRollingFriction', v)} />
+              <Slider label="DEM Local Damping （局所減衰）" value={config.gpgpuGrainsDemLocalDamping} min={0} max={0.9} step={0.01} onChange={(v) => updateConfig('gpgpuGrainsDemLocalDamping', v)} />
+              <Slider label="DEM History Slots （接触履歴数 K）" value={config.gpgpuGrainsDemHistorySlots} min={4} max={16} step={1} onChange={(v) => updateConfig('gpgpuGrainsDemHistorySlots', v)} />
+              <Toggle label="DEM Auto Quality （自動でサブステップ調整）" value={config.gpgpuGrainsDemAutoQuality} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuGrainsDemAutoQuality', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                DEM が有効な間は WebGPU 経路で解かれ、上の山ソルバ系キー（剛性・凝集・投影・XSPH・速度更新など）と Pile は働きません。粒径・摩擦・反発は共通です。安息角を指定すると、実測の較正テーブルから摩擦と転がり抵抗の組が引かれます（較正場面での到達範囲は約17〜33度）。WebGPU が使えない環境では従来の解法に自動で戻ります。
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

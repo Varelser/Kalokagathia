@@ -4,6 +4,37 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [2.20.0] — 2026-11-26
+
+Thirty-eighth term: the Grains DEM engine (solver
+research stage 2), a force-based discrete element
+solver with per-contact history, added as a WGSL
+compute path next to the position-based legacy
+grains solver. Eight new config keys
+(gpgpuGrainsDem*), all defaulting to off; no preset
+enables the engine, and while it is active it owns
+the grains solve on the WebGPU route (the legacy
+position-solver keys and the pile solver resolve
+off). The DEM path runs a fixed-substep loop
+(1/(60*64) s, cap 64 by default) with an optional
+auto-quality ladder (64 → 48 → 32) driven by GPU
+frame time. Contact history is kept per particle
+in K slots (default 12) and is fully reset when a
+preset is applied (config-load epoch), so a preset
+switch never inherits stale contacts. The
+ReposeAngle key drives the DEM friction and
+rolling resistance through a calibration table
+measured on the real GPU (stage 2-2): specified
+15–35° reproduce within ±3° (35° measures 32.8°);
+the reachable range with friction and rolling
+alone is about 17–33°, and a 40° specification
+clamps to the strongest calibrated point. At the
+product defaults (friction 0.6, rolling 0.46) a
+pile forms at a measured surface angle of 33.3°
+and settles to rest (velocity² 4.7×10⁻⁵). With
+the engine off, behaviour is byte-identical to
+2.19.0 (shader pins unchanged, DRIFT zero).
+
 ## [1.87.0] — 2026-11-20
 
 Twelfth-term Phase CX: measured dynamic resolution

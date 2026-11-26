@@ -5,6 +5,7 @@ import {
   resolveAttrExtConsumers,
 } from './gpgpuAttributes';
 import { flip3dMode } from './flip3d';
+import { GRAINS_DEM_FEATURE, resolveGrainsDemPlan } from './gpgpuGrains';
 
 export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   'particles',
@@ -72,6 +73,15 @@ export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   'particle-life',
   'levy',
   'floor',
+  // Grains DEM engine (solver research stage 2-1): the WGSL DEM
+  // path group in lib/webgpuCompute.ts (grid build / force /
+  // integrate substeps with per-contact history). Requesting it
+  // REPLACES the legacy 'grains' request — see the request logic
+  // below. Its precondition is a device whose storage-buffer
+  // limit was requested at the adapter maximum (initWebGPUCompute
+  // does this); the runtime disables DEM when the granted limit
+  // is still too small.
+  'grains-dem',
 ] as const;
 
 export type WebgpuComputeFeature = typeof WEBGPU_COMPUTE_SUPPORTED_FEATURES[number];
@@ -258,7 +268,15 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // Grains (Phase AQ): the DEM-style contact / friction solver
   // lives in the WebGL velocity pass only — declaring it routes
   // to WebGL (the CPU fallback treats it as a no-op, like SPH).
-  if (config.gpgpuGrainsEnabled) features.push('grains');
+  // Stage 2-1 exception: while the DEM plan resolves active, the
+  // config requests the WGSL 'grains-dem' feature INSTEAD, so a
+  // DEM config stays on the WebGPU route and the DEM path group
+  // owns the solve. When the plan is inactive (DEM off, or an
+  // exclusion like rigid / Verlet owns the state) the legacy
+  // request stands and behaviour is exactly as before.
+  if (config.gpgpuGrainsEnabled) {
+    features.push(resolveGrainsDemPlan(config).active ? GRAINS_DEM_FEATURE : 'grains');
+  }
   // Vellum (Phase AR): the constraint projection pass, the tear
   // state pass and the structured grid bake live on the WebGL
   // path only — declaring it routes to WebGL (the CPU fallback

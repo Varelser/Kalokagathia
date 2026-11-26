@@ -2,6 +2,7 @@ import { Dispatch, MutableRefObject, SetStateAction, useCallback, useEffect, use
 import type { ParticleConfig, SequenceTransitionEasing } from '../types';
 import { applyTransitionEasing, DEFAULT_SEQUENCE_EASING, interpolateConfig, normalizeConfig } from './appState';
 import { interpolateConfigShaped } from './appStateInterpolation';
+import { bumpGrainsDemConfigEpoch } from './gpgpuGrains';
 import { resolveTransitionShape } from './transitionShape';
 
 type UsePresetTransitionArgs = {
@@ -34,6 +35,9 @@ export function usePresetTransition({
 
   const applyConfigInstant = useCallback((nextConfig: ParticleConfig, nextPresetId: string | null = null) => {
     stopPresetTransition();
+    // Config load: the DEM engine re-initialises its contact
+    // history on the next stepped frame (design section 7).
+    bumpGrainsDemConfigEpoch();
     setConfig(normalizeConfig(nextConfig));
     setActivePresetId(nextPresetId);
     return true;
@@ -46,6 +50,9 @@ export function usePresetTransition({
     easing: SequenceTransitionEasing = DEFAULT_SEQUENCE_EASING,
   ) => {
     stopPresetTransition();
+    // Config load: the DEM engine re-initialises its contact
+    // history on the next stepped frame (design section 7).
+    bumpGrainsDemConfigEpoch();
 
     const fromConfig = normalizeConfig(latestConfigRef.current);
     const toConfig = normalizeConfig(targetConfig);

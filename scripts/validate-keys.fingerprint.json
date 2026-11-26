@@ -1,8 +1,8 @@
 {
   "version": 1,
   "algorithm": "sha256(sorted keys joined by newline)",
-  "fingerprint": "e6505b52ba0615282fe9e3b32ff8f08e0757e12cc89210226070d352b77aada7",
-  "keyCount": 1515,
+  "fingerprint": "59d3222541914c0a7e9496b60d515f243807feff39de46f8c0610e8ac2c1a9b8",
+  "keyCount": 1523,
   "keys": [
     "ambientBaseSize",
     "ambientColor",
@@ -274,6 +274,14 @@
     "gpgpuGradThreeQuarter",
     "gpgpuGradThreeQuarterPos",
     "gpgpuGrainsCohesion",
+    "gpgpuGrainsDemAutoQuality",
+    "gpgpuGrainsDemEnabled",
+    "gpgpuGrainsDemHistorySlots",
+    "gpgpuGrainsDemLocalDamping",
+    "gpgpuGrainsDemRollingFriction",
+    "gpgpuGrainsDemStiffness",
+    "gpgpuGrainsDemSubsteps",
+    "gpgpuGrainsDemTangentialRatio",
     "gpgpuGrainsEnabled",
     "gpgpuGrainsFriction",
     "gpgpuGrainsIterations",
@@ -1520,5 +1528,5 @@
     "volumeFogGlslCode",
     "volumeFogGlslEnabled"
   ],
-  "recordedAt": "2026-11-25T16:40:58.576Z"
+  "recordedAt": "2026-11-25T23:44:08.449Z"
 }

@@ -31,6 +31,12 @@ import {
   flip3dPassCount,
   setFlip3dRuntimeStatus,
 } from './flip3d';
+import {
+  GRAINS_DEM_CELL_CAPACITY,
+  GRAINS_DEM_DT,
+  grainsDemAccumulate,
+  grainsDemQualityStep,
+} from './gpgpuGrains';
 
 const VEL_WGSL = /* wgsl */ `
 struct Uniforms {
@@ -1371,6 +1377,559 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 `;
 
+// ---------------------------------------------------------------------
+// Grains DEM engine (solver research stage 2-1): a force-based DEM
+// solver with per-contact history, ported from the proven
+// off-product spike (kalokagathia-pro/dem-spike) into the WGSL
+// pipeline as an additional engine next to the position-based
+// legacy solver. Design of record:
+// kalokagathia-pro/GRAINS_DEM_INTEGRATION_DESIGN.md.
+//
+// Frame shape while DEM is active (the standard position pass is
+// SKIPPED — DEM owns the position/velocity update):
+//   velocity pass (external forces incl. this frame's gravity)
+//   -> DEM lifecycle (age advance + wrap respawn ported from
+//      POS_WGSL, generation counter, history invalidation,
+//      product->physical velocity conversion)
+//   -> S substeps x (grid build -> force/torque -> integrate)
+//      at a fixed dt with an accumulator; contact forces only —
+//      gravity already arrived through the velocity pass
+//      (operator splitting), so the substeps add none.
+//   -> DEM finalize (physical->product velocity conversion,
+//      safety valves: sphere clamp backstop, SDF push-out,
+//      floor deep-penetration rescue, pointer paint + history
+//      clear) and the previous-position snapshot refresh.
+// The floor and the bounce sphere are DEM contacts (the floor
+// with its own history slot); terrain / Mesh SDF stay positional
+// push-outs outside the substeps, as the design specifies.
+// ---------------------------------------------------------------------
+
+const DEM_UNIFORM_BYTES = 256;
+// Storage buffers bound by the DEM force pass (uniform excluded):
+// pos, vel, angVel, hist, boundaryHist, force, torque, cellCount,
+// cellSlots, stats. The device must grant at least this many
+// storage buffers per shader stage (init requests the adapter
+// maximum; the step checks the granted limit before activating).
+const DEM_REQUIRED_STORAGE_BUFFERS = 10;
+
+const DEM_COMMON_WGSL = /* wgsl */ `
+struct DemUniforms {
+  texSize : u32,
+  nPart : u32,
+  historySlots : u32,
+  cellCap : u32,
+  gridDimX : u32,
+  gridDimY : u32,
+  gridDimZ : u32,
+  flags : u32,
+  dt : f32,
+  kn : f32,
+  kt : f32,
+  cnPair : f32,
+  cnFloor : f32,
+  ctPair : f32,
+  ctFloor : f32,
+  muS : f32,
+  muFloor : f32,
+  rolling : f32,
+  radius : f32,
+  mass : f32,
+  inertia : f32,
+  localDamping : f32,
+  cellSize : f32,
+  gridMinX : f32,
+  gridMinY : f32,
+  gridMinZ : f32,
+  delta : f32,
+  speed : f32,
+  bounceRadius : f32,
+  time : f32,
+  floorEnabled : f32,
+  floorY : f32,
+  sdfEnabled : f32,
+  sdfShape : i32,
+  sdfX : f32,
+  sdfY : f32,
+  sdfZ : f32,
+  sdfSize : f32,
+  mouseEnabled : f32,
+  mouseMode : i32,
+  mousePosX : f32,
+  mousePosY : f32,
+  mousePosZ : f32,
+  mouseRadius : f32,
+  mousePaintRate : f32,
+  ageEnabled : f32,
+  ageMax : f32,
+  ageReplicaCount : f32,
+  ageReplicaStep : f32,
+  replicaAgeBase : f32,
+  emitLightEnabled : f32,
+  emitLightPosX : f32,
+  emitLightPosY : f32,
+  emitLightPosZ : f32,
+  diameter : f32,
+};
+@group(0) @binding(0) var<uniform> du : DemUniforms;
+
+const DEM_MAX_SLOTS : i32 = 16;
+// flags bits
+const DEM_FLAG_CLEAR_HISTORY : u32 = 1u;
+
+fn demCellOf(p: vec3f) -> i32 {
+  var c = vec3i(floor((p - vec3f(du.gridMinX, du.gridMinY, du.gridMinZ)) / du.cellSize));
+  c = clamp(c, vec3i(0), vec3i(i32(du.gridDimX) - 1, i32(du.gridDimY) - 1, i32(du.gridDimZ) - 1));
+  return (c.y * i32(du.gridDimZ) + c.z) * i32(du.gridDimX) + c.x;
+}
+fn demCellCoord(idx: i32) -> vec3i {
+  let dx = i32(du.gridDimX);
+  let dz = i32(du.gridDimZ);
+  let x = idx % dx;
+  let z = (idx / dx) % dz;
+  let y = idx / (dx * dz);
+  return vec3i(x, y, z);
+}
+`;
+
+const DEM_GRID_WGSL = DEM_COMMON_WGSL + /* wgsl */ `
+@group(0) @binding(1) var<storage, read>       dPos      : array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> cellCount : array<atomic<u32>>;
+@group(0) @binding(3) var<storage, read_write> cellSlots : array<u32>;
+@group(0) @binding(4) var<storage, read_write> dStats    : array<atomic<u32>>;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let i = gid.x;
+  if (i >= du.nPart) { return; }
+  let cell = demCellOf(dPos[i].xyz);
+  let slot = atomicAdd(&cellCount[cell], 1u);
+  if (slot < du.cellCap) {
+    cellSlots[u32(cell) * du.cellCap + slot] = i;
+  } else {
+    // Cell overflow: the candidate is dropped for this substep
+    // (counted; the design accepts the drop, never a wrap).
+    atomicAdd(&dStats[0], 1u);
+  }
+}
+`;
+
+const DEM_FORCE_WGSL = DEM_COMMON_WGSL + /* wgsl */ `
+@group(0) @binding(1) var<storage, read>       dPos     : array<vec4f>;
+@group(0) @binding(2) var<storage, read>       dVel     : array<vec4f>;
+@group(0) @binding(3) var<storage, read>       dAngVel  : array<vec4f>;
+struct DemSlot { partner : i32, gen : u32, xi : vec3f, uroll : vec3f, };
+@group(0) @binding(4) var<storage, read_write> dHist    : array<DemSlot>;
+struct DemBoundaryHist { xi : vec3f, uroll : vec3f, };
+@group(0) @binding(5) var<storage, read_write> dBHist   : array<DemBoundaryHist>;
+@group(0) @binding(6) var<storage, read_write> dForce   : array<vec4f>;
+@group(0) @binding(7) var<storage, read_write> dTorque  : array<vec4f>;
+@group(0) @binding(8) var<storage, read_write> cellCount : array<atomic<u32>>;
+@group(0) @binding(9) var<storage, read>       cellSlots : array<u32>;
+@group(0) @binding(10) var<storage, read_write> dStats   : array<atomic<u32>>;
+
+// One contact evaluation (the spike's contact law, verbatim in
+// structure). Accumulates force/torque on particle i in locals.
+// n points from i toward the other body. xi/ur are the history
+// state (tangential spring displacement / rolling spring
+// displacement), updated in place. trScale is the rolling torque
+// cap per unit normal force (pair: rolling * R; boundary:
+// 2 * rolling * R — the design's boundary doubling).
+fn demContact(i: u32, n: vec3f, overlap: f32,
+              vO: vec3f, wO: vec3f,
+              cn: f32, ct: f32, mu: f32, rBar: f32, trScale: f32,
+              xiIn: vec3f, urIn: vec3f,
+              F: ptr<function, vec3f>, T: ptr<function, vec3f>,
+              xiOut: ptr<function, vec3f>, urOut: ptr<function, vec3f>) {
+  let vI = dVel[i].xyz;
+  let wI = dAngVel[i].xyz;
+  let rI = du.radius * n;
+  let rO = -du.radius * n;
+  let vcI = vI + cross(wI, rI);
+  let vcO = vO + cross(wO, rO);
+  let vRel = vcO - vcI;
+  let vn = dot(vRel, n);
+  var fnMag = du.kn * overlap - cn * vn;
+  fnMag = max(fnMag, 0.0);
+  var Ftot = -fnMag * n;
+  // Tangential Cundall-Strack history spring.
+  var xi = xiIn - n * dot(xiIn, n);
+  let vt = vRel - vn * n;
+  xi = xi + vt * du.dt;
+  var ftSpring = du.kt * xi;
+  let ftMax = mu * fnMag;
+  let ftLen = length(ftSpring);
+  if (ftLen > ftMax && ftLen > 1e-12) {
+    xi = xi * (ftMax / ftLen);
+    ftSpring = du.kt * xi;
+  }
+  let Ft = ftSpring + ct * vt;
+  Ftot = Ftot + Ft;
+  // Rolling resistance: elastic-plastic spring on relative spin.
+  var ur = urIn - n * dot(urIn, n);
+  let wRel = wI - wO;
+  ur = ur + cross(n, wRel) * rBar * du.dt;
+  let kr = du.kt * rBar;
+  var Troll = -kr * cross(ur, n);
+  let trMax = trScale * fnMag;
+  let trLen = length(Troll);
+  if (trLen > trMax && trLen > 1e-12) {
+    Troll = Troll * (trMax / trLen);
+    ur = -cross(n, Troll) / kr;
+  }
+  *F = *F + Ftot;
+  *T = *T + cross(rI, Ftot) + Troll;
+  *xiOut = xi;
+  *urOut = ur;
+}
+
+@compute @workgroup_size(128)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let i = gid.x;
+  if (i >= du.nPart) { return; }
+  let pI = dPos[i].xyz;
+  let K = i32(du.historySlots);
+  // Load this particle's history slots into locals (only this
+  // thread ever touches them — the gather discipline).
+  var partners: array<i32, 16>;
+  var gens: array<u32, 16>;
+  var xis: array<vec3f, 16>;
+  var urs: array<vec3f, 16>;
+  var seen: array<bool, 16>;
+  for (var s = 0; s < DEM_MAX_SLOTS; s++) {
+    if (s >= K) { break; }
+    let sl = dHist[i * u32(K) + u32(s)];
+    partners[s] = sl.partner;
+    gens[s] = sl.gen;
+    xis[s] = sl.xi;
+    urs[s] = sl.uroll;
+    seen[s] = false;
+  }
+  var F = vec3f(0.0);
+  var T = vec3f(0.0);
+  let myCell = demCellCoord(demCellOf(pI));
+  let diam = 2.0 * du.radius;
+  for (var dz = -1; dz <= 1; dz++) {
+  for (var dy = -1; dy <= 1; dy++) {
+  for (var dx = -1; dx <= 1; dx++) {
+    let cc = myCell + vec3i(dx, dy, dz);
+    if (any(cc < vec3i(0)) || any(cc >= vec3i(i32(du.gridDimX), i32(du.gridDimY), i32(du.gridDimZ)))) { continue; }
+    let cIdx = (cc.y * i32(du.gridDimZ) + cc.z) * i32(du.gridDimX) + cc.x;
+    let cnt = min(atomicLoad(&cellCount[cIdx]), du.cellCap);
+    for (var s2 = 0u; s2 < cnt; s2++) {
+      let j = cellSlots[u32(cIdx) * du.cellCap + s2];
+      if (j == i) { continue; }
+      let d = dPos[j].xyz - pI;
+      let dist2 = dot(d, d);
+      if (dist2 >= diam * diam || dist2 < 1e-12) { continue; }
+      let dist = sqrt(dist2);
+      let n = d / dist;
+      let overlap = diam - dist;
+      let genJ = u32(dAngVel[j].w + 0.5);
+      // Find the slot for partner j (generation must match — a
+      // respawned partner's old spring is void), else claim a
+      // free or stale slot, else count a slot overflow and
+      // evaluate the contact without history this substep.
+      var si = -1;
+      var freeSi = -1;
+      for (var s3 = 0; s3 < DEM_MAX_SLOTS; s3++) {
+        if (s3 >= K) { break; }
+        if (partners[s3] == i32(j) && gens[s3] == genJ) { si = s3; break; }
+        if (freeSi < 0 && (partners[s3] < 0 || (partners[s3] == i32(j) && gens[s3] != genJ))) { freeSi = s3; }
+      }
+      var xi = vec3f(0.0);
+      var ur = vec3f(0.0);
+      if (si >= 0) {
+        xi = xis[si]; ur = urs[si];
+      } else if (freeSi >= 0) {
+        si = freeSi;
+        partners[si] = i32(j);
+        gens[si] = genJ;
+      } else {
+        atomicAdd(&dStats[1], 1u);
+      }
+      var xiO = xi;
+      var urO = ur;
+      demContact(i, n, overlap, dVel[j].xyz, dAngVel[j].xyz,
+                 du.cnPair, du.ctPair, du.muS, du.radius * 0.5, du.rolling * du.radius,
+                 xi, ur, &F, &T, &xiO, &urO);
+      if (si >= 0) {
+        xis[si] = xiO; urs[si] = urO; seen[si] = true;
+      }
+    }
+  }}}
+  // Floor contact (boundary history slot 0, history included).
+  if (du.floorEnabled > 0.5 && pI.y - du.floorY < du.radius) {
+    var bh = dBHist[i * 2u];
+    var xiO = bh.xi;
+    var urO = bh.uroll;
+    demContact(i, vec3f(0.0, -1.0, 0.0), du.radius - (pI.y - du.floorY),
+               vec3f(0.0), vec3f(0.0),
+               du.cnFloor, du.ctFloor, du.muFloor, du.radius, 2.0 * du.rolling * du.radius,
+               bh.xi, bh.uroll, &F, &T, &xiO, &urO);
+    bh.xi = xiO; bh.uroll = urO;
+    dBHist[i * 2u] = bh;
+  }
+  // Bounce-sphere contact (boundary history slot 1).
+  let distC = length(pI);
+  if (du.bounceRadius > 0.0 && distC > du.bounceRadius - du.radius && distC > 1e-6) {
+    let n = pI / distC;
+    var bh = dBHist[i * 2u + 1u];
+    var xiO = bh.xi;
+    var urO = bh.uroll;
+    demContact(i, n, distC + du.radius - du.bounceRadius,
+               vec3f(0.0), vec3f(0.0),
+               du.cnFloor, du.ctFloor, du.muFloor, du.radius, 2.0 * du.rolling * du.radius,
+               bh.xi, bh.uroll, &F, &T, &xiO, &urO);
+    bh.xi = xiO; bh.uroll = urO;
+    dBHist[i * 2u + 1u] = bh;
+  }
+  // Free the slots whose contact ended this substep.
+  for (var s = 0; s < DEM_MAX_SLOTS; s++) {
+    if (s >= K) { break; }
+    if (partners[s] >= 0 && !seen[s]) {
+      partners[s] = -1;
+      xis[s] = vec3f(0.0);
+      urs[s] = vec3f(0.0);
+    }
+    dHist[i * u32(K) + u32(s)] = DemSlot(partners[s], gens[s], xis[s], urs[s]);
+  }
+  dForce[i] = vec4f(F, 0.0);
+  dTorque[i] = vec4f(T, 0.0);
+}
+`;
+
+const DEM_INTEGRATE_WGSL = DEM_COMMON_WGSL + /* wgsl */ `
+@group(0) @binding(1) var<storage, read_write> dPos    : array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> dVel    : array<vec4f>;
+@group(0) @binding(3) var<storage, read_write> dAngVel : array<vec4f>;
+@group(0) @binding(4) var<storage, read>       dForce  : array<vec4f>;
+@group(0) @binding(5) var<storage, read>       dTorque : array<vec4f>;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let i = gid.x;
+  if (i >= du.nPart) { return; }
+  var p = dPos[i];
+  var v = dVel[i].xyz;
+  var w = dAngVel[i].xyz;
+  var F = dForce[i].xyz;
+  var Tq = dTorque[i].xyz;
+  if (du.localDamping > 0.0) {
+    // Cundall local damping: oppose motion with alpha * |net
+    // force|, component-wise (the spike's form, verbatim).
+    F = F - du.localDamping * abs(F) * sign(v);
+    Tq = Tq - du.localDamping * abs(Tq) * sign(w);
+  }
+  v = v + (F / du.mass) * du.dt;
+  w = w + (Tq / du.inertia) * du.dt;
+  p = vec4f(p.xyz + v * du.dt, p.w);
+  dPos[i] = p;
+  dVel[i] = vec4f(v, dVel[i].w);
+  dAngVel[i] = vec4f(w, dAngVel[i].w);
+}
+`;
+
+const DEM_LIFECYCLE_WGSL = DEM_COMMON_WGSL + /* wgsl */ `
+@group(0) @binding(1) var<storage, read>       dPosIn  : array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> dVel    : array<vec4f>;
+@group(0) @binding(3) var<storage, read_write> dPosOut : array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> dAngVel : array<vec4f>;
+@group(0) @binding(5) var<storage, read_write> dHist   : array<DemSlot>;
+@group(0) @binding(6) var<storage, read_write> dBHist  : array<DemBoundaryHist>;
+@group(0) @binding(7) var<storage, read>       dPrevPos : array<vec4f>;
+struct DemSlot { partner : i32, gen : u32, xi : vec3f, uroll : vec3f, };
+struct DemBoundaryHist { xi : vec3f, uroll : vec3f, };
+
+fn demHash11(n: f32) -> f32 {
+  var p3 = fract(vec3f(n) * vec3f(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yxz + vec3f(33.33));
+  return fract((p3.x + p3.y) * p3.z);
+}
+fn demHash1Age(p: vec2f) -> f32 {
+  return demHash11(p.x * 127.1 + p.y * 311.7);
+}
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= du.nPart) { return; }
+  let texSizeF = f32(du.texSize);
+  let vUv = (vec2f(f32(idx % du.texSize), f32(idx / du.texSize)) + 0.5) / texSizeF;
+  var pos = dPosIn[idx].xyz;
+  var age = dPosIn[idx].w;
+  var respawned = false;
+  // Age advance + wrap respawn, ported verbatim from POS_WGSL
+  // (the same placement law and replica restart age).
+  if (du.ageEnabled > 0.5) {
+    age += du.delta;
+    if (age > du.ageMax) {
+      let r = du.bounceRadius * (0.05 + demHash1Age(vUv + vec2f(age)) * 0.9);
+      let th = demHash1Age(vUv + vec2f(1.3)) * 6.2832;
+      let phi = acos(2.0 * demHash1Age(vUv + vec2f(2.7)) - 1.0);
+      if (du.emitLightEnabled > 0.5) {
+        let jr = r * 0.05;
+        pos = vec3f(du.emitLightPosX, du.emitLightPosY, du.emitLightPosZ)
+          + vec3f(jr * sin(phi) * cos(th), jr * sin(phi) * sin(th), jr * cos(phi));
+      } else {
+        pos = vec3f(r * sin(phi) * cos(th), r * sin(phi) * sin(th), r * cos(phi));
+      }
+      var replicaIdx = 0.0;
+      if (du.ageReplicaCount > 1.5) {
+        replicaIdx = floor(f32(idx) * du.ageReplicaCount / max(texSizeF * texSizeF, 1.0));
+      }
+      age = replicaIdx * du.ageReplicaStep * du.ageMax + du.replicaAgeBase;
+      respawned = true;
+    }
+  }
+  var w = dAngVel[idx].xyz;
+  var gen = dAngVel[idx].w;
+  let clearAll = (du.flags & DEM_FLAG_CLEAR_HISTORY) != 0u;
+  var clearHist = clearAll || respawned;
+  if (!clearHist) {
+    // Teleport rule (design section 7): a displacement beyond
+    // one grain diameter since the previous frame's final
+    // position voids this particle's contact history.
+    let disp = length(dPosIn[idx].xyz - dPrevPos[idx].xyz);
+    if (disp > du.diameter) { clearHist = true; }
+  }
+  if (respawned) { gen += 1.0; w = vec3f(0.0); }
+  if (clearAll) { w = vec3f(0.0); }
+  if (clearHist) {
+    let K = u32(du.historySlots);
+    for (var s = 0u; s < K; s++) {
+      dHist[idx * K + s] = DemSlot(-1, 0u, vec3f(0.0), vec3f(0.0));
+    }
+    dBHist[idx * 2u] = DemBoundaryHist(vec3f(0.0), vec3f(0.0));
+    dBHist[idx * 2u + 1u] = DemBoundaryHist(vec3f(0.0), vec3f(0.0));
+  }
+  dAngVel[idx] = vec4f(w, gen);
+  // Product velocity (world per frame) -> physical (world/s).
+  let vPhys = dVel[idx].xyz * (du.speed * 60.0);
+  dVel[idx] = vec4f(vPhys, dVel[idx].w);
+  dPosOut[idx] = vec4f(pos, age);
+}
+`;
+
+const DEM_FINALIZE_WGSL = DEM_COMMON_WGSL + /* wgsl */ `
+@group(0) @binding(1) var<storage, read_write> dPos    : array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> dVel    : array<vec4f>;
+@group(0) @binding(3) var<storage, read_write> dAngVel : array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> dHist   : array<DemSlot>;
+@group(0) @binding(5) var<storage, read_write> dBHist  : array<DemBoundaryHist>;
+struct DemSlot { partner : i32, gen : u32, xi : vec3f, uroll : vec3f, };
+struct DemBoundaryHist { xi : vec3f, uroll : vec3f, };
+
+fn demHash1(p: vec2f) -> f32 {
+  var p3 = fract(vec3f(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + vec3f(33.33));
+  return fract((p3.x + p3.y) * p3.z);
+}
+fn demHash11(n: f32) -> f32 {
+  var p3 = fract(vec3f(n) * vec3f(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yxz + vec3f(33.33));
+  return fract((p3.x + p3.y) * p3.z);
+}
+fn demPaintHash(uv: vec2f, tick: f32) -> f32 {
+  return demHash11(dot(uv * 913.7 + vec2f(tick * 17.31, tick * 7.77), vec2f(127.1, 311.7)));
+}
+fn demGyroidField(p: vec3f, sc: vec3f, size: f32) -> f32 {
+  let q = (p - sc) * (3.14159265 / max(size, 1.0));
+  return sin(q.x) * cos(q.y) + sin(q.y) * cos(q.z) + sin(q.z) * cos(q.x);
+}
+fn demGyroidNormal(p: vec3f, sc: vec3f, size: f32) -> vec3f {
+  let q = (p - sc) * (3.14159265 / max(size, 1.0));
+  let g = vec3f(
+    cos(q.x) * cos(q.y) - sin(q.z) * sin(q.x),
+    cos(q.y) * cos(q.z) - sin(q.x) * sin(q.y),
+    cos(q.z) * sin(q.x) - sin(q.y) * sin(q.z)
+  );
+  return normalize(g + vec3f(0.0001));
+}
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let idx = gid.x;
+  if (idx >= du.nPart) { return; }
+  let texSizeF = f32(du.texSize);
+  let vUv = (vec2f(f32(idx % du.texSize), f32(idx / du.texSize)) + 0.5) / texSizeF;
+  var pos = dPos[idx].xyz;
+  let age = dPos[idx].w;
+
+  // Safety valves (positional, outside the substeps — the
+  // design keeps terrain / Mesh SDF as push-outs, not DEM
+  // contacts). Sphere clamp backstop: the legacy formula.
+  let dist = length(pos);
+  if (dist > du.bounceRadius * 1.05) { pos = normalize(pos) * du.bounceRadius * 1.05; }
+
+  // SDF collider push-out (same shapes as POS_WGSL).
+  if (du.sdfEnabled > 0.5) {
+    let sc = vec3f(du.sdfX, du.sdfY, du.sdfZ);
+    var sd = 0.0; var sn = vec3f(0.0);
+    if (du.sdfShape == 0) {
+      sd = length(pos - sc) - du.sdfSize;
+      sn = normalize(pos - sc + vec3f(0.0001));
+    } else if (du.sdfShape == 1) {
+      let q = abs(pos - sc) - vec3f(du.sdfSize);
+      sd = length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+      let dq = pos - sc; let aq = abs(dq); let dd = aq - vec3f(du.sdfSize);
+      if (max(dd.x, max(dd.y, dd.z)) > 0.0) { sn = normalize(max(dd, vec3f(0.0)) * sign(dq)); }
+      else if (dd.x > dd.y && dd.x > dd.z) { sn = vec3f(sign(dq.x), 0.0, 0.0); }
+      else if (dd.y > dd.z) { sn = vec3f(0.0, sign(dq.y), 0.0); }
+      else { sn = vec3f(0.0, 0.0, sign(dq.z)); }
+    } else if (du.sdfShape == 2) {
+      let lp = pos - sc; let r2 = du.sdfSize * 0.35;
+      let ringD = length(lp.xz) - du.sdfSize;
+      sd = length(vec2f(ringD, lp.y)) - r2;
+      let lxz = length(lp.xz) + 0.001;
+      sn = normalize(vec3f(lp.x / lxz * ringD, lp.y, lp.z / lxz * ringD));
+    } else if (du.sdfShape == 4) {
+      sd = demGyroidField(pos, sc, du.sdfSize) * du.sdfSize * 0.227;
+      sn = demGyroidNormal(pos, sc, du.sdfSize);
+    } else {
+      let yc = clamp(pos.y - sc.y, -du.sdfSize, du.sdfSize);
+      let dp = vec3f(pos.x - sc.x, pos.y - sc.y - yc, pos.z - sc.z);
+      sd = length(dp) - du.sdfSize * 0.4;
+      sn = normalize(dp + vec3f(0.0001));
+    }
+    if (sd < 0.0) { pos -= sn * sd; }
+  }
+
+  // Floor deep-penetration rescue (the sustained behaviour is
+  // the DEM floor contact's; this only rescues a centre that
+  // somehow crossed the plane itself).
+  if (du.floorEnabled > 0.5 && pos.y < du.floorY) {
+    pos.y = du.floorY + du.radius;
+  }
+
+  // Pointer paint (ported from POS_WGSL): painted particles
+  // teleport, so their contact history is voided.
+  if (du.mouseEnabled > 0.5 && du.mouseMode == 3) {
+    let paintTick = floor(du.time * 30.0);
+    let paintGate = demPaintHash(vUv, paintTick);
+    if (paintGate < du.mousePaintRate * 0.008) {
+      let paintOffset = vec3f(
+        demHash1(vUv + paintTick * 0.731),
+        demHash1(vUv + paintTick * 1.317 + 4.7),
+        demHash1(vUv + paintTick * 2.113 + 9.1)
+      ) - 0.5;
+      pos = vec3f(du.mousePosX, du.mousePosY, du.mousePosZ) + paintOffset * du.mouseRadius * 0.7;
+      let K = u32(du.historySlots);
+      for (var s = 0u; s < K; s++) {
+        dHist[idx * K + s] = DemSlot(-1, 0u, vec3f(0.0), vec3f(0.0));
+      }
+      dBHist[idx * 2u] = DemBoundaryHist(vec3f(0.0), vec3f(0.0));
+      dBHist[idx * 2u + 1u] = DemBoundaryHist(vec3f(0.0), vec3f(0.0));
+      dAngVel[idx] = vec4f(0.0, 0.0, 0.0, dAngVel[idx].w);
+    }
+  }
+
+  dPos[idx] = vec4f(pos, age);
+  // Physical (world/s) -> product velocity (world per frame);
+  // vel.w (the velocity pass's phase state) is preserved.
+  dVel[idx] = vec4f(dVel[idx].xyz / (du.speed * 60.0), dVel[idx].w);
+}
+`;
+
 // Fluid field advection (Phase 25): the WGSL twin of
 // FLUID_ADVECT_FRAG (components/gpgpuShaderSimulationFluid.ts) —
 // Semi-Lagrangian backward trace + 5-point Laplacian diffusion +
@@ -1965,6 +2524,10 @@ export type WebGPUComputeState = {
   /** Named-attribute bake mirror (Phase 28, 9-5): rgba32float,
    * texSize x texSize; zeros until the first bake upload. */
   attrTexture: GPUTexture;
+  /** Grains DEM engine (stage 2-1): lazily created on the
+   * first DEM-active step (see ensureGrainsDemState); a
+   * DEM-off state allocates nothing and dispatches nothing. */
+  dem: GrainsDemState | null;
 };
 
 type Flip3dPipelines = {
@@ -2016,6 +2579,62 @@ type Flip3dGridState = {
   framesStepped: number;
 };
 
+/** Grains DEM engine state (stage 2-1): the pass pipelines,
+ * the shared uniform block, and the solver-owned buffers
+ * (angular velocity + generation counter, per-particle contact
+ * history slots, boundary history, force / torque accumulation,
+ * the uniform grid, overflow statistics, and the previous-frame
+ * position snapshot the teleport rule compares against). The
+ * particle position / velocity themselves stay in the shared
+ * ping-pong buffers: the DEM passes work on posOut / velOut in
+ * place and the standard position pass is skipped while DEM is
+ * active. */
+type GrainsDemState = {
+  /** texSize | K | grid signature; a change recreates the state. */
+  signature: string;
+  pipelines: {
+    grid: GPUComputePipeline;
+    force: GPUComputePipeline;
+    integrate: GPUComputePipeline;
+    lifecycle: GPUComputePipeline;
+    finalize: GPUComputePipeline;
+  };
+  uBuf: GPUBuffer;
+  uData: Float32Array<ArrayBuffer>;
+  /** xyz = angular velocity, w = generation counter. */
+  angVelBuf: GPUBuffer;
+  histBuf: GPUBuffer;
+  boundaryHistBuf: GPUBuffer;
+  forceBuf: GPUBuffer;
+  torqueBuf: GPUBuffer;
+  cellCountBuf: GPUBuffer;
+  cellSlotsBuf: GPUBuffer;
+  statsBuf: GPUBuffer;
+  statsStagingBuf: GPUBuffer;
+  prevPosBuf: GPUBuffer;
+  /** Fixed-dt accumulator remainder (seconds). */
+  accumulator: number;
+  /** DEM was active on the previous stepped frame. */
+  wasActive: boolean;
+  /** Full history init pending (state creation / reactivation). */
+  needsInit: boolean;
+  /** Config-load epoch the history was initialised under. */
+  configEpoch: number;
+  /** How many full history inits have been dispatched. */
+  historyInits: number;
+  /** Previous-frame snapshot not yet seeded from posIn. */
+  prevSeeded: boolean;
+  qualityIndex: number;
+  qualityFramesPast: number;
+  qualityEmaMs: number;
+  qualityMaxSubsteps: number;
+  qualityMeasurePending: boolean;
+  framesStepped: number;
+  substepsLastFrame: number;
+  statsPending: boolean;
+  statsCache: { cellOverflow: number; slotOverflow: number };
+};
+
 // Vel uniform buffer: 164 f32 slots (see the WGSL Uniforms struct
 // field order; int fields are written through an Int32Array view).
 const VEL_UNIFORM_BYTES = 656;
@@ -2035,7 +2654,17 @@ export async function initWebGPUCompute(
     adapter = await navigator.gpu.requestAdapter();
     if (!adapter) return null;
   } catch { return null; }
-  const device = await adapter.requestDevice();
+  // Grains DEM precondition (stage 2-1 design, spike finding):
+  // the DEM force pass binds ~10 storage buffers, above the
+  // default limit on some adapters, so the storage limits are
+  // requested at the adapter maximum. Numerically inert for
+  // every existing pass.
+  const device = await adapter.requestDevice({
+    requiredLimits: {
+      maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage,
+      maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+    },
+  });
 
   const N = texSize * texSize;
   const byteSize = N * 4 * 4; // N * vec4f * 4 bytes
@@ -2237,6 +2866,7 @@ export async function initWebGPUCompute(
     flipDummyTex,
     attrTexture,
     flipGrid: null,
+    dem: null,
   };
 }
 
@@ -2309,6 +2939,110 @@ function destroyFlip3dGrid(grid: Flip3dGridState): void {
   grid.star.destroy();
   grid.coupleVelTex.destroy();
   grid.coupleBaseTex.destroy();
+}
+
+/** Create the Grains DEM state on first use (stage 2-1) and
+ * recreate it when its signature (pool size, history slots,
+ * grid, grain radius) changes — recreation is one of the full
+ * history-init triggers in the design's lifecycle rules, as are
+ * state creation itself and a DEM off->on transition (both set
+ * needsInit, which the next lifecycle dispatch consumes as the
+ * clear-history flag). Buffers are WebGPU zero-initialised; the
+ * init dispatch rewrites the history slots to the proper empty
+ * marker before any force pass reads them. */
+function ensureGrainsDemState(
+  state: WebGPUComputeState,
+  dem: WebGPUGrainsDemParams,
+): GrainsDemState | null {
+  const signature = [
+    state.texSize, dem.historySlots, dem.gridDim,
+    dem.cellSize.toFixed(4), dem.radius.toFixed(4),
+  ].join('|');
+  if (state.dem && state.dem.signature === signature) return state.dem;
+  if (state.dem) destroyGrainsDemState(state.dem);
+  const { device } = state;
+  const N = state.texSize * state.texSize;
+  const cells = dem.gridDim * dem.gridDim * dem.gridDim;
+  const makePipeline = (
+    code: string,
+    types: Array<'uniform' | 'read-only-storage' | 'storage'>,
+  ): GPUComputePipeline => {
+    const layout = device.createBindGroupLayout({
+      entries: types.map((type, binding) => ({
+        binding,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type },
+      })),
+    });
+    return device.createComputePipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+      compute: { module: device.createShaderModule({ code }), entryPoint: 'main' },
+    });
+  };
+  const RO = 'read-only-storage' as const;
+  const RW = 'storage' as const;
+  const UN = 'uniform' as const;
+  const storageOpts = (size: number): GPUBufferDescriptor => ({
+    size,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+  });
+  try {
+    state.dem = {
+      signature,
+      pipelines: {
+        grid: makePipeline(DEM_GRID_WGSL, [UN, RO, RW, RW, RW]),
+        force: makePipeline(DEM_FORCE_WGSL, [UN, RO, RO, RO, RW, RW, RW, RW, RW, RO, RW]),
+        integrate: makePipeline(DEM_INTEGRATE_WGSL, [UN, RW, RW, RW, RO, RO]),
+        lifecycle: makePipeline(DEM_LIFECYCLE_WGSL, [UN, RO, RW, RW, RW, RW, RW, RO]),
+        finalize: makePipeline(DEM_FINALIZE_WGSL, [UN, RW, RW, RW, RW, RW]),
+      },
+      uBuf: device.createBuffer({ size: DEM_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      uData: new Float32Array(new ArrayBuffer(DEM_UNIFORM_BYTES)),
+      angVelBuf: device.createBuffer(storageOpts(N * 16)),
+      histBuf: device.createBuffer(storageOpts(N * dem.historySlots * 48)),
+      boundaryHistBuf: device.createBuffer(storageOpts(N * 2 * 32)),
+      forceBuf: device.createBuffer(storageOpts(N * 16)),
+      torqueBuf: device.createBuffer(storageOpts(N * 16)),
+      cellCountBuf: device.createBuffer(storageOpts(cells * 4)),
+      cellSlotsBuf: device.createBuffer(storageOpts(cells * GRAINS_DEM_CELL_CAPACITY * 4)),
+      statsBuf: device.createBuffer(storageOpts(16)),
+      statsStagingBuf: device.createBuffer({ size: 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }),
+      prevPosBuf: device.createBuffer(storageOpts(N * 16)),
+      accumulator: 0,
+      wasActive: false,
+      needsInit: true,
+      configEpoch: -1,
+      historyInits: 0,
+      prevSeeded: false,
+      qualityIndex: 0,
+      qualityFramesPast: 0,
+      qualityEmaMs: 0,
+      qualityMaxSubsteps: dem.maxSubsteps,
+      qualityMeasurePending: false,
+      framesStepped: 0,
+      substepsLastFrame: 0,
+      statsPending: false,
+      statsCache: { cellOverflow: 0, slotOverflow: 0 },
+    };
+  } catch {
+    state.dem = null;
+    return null;
+  }
+  return state.dem;
+}
+
+function destroyGrainsDemState(dem: GrainsDemState): void {
+  dem.uBuf.destroy();
+  dem.angVelBuf.destroy();
+  dem.histBuf.destroy();
+  dem.boundaryHistBuf.destroy();
+  dem.forceBuf.destroy();
+  dem.torqueBuf.destroy();
+  dem.cellCountBuf.destroy();
+  dem.cellSlotsBuf.destroy();
+  dem.statsBuf.destroy();
+  dem.statsStagingBuf.destroy();
+  dem.prevPosBuf.destroy();
 }
 
 /** Create the resident fluid grid on first use and seed both
@@ -2452,6 +3186,88 @@ export interface WebGPUFlip3dParams {
   count: number;
 }
 
+/** Per-frame Grains DEM parameters for stepWebGPUCompute
+ * (stage 2-1): the resolved plan values from
+ * resolveGrainsDemPlan / resolveGrainsDemGrid
+ * (lib/gpgpuGrains.ts) plus the boundary / lifecycle subsets
+ * the DEM passes consume. `active` is the plan's verdict; the
+ * step additionally checks the device storage-buffer limit
+ * before running the DEM group. */
+export interface WebGPUGrainsDemParams {
+  active: boolean;
+  radius: number;
+  mass: number;
+  inertia: number;
+  kn: number;
+  kt: number;
+  cn: number;
+  ct: number;
+  muS: number;
+  muFloor: number;
+  rollingFriction: number;
+  localDamping: number;
+  historySlots: number;
+  maxSubsteps: number;
+  autoQuality: boolean;
+  cellSize: number;
+  gridDim: number;
+  floorEnabled: boolean;
+  floorY: number;
+  sdfEnabled: boolean;
+  sdfShape: number;
+  sdfX: number;
+  sdfY: number;
+  sdfZ: number;
+  sdfSize: number;
+  mouseEnabled: boolean;
+  mousePos: { x: number; y: number; z: number };
+  mouseRadius: number;
+  mouseMode: number;
+  mousePaintRate: number;
+  ageEnabled: boolean;
+  ageMax: number;
+  ageReplicaCount: number;
+  ageReplicaStep: number;
+  replicaAgeBase: number;
+  emitLightEnabled: boolean;
+  emitLightPos: { x: number; y: number; z: number };
+  /** Config-load epoch (lib/gpgpuGrains.ts): a change since the
+   * DEM state was initialised re-initialises the contact
+   * history (preset-switch rule, design section 7). Optional:
+   * absent means the epoch rule never fires. */
+  configEpoch?: number;
+}
+
+/** Live DEM statistics for diagnostics / gates: cumulative
+ * overflow counters (read back asynchronously; values lag by a
+ * frame or two) plus the CPU-side stepping state. */
+export interface WebGPUGrainsDemStats {
+  active: boolean;
+  framesStepped: number;
+  substepsLastFrame: number;
+  qualityMaxSubsteps: number;
+  cellOverflow: number;
+  slotOverflow: number;
+  historyInits: number;
+}
+
+export function getWebGPUGrainsDemStats(state: WebGPUComputeState): WebGPUGrainsDemStats {
+  const dem = state.dem;
+  if (!dem) {
+    return { active: false, framesStepped: 0, substepsLastFrame: 0, qualityMaxSubsteps: 0, cellOverflow: 0, slotOverflow: 0, historyInits: 0 };
+  }
+  return {
+    active: dem.wasActive,
+    framesStepped: dem.framesStepped,
+    substepsLastFrame: dem.substepsLastFrame,
+    qualityMaxSubsteps: dem.qualityMaxSubsteps,
+    cellOverflow: dem.statsCache.cellOverflow,
+    slotOverflow: dem.statsCache.slotOverflow,
+    historyInits: dem.historyInits,
+  };
+}
+
+
 /** The steering subset stepWebGPUCompute consumes (Phase 20). */
 export interface WebGPUSteeringParams {
   active: boolean;
@@ -2484,6 +3300,7 @@ export function stepWebGPUCompute(
   forces?: WebGPUForceParams | null,
   fluid?: WebGPUFluidParams | null,
   flip3d?: WebGPUFlip3dParams | null,
+  dem?: WebGPUGrainsDemParams | null,
 ): void {
   const { device, velPipeline, posPipeline, posABuf, posBBuf, velABuf, velBBuf, morphBuf, morphNormalBuf, initPosBuf, prevPosBuf, particleLifeBuf, velUBuf, posUBuf, texSize } = state;
   const N = texSize * texSize;
@@ -2924,22 +3741,124 @@ export function stepWebGPUCompute(
     enc.copyBufferToBuffer(posIn, 0, prevPosBuf, 0, N * 16);
   }
 
-  // Position pass
-  const posBG = device.createBindGroup({
-    layout: posPipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: { buffer: posUBuf } },
-      { binding: 1, resource: { buffer: posIn } },
-      { binding: 2, resource: { buffer: velOut } },
-      { binding: 3, resource: { buffer: posOut } },
-      { binding: 4, resource: { buffer: prevPosBuf } },
-    ],
-  });
-  const posPass = enc.beginComputePass();
-  posPass.setPipeline(posPipeline);
-  posPass.setBindGroup(0, posBG);
-  posPass.dispatchWorkgroups(Math.ceil(N / 64));
-  posPass.end();
+  // Grains DEM (stage 2-1): while the DEM plan is active and
+  // the device granted enough storage buffers, the DEM pass
+  // group REPLACES the standard position pass (the velocity
+  // pass above already ran; DEM owns the position/velocity
+  // update from here). Any failure to engage — no plan, low
+  // device limit, state creation failure, or an accumulator
+  // that yields zero substeps this frame — falls through to
+  // the standard position pass, so a DEM config can never end
+  // up with an unwritten posOut.
+  const demWanted = Boolean(dem && dem.active);
+  if (!demWanted && state.dem) state.dem.wasActive = false;
+  let demRan = false;
+  let demStatsCopyQueued = false;
+  if (demWanted && state.device.limits.maxStorageBuffersPerShaderStage >= DEM_REQUIRED_STORAGE_BUFFERS) {
+    const ds = ensureGrainsDemState(state, dem!);
+    if (ds) {
+      // Preset-switch rule (design section 7): a config load
+      // since the last stepped frame re-initialises the DEM
+      // history, even when the load did not reseed particles.
+      if (dem!.configEpoch !== undefined && dem!.configEpoch !== ds.configEpoch) {
+        ds.configEpoch = dem!.configEpoch;
+        ds.needsInit = true;
+      }
+      const cap = dem!.autoQuality
+        ? Math.min(dem!.maxSubsteps, ds.qualityMaxSubsteps)
+        : dem!.maxSubsteps;
+      const acc = grainsDemAccumulate(ds.accumulator, delta, cap);
+      ds.accumulator = acc.accumulator;
+      if (acc.substeps > 0) {
+        const u = ds.uData;
+        const u32 = new Uint32Array(u.buffer);
+        const uI = new Int32Array(u.buffer);
+        const clearHistory = ds.needsInit || !ds.wasActive;
+        u32[0] = texSize; u32[1] = N; u32[2] = dem!.historySlots; u32[3] = GRAINS_DEM_CELL_CAPACITY;
+        u32[4] = dem!.gridDim; u32[5] = dem!.gridDim; u32[6] = dem!.gridDim;
+        u32[7] = clearHistory ? 1 : 0;
+        u[8] = GRAINS_DEM_DT; u[9] = dem!.kn; u[10] = dem!.kt;
+        u[11] = dem!.cn; u[12] = dem!.cn * Math.SQRT2; u[13] = dem!.ct; u[14] = dem!.ct * Math.SQRT2;
+        u[15] = dem!.muS; u[16] = dem!.muFloor; u[17] = dem!.rollingFriction;
+        u[18] = dem!.radius; u[19] = dem!.mass; u[20] = dem!.inertia;
+        u[21] = dem!.localDamping; u[22] = dem!.cellSize;
+        const gridSpan = dem!.gridDim * dem!.cellSize;
+        u[23] = -gridSpan / 2; u[24] = -gridSpan / 2; u[25] = -gridSpan / 2;
+        u[26] = delta; u[27] = speed; u[28] = bounceRadius; u[29] = time;
+        u[30] = dem!.floorEnabled ? 1 : 0; u[31] = dem!.floorY;
+        u[32] = dem!.sdfEnabled ? 1 : 0; uI[33] = dem!.sdfShape;
+        u[34] = dem!.sdfX; u[35] = dem!.sdfY; u[36] = dem!.sdfZ; u[37] = dem!.sdfSize;
+        u[38] = dem!.mouseEnabled ? 1 : 0; uI[39] = dem!.mouseMode;
+        u[40] = dem!.mousePos.x; u[41] = dem!.mousePos.y; u[42] = dem!.mousePos.z;
+        u[43] = dem!.mouseRadius; u[44] = dem!.mousePaintRate;
+        u[45] = dem!.ageEnabled ? 1 : 0; u[46] = dem!.ageMax;
+        u[47] = dem!.ageReplicaCount; u[48] = dem!.ageReplicaStep; u[49] = dem!.replicaAgeBase;
+        u[50] = dem!.emitLightEnabled ? 1 : 0;
+        u[51] = dem!.emitLightPos.x; u[52] = dem!.emitLightPos.y; u[53] = dem!.emitLightPos.z;
+        u[54] = dem!.radius * 2;
+        device.queue.writeBuffer(ds.uBuf, 0, u);
+
+        const P = ds.pipelines;
+        const dispatchDem = (pipeline: GPUComputePipeline, bufs: GPUBuffer[], groups: number) => {
+          const bg = device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: { buffer: ds.uBuf } },
+              ...bufs.map((buffer, i) => ({ binding: i + 1, resource: { buffer } })),
+            ],
+          });
+          const pass = enc.beginComputePass();
+          pass.setPipeline(pipeline);
+          pass.setBindGroup(0, bg);
+          pass.dispatchWorkgroups(groups);
+          pass.end();
+        };
+        const particleGroups256 = Math.ceil(N / 256);
+        if (!ds.prevSeeded) {
+          enc.copyBufferToBuffer(posIn, 0, ds.prevPosBuf, 0, N * 16);
+          ds.prevSeeded = true;
+        }
+        dispatchDem(P.lifecycle, [posIn, velOut, posOut, ds.angVelBuf, ds.histBuf, ds.boundaryHistBuf, ds.prevPosBuf], particleGroups256);
+        for (let s = 0; s < acc.substeps; s++) {
+          enc.clearBuffer(ds.cellCountBuf);
+          dispatchDem(P.grid, [posOut, ds.cellCountBuf, ds.cellSlotsBuf, ds.statsBuf], particleGroups256);
+          dispatchDem(P.force, [posOut, velOut, ds.angVelBuf, ds.histBuf, ds.boundaryHistBuf, ds.forceBuf, ds.torqueBuf, ds.cellCountBuf, ds.cellSlotsBuf, ds.statsBuf], Math.ceil(N / 128));
+          dispatchDem(P.integrate, [posOut, velOut, ds.angVelBuf, ds.forceBuf, ds.torqueBuf], particleGroups256);
+        }
+        dispatchDem(P.finalize, [posOut, velOut, ds.angVelBuf, ds.histBuf, ds.boundaryHistBuf], particleGroups256);
+        enc.copyBufferToBuffer(posOut, 0, ds.prevPosBuf, 0, N * 16);
+        demRan = true;
+        ds.framesStepped += 1;
+        ds.substepsLastFrame = acc.substeps;
+        if (clearHistory) ds.historyInits += 1;
+        ds.needsInit = false;
+        ds.wasActive = true;
+        if (!ds.statsPending && ds.statsStagingBuf.mapState === 'unmapped') {
+          enc.copyBufferToBuffer(ds.statsBuf, 0, ds.statsStagingBuf, 0, 16);
+          demStatsCopyQueued = true;
+        }
+      }
+    }
+  }
+
+  // Position pass (skipped while the DEM group ran).
+  if (!demRan) {
+    const posBG = device.createBindGroup({
+      layout: posPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: posUBuf } },
+        { binding: 1, resource: { buffer: posIn } },
+        { binding: 2, resource: { buffer: velOut } },
+        { binding: 3, resource: { buffer: posOut } },
+        { binding: 4, resource: { buffer: prevPosBuf } },
+      ],
+    });
+    const posPass = enc.beginComputePass();
+    posPass.setPipeline(posPipeline);
+    posPass.setBindGroup(0, posBG);
+    posPass.dispatchWorkgroups(Math.ceil(N / 64));
+    posPass.end();
+  }
 
   // FLIP 3D (Phase 26): publish this step's projected / base
   // pair into the coupling textures — after the velocity pass
@@ -2966,7 +3885,42 @@ export function stepWebGPUCompute(
   if (!state.readbackPending && state.stagingBuf.mapState === 'unmapped') {
     enc.copyBufferToBuffer(posOut, 0, state.stagingBuf, 0, N * 16);
   }
+  const demQualityT0 = demRan && dem && dem.autoQuality ? performance.now() : 0;
   device.queue.submit([enc.finish()]);
+
+  // Grains DEM: consume the queued overflow-stats readback and
+  // feed the auto-quality ladder with the GPU queue drain time
+  // (submit -> work-done). Both are fire-and-forget; failures
+  // keep the last known values / ladder level.
+  if (demStatsCopyQueued && state.dem) {
+    const ds = state.dem;
+    ds.statsPending = true;
+    ds.statsStagingBuf.mapAsync(GPUMapMode.READ, 0, 16)
+      .then(() => {
+        const view = new Uint32Array(ds.statsStagingBuf.getMappedRange(0, 16));
+        ds.statsCache.cellOverflow = view[0];
+        ds.statsCache.slotOverflow = view[1];
+        ds.statsStagingBuf.unmap();
+      })
+      .catch(() => { /* keep the last known values */ })
+      .finally(() => { ds.statsPending = false; });
+  }
+  if (demQualityT0 > 0 && state.dem && dem && !state.dem.qualityMeasurePending) {
+    const ds = state.dem;
+    const keyMax = dem.maxSubsteps;
+    ds.qualityMeasurePending = true;
+    device.queue.onSubmittedWorkDone()
+      .then(() => {
+        const ms = performance.now() - demQualityT0;
+        ds.qualityEmaMs = ds.qualityEmaMs === 0 ? ms : ds.qualityEmaMs * 0.9 + ms * 0.1;
+        const stepQ = grainsDemQualityStep(ds.qualityIndex, ds.qualityEmaMs, ds.qualityFramesPast, keyMax);
+        ds.qualityIndex = stepQ.ladderIndex;
+        ds.qualityFramesPast = stepQ.framesPast;
+        ds.qualityMaxSubsteps = stepQ.maxSubsteps;
+      })
+      .catch(() => { /* the ladder keeps its level */ })
+      .finally(() => { ds.qualityMeasurePending = false; });
+  }
 }
 
 /** Async readback of position data. Returns Float32Array (RGBA per particle).
@@ -3042,4 +3996,5 @@ export function destroyWebGPUCompute(state: WebGPUComputeState): void {
   state.flipDummyTex.destroy();
   state.attrTexture.destroy();
   if (state.flipGrid) destroyFlip3dGrid(state.flipGrid);
+  if (state.dem) destroyGrainsDemState(state.dem);
 }

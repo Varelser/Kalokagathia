@@ -830,3 +830,294 @@ export function grainsDensityCorrection(
   if (len > cap) { const k = cap / len; cx *= k; cy *= k; cz *= k; }
   return { x: cx, y: cy, z: cz };
 }
+
+// ---------------------------------------------------------------------
+// Grains DEM engine (Period: solver research stage 2-1, foundation).
+//
+// A second, force-based grains solver that runs on the WGSL compute
+// route only, as an additional engine next to the position-based
+// legacy solver (which stays on the WebGL route). Design of record:
+// kalokagathia-pro/GRAINS_DEM_INTEGRATION_DESIGN.md. The physics core
+// (per-contact history slots, rolling resistance, three dispatches
+// per substep) is ported from the proven off-product spike
+// (kalokagathia-pro/dem-spike). Numbers here are the spike's proven
+// operating point rescaled by particle mass; per-scene calibration
+// of the angle is stage 2-2 work, not this foundation's.
+// ---------------------------------------------------------------------
+
+/** Capability feature name for the DEM engine (webgpuComputeFoundation). */
+export const GRAINS_DEM_FEATURE = 'grains-dem';
+
+/**
+ * Fixed DEM substep length in seconds. The spike ran S=64 substeps
+ * per 1/60 s frame, i.e. dt = 1/(60*64); the accumulator in the
+ * runtime reproduces exactly that rate regardless of display rate.
+ */
+export const GRAINS_DEM_DT = 1 / (60 * 64);
+/** Spike reference radius: at R = 0.5 the particle mass is 1. */
+export const GRAINS_DEM_REFERENCE_RADIUS = 0.5;
+/** Spike normal stiffness at unit mass (kn = 20000 * mass). */
+export const GRAINS_DEM_KN_PER_MASS = 20000;
+/** Floor sliding friction is the pair friction times this (spike: 0.5 / 0.4). */
+export const GRAINS_DEM_FLOOR_MU_RATIO = 1.25;
+/** Boundary rolling cap is twice the pair cap (spike: lever R vs R/2). */
+export const GRAINS_DEM_BOUNDARY_ROLLING_SCALE = 2;
+
+/**
+ * Config-load epoch for the DEM lifecycle rules (design section
+ * 7): every config load (preset apply, instant or morph) bumps
+ * this counter, and the runtime compares it against the epoch
+ * the DEM state was initialised under; a mismatch re-initialises
+ * the contact history, so a preset switch never inherits the
+ * previous scene's history even when nothing reseeds. Plain
+ * parameter edits do NOT bump it (history survives those).
+ */
+let grainsDemConfigEpoch = 0;
+export function bumpGrainsDemConfigEpoch(): void {
+  grainsDemConfigEpoch += 1;
+}
+export function grainsDemConfigEpochValue(): number {
+  return grainsDemConfigEpoch;
+}
+
+/**
+ * ReposeAngle compatibility shim for the DEM engine (design
+ * section 4): the legacy solver turns the angle key into a
+ * friction override via mu = tan(angle), but a DEM pile's angle
+ * is emergent from BOTH the sliding friction and the rolling
+ * resistance, so the DEM plan instead looks the pair up in this
+ * calibration table (measured on the real GPU in the product's
+ * own unit system, stage 2-2) and interpolates linearly.
+ * Angles outside the table clamp to the end rows. While the
+ * angle key is set (> 0) it overrides both the Friction key and
+ * the DemRollingFriction key, mirroring the legacy priority.
+ */
+export interface GrainsDemReposeRow {
+  angleDeg: number;
+  muS: number;
+  rollingFriction: number;
+}
+export const GRAINS_DEM_REPOSE_TABLE: readonly GrainsDemReposeRow[] = [
+  // Calibrated on the iMac real GPU in the gate scene (stage
+  // 2-2, spike-yardstick surface angle, settled segment means).
+  // Measured anchors: (0.1, 0) -> 17.3 deg, (0.3, 0.02) ->
+  // 19.8 deg, (0.6, 0.46) -> 33.3 deg; the 25 / 30 rows
+  // interpolate the measured mu = 0.4 rolling ladder
+  // (0.05 -> 22.9, 0.1 -> 26.7, 0.2 -> 29.1, 0.46 -> 30.9 deg).
+  // The gate scene's reachable range is ~17-33 deg: the 15 row
+  // sits at the measured floor and the 40 row at the measured
+  // ceiling (both rows resolve to the nearest measured combo).
+  { angleDeg: 15, muS: 0.1, rollingFriction: 0 },
+  { angleDeg: 20, muS: 0.3, rollingFriction: 0.02 },
+  { angleDeg: 25, muS: 0.4, rollingFriction: 0.08 },
+  { angleDeg: 30, muS: 0.4, rollingFriction: 0.33 },
+  { angleDeg: 35, muS: 0.6, rollingFriction: 0.46 },
+  { angleDeg: 40, muS: 0.6, rollingFriction: 0.46 },
+];
+
+/** Table lookup with end clamping and linear interpolation. */
+export function grainsDemReposeLookup(angleDeg: number): { muS: number; rollingFriction: number } {
+  const table = GRAINS_DEM_REPOSE_TABLE;
+  const a = Math.min(Math.max(angleDeg, table[0].angleDeg), table[table.length - 1].angleDeg);
+  for (let i = 0; i < table.length - 1; i++) {
+    const lo = table[i];
+    const hi = table[i + 1];
+    if (a <= hi.angleDeg) {
+      const t = hi.angleDeg > lo.angleDeg ? (a - lo.angleDeg) / (hi.angleDeg - lo.angleDeg) : 0;
+      return {
+        muS: lo.muS + (hi.muS - lo.muS) * t,
+        rollingFriction: lo.rollingFriction + (hi.rollingFriction - lo.rollingFriction) * t,
+      };
+    }
+  }
+  const last = table[table.length - 1];
+  return { muS: last.muS, rollingFriction: last.rollingFriction };
+}
+/** Grid: candidates kept per cell (spike-proven). */
+export const GRAINS_DEM_CELL_CAPACITY = 16;
+/** Grid: per-axis dimension cap (same discipline as the WebGL grid). */
+export const GRAINS_DEM_GRID_MAX_DIM = 256;
+/** Grid: total cell cap; the cell size grows past this point. */
+export const GRAINS_DEM_GRID_MAX_CELLS = 524288;
+/** Auto-quality ladder: max substeps per frame, high to low. */
+export const GRAINS_DEM_QUALITY_LADDER: readonly number[] = [64, 48, 32];
+/** Auto-quality: downgrade when the GPU queue EMA exceeds this (ms). */
+export const GRAINS_DEM_QUALITY_DOWN_MS = 20;
+/** Auto-quality: upgrade again when the EMA falls below this (ms). */
+export const GRAINS_DEM_QUALITY_UP_MS = 12;
+/** Auto-quality: consecutive frames past a threshold before a switch. */
+export const GRAINS_DEM_QUALITY_HYSTERESIS_FRAMES = 45;
+
+export interface GrainsDemPlan {
+  /** True when the DEM engine owns grains this frame. */
+  active: boolean;
+  /** Why the engine is inactive (diagnostics; empty when active). */
+  inactiveReason: string;
+  /** Resolved grain radius (world units) = Size / 2. */
+  radius: number;
+  /** Particle mass: volume-scaled from the spike's unit mass. */
+  mass: number;
+  /** Solid-sphere inertia (2/5) m R^2. */
+  inertia: number;
+  /** Normal stiffness kn = 20000 * mass * DemStiffness. */
+  kn: number;
+  /** Tangential stiffness kt = kn * DemTangentialRatio. */
+  kt: number;
+  /** Normal damping from the restitution key (zeta-clamped). */
+  cn: number;
+  /** Tangential damping (spike: same as normal). */
+  ct: number;
+  /** Pair sliding friction (ReposeAngle shim overrides, section 4). */
+  muS: number;
+  /** Floor sliding friction. */
+  muFloor: number;
+  /** Rolling torque cap coefficient: cap = coeff * R * F_n (pairs). */
+  rollingFriction: number;
+  /** Cundall local damping coefficient (0 = off). */
+  localDamping: number;
+  /** History slots per particle (K). */
+  historySlots: number;
+  /** Max substeps per frame from the key (before auto-quality). */
+  maxSubsteps: number;
+  /** Auto-quality downgrade enabled. */
+  autoQuality: boolean;
+}
+
+function clampDem(value: number, lo: number, hi: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.min(hi, Math.max(lo, value)) : fallback;
+}
+
+/**
+ * The single DEM resolution point (design section 4): every other
+ * layer asks this plan whether DEM is active and with what numbers.
+ * Exclusions (design section 6): rigid bodies and Verlet own the
+ * particle state, so DEM resolves off; the legacy Pile plan resolves
+ * off implicitly because a DEM-active config routes to WebGPU where
+ * the pile does not exist.
+ */
+export function resolveGrainsDemPlan(config: ParticleConfig): GrainsDemPlan {
+  const radius = Math.max(Math.max(0.001, config.gpgpuGrainsSize || 0) / 2, 0.001);
+  const volumeScale = Math.pow(radius / GRAINS_DEM_REFERENCE_RADIUS, 3);
+  const mass = Math.max(volumeScale, 1e-6);
+  const inertia = 0.4 * mass * radius * radius;
+  const stiffnessMul = clampDem(config.gpgpuGrainsDemStiffness, 0.05, 20, 1);
+  const kn = GRAINS_DEM_KN_PER_MASS * mass * stiffnessMul;
+  const kt = kn * clampDem(config.gpgpuGrainsDemTangentialRatio, 0, 2, 0.5);
+  // Friction resolution (design section 4): while ReposeAngle
+  // is set, the DEM shim's calibration table supplies BOTH the
+  // sliding friction and the rolling coefficient (the legacy
+  // tan() override in effectiveGrainsFriction stays in force
+  // for the legacy solvers only). Otherwise the Friction key
+  // and the DemRollingFriction key rule, as in stage 2-1.
+  const reposeDeg = Math.max(0, Math.min(GRAINS_REPOSE_MAX_DEG, config.gpgpuGrainsReposeAngle ?? 0));
+  const reposeShim = reposeDeg > 0 ? grainsDemReposeLookup(reposeDeg) : null;
+  const muS = reposeShim ? reposeShim.muS : Math.max(0, config.gpgpuGrainsFriction || 0);
+  const restitution = clampDem(config.gpgpuGrainsRestitution, 0, 0.99, 0);
+  // Tsuji damping ratio from restitution; e = 0 clamps to critical.
+  const logE = Math.log(Math.max(restitution, 1e-3));
+  const zeta = restitution <= 0
+    ? 1
+    : Math.min(1, -logE / Math.sqrt(Math.PI * Math.PI + logE * logE));
+  const cn = 2 * zeta * Math.sqrt(kn * mass * 0.5);
+  const plan: GrainsDemPlan = {
+    active: false,
+    inactiveReason: '',
+    radius,
+    mass,
+    inertia,
+    kn,
+    kt,
+    cn,
+    ct: cn,
+    muS,
+    muFloor: muS * GRAINS_DEM_FLOOR_MU_RATIO,
+    rollingFriction: reposeShim
+      ? reposeShim.rollingFriction
+      : clampDem(config.gpgpuGrainsDemRollingFriction, 0, 4, 0.46),
+    localDamping: clampDem(config.gpgpuGrainsDemLocalDamping, 0, 0.9, 0),
+    historySlots: Math.round(clampDem(config.gpgpuGrainsDemHistorySlots, 4, 16, 12)),
+    maxSubsteps: Math.round(clampDem(config.gpgpuGrainsDemSubsteps, 8, 128, 64)),
+    autoQuality: config.gpgpuGrainsDemAutoQuality !== false,
+  };
+  if (!config.gpgpuGrainsEnabled) { plan.inactiveReason = 'grains-off'; return plan; }
+  if (!config.gpgpuGrainsDemEnabled) { plan.inactiveReason = 'dem-off'; return plan; }
+  if (config.gpgpuRigidEnabled === true) { plan.inactiveReason = 'rigid-exclusive'; return plan; }
+  if (config.gpgpuVerletEnabled === true) { plan.inactiveReason = 'verlet-exclusive'; return plan; }
+  plan.active = true;
+  return plan;
+}
+
+/**
+ * Uniform grid resolution for the DEM passes: the cell is never
+ * smaller than a grain diameter (so the 27-cell search is complete),
+ * dimensions are capped per axis, and the cell grows further when
+ * the total cell count would exceed the cap (design section 2).
+ */
+export function resolveGrainsDemGrid(
+  diameter: number, bounceRadius: number,
+): { cellSize: number; dimX: number; dimY: number; dimZ: number; cellCount: number } {
+  const gd = Math.max(diameter, 0.001);
+  const span = Math.max(bounceRadius, 1) * 2 * 1.05 + gd * 2;
+  let cellSize = Math.max(gd, span / GRAINS_DEM_GRID_MAX_DIM);
+  let dim = Math.max(1, Math.ceil(span / cellSize));
+  // Total-cell cap: cap the per-axis dimension directly (a
+  // cbrt grow factor under-compensates through the ceil). The
+  // trigger implies span / maxDim > gd, so the cell stays at
+  // least one diameter wide and the 27-cell search stays
+  // complete.
+  const maxDimByCells = Math.floor(Math.cbrt(GRAINS_DEM_GRID_MAX_CELLS));
+  if (dim > maxDimByCells) {
+    cellSize = span / maxDimByCells;
+    dim = maxDimByCells;
+  }
+  return { cellSize, dimX: dim, dimY: dim, dimZ: dim, cellCount: dim * dim * dim };
+}
+
+/**
+ * Fixed-dt accumulator: how many DEM substeps to run for a frame of
+ * `delta` seconds. Whole substeps only; time that would exceed the
+ * per-frame cap is dropped, never stretched (design section 2).
+ * Returns the substeps to run and the accumulator remainder.
+ */
+export function grainsDemAccumulate(
+  accumulator: number, delta: number, maxSubsteps: number,
+): { substeps: number; accumulator: number } {
+  const cap = Math.max(1, Math.floor(maxSubsteps));
+  let acc = Math.max(0, accumulator) + Math.min(Math.max(delta, 0), 0.1);
+  let substeps = Math.floor(acc / GRAINS_DEM_DT);
+  if (substeps > cap) {
+    substeps = cap;
+    acc = 0; // drop the excess rather than stretching dt
+  } else {
+    acc -= substeps * GRAINS_DEM_DT;
+  }
+  return { substeps, accumulator: acc };
+}
+
+/**
+ * Auto-quality ladder step (pure): given the current ladder index,
+ * the GPU-time EMA and the count of consecutive frames the EMA has
+ * been past the relevant threshold, decide the next index and the
+ * reset counter. Downgrades engage at the key's max substeps.
+ */
+export function grainsDemQualityStep(
+  ladderIndex: number, emaMs: number, framesPast: number, keyMaxSubsteps: number,
+): { ladderIndex: number; framesPast: number; maxSubsteps: number } {
+  const ladder = GRAINS_DEM_QUALITY_LADDER;
+  let idx = Math.min(Math.max(ladderIndex, 0), ladder.length - 1);
+  let past = framesPast;
+  if (emaMs > GRAINS_DEM_QUALITY_DOWN_MS && idx < ladder.length - 1) {
+    past += 1;
+    if (past >= GRAINS_DEM_QUALITY_HYSTERESIS_FRAMES) { idx += 1; past = 0; }
+  } else if (emaMs < GRAINS_DEM_QUALITY_UP_MS && idx > 0) {
+    past += 1;
+    if (past >= GRAINS_DEM_QUALITY_HYSTERESIS_FRAMES) { idx -= 1; past = 0; }
+  } else {
+    past = 0;
+  }
+  return {
+    ladderIndex: idx,
+    framesPast: past,
+    maxSubsteps: Math.min(keyMaxSubsteps, ladder[idx]),
+  };
+}
