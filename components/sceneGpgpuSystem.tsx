@@ -23,6 +23,8 @@ import {
   captureDiagnosticState,
   type DiagnosticFrameContext,
 } from './gpgpuDiagnosticAov';
+import { refreshWebGPUDiagSnapshot } from '../lib/webgpuCompute';
+import { describeWebGPUDiagSnapshot } from '../lib/webgpuDiagSnapshot';
 import { HashGridSampler } from './gpgpuHashGridDiagnostic';
 import {
   resolveGpgpuAudioBlast,
@@ -194,6 +196,27 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       captureState: () => {
         const ctx = diagFrameRef.current;
         if (!ctx) return { error: 'no-frame-yet' };
+        // Stage 0 S7 (plan A1): on the WebGPU route the WebGL
+        // targets below are never advanced by the simulation,
+        // so reading them returns frozen pre-route snapshots
+        // (alternating A/B). Serve the latest completed WebGPU
+        // diagnostic snapshot instead, with freshness metadata;
+        // while none exists, report not-ready rather than
+        // returning the frozen targets. The call also kicks the
+        // next snapshot refresh, so repeated calls converge to
+        // fresh data. The WebGL path below is unchanged.
+        if (ctx.route === 'webgpu') {
+          const wg = ctx.webgpuState;
+          if (!wg) return { error: 'diag-snapshot-not-ready', route: 'webgpu' as const, available: false, stale: true, frame: null, capturedAtMs: null, latestFrame: 0 };
+          refreshWebGPUDiagSnapshot(wg);
+          const meta = describeWebGPUDiagSnapshot(wg.diagSnapshot, wg.diagFrameCounter, performance.now());
+          const snap = wg.diagSnapshot;
+          if (!snap) return { error: 'diag-snapshot-not-ready', ...meta };
+          const state = captureDiagnosticState(snap.positions, snap.velocities, ctx.texSize, ctx.ageMax);
+          const stats: Record<string, unknown> = {};
+          for (const [id, r] of Object.entries(state.passes)) stats[id] = r.stats;
+          return { texSize: state.texSize, stateHash: state.stateHash, stats, ...meta };
+        }
         const count = ctx.texSize * ctx.texSize;
         if (!diagPosBufRef.current || diagPosBufRef.current.length !== count * 4) {
           diagPosBufRef.current = new Float32Array(count * 4);
@@ -1879,6 +1902,11 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       texSize,
       ageMax: config.gpgpuAgeMax,
       extent: config.gpgpuBounceRadius,
+      // Stage 0 S7 (plan A1): publish the route so the ?diag=1
+      // hook's captureState can avoid the frozen WebGL targets
+      // on the WebGPU route.
+      route: routing.useWebGPU ? 'webgpu' : 'webgl',
+      webgpuState: routing.useWebGPU ? webgpuStateRef.current : null,
       fluidFinal: fluidFinalTargetRef.current,
       fluidFinalName:
         fluidFinalTargetRef.current === fluidRTARef.current

@@ -37,6 +37,7 @@ import {
   grainsDemAccumulate,
   grainsDemQualityStep,
 } from './gpgpuGrains';
+import type { WebGPUDiagSnapshot } from './webgpuDiagSnapshot';
 
 const VEL_WGSL = /* wgsl */ `
 struct Uniforms {
@@ -2716,6 +2717,11 @@ export type WebGPUComputeState = {
   velUBuf: GPUBuffer;
   posUBuf: GPUBuffer;
   stagingBuf: GPUBuffer;
+  /** Velocity twin of stagingBuf (Stage 0 S7, plan A1): the
+   * diagnostic readback pair needs velocities as well as
+   * positions. MAP_READ staging only — not a compute binding,
+   * so it does not consume a storage-buffer slot. */
+  velStagingBuf: GPUBuffer;
   texSize: number;
   /** 事前確保済みuniformバッファ（毎フレームの new Float32Array を避ける） */
   velUData: Float32Array<ArrayBuffer>;
@@ -2724,6 +2730,21 @@ export type WebGPUComputeState = {
   lastParticleLifeMatrix: Float32Array | null;
   /** stagingBuf への readback mapAsync が未解決の間は true */
   readbackPending: boolean;
+  /** velStagingBuf への readback mapAsync が未解決の間は true */
+  velReadbackPending: boolean;
+  /** Diagnostic snapshot support (Stage 0 S7, plan A1).
+   * diagFrameCounter counts stepWebGPUCompute calls (1-based).
+   * diagStagedFrame is the frame whose pos+vel pair currently
+   * sits in stagingBuf/velStagingBuf (-1 while the two staging
+   * buffers hold different frames, i.e. no valid pair).
+   * diagSnapshot is the latest completed pair readback. */
+  diagFrameCounter: number;
+  diagStagedFrame: number;
+  diagSnapshot: WebGPUDiagSnapshot | null;
+  /** A diagnostic pair mapAsync is in flight. While true both
+   * readbackPending flags are held so the display mirror cannot
+   * touch either staging buffer mid-pair. */
+  diagReadbackPending: boolean;
   /** Fluid field (Phase 25): the advection pipeline (third
    * pipeline), its uniform block, and the resident ping-pong
    * grid. The grid buffers are created lazily on the first
@@ -2953,6 +2974,14 @@ export async function initWebGPUCompute(
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
   });
 
+  // Velocity readback staging (Stage 0 S7, plan A1): same
+  // allocation rule as stagingBuf; filled from velOut alongside
+  // the position copy in stepWebGPUCompute.
+  const velStagingBuf = device.createBuffer({
+    size: byteSize,
+    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+  });
+
   // Uniform buffers (vel 592 bytes incl. the Phase X3 force
   // fields and the Phase 20 steering set, pos 96 bytes)
   const velUBuf = device.createBuffer({ size: VEL_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -3091,8 +3120,10 @@ export async function initWebGPUCompute(
   return {
     device, velPipeline, posPipeline, posABuf, posBBuf, velABuf, velBBuf,
     morphBuf, morphNormalBuf, initPosBuf, prevPosBuf, particleLifeBuf,
-    velUBuf, posUBuf, stagingBuf, texSize, velUData, posUData,
+    velUBuf, posUBuf, stagingBuf, velStagingBuf, texSize, velUData, posUData,
     lastParticleLifeMatrix: null, readbackPending: false,
+    velReadbackPending: false,
+    diagFrameCounter: 0, diagStagedFrame: -1, diagSnapshot: null, diagReadbackPending: false,
     fluidPipeline, fluidUBuf, fluidUData, fluidDummyBuf,
     fluidABuf: null, fluidBBuf: null, fluidPingIsA: true,
     flip3dPipelines, flipUBuf, flipUData, flipVelUBuf, flipVelUData,
@@ -3572,6 +3603,12 @@ export function stepWebGPUCompute(
 ): void {
   const { device, velPipeline, posPipeline, posABuf, posBBuf, velABuf, velBBuf, morphBuf, morphNormalBuf, initPosBuf, prevPosBuf, particleLifeBuf, velUBuf, posUBuf, texSize } = state;
   const N = texSize * texSize;
+
+  // Diagnostic snapshot support (Stage 0 S7, plan A1): number
+  // this step so the staging copies at the end of the step can
+  // be attributed to it as a pos+vel pair.
+  state.diagFrameCounter += 1;
+  const diagStepFrame = state.diagFrameCounter;
 
   const posIn  = pingIsA ? posABuf : posBBuf;
   const posOut = pingIsA ? posBBuf : posABuf;
@@ -4175,8 +4212,23 @@ export function stepWebGPUCompute(
 
   // Copy posOut to staging for readback
   // mapAsync が未解決 / mapped の間は stagingBuf を触らない
-  if (!state.readbackPending && state.stagingBuf.mapState === 'unmapped') {
+  const posCopyQueued = !state.readbackPending && state.stagingBuf.mapState === 'unmapped';
+  if (posCopyQueued) {
     enc.copyBufferToBuffer(posOut, 0, state.stagingBuf, 0, N * 16);
+  }
+  // Copy velOut to its staging twin (Stage 0 S7, plan A1), with
+  // the same guard. The diagnostic snapshot is only ever taken
+  // from a step where BOTH copies were queued, so the pair is
+  // guaranteed to come from the same simulation step; a step
+  // that queues exactly one copy invalidates the staged pair.
+  const velCopyQueued = !state.velReadbackPending && state.velStagingBuf.mapState === 'unmapped';
+  if (velCopyQueued) {
+    enc.copyBufferToBuffer(velOut, 0, state.velStagingBuf, 0, N * 16);
+  }
+  if (posCopyQueued && velCopyQueued) {
+    state.diagStagedFrame = diagStepFrame;
+  } else if (posCopyQueued !== velCopyQueued) {
+    state.diagStagedFrame = -1;
   }
   const demQualityT0 = demRan && dem && dem.autoQuality ? performance.now() : 0;
   device.queue.submit([enc.finish()]);
@@ -4267,6 +4319,103 @@ export async function readbackWebGPUPositions(
   return Promise.race([mapPromise, timeoutPromise]);
 }
 
+/** Async readback of velocity data. Returns Float32Array (RGBA per particle).
+ *  Mirror of readbackWebGPUPositions over velStagingBuf.
+ *  lastResult: 前フレームのデータ。mapAsyncがタイムアウトした場合に返すフォールバック。
+ */
+export async function readbackWebGPUVelocities(
+  state: WebGPUComputeState,
+  lastResult?: Float32Array,
+): Promise<Float32Array> {
+  const N = state.texSize * state.texSize;
+  const TIMEOUT_MS = 100;
+  const fallback = lastResult ?? new Float32Array(N * 4);
+
+  if (state.velReadbackPending || state.velStagingBuf.mapState !== 'unmapped') {
+    return fallback;
+  }
+
+  state.velReadbackPending = true;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let timedOut = false;
+
+  const mapPromise = state.velStagingBuf.mapAsync(GPUMapMode.READ, 0, N * 16)
+    .then(() => {
+      if (timedOut) {
+        if (state.velStagingBuf.mapState === 'mapped') {
+          state.velStagingBuf.unmap();
+        }
+        return fallback;
+      }
+
+      const range = state.velStagingBuf.getMappedRange(0, N * 16);
+      const result = new Float32Array(range.slice(0));
+      state.velStagingBuf.unmap();
+      return result;
+    })
+    .catch(() => fallback)
+    .finally(() => {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+      state.velReadbackPending = false;
+    });
+
+  const timeoutPromise = new Promise<Float32Array>((resolve) => {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      resolve(fallback);
+    }, TIMEOUT_MS);
+  });
+
+  return Promise.race([mapPromise, timeoutPromise]);
+}
+
+/** Diagnostic snapshot refresh (Stage 0 S7, plan A1).
+ * Fire-and-forget: when the staging buffers hold a pos+vel pair
+ * from one step (diagStagedFrame >= 0) that has not been read
+ * back yet, map both and store the pair as state.diagSnapshot.
+ * Unlike the display-mirror readbacks above, this maps the two
+ * buffers directly and stores NO fallback data — a failed or
+ * contended attempt simply keeps the previous snapshot, so a
+ * snapshot's frame label always names the step its bytes came
+ * from. Both readbackPending flags are held for the duration so
+ * nothing else can touch either staging buffer mid-pair.
+ * Called from the ?diag=1 hook's captureState(); a no-op cost
+ * when no hook asks. */
+export function refreshWebGPUDiagSnapshot(state: WebGPUComputeState): void {
+  if (state.diagReadbackPending) return;
+  const frame = state.diagStagedFrame;
+  if (frame < 0) return;
+  if (state.diagSnapshot && state.diagSnapshot.frame === frame) return;
+  if (state.readbackPending || state.velReadbackPending) return;
+  if (state.stagingBuf.mapState !== 'unmapped' || state.velStagingBuf.mapState !== 'unmapped') return;
+
+  const N = state.texSize * state.texSize;
+  state.diagReadbackPending = true;
+  state.readbackPending = true;
+  state.velReadbackPending = true;
+
+  const mapOne = (buf: GPUBuffer): Promise<Float32Array> =>
+    buf.mapAsync(GPUMapMode.READ, 0, N * 16).then(() => {
+      const range = buf.getMappedRange(0, N * 16);
+      const out = new Float32Array(range.slice(0));
+      buf.unmap();
+      return out;
+    });
+
+  Promise.all([mapOne(state.stagingBuf), mapOne(state.velStagingBuf)])
+    .then(([positions, velocities]) => {
+      state.diagSnapshot = { positions, velocities, frame, capturedAtMs: performance.now() };
+    })
+    .catch(() => { /* keep the previous snapshot */ })
+    .finally(() => {
+      state.diagReadbackPending = false;
+      state.readbackPending = false;
+      state.velReadbackPending = false;
+    });
+}
+
 export function destroyWebGPUCompute(state: WebGPUComputeState): void {
   state.posABuf.destroy();
   state.posBBuf.destroy();
@@ -4280,6 +4429,7 @@ export function destroyWebGPUCompute(state: WebGPUComputeState): void {
   state.velUBuf.destroy();
   state.posUBuf.destroy();
   state.stagingBuf.destroy();
+  state.velStagingBuf.destroy();
   state.fluidUBuf.destroy();
   state.fluidDummyBuf.destroy();
   state.fluidABuf?.destroy();

@@ -385,6 +385,17 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uMeshSdfVoxelWorld: { value: 0.0 },
       uMeshSdfBounce:     { value: 0.5 },
       uMeshSdfFriction:   { value: 0.25 },
+      // Multi-body mesh SDF: disabled + count 0 is the exact
+      // legacy path (the atlas reuses uMeshSdfTex above).
+      uMeshSdfMultiEnabled: { value: false },
+      uMeshSdfBodyCount:    { value: 0 },
+      uMeshSdfBodyOrigin:   { value: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)] },
+      uMeshSdfBodyDomain:   { value: [1.0, 1.0, 1.0, 1.0] },
+      uMeshSdfBodyScale:    { value: [0.0, 0.0, 0.0, 0.0] },
+      uMeshSdfBodyVoxel:    { value: [0.0, 0.0, 0.0, 0.0] },
+      uMeshSdfBodyCell:     { value: [new THREE.Vector2(0, 0), new THREE.Vector2(0, 0), new THREE.Vector2(0, 0), new THREE.Vector2(0, 0)] },
+      uMeshSdfBodyBounce:   { value: [0.5, 0.5, 0.5, 0.5] },
+      uMeshSdfBodyFriction: { value: [0.25, 0.25, 0.25, 0.25] },
       uFloorEnabled:    { value: false },
       uFloorY:          { value: -110.0 },
       uFloorBounce:     { value: 0.62 },
@@ -502,6 +513,15 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uMeshSdfDomainWorld: { value: 1.0 },
       uMeshSdfScale:      { value: 0.0 },
       uMeshSdfVoxelWorld: { value: 0.0 },
+      // Multi-body mesh SDF: disabled + count 0 is the exact
+      // legacy path (the atlas reuses uMeshSdfTex above).
+      uMeshSdfMultiEnabled: { value: false },
+      uMeshSdfBodyCount:    { value: 0 },
+      uMeshSdfBodyOrigin:   { value: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)] },
+      uMeshSdfBodyDomain:   { value: [1.0, 1.0, 1.0, 1.0] },
+      uMeshSdfBodyScale:    { value: [0.0, 0.0, 0.0, 0.0] },
+      uMeshSdfBodyVoxel:    { value: [0.0, 0.0, 0.0, 0.0] },
+      uMeshSdfBodyCell:     { value: [new THREE.Vector2(0, 0), new THREE.Vector2(0, 0), new THREE.Vector2(0, 0), new THREE.Vector2(0, 0)] },
       // Floor bounce + pointer paint (B3)
       uTime:          { value: 0 },
       uFloorEnabled:  { value: false },

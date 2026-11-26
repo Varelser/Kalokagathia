@@ -319,6 +319,19 @@ const VEL_FRAG_PREAMBLE_MID = /* glsl */ `  // Vellum (Phase AR): the pressure f
   uniform float uMeshSdfVoxelWorld;
   uniform float uMeshSdfBounce;
   uniform float uMeshSdfFriction;
+  // Multi-body mesh SDF: up to 4 bodies packed as a 2x2 atlas in
+  // the SAME uMeshSdfTex slot (no extra sampler). Guarded by
+  // uMeshSdfMultiEnabled; when false the arrays are never read
+  // and the single-body path above is exact.
+  uniform bool  uMeshSdfMultiEnabled;
+  uniform int   uMeshSdfBodyCount;
+  uniform vec3  uMeshSdfBodyOrigin[4];
+  uniform float uMeshSdfBodyDomain[4];
+  uniform float uMeshSdfBodyScale[4];
+  uniform float uMeshSdfBodyVoxel[4];
+  uniform vec2  uMeshSdfBodyCell[4];
+  uniform float uMeshSdfBodyBounce[4];
+  uniform float uMeshSdfBodyFriction[4];
   uniform bool  uFloorEnabled;
   uniform float uFloorY;
   uniform float uFloorBounce;

@@ -186,7 +186,7 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // collider bake in the sim passes, which the WGSL passes do
   // not implement — declaring it routes the session to WebGL.
   if (config.gpgpuTerrainColliderEnabled) features.push('terrain-collider');
-  if (config.gpgpuMeshSdfEnabled) features.push('mesh-sdf-collider');
+  if (config.gpgpuMeshSdfEnabled || config.gpgpuMeshSdfMultiEnabled) features.push('mesh-sdf-collider');
   // Emission curve (Phase AJ): the respawn gate lives in the
   // WebGL position pass only — declaring it routes to WebGL.
   if (config.gpgpuEmissionCurveEnabled) features.push('emission-curve');

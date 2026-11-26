@@ -1160,6 +1160,34 @@ export interface ParticleConfigGpgpu {
   gpgpuMeshSdfResolution: number;
   gpgpuMeshSdfBounce: number;
   gpgpuMeshSdfFriction: number;
+  // Multi-body mesh SDF (atlas of up to 4 bodies in the single
+  // uMeshSdfTex slot; body 1 is the single collider above, bodies
+  // 2-4 have their own OBJ source / offset / scale). Master switch
+  // off = the single-body path is untouched. See
+  // lib/meshSdfCollider.ts (buildMeshSdfAtlas).
+  gpgpuMeshSdfMultiEnabled: boolean;
+  gpgpuMeshSdfBody2ObjSource: string;
+  gpgpuMeshSdfBody2OffsetX: number;
+  gpgpuMeshSdfBody2OffsetY: number;
+  gpgpuMeshSdfBody2OffsetZ: number;
+  /** Multiplier of meshSdfWorldScale(config) for this body. */
+  gpgpuMeshSdfBody2Scale: number;
+  gpgpuMeshSdfBody2Bounce: number;
+  gpgpuMeshSdfBody2Friction: number;
+  gpgpuMeshSdfBody3ObjSource: string;
+  gpgpuMeshSdfBody3OffsetX: number;
+  gpgpuMeshSdfBody3OffsetY: number;
+  gpgpuMeshSdfBody3OffsetZ: number;
+  gpgpuMeshSdfBody3Scale: number;
+  gpgpuMeshSdfBody3Bounce: number;
+  gpgpuMeshSdfBody3Friction: number;
+  gpgpuMeshSdfBody4ObjSource: string;
+  gpgpuMeshSdfBody4OffsetX: number;
+  gpgpuMeshSdfBody4OffsetY: number;
+  gpgpuMeshSdfBody4OffsetZ: number;
+  gpgpuMeshSdfBody4Scale: number;
+  gpgpuMeshSdfBody4Bounce: number;
+  gpgpuMeshSdfBody4Friction: number;
   // Point cache playback (Phase BZ): an imported numbered-PLY
   // point cache (lib/pointCache.ts) follows the shared sequence
   // clock and drives the attribute point cloud frame by frame

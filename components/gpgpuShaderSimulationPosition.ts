@@ -74,6 +74,15 @@ const POS_FRAG_MID = /* glsl */ `  // Rigid bodies (Phase AU): while the CPU rig
   uniform float uMeshSdfDomainWorld;
   uniform float uMeshSdfScale;
   uniform float uMeshSdfVoxelWorld;
+  // Multi-body mesh SDF: same atlas contract as the velocity
+  // pass (no extra sampler; guarded by uMeshSdfMultiEnabled).
+  uniform bool  uMeshSdfMultiEnabled;
+  uniform int   uMeshSdfBodyCount;
+  uniform vec3  uMeshSdfBodyOrigin[4];
+  uniform float uMeshSdfBodyDomain[4];
+  uniform float uMeshSdfBodyScale[4];
+  uniform float uMeshSdfBodyVoxel[4];
+  uniform vec2  uMeshSdfBodyCell[4];
   uniform bool  uFloorEnabled;
   uniform float uFloorY;
   // Terrain collider (Phase AI): the derived collider bake
@@ -291,6 +300,37 @@ const POS_FRAG_MID = /* glsl */ `  // Rigid bodies (Phase AU): while the CPU rig
       meshSdfDistance(p + vec3(e, 0.0, 0.0)) - meshSdfDistance(p - vec3(e, 0.0, 0.0)),
       meshSdfDistance(p + vec3(0.0, e, 0.0)) - meshSdfDistance(p - vec3(0.0, e, 0.0)),
       meshSdfDistance(p + vec3(0.0, 0.0, e)) - meshSdfDistance(p - vec3(0.0, 0.0, e)));
+    float gl = length(g);
+    return gl > 0.0001 ? g / gl : vec3(0.0, 1.0, 0.0);
+  }
+
+  // Multi-body mesh SDF: identical copy of the velocity pass's
+  // per-body atlas query (cell-clamped; outside the body domain
+  // the query is +1e6, no collision).
+  float meshSdfBodyDistance(int i, vec3 p) {
+    float domain = uMeshSdfBodyDomain[i];
+    if (domain <= 0.0) return 1.0e6;
+    vec3 q = (p - uMeshSdfBodyOrigin[i]) / domain;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) return 1.0e6;
+    float eps = 0.5 * uMeshSdfBodyVoxel[i] / domain;
+    vec3 qc = clamp(q, vec3(eps), vec3(1.0 - eps));
+    vec3 aq = vec3(uMeshSdfBodyCell[i] + qc.xy * 0.5, qc.z);
+    return texture2D(uMeshSdfTex, aq).r * uMeshSdfBodyScale[i];
+  }
+  vec3 meshSdfBodyNormal(int i, vec3 p) {
+    float e = uMeshSdfBodyVoxel[i] * 0.5;
+    // Defect fix 2026-11-27: clamp the taps into the domain box
+    // (shrunk by e) before sampling. Outside the domain the
+    // distance function returns 1e6, so an unclamped tap within
+    // e of a face collapsed the gradient onto the face axis —
+    // reachable at small scales, where the velocity pass already
+    // engages at sd < 2 near the boundary.
+    vec3 nLo = uMeshSdfBodyOrigin[i] + vec3(e);
+    vec3 nHi = max(nLo, uMeshSdfBodyOrigin[i] + vec3(uMeshSdfBodyDomain[i] - e));
+    vec3 g = vec3(
+      meshSdfBodyDistance(i, clamp(p + vec3(e, 0.0, 0.0), nLo, nHi)) - meshSdfBodyDistance(i, clamp(p - vec3(e, 0.0, 0.0), nLo, nHi)),
+      meshSdfBodyDistance(i, clamp(p + vec3(0.0, e, 0.0), nLo, nHi)) - meshSdfBodyDistance(i, clamp(p - vec3(0.0, e, 0.0), nLo, nHi)),
+      meshSdfBodyDistance(i, clamp(p + vec3(0.0, 0.0, e), nLo, nHi)) - meshSdfBodyDistance(i, clamp(p - vec3(0.0, 0.0, e), nLo, nHi)));
     float gl = length(g);
     return gl > 0.0001 ? g / gl : vec3(0.0, 1.0, 0.0);
   }
@@ -527,6 +567,23 @@ const POS_FRAG_TAIL = /* glsl */ `    // Collision life (Phase 15): contact book
     // baked mesh grid, after the analytic SDF push-out (both may
     // be live). Outside the domain the query is +1e6, so this is
     // a no-op there.
+    // Multi-body mesh SDF — min synthesis: evaluate every body,
+    // push out once along the deepest body's normal. While multi
+    // is live the passes leave uMeshSdfEnabled false.
+    if (uMeshSdfMultiEnabled) {
+      float bestSd = 1.0e6;
+      int bestBody = -1;
+      for (int bi = 0; bi < 4; bi++) {
+        if (bi >= uMeshSdfBodyCount) break;
+        float bsd = meshSdfBodyDistance(bi, pos);
+        if (bsd < bestSd) { bestSd = bsd; bestBody = bi; }
+      }
+      if (bestBody >= 0 && bestSd < 0.0) {
+        pos -= meshSdfBodyNormal(bestBody, pos) * bestSd;
+        if (collisionTrack) collisionContact = true;
+      }
+    }
+
     if (uMeshSdfEnabled) {
       float msd = meshSdfDistance(pos);
       if (msd < 0.0) {

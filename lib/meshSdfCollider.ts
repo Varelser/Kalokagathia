@@ -639,6 +639,144 @@ export function queryMeshSdf(grid: MeshSdfGrid, px: number, py: number, pz: numb
 }
 
 // ---------------------------------------------------------------------------
+// Multi-body atlas (up to 4 bodies in one texture)
+//
+// Bodies are packed as a 2×2 tile atlas: atlas dimensions are
+// (2R, 2R, R) for the shared bake resolution R, body i (0-based)
+// occupies the cell whose voxel offset is ((i%2)·R, floor(i/2)·R, 0).
+// Sampling a body clamps the in-cell fractional coordinates to the
+// cell's own texel centres, so trilinear feet never reach into a
+// neighbouring cell (the CPU twin of the shader's cell clamp).
+
+export interface MeshSdfAtlasGrid {
+  /** Signed distances in NORMALISED units, x-major over the atlas
+   *  (index = x + W·(y + H·z)). Cells whose body is absent are
+   *  filled with a large positive distance. */
+  data: Float32Array;
+  resolution: number;
+  atlasWidth: number;
+  atlasHeight: number;
+  atlasDepth: number;
+  grids: (MeshSdfGrid | null)[];
+}
+
+/** Voxel offset of body `bodyIndex`'s cell inside the atlas. */
+export function meshSdfAtlasCellOffset(
+  resolution: number,
+  bodyIndex: number,
+): [number, number, number] {
+  return [(bodyIndex % 2) * resolution, Math.floor(bodyIndex / 2) * resolution, 0];
+}
+
+/** Pack up to 4 baked grids into the 2×2 atlas. Pure (no THREE). */
+export function buildMeshSdfAtlas(grids: (MeshSdfGrid | null)[]): MeshSdfAtlasGrid {
+  const list = grids.slice(0, 4);
+  const ref = list.find((g) => g !== null) ?? null;
+  if (!ref) {
+    return {
+      data: new Float32Array(0),
+      resolution: 0,
+      atlasWidth: 0,
+      atlasHeight: 0,
+      atlasDepth: 0,
+      grids: list,
+    };
+  }
+  const r = ref.resolution;
+  const w = 2 * r;
+  const h = 2 * r;
+  const d = r;
+  const data = new Float32Array(w * h * d);
+  data.fill(ref.sideNorm);
+  for (let i = 0; i < list.length; i += 1) {
+    const grid = list[i];
+    if (!grid || grid.resolution !== r) continue;
+    const [ox, oy] = meshSdfAtlasCellOffset(r, i);
+    const g = grid.grid;
+    for (let z = 0; z < r; z += 1) {
+      for (let y = 0; y < r; y += 1) {
+        const srcRow = r * (y + r * z);
+        const dstRow = (ox) + w * ((oy + y) + h * z);
+        for (let x = 0; x < r; x += 1) {
+          data[dstRow + x] = g[srcRow + x];
+        }
+      }
+    }
+  }
+  return { data, resolution: r, atlasWidth: w, atlasHeight: h, atlasDepth: d, grids: list };
+}
+
+/**
+ * CPU twin of the shader's per-body atlas query: trilinear sample
+ * of body `bodyIndex` at a NORMALISED position in that body's
+ * domain. Outside the domain returns +Infinity. The fractional
+ * coordinates are clamped to the body's own texel centres, which
+ * is the cell-clamp guard (no bleed from neighbouring cells). For
+ * a 1-body atlas this matches `queryMeshSdf` exactly.
+ */
+export function queryMeshSdfAtlas(
+  atlas: MeshSdfAtlasGrid,
+  bodyIndex: number,
+  px: number,
+  py: number,
+  pz: number,
+): number {
+  const grid = atlas.grids[bodyIndex];
+  if (!grid || atlas.resolution <= 0) return Infinity;
+  const n = grid.resolution;
+  const hv = grid.voxelNorm;
+  const origin = -grid.sideNorm / 2;
+  const fx = (px - origin) / hv - 0.5;
+  const fy = (py - origin) / hv - 0.5;
+  const fz = (pz - origin) / hv - 0.5;
+  if (fx < -0.5 || fy < -0.5 || fz < -0.5 || fx > n - 0.5 || fy > n - 0.5 || fz > n - 0.5) {
+    return Infinity;
+  }
+  const cx = Math.min(Math.max(fx, 0), n - 1);
+  const cy = Math.min(Math.max(fy, 0), n - 1);
+  const cz = Math.min(Math.max(fz, 0), n - 1);
+  const x0 = Math.floor(cx);
+  const y0 = Math.floor(cy);
+  const z0 = Math.floor(cz);
+  const x1 = Math.min(x0 + 1, n - 1);
+  const y1 = Math.min(y0 + 1, n - 1);
+  const z1 = Math.min(z0 + 1, n - 1);
+  const tx = cx - x0;
+  const ty = cy - y0;
+  const tz = cz - z0;
+  const [ox, oy] = meshSdfAtlasCellOffset(n, bodyIndex);
+  const w = atlas.atlasWidth;
+  const hh = atlas.atlasHeight;
+  const data = atlas.data;
+  const at = (x: number, y: number, z: number) => data[(ox + x) + w * ((oy + y) + hh * z)];
+  const c00 = at(x0, y0, z0) * (1 - tx) + at(x1, y0, z0) * tx;
+  const c10 = at(x0, y1, z0) * (1 - tx) + at(x1, y1, z0) * tx;
+  const c01 = at(x0, y0, z1) * (1 - tx) + at(x1, y0, z1) * tx;
+  const c11 = at(x0, y1, z1) * (1 - tx) + at(x1, y1, z1) * tx;
+  const c0 = c00 * (1 - ty) + c10 * ty;
+  const c1 = c01 * (1 - ty) + c11 * ty;
+  return c0 * (1 - tz) + c1 * tz;
+}
+
+/**
+ * CPU model of the shader's min synthesis: the index of the
+ * smallest (deepest) distance, or -1 when every distance is
+ * non-finite (outside every domain = no collision).
+ */
+export function meshSdfMinBodyIndex(distances: readonly number[]): number {
+  let best = Infinity;
+  let bestIndex = -1;
+  for (let i = 0; i < distances.length; i += 1) {
+    const d = distances[i];
+    if (Number.isFinite(d) && d < best) {
+      best = d;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+// ---------------------------------------------------------------------------
 // Texture + async bake management
 
 export type MeshSdfFormat = 'r16f' | 'float32';
@@ -804,5 +942,332 @@ export function getMeshSdfBakeStatus(config: ParticleConfig): MeshSdfBakeStatus 
     format: data.format,
     triangleCount: data.grid.triangleCount,
     minFeatureVoxels: data.grid.minFeatureVoxels,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Multi-body async bake + atlas texture management
+//
+// Body 1 is the single-body collider (morph source / placement /
+// Bounce / Friction). Bodies 2-4 carry their own OBJ source; their
+// world centre is the configured offset, and their world scale is
+// meshSdfWorldScale(config) × their Scale key. A body whose bake
+// is refused (open mesh etc.) is dropped on its own — the rest
+// still form an atlas. While multi is enabled but the atlas is
+// not ready the passes use NO mesh collider at all (the single
+// body is not substituted), so a half-baked state can never show
+// a partial collider set.
+
+export interface MeshSdfMultiBodyData {
+  /** Original body number (0 = body 1 … 3 = body 4). */
+  bodyIndex: number;
+  origin: [number, number, number];
+  domainWorld: number;
+  scale: number;
+  voxelWorld: number;
+  bounce: number;
+  friction: number;
+  /** Cell origin in atlas UV space. */
+  cellUv: [number, number];
+}
+
+export interface MeshSdfMultiColliderData {
+  texture: THREE.Data3DTexture;
+  atlas: MeshSdfAtlasGrid;
+  format: MeshSdfFormat;
+  bodies: MeshSdfMultiBodyData[];
+}
+
+interface MultiBodySpec {
+  source: string;
+  center: [number, number, number];
+  scaleFactor: number;
+  bounce: number;
+  friction: number;
+}
+
+function multiBodySpecs(config: ParticleConfig): MultiBodySpec[] {
+  return [
+    {
+      source: config.gpgpuMorphObjSource || '',
+      center: [0, 0, 0],
+      scaleFactor: 1,
+      bounce: config.gpgpuMeshSdfBounce ?? 0.5,
+      friction: config.gpgpuMeshSdfFriction ?? 0.25,
+    },
+    {
+      source: config.gpgpuMeshSdfBody2ObjSource || '',
+      center: [
+        config.gpgpuMeshSdfBody2OffsetX ?? 0,
+        config.gpgpuMeshSdfBody2OffsetY ?? 0,
+        config.gpgpuMeshSdfBody2OffsetZ ?? 0,
+      ],
+      scaleFactor: config.gpgpuMeshSdfBody2Scale ?? 1,
+      bounce: config.gpgpuMeshSdfBody2Bounce ?? 0.5,
+      friction: config.gpgpuMeshSdfBody2Friction ?? 0.25,
+    },
+    {
+      source: config.gpgpuMeshSdfBody3ObjSource || '',
+      center: [
+        config.gpgpuMeshSdfBody3OffsetX ?? 0,
+        config.gpgpuMeshSdfBody3OffsetY ?? 0,
+        config.gpgpuMeshSdfBody3OffsetZ ?? 0,
+      ],
+      scaleFactor: config.gpgpuMeshSdfBody3Scale ?? 1,
+      bounce: config.gpgpuMeshSdfBody3Bounce ?? 0.5,
+      friction: config.gpgpuMeshSdfBody3Friction ?? 0.25,
+    },
+    {
+      source: config.gpgpuMeshSdfBody4ObjSource || '',
+      center: [
+        config.gpgpuMeshSdfBody4OffsetX ?? 0,
+        config.gpgpuMeshSdfBody4OffsetY ?? 0,
+        config.gpgpuMeshSdfBody4OffsetZ ?? 0,
+      ],
+      scaleFactor: config.gpgpuMeshSdfBody4Scale ?? 1,
+      bounce: config.gpgpuMeshSdfBody4Bounce ?? 0.5,
+      friction: config.gpgpuMeshSdfBody4Friction ?? 0.25,
+    },
+  ];
+}
+
+/** The multi collider can only exist while the parent mesh SDF
+ *  key AND the multi master key are on and at least one body has
+ *  a source text. (Defect fix 2026-11-27: the parent check was
+ *  missing, so turning the parent off in the UI — which hides
+ *  the multi controls — left the multi collider live.) */
+export function isMeshSdfMultiRequested(config: ParticleConfig): boolean {
+  if (!config.gpgpuMeshSdfEnabled) return false;
+  if (!config.gpgpuMeshSdfMultiEnabled) return false;
+  return multiBodySpecs(config).some((s) => s.source.trim().length > 0);
+}
+
+interface MeshSdfMultiEntry {
+  status: 'baking' | 'ready' | 'refused';
+  progress: number;
+  sessions: (MeshSdfBakeSession | null)[];
+  data: { texture: THREE.Data3DTexture; atlas: MeshSdfAtlasGrid; format: MeshSdfFormat } | null;
+  body1Failure: MeshSdfBakeFailure | null;
+  failures: (MeshSdfBakeFailure | null)[];
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+const multiEntries = new Map<string, MeshSdfMultiEntry>();
+const MAX_MULTI_ENTRIES = 4;
+
+function multiEntryKey(config: ParticleConfig): string {
+  const hashes = multiBodySpecs(config).map((s) => meshSdfSourceHash(s.source));
+  return `multi|${hashes.join('|')}|${meshSdfResolution(config)}`;
+}
+
+function makeMeshSdfAtlasTexture(
+  atlas: MeshSdfAtlasGrid,
+): { texture: THREE.Data3DTexture; atlas: MeshSdfAtlasGrid; format: MeshSdfFormat } {
+  const { atlasWidth: w, atlasHeight: h, atlasDepth: d } = atlas;
+  const count = w * h * d;
+  try {
+    const half = new Uint16Array(count);
+    for (let i = 0; i < count; i += 1) {
+      half[i] = THREE.DataUtils.toHalfFloat(atlas.data[i]);
+    }
+    const texture = new THREE.Data3DTexture(half, w, h, d);
+    texture.format = THREE.RedFormat;
+    texture.type = THREE.HalfFloatType;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.wrapR = THREE.ClampToEdgeWrapping;
+    texture.generateMipmaps = false;
+    texture.unpackAlignment = 1;
+    texture.needsUpdate = true;
+    return { texture, atlas, format: 'r16f' };
+  } catch {
+    const texture = new THREE.Data3DTexture(atlas.data, w, h, d);
+    texture.format = THREE.RedFormat;
+    texture.type = THREE.FloatType;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.wrapR = THREE.ClampToEdgeWrapping;
+    texture.generateMipmaps = false;
+    texture.unpackAlignment = 1;
+    texture.needsUpdate = true;
+    return { texture, atlas, format: 'float32' };
+  }
+}
+
+function startMultiEntry(config: ParticleConfig, key: string): MeshSdfMultiEntry {
+  const specs = multiBodySpecs(config);
+  const resolution = meshSdfResolution(config);
+  const entry: MeshSdfMultiEntry = {
+    status: 'baking',
+    progress: 0,
+    sessions: [null, null, null, null],
+    data: null,
+    body1Failure: null,
+    failures: [null, null, null, null],
+    timer: null,
+  };
+  multiEntries.set(key, entry);
+  if (multiEntries.size > MAX_MULTI_ENTRIES) {
+    for (const [k, e] of multiEntries) {
+      if (multiEntries.size <= MAX_MULTI_ENTRIES) break;
+      if (k !== key && e.status !== 'baking') {
+        if (e.timer) clearTimeout(e.timer);
+        e.data?.texture.dispose();
+        multiEntries.delete(k);
+      }
+    }
+  }
+  let anySession = false;
+  for (let i = 0; i < 4; i += 1) {
+    const source = specs[i].source;
+    if (!source.trim()) continue;
+    const geometry = parseObjGeometry(source);
+    if (!geometry) {
+      entry.failures[i] = 'no-geometry';
+      if (i === 0) entry.body1Failure = 'no-geometry';
+      continue;
+    }
+    const session = createMeshSdfBake(geometry, resolution);
+    if (session.failure) {
+      entry.failures[i] = session.failure;
+      if (i === 0) entry.body1Failure = session.failure;
+      continue;
+    }
+    entry.sessions[i] = session;
+    anySession = true;
+  }
+  if (!anySession) {
+    entry.status = 'refused';
+    entry.progress = 1;
+    return entry;
+  }
+  const pump = () => {
+    entry.timer = null;
+    if (multiEntries.get(key) !== entry) return; // superseded
+    let done = true;
+    let progressSum = 0;
+    let progressCount = 0;
+    for (const session of entry.sessions) {
+      if (!session) continue;
+      if (!session.result) {
+        for (let s = 0; s < 3; s += 1) {
+          if (session.step()) break;
+        }
+      }
+      progressSum += session.progress;
+      progressCount += 1;
+      if (!session.result) done = false;
+    }
+    entry.progress = progressCount > 0 ? progressSum / progressCount : 1;
+    if (done) {
+      const grids = entry.sessions.map((s) => (s ? s.result : null));
+      if (grids.every((g) => g === null)) {
+        entry.status = 'refused';
+        entry.progress = 1;
+        return;
+      }
+      const atlas = buildMeshSdfAtlas(grids);
+      entry.data = makeMeshSdfAtlasTexture(atlas);
+      entry.status = 'ready';
+      entry.progress = 1;
+    } else {
+      entry.timer = setTimeout(pump, 0);
+    }
+  };
+  entry.timer = setTimeout(pump, 0);
+  return entry;
+}
+
+function computeMultiBodies(config: ParticleConfig, atlas: MeshSdfAtlasGrid): MeshSdfMultiBodyData[] {
+  const specs = multiBodySpecs(config);
+  const worldScale = meshSdfWorldScale(config);
+  const bodies: MeshSdfMultiBodyData[] = [];
+  for (let i = 0; i < 4; i += 1) {
+    const grid = atlas.grids[i];
+    if (!grid) continue;
+    const spec = specs[i];
+    if (i > 0 && !(spec.scaleFactor > 0)) continue;
+    const scale = worldScale * spec.scaleFactor;
+    const domainWorld = grid.sideNorm * scale;
+    bodies.push({
+      bodyIndex: i,
+      origin: [
+        spec.center[0] - domainWorld / 2,
+        spec.center[1] - domainWorld / 2,
+        spec.center[2] - domainWorld / 2,
+      ],
+      domainWorld,
+      scale,
+      voxelWorld: grid.voxelNorm * scale,
+      bounce: spec.bounce,
+      friction: spec.friction,
+      cellUv: [
+        ((i % 2) * atlas.resolution) / atlas.atlasWidth,
+        (Math.floor(i / 2) * atlas.resolution) / atlas.atlasHeight,
+      ],
+    });
+  }
+  return bodies;
+}
+
+/**
+ * The multi-body collider for the sim passes, or null while the
+ * atlas bake is pending / refused / not requested. Calling this
+ * starts the bakes (once per source set + resolution).
+ */
+export function getMeshSdfMultiCollider(config: ParticleConfig): MeshSdfMultiColliderData | null {
+  if (!isMeshSdfMultiRequested(config)) return null;
+  const key = multiEntryKey(config);
+  let entry = multiEntries.get(key);
+  if (!entry) entry = startMultiEntry(config, key);
+  if (entry.status !== 'ready' || !entry.data) return null;
+  const bodies = computeMultiBodies(config, entry.data.atlas);
+  if (bodies.length === 0) return null;
+  return {
+    texture: entry.data.texture,
+    atlas: entry.data.atlas,
+    format: entry.data.format,
+    bodies,
+  };
+}
+
+/** Bake status for the UI — same shape as the single status.
+ *  Defect fix 2026-11-27: the status used to be body 1's state
+ *  alone, so with body 1 empty or refused it stuck at
+ *  'no-source' / 'refused' even while bodies 2–4 baked and the
+ *  collider was live. The status now follows the whole set:
+ *  'no-source' only when no body has a source, 'refused' only
+ *  when every attempted body failed, and the representative
+ *  grid is the first body that actually baked. */
+export function getMeshSdfMultiBakeStatus(config: ParticleConfig): MeshSdfBakeStatus {
+  if (!config.gpgpuMeshSdfEnabled || !config.gpgpuMeshSdfMultiEnabled) return { state: 'off' };
+  const specs = multiBodySpecs(config);
+  if (!specs.some((s) => s.source.trim().length > 0)) return { state: 'no-source' };
+  const resolution = meshSdfResolution(config);
+  const key = multiEntryKey(config);
+  let entry = multiEntries.get(key);
+  if (!entry) entry = startMultiEntry(config, key);
+  if (entry.status === 'baking') {
+    return { state: 'baking', progress: entry.progress, resolution };
+  }
+  const firstFailure = entry.failures.find((f) => f) ?? entry.body1Failure ?? 'no-geometry';
+  if (entry.status === 'refused') {
+    return { state: 'refused', reason: firstFailure, resolution };
+  }
+  const data = entry.data as { texture: THREE.Data3DTexture; atlas: MeshSdfAtlasGrid; format: MeshSdfFormat };
+  const repGrid = data.atlas.grids.find((g) => g);
+  if (!repGrid) {
+    return { state: 'refused', reason: firstFailure, resolution };
+  }
+  return {
+    state: 'ready',
+    resolution,
+    format: data.format,
+    triangleCount: repGrid.triangleCount,
+    minFeatureVoxels: repGrid.minFeatureVoxels,
   };
 }

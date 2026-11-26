@@ -158,6 +158,30 @@ const VEL_FRAG_TAIL_HEAD = /* glsl */ `    // Morph Target Attraction (Kinetix i
     // on the trilinear facets). Applied after the analytic SDF
     // block, so both colliders may be live; the position pass
     // owns the exact push-out.
+    // Multi-body mesh SDF — min synthesis over all bodies at
+    // the same position: only the deepest body responds, once,
+    // with its own normal / Bounce / Friction. While multi is
+    // live the passes leave uMeshSdfEnabled false, so the
+    // single-body block below never double-applies.
+    if (uMeshSdfMultiEnabled) {
+      float bestSd = 1.0e6;
+      int bestBody = -1;
+      for (int bi = 0; bi < 4; bi++) {
+        if (bi >= uMeshSdfBodyCount) break;
+        float bsd = meshSdfBodyDistance(bi, pos);
+        if (bsd < bestSd) { bestSd = bsd; bestBody = bi; }
+      }
+      if (bestBody >= 0 && bestSd < 2.0) {
+        vec3 msn = meshSdfBodyNormal(bestBody, pos);
+        float vn = dot(vel, msn);
+        if (vn < 0.0) {
+          vec3 vN = msn * vn;
+          vec3 vT = vel - vN;
+          vel = vT * (1.0 - uMeshSdfBodyFriction[bestBody]) - vN * uMeshSdfBodyBounce[bestBody];
+        }
+      }
+    }
+
     if (uMeshSdfEnabled) {
       float msd = meshSdfDistance(pos);
       if (msd < 2.0) {

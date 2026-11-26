@@ -6,7 +6,7 @@ import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDispla
 import { Slider, Toggle } from './controlPanelParts';
 import { MorphObjImportBlock, MorphSvgImportBlock, ObjMeshBlock, TerrainTextureImageBlock } from './controlPanelGlobalDisplayGpgpuForcesImportBlocks';
 import { TerrainDerivedMapsBlock } from './controlPanelGlobalDisplayGpgpuForcesMapBlocks';
-import { getMeshSdfBakeStatus } from '../lib/meshSdfCollider';
+import { getMeshSdfBakeStatus, getMeshSdfMultiBakeStatus } from '../lib/meshSdfCollider';
 import {
   buildFragmentCollection,
   fragmentSignatureDiffs,
@@ -49,6 +49,76 @@ const MeshSdfBakeStatusLine: React.FC<{ config: ParticleConfig }> = ({ config })
         : 'OBJ を読み取れないためベイクできません。';
   } else if (status.state === 'no-source') {
     text = 'Morph の OBJ Source を取り込むと距離場を焼きます（閉じたメッシュのみ）。';
+  } else {
+    text = '';
+  }
+  if (!text) return null;
+  return <div className="mt-1 text-[9px] leading-relaxed text-white/40">{text}</div>;
+};
+
+// Multi-body mesh SDF (bodies 2-4): each body has its own OBJ
+// source, world-centre offset, scale (× body 1's world scale),
+// Bounce and Friction. An empty source (or Scale <= 0) disables
+// the body on its own.
+const MeshSdfBodyControls: React.FC<{
+  n: number;
+  source: string;
+  onSource: (v: string) => void;
+  offsetX: number;
+  offsetY: number;
+  offsetZ: number;
+  onOffset: (axis: 'X' | 'Y' | 'Z', v: number) => void;
+  scale: number;
+  onScale: (v: number) => void;
+  bounce: number;
+  onBounce: (v: number) => void;
+  friction: number;
+  onFriction: (v: number) => void;
+}> = ({ n, source, onSource, offsetX, offsetY, offsetZ, onOffset, scale, onScale, bounce, onBounce, friction, onFriction }) => (
+  <div className="mt-3 border-t border-white/5 pt-2">
+    <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Body {n} OBJ Source （体{n}のOBJ）</div>
+    <textarea
+      value={source}
+      onChange={(event) => onSource(event.target.value.slice(0, 200_000))}
+      spellCheck={false}
+      rows={3}
+      className="w-full rounded border border-white/15 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40"
+      placeholder="閉じたメッシュの OBJ テキストを貼り付け（空なら体は無効）"
+    />
+    {(['X', 'Y', 'Z'] as const).map((axis) => (
+      <Slider
+        key={axis}
+        label={`Offset ${axis} （中心${axis}）`}
+        value={axis === 'X' ? offsetX : axis === 'Y' ? offsetY : offsetZ}
+        min={-300}
+        max={300}
+        step={1}
+        onChange={(v) => onOffset(axis, v)}
+      />
+    ))}
+    <Slider label="Scale （スケール倍率）" value={scale} min={0} max={3} step={0.05} onChange={onScale} />
+    <Slider label="Bounce （反発）" value={bounce} min={0} max={1} step={0.05} onChange={onBounce} />
+    <Slider label="Friction （摩擦）" value={friction} min={0} max={1} step={0.05} onChange={onFriction} />
+  </div>
+);
+
+const MeshSdfMultiBakeStatusLine: React.FC<{ config: ParticleConfig }> = ({ config }) => {
+  const [, setTick] = React.useState(0);
+  const status = getMeshSdfMultiBakeStatus(config);
+  React.useEffect(() => {
+    if (status.state !== 'baking') return undefined;
+    const id = setInterval(() => setTick((t) => t + 1), 500);
+    return () => clearInterval(id);
+  }, [status.state]);
+  let text: string;
+  if (status.state === 'ready') {
+    text = `複数体ベイク完了（${status.resolution}³ アトラス）。最も深い1体だけで押し出し・反射します。`;
+  } else if (status.state === 'baking') {
+    text = `複数体ベイク中… ${Math.round(status.progress * 100)}%（完了するまでメッシュコライダは無効です）`;
+  } else if (status.state === 'refused') {
+    text = '体1のメッシュが開いている等のためベイクできません（拒否された体だけ無効化されます）。';
+  } else if (status.state === 'no-source') {
+    text = '体1（Morph の OBJ Source）が無いため複数体は待機中です。体2〜4だけでもソースを入れると焼きます。';
   } else {
     text = '';
   }
@@ -737,6 +807,62 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <MeshSdfBakeStatusLine config={config} />
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             取り込み済み OBJ を符号付き距離場に焼き、任意の閉メッシュを障害物にします（Phase BY）。配置はモーフ配置（原点・モーフスケール）に従い、ObjMesh 表示の位置オフセットには追随しません。解析 SDF と同時使用でき、解析側が先に効きます。
+          </div>
+          <div className="mt-3 border-t border-white/10 pt-3">
+            <Toggle label="Multi Bodies （複数体・最大4）" value={config.gpgpuMeshSdfMultiEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMeshSdfMultiEnabled', v)} />
+            {config.gpgpuMeshSdfMultiEnabled && (
+              <>
+                <MeshSdfBodyControls
+                  n={2}
+                  source={config.gpgpuMeshSdfBody2ObjSource}
+                  onSource={(v) => updateConfig('gpgpuMeshSdfBody2ObjSource', v)}
+                  offsetX={config.gpgpuMeshSdfBody2OffsetX}
+                  offsetY={config.gpgpuMeshSdfBody2OffsetY}
+                  offsetZ={config.gpgpuMeshSdfBody2OffsetZ}
+                  onOffset={(axis, v) => updateConfig(axis === 'X' ? 'gpgpuMeshSdfBody2OffsetX' : axis === 'Y' ? 'gpgpuMeshSdfBody2OffsetY' : 'gpgpuMeshSdfBody2OffsetZ', v)}
+                  scale={config.gpgpuMeshSdfBody2Scale}
+                  onScale={(v) => updateConfig('gpgpuMeshSdfBody2Scale', v)}
+                  bounce={config.gpgpuMeshSdfBody2Bounce}
+                  onBounce={(v) => updateConfig('gpgpuMeshSdfBody2Bounce', v)}
+                  friction={config.gpgpuMeshSdfBody2Friction}
+                  onFriction={(v) => updateConfig('gpgpuMeshSdfBody2Friction', v)}
+                />
+                <MeshSdfBodyControls
+                  n={3}
+                  source={config.gpgpuMeshSdfBody3ObjSource}
+                  onSource={(v) => updateConfig('gpgpuMeshSdfBody3ObjSource', v)}
+                  offsetX={config.gpgpuMeshSdfBody3OffsetX}
+                  offsetY={config.gpgpuMeshSdfBody3OffsetY}
+                  offsetZ={config.gpgpuMeshSdfBody3OffsetZ}
+                  onOffset={(axis, v) => updateConfig(axis === 'X' ? 'gpgpuMeshSdfBody3OffsetX' : axis === 'Y' ? 'gpgpuMeshSdfBody3OffsetY' : 'gpgpuMeshSdfBody3OffsetZ', v)}
+                  scale={config.gpgpuMeshSdfBody3Scale}
+                  onScale={(v) => updateConfig('gpgpuMeshSdfBody3Scale', v)}
+                  bounce={config.gpgpuMeshSdfBody3Bounce}
+                  onBounce={(v) => updateConfig('gpgpuMeshSdfBody3Bounce', v)}
+                  friction={config.gpgpuMeshSdfBody3Friction}
+                  onFriction={(v) => updateConfig('gpgpuMeshSdfBody3Friction', v)}
+                />
+                <MeshSdfBodyControls
+                  n={4}
+                  source={config.gpgpuMeshSdfBody4ObjSource}
+                  onSource={(v) => updateConfig('gpgpuMeshSdfBody4ObjSource', v)}
+                  offsetX={config.gpgpuMeshSdfBody4OffsetX}
+                  offsetY={config.gpgpuMeshSdfBody4OffsetY}
+                  offsetZ={config.gpgpuMeshSdfBody4OffsetZ}
+                  onOffset={(axis, v) => updateConfig(axis === 'X' ? 'gpgpuMeshSdfBody4OffsetX' : axis === 'Y' ? 'gpgpuMeshSdfBody4OffsetY' : 'gpgpuMeshSdfBody4OffsetZ', v)}
+                  scale={config.gpgpuMeshSdfBody4Scale}
+                  onScale={(v) => updateConfig('gpgpuMeshSdfBody4Scale', v)}
+                  bounce={config.gpgpuMeshSdfBody4Bounce}
+                  onBounce={(v) => updateConfig('gpgpuMeshSdfBody4Bounce', v)}
+                  friction={config.gpgpuMeshSdfBody4Friction}
+                  onFriction={(v) => updateConfig('gpgpuMeshSdfBody4Friction', v)}
+                />
+                <MeshSdfMultiBakeStatusLine config={config} />
+                <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                  体1は上の単体メッシュSDFそのもの、体2〜4は個別の OBJ・中心・スケールで置けます。全身体を同じ解像度で焼いて1枚のアトラスにし、粒子は最も深い1体とだけ衝突します。ベイク中はメッシュコライダ全体が無効です。
+                </div>
+              </>
+            )}
           </div>
         </>
       )}

@@ -1,6 +1,9 @@
 // Phase 15 (Unity section 1) collision life — structural checks:
 //   - the position shader declares the uniforms, records contact
-//     at all five collider resolutions, applies the life rate
+//     at all six collider resolutions (the sixth is the
+//     multi-body mesh SDF push-out, added with the atlas
+//     colliders — a real contact site for kill / life-loss),
+//     applies the life rate
 //     before the age advance, and ORs the kill into doRespawn
 //   - defaults inert; WebGPU routing declares the feature so a
 //     config using it routes to WebGL instead of dropping it
@@ -19,7 +22,7 @@ const check = (name, cond, detail = '') => {
 
 const pos = readFileSync(join(ROOT, 'components/gpgpuShaderSimulationPosition.ts'), 'utf8');
 check('uniforms declared', pos.includes('uniform float uCollisionLifeLoss;') && pos.includes('uniform bool  uCollisionKill;'));
-check('contact recorded at 5 sites', (pos.match(/collisionContact = true/g) ?? []).length === 5,
+check('contact recorded at 6 sites', (pos.match(/collisionContact = true/g) ?? []).length === 6,
   `sites=${(pos.match(/collisionContact = true/g) ?? []).length}`);
 check('tracking gated on an option being live', pos.includes('bool collisionTrack = uCollisionKill || uCollisionLifeLoss > 0.0;'));
 const lossIdx = pos.indexOf('age += uCollisionLifeLoss * uDelta;');

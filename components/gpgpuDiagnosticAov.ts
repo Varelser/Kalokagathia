@@ -19,6 +19,7 @@ import {
   encodeDiagnosticPass,
   type DiagnosticPassResult,
 } from '../lib/diagnosticPasses';
+import type { WebGPUComputeState } from '../lib/webgpuCompute';
 
 const AOV_VERT = /* glsl */ `
 attribute vec2 aTexCoord;
@@ -84,6 +85,19 @@ export interface DiagnosticFrameContext {
   fluidFinal: THREE.WebGLRenderTarget | null;
   /** Which member of the fluid ping pair `fluidFinal` is. */
   fluidFinalName: 'fluidRTA' | 'fluidRTB' | null;
+  /**
+   * Stage 0 S7 (plan A1): the execution route this frame ran
+   * on. Absent on contexts built before the field existed —
+   * captureState treats absence as 'webgl', the historical
+   * behaviour. On the 'webgpu' route posOut/velOut above are
+   * NOT advanced by the simulation (see
+   * STAGE0_S7_CROWD_DIAG_ANALYSIS) and must not be read back;
+   * captureState serves the WebGPU diagnostic snapshot from
+   * `webgpuState` instead.
+   */
+  route?: 'webgl' | 'webgpu';
+  /** The live WebGPU compute state on the 'webgpu' route. */
+  webgpuState?: WebGPUComputeState | null;
 }
 
 export interface DiagnosticStateCapture {

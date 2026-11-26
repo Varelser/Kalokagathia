@@ -28,7 +28,9 @@ import {
 } from '../lib/terrainDerivedMaps';
 import {
   getMeshSdfCollider,
+  getMeshSdfMultiCollider,
   meshSdfWorldScale,
+  type MeshSdfMultiColliderData,
 } from '../lib/meshSdfCollider';
 import {
   pyroGridCurrentVelTexture,
@@ -41,6 +43,48 @@ import {
   flip3dCurrentVelTexture,
   type Flip3dTargets,
 } from './gpgpuFlip3dPasses';
+
+/**
+ * Fill the multi-body mesh SDF uniforms of one sim material from
+ * a ready multi collider. Bodies are compacted in body-number
+ * order; slots past the count keep their zero defaults and are
+ * never read (the shader loop breaks at uMeshSdfBodyCount).
+ * Bounce/Friction arrays exist only on the velocity material.
+ */
+function applyMeshSdfMultiUniforms(
+  uniforms: Record<string, { value: unknown }>,
+  multi: MeshSdfMultiColliderData,
+): void {
+  if (uniforms.uMeshSdfMultiEnabled) uniforms.uMeshSdfMultiEnabled.value = true;
+  if (uniforms.uMeshSdfBodyCount) uniforms.uMeshSdfBodyCount.value = multi.bodies.length;
+  const origins = uniforms.uMeshSdfBodyOrigin?.value as THREE.Vector3[] | undefined;
+  const cells = uniforms.uMeshSdfBodyCell?.value as THREE.Vector2[] | undefined;
+  const domains = uniforms.uMeshSdfBodyDomain?.value as number[] | undefined;
+  const scales = uniforms.uMeshSdfBodyScale?.value as number[] | undefined;
+  const voxels = uniforms.uMeshSdfBodyVoxel?.value as number[] | undefined;
+  const bounces = uniforms.uMeshSdfBodyBounce?.value as number[] | undefined;
+  const frictions = uniforms.uMeshSdfBodyFriction?.value as number[] | undefined;
+  multi.bodies.forEach((body, i) => {
+    if (origins?.[i]) origins[i].set(body.origin[0], body.origin[1], body.origin[2]);
+    if (cells?.[i]) cells[i].set(body.cellUv[0], body.cellUv[1]);
+    // Defect fix 2026-11-27: pass the real domain through. The
+    // old `> 0 ? : 1.0` substitution defeated the shader's
+    // `domain <= 0` guard, so a zero-domain body (worldScale 0)
+    // read as a live unit domain with distance 0 everywhere.
+    if (domains) domains[i] = body.domainWorld;
+    if (scales) scales[i] = body.scale;
+    if (voxels) voxels[i] = body.voxelWorld;
+    if (bounces) bounces[i] = Math.max(0, Math.min(1, body.bounce ?? 0.5));
+    if (frictions) frictions[i] = Math.max(0, Math.min(1, body.friction ?? 0.25));
+  });
+  if (uniforms.uMeshSdfTex) uniforms.uMeshSdfTex.value = multi.texture;
+}
+
+/** Reset the multi-body uniforms to the disabled defaults. */
+function clearMeshSdfMultiUniforms(uniforms: Record<string, { value: unknown }>): void {
+  if (uniforms.uMeshSdfMultiEnabled) uniforms.uMeshSdfMultiEnabled.value = false;
+  if (uniforms.uMeshSdfBodyCount) uniforms.uMeshSdfBodyCount.value = 0;
+}
 
 // Particle Life matrix cache: the flat uniform array only changes when
 // preset / species / seed change, so avoid reallocating it every frame.
@@ -1105,19 +1149,38 @@ export function runSimulationPasses(args: {
   // terrain collider — the getter returns null unless the key is
   // on AND the async bake has completed, so the disabled uniform
   // keeps the exact legacy path while baking / refused / off.
-  const meshSdfVel = getMeshSdfCollider(config);
+  // Multi-body mesh SDF: while the master key is on, the atlas
+  // collider replaces the single one outright — and while its
+  // bake is pending there is NO mesh collider (the single body
+  // is not substituted), so a partial set can never appear.
+  // Defect fix 2026-11-27: multi requires the parent mesh SDF
+  // key as well (the UI nests the multi toggle inside it).
+  const meshSdfMultiActiveVel = !!config.gpgpuMeshSdfEnabled && !!config.gpgpuMeshSdfMultiEnabled;
+  const meshSdfMultiVel = meshSdfMultiActiveVel ? getMeshSdfMultiCollider(config) : null;
+  const meshSdfVel = meshSdfMultiActiveVel ? null : getMeshSdfCollider(config);
   const meshSdfWorldVel = meshSdfWorldScale(config);
-  if (velSimMat.uniforms.uMeshSdfEnabled) velSimMat.uniforms.uMeshSdfEnabled.value = !!meshSdfVel;
-  if (velSimMat.uniforms.uMeshSdfTex) velSimMat.uniforms.uMeshSdfTex.value = meshSdfVel ? meshSdfVel.texture : null;
-  if (velSimMat.uniforms.uMeshSdfOrigin && meshSdfVel) {
-    const halfWorld = (meshSdfVel.grid.sideNorm * meshSdfWorldVel) / 2;
-    (velSimMat.uniforms.uMeshSdfOrigin.value as THREE.Vector3).set(-halfWorld, -halfWorld, -halfWorld);
+  if (meshSdfMultiActiveVel) {
+    clearMeshSdfMultiUniforms(velSimMat.uniforms);
+    if (velSimMat.uniforms.uMeshSdfEnabled) velSimMat.uniforms.uMeshSdfEnabled.value = false;
+    if (meshSdfMultiVel) {
+      applyMeshSdfMultiUniforms(velSimMat.uniforms, meshSdfMultiVel);
+    } else if (velSimMat.uniforms.uMeshSdfTex) {
+      velSimMat.uniforms.uMeshSdfTex.value = null;
+    }
+  } else {
+    clearMeshSdfMultiUniforms(velSimMat.uniforms);
+    if (velSimMat.uniforms.uMeshSdfEnabled) velSimMat.uniforms.uMeshSdfEnabled.value = !!meshSdfVel;
+    if (velSimMat.uniforms.uMeshSdfTex) velSimMat.uniforms.uMeshSdfTex.value = meshSdfVel ? meshSdfVel.texture : null;
+    if (velSimMat.uniforms.uMeshSdfOrigin && meshSdfVel) {
+      const halfWorld = (meshSdfVel.grid.sideNorm * meshSdfWorldVel) / 2;
+      (velSimMat.uniforms.uMeshSdfOrigin.value as THREE.Vector3).set(-halfWorld, -halfWorld, -halfWorld);
+    }
+    if (velSimMat.uniforms.uMeshSdfDomainWorld) velSimMat.uniforms.uMeshSdfDomainWorld.value = meshSdfVel ? meshSdfVel.grid.sideNorm * meshSdfWorldVel : 1.0;
+    if (velSimMat.uniforms.uMeshSdfScale) velSimMat.uniforms.uMeshSdfScale.value = meshSdfVel ? meshSdfWorldVel : 0;
+    if (velSimMat.uniforms.uMeshSdfVoxelWorld) velSimMat.uniforms.uMeshSdfVoxelWorld.value = meshSdfVel ? meshSdfVel.grid.voxelNorm * meshSdfWorldVel : 0;
+    if (velSimMat.uniforms.uMeshSdfBounce) velSimMat.uniforms.uMeshSdfBounce.value = Math.max(0, Math.min(1, config.gpgpuMeshSdfBounce ?? 0.5));
+    if (velSimMat.uniforms.uMeshSdfFriction) velSimMat.uniforms.uMeshSdfFriction.value = Math.max(0, Math.min(1, config.gpgpuMeshSdfFriction ?? 0.25));
   }
-  if (velSimMat.uniforms.uMeshSdfDomainWorld) velSimMat.uniforms.uMeshSdfDomainWorld.value = meshSdfVel ? meshSdfVel.grid.sideNorm * meshSdfWorldVel : 1.0;
-  if (velSimMat.uniforms.uMeshSdfScale) velSimMat.uniforms.uMeshSdfScale.value = meshSdfVel ? meshSdfWorldVel : 0;
-  if (velSimMat.uniforms.uMeshSdfVoxelWorld) velSimMat.uniforms.uMeshSdfVoxelWorld.value = meshSdfVel ? meshSdfVel.grid.voxelNorm * meshSdfWorldVel : 0;
-  if (velSimMat.uniforms.uMeshSdfBounce) velSimMat.uniforms.uMeshSdfBounce.value = Math.max(0, Math.min(1, config.gpgpuMeshSdfBounce ?? 0.5));
-  if (velSimMat.uniforms.uMeshSdfFriction) velSimMat.uniforms.uMeshSdfFriction.value = Math.max(0, Math.min(1, config.gpgpuMeshSdfFriction ?? 0.25));
   // Named attributes (Phase AK): resolved CPU-side like the
   // terrain collider — the velocity consumers (force drive /
   // group gate) engage only when the attribute texture exists,
@@ -1396,17 +1459,33 @@ export function runSimulationPasses(args: {
   // Mesh SDF collider (Phase BY): same resolution as the
   // velocity pass — null while disabled / baking / refused keeps
   // the exact legacy path.
-  const meshSdfPos = getMeshSdfCollider(config);
+  // Multi-body mesh SDF: same resolution as the velocity pass —
+  // while the master key is on, a pending atlas bake means NO
+  // mesh collider in this pass either.
+  const meshSdfMultiActivePos = !!config.gpgpuMeshSdfEnabled && !!config.gpgpuMeshSdfMultiEnabled;
+  const meshSdfMultiPos = meshSdfMultiActivePos ? getMeshSdfMultiCollider(config) : null;
+  const meshSdfPos = meshSdfMultiActivePos ? null : getMeshSdfCollider(config);
   const meshSdfWorldPos = meshSdfWorldScale(config);
-  if (posSimMat.uniforms.uMeshSdfEnabled) posSimMat.uniforms.uMeshSdfEnabled.value = !!meshSdfPos;
-  if (posSimMat.uniforms.uMeshSdfTex) posSimMat.uniforms.uMeshSdfTex.value = meshSdfPos ? meshSdfPos.texture : null;
-  if (posSimMat.uniforms.uMeshSdfOrigin && meshSdfPos) {
-    const halfWorld = (meshSdfPos.grid.sideNorm * meshSdfWorldPos) / 2;
-    (posSimMat.uniforms.uMeshSdfOrigin.value as THREE.Vector3).set(-halfWorld, -halfWorld, -halfWorld);
+  if (meshSdfMultiActivePos) {
+    clearMeshSdfMultiUniforms(posSimMat.uniforms);
+    if (posSimMat.uniforms.uMeshSdfEnabled) posSimMat.uniforms.uMeshSdfEnabled.value = false;
+    if (meshSdfMultiPos) {
+      applyMeshSdfMultiUniforms(posSimMat.uniforms, meshSdfMultiPos);
+    } else if (posSimMat.uniforms.uMeshSdfTex) {
+      posSimMat.uniforms.uMeshSdfTex.value = null;
+    }
+  } else {
+    clearMeshSdfMultiUniforms(posSimMat.uniforms);
+    if (posSimMat.uniforms.uMeshSdfEnabled) posSimMat.uniforms.uMeshSdfEnabled.value = !!meshSdfPos;
+    if (posSimMat.uniforms.uMeshSdfTex) posSimMat.uniforms.uMeshSdfTex.value = meshSdfPos ? meshSdfPos.texture : null;
+    if (posSimMat.uniforms.uMeshSdfOrigin && meshSdfPos) {
+      const halfWorld = (meshSdfPos.grid.sideNorm * meshSdfWorldPos) / 2;
+      (posSimMat.uniforms.uMeshSdfOrigin.value as THREE.Vector3).set(-halfWorld, -halfWorld, -halfWorld);
+    }
+    if (posSimMat.uniforms.uMeshSdfDomainWorld) posSimMat.uniforms.uMeshSdfDomainWorld.value = meshSdfPos ? meshSdfPos.grid.sideNorm * meshSdfWorldPos : 1.0;
+    if (posSimMat.uniforms.uMeshSdfScale) posSimMat.uniforms.uMeshSdfScale.value = meshSdfPos ? meshSdfWorldPos : 0;
+    if (posSimMat.uniforms.uMeshSdfVoxelWorld) posSimMat.uniforms.uMeshSdfVoxelWorld.value = meshSdfPos ? meshSdfPos.grid.voxelNorm * meshSdfWorldPos : 0;
   }
-  if (posSimMat.uniforms.uMeshSdfDomainWorld) posSimMat.uniforms.uMeshSdfDomainWorld.value = meshSdfPos ? meshSdfPos.grid.sideNorm * meshSdfWorldPos : 1.0;
-  if (posSimMat.uniforms.uMeshSdfScale) posSimMat.uniforms.uMeshSdfScale.value = meshSdfPos ? meshSdfWorldPos : 0;
-  if (posSimMat.uniforms.uMeshSdfVoxelWorld) posSimMat.uniforms.uMeshSdfVoxelWorld.value = meshSdfPos ? meshSdfPos.grid.voxelNorm * meshSdfWorldPos : 0;
   posSimMat.uniforms.uMouseEnabled.value = config.gpgpuMouseEnabled;
   posSimMat.uniforms.uMousePos.value.copy(mouseWorld);
   posSimMat.uniforms.uMouseRadius.value = config.gpgpuMouseRadius;

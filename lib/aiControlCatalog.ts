@@ -893,6 +893,7 @@ const BOOLS: BoolDef[] = [
   ['gpgpuPcgGraphEnabled', 'PCGルールグラフ（散布の固定順序をノード列で開く、既定OFFで従来同一、既定グラフはビット同一）'],
   ['gpgpuTerrainColliderEnabled', '地形コライダ（粒子が地形で跳ねる・止まる、地形メッシュ有効・平面モード時のみ、既定OFFで従来同一）'],
   ['gpgpuMeshSdfEnabled', 'メッシュSDFコライダ（取り込み済みOBJを距離場に焼いて障害物化、閉じたメッシュのみ、モーフ配置に従う、既定OFFで従来同一）'],
+  ['gpgpuMeshSdfMultiEnabled', 'メッシュSDF複数体（最大4体をアトラス化して最小合成、体2〜4は個別OBJ・オフセット・スケール、既定OFFで従来同一）'],
   ['pointCacheEnabled', 'ポイントキャッシュ再生（連番PLY＋マニフェストの点群アニメーションをシーケンス時計で再生し属性点群へ流す、既定OFFで従来同一）'],
   ['gpgpuPyroGridEnabled', 'Pyroグリッドソルバー（2Dアトラス化3Dグリッドの移流・浮力・圧力射影、解像度は別キーで0=ティア自動32/48/64・96は手動、Jacobi反復0〜32、既定OFFで従来同一）'],
   ['gpgpuPyroGridBlend', 'Pyroグリッドの粒子結合ブレンド（0=PIC、1=FLIP。0では結合自体が働かず従来同一）'],

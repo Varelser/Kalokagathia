@@ -261,6 +261,39 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  float dmHash11(float n) {
     return gl > 0.0001 ? g / gl : vec3(0.0, 1.0, 0.0);
   }
 
+  // Multi-body mesh SDF: per-body query into the 2x2 atlas held
+  // in uMeshSdfTex. q is clamped to the body's own texel centres
+  // (half a voxel in UV) before the cell offset is applied, so
+  // trilinear filtering can never bleed into a neighbouring
+  // cell. Outside the body's domain the query is +1e6.
+  float meshSdfBodyDistance(int i, vec3 p) {
+    float domain = uMeshSdfBodyDomain[i];
+    if (domain <= 0.0) return 1.0e6;
+    vec3 q = (p - uMeshSdfBodyOrigin[i]) / domain;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) return 1.0e6;
+    float eps = 0.5 * uMeshSdfBodyVoxel[i] / domain;
+    vec3 qc = clamp(q, vec3(eps), vec3(1.0 - eps));
+    vec3 aq = vec3(uMeshSdfBodyCell[i] + qc.xy * 0.5, qc.z);
+    return texture2D(uMeshSdfTex, aq).r * uMeshSdfBodyScale[i];
+  }
+  vec3 meshSdfBodyNormal(int i, vec3 p) {
+    float e = uMeshSdfBodyVoxel[i] * 0.5;
+    // Defect fix 2026-11-27: clamp the taps into the domain box
+    // (shrunk by e) before sampling. Outside the domain the
+    // distance function returns 1e6, so an unclamped tap within
+    // e of a face collapsed the gradient onto the face axis —
+    // reachable at small scales, where the velocity pass already
+    // engages at sd < 2 near the boundary.
+    vec3 nLo = uMeshSdfBodyOrigin[i] + vec3(e);
+    vec3 nHi = max(nLo, uMeshSdfBodyOrigin[i] + vec3(uMeshSdfBodyDomain[i] - e));
+    vec3 g = vec3(
+      meshSdfBodyDistance(i, clamp(p + vec3(e, 0.0, 0.0), nLo, nHi)) - meshSdfBodyDistance(i, clamp(p - vec3(e, 0.0, 0.0), nLo, nHi)),
+      meshSdfBodyDistance(i, clamp(p + vec3(0.0, e, 0.0), nLo, nHi)) - meshSdfBodyDistance(i, clamp(p - vec3(0.0, e, 0.0), nLo, nHi)),
+      meshSdfBodyDistance(i, clamp(p + vec3(0.0, 0.0, e), nLo, nHi)) - meshSdfBodyDistance(i, clamp(p - vec3(0.0, 0.0, e), nLo, nHi)));
+    float gl = length(g);
+    return gl > 0.0001 ? g / gl : vec3(0.0, 1.0, 0.0);
+  }
+
   // Particle Life species: fixed per particle, derived from the texel
   // index with the same hash the points readout uses, so sim and draw
   // always agree on which species a particle belongs to.
