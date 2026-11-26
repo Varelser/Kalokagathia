@@ -28,6 +28,7 @@ export const APP_STATE_DEFAULT_AUDIO_SYNTH: Partial<ParticleConfig> = {
   audioCameraScale: 1.15,
   audioHueShiftScale: 0,
   audioRoutingGraph: '',
+  audioSceneGraph: '',
   // Custom Frequency Bands (default off, 0 scale = no effect)
   audioBandALowHz: 40,
   audioBandAHighHz: 200,

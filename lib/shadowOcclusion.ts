@@ -60,6 +60,7 @@ import {
   sampleErodedField,
   terrainFieldSeedFor,
   terrainHeightAt,
+  tiledTerrainHeightAt,
   type GpgpuMorphTerrainKind,
   type GpgpuMorphTerrainOptions,
 } from './gpgpuMorphTargets';
@@ -101,6 +102,17 @@ export interface ShadowScene {
   objSpheres?: ObjSphereOccluder[];
   /** Penumbra softness in [0, 1]. */
   softness: number;
+  /**
+   * Tunnel presentation (Round 83/84 gap 7): when the terrain
+   * mesh wraps the field into a tube, the terrain occluder is
+   * the tube wall instead of the plane height field. Radius =
+   * 1.05 * worldScale (identical to the bake extent), length =
+   * 2.1 * worldScale, axis = Z. Derived from the existing
+   * gpgpuTerrainMeshTunnel key — no new config key.
+   */
+  tunnel: boolean;
+  tunnelRadius: number;
+  tunnelLength: number;
 }
 
 export function clampShadowSoftness(v: number): number {
@@ -172,6 +184,119 @@ export function terrainHorizonRatio(
   return worst;
 }
 
+/**
+ * Tunnel field height (normalised, field units) at angle
+ * `theta` in [0, 2*pi) and world z: the SAME sampler the tunnel
+ * mesh reads (lib/terrainMesh.ts) — the eroded grid when it was
+ * baked for the tunnel (wrapX), otherwise the cross-fade tiled
+ * analytic field (tiledTerrainHeightAt is the exported twin of
+ * the mesh builder's local tiledHeightAt with both wraps on).
+ * fx spans the wrapped circumference [-1.05, 1.05), fz is the
+ * field z (world z / worldScale).
+ */
+export function tunnelFieldHeightAt(theta: number, wz: number, scene: ShadowScene): number {
+  if (!(scene.worldScale > 0)) return 0;
+  const fieldSeed = terrainFieldSeedFor(scene.seed, scene.terrain.seed);
+  const fx = (theta / (Math.PI * 2)) * 2.1 - 1.05;
+  const fz = wz / scene.worldScale;
+  const field = getErodedTerrainField(scene.terrain, fieldSeed);
+  if (field && scene.terrain.erosion?.wrapX === true) {
+    return sampleErodedField(field, fx, fz);
+  }
+  return tiledTerrainHeightAt(fx, fz, scene.terrain, fieldSeed);
+}
+
+/** World radius of the tunnel wall surface at (theta, world z). */
+export function tunnelSurfaceRadiusAt(theta: number, wz: number, scene: ShadowScene): number {
+  return scene.tunnelRadius - tunnelFieldHeightAt(theta, wz, scene) * scene.worldScale;
+}
+
+/**
+ * Tunnel horizon occlusion (Plan A2, Round 84 gap 7 design):
+ * the plane horizon test mapped onto the radial direction.
+ * Marches from the point toward the light; at each step the
+ * ray's radial distance is compared with the wall surface
+ * radius at that step's (theta, z); the largest positive excess
+ * normalised by step distance is the ratio. Steps that leave
+ * the tube through an open end (|z| > extent) stop the march —
+ * beyond the opening there is no wall. A light inside the tube
+ * yields 0 naturally (the ray never crosses the wall radius).
+ */
+export function tunnelHorizonRatio(
+  px: number,
+  py: number,
+  pz: number,
+  scene: ShadowScene,
+  marchSteps = 8,
+): number {
+  const dx = scene.lightPos.x - px;
+  const dy = scene.lightPos.y - py;
+  const dz = scene.lightPos.z - pz;
+  const dist = Math.hypot(dx, dy, dz);
+  if (!(dist > 1e-6)) return 0;
+  const E = scene.tunnelRadius; // == bake extent == half length
+  let worst = 0;
+  // Arming: an excess counts only once the ray has travelled
+  // through open space (radially inside the wall surface). A
+  // point ON the wall whose light sits outside on its own side
+  // exits through its own surface immediately — that exit is
+  // not a blocker (the plane test likewise never samples the
+  // shaded point's own ground), while a ray that crosses the
+  // tube and enters the far wall IS blocked.
+  let armed = false;
+  for (let i = 1; i <= marchSteps; i++) {
+    const t = i / (marchSteps + 1);
+    const qx = px + dx * t;
+    const qy = py + dy * t;
+    const qz = pz + dz * t;
+    if (Math.abs(qz) > E) break; // left through an open end
+    let theta = Math.atan2(qy, qx);
+    if (theta < 0) theta += Math.PI * 2;
+    const rs = tunnelSurfaceRadiusAt(theta, qz, scene);
+    const rho = Math.hypot(qx, qy);
+    if (rho < rs - 1e-9) {
+      armed = true;
+    } else if (armed && rho > rs) {
+      const ratio = (rho - rs) / Math.max(dist * t, 1e-6);
+      if (ratio > worst) worst = ratio;
+    }
+  }
+  return worst;
+}
+
+/**
+ * Analytic plain-cylinder occlusion (Plan A1, the stepping
+ * stone kept for tests): 1 when the segment point -> light
+ * crosses the bare cylinder wall (radius R, |z| <= E) before
+ * reaching the light, else 0. Points outside the cylinder are
+ * outside this approximation's domain and return 0 — the known
+ * A1 limit that A2 removes (a deep valley point sits at r > R).
+ */
+export function tunnelCylinderOcclusion(
+  px: number,
+  py: number,
+  pz: number,
+  scene: ShadowScene,
+): number {
+  const R = scene.tunnelRadius;
+  const E = R;
+  if (Math.hypot(px, py) > R) return 0;
+  const dx = scene.lightPos.x - px;
+  const dy = scene.lightPos.y - py;
+  const dz = scene.lightPos.z - pz;
+  const a = dx * dx + dy * dy;
+  if (!(a > 1e-12)) return 0; // ray parallel to the axis stays inside
+  const b = 2 * (px * dx + py * dy);
+  const c = px * px + py * py - R * R;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return 0;
+  const sq = Math.sqrt(disc);
+  for (const t of [(-b - sq) / (2 * a), (-b + sq) / (2 * a)]) {
+    if (t > 1e-6 && t < 1 && Math.abs(pz + dz * t) <= E) return 1;
+  }
+  return 0;
+}
+
 function sphereOcclusionOne(
   px: number,
   py: number,
@@ -240,7 +365,12 @@ export function occlusionAtPoint(
 ): number {
   let occ = 0;
   if (scene.sourceTerrain && scene.terrain.amplitude > 0 && scene.worldScale > 0) {
-    const ratio = terrainHorizonRatio(px, py, pz, scene, marchSteps);
+    // Tunnel presentation: the occluder is the tube wall, so the
+    // horizon test runs in the radial frame (Plan A2). Plane mode
+    // keeps the original test verbatim.
+    const ratio = scene.tunnel
+      ? tunnelHorizonRatio(px, py, pz, scene, marchSteps)
+      : terrainHorizonRatio(px, py, pz, scene, marchSteps);
     // A slope ratio of ~0.55 (about 29 degrees of blockage) already
     // reads as a full shadow; below that the occlusion ramps in.
     const terrainOcc = Math.max(0, Math.min(1, ratio / 0.55));
@@ -268,6 +398,8 @@ export function shadowMultiplierAt(
 
 export interface ShadowOcclusionBake {
   resolution: number;
+  /** Which evaluation surface the grid was baked on. */
+  mode: 'plane' | 'tunnel';
   /** World half-extent covered by the grid (XZ square [-E, E]^2). */
   extent: number;
   /** R = occlusion at the terrain surface, G = surface height
@@ -303,7 +435,46 @@ export function bakeShadowOcclusionMap(
       data[o + 3] = 255;
     }
   }
-  return { resolution: res, extent: E, data, heightScale };
+  return { mode: 'plane', resolution: res, extent: E, data, heightScale };
+}
+
+/**
+ * Bake the occlusion grid over the TUNNEL surface (Round 83/84
+ * gap 7): the grid's u axis is the wrapped circumference
+ * (theta = u * 2*pi, res distinct columns — no duplicated seam
+ * column), v is the tube length (z in [-E, E], closed like the
+ * plane bake's rows). Each cell evaluates the occlusion at the
+ * wall surface point built with the mesh's own transform, and
+ * encodes R = occlusion, G = field height normalised exactly
+ * like the plane bake. The plane bake above is untouched, so
+ * plane mode stays byte-identical. Deterministic, like the
+ * plane bake.
+ */
+export function bakeTunnelShadowOcclusionMap(
+  scene: ShadowScene,
+  resolution = 64,
+): ShadowOcclusionBake {
+  const res = Math.max(8, Math.min(128, Math.floor(resolution)));
+  const E = Math.max(1, scene.worldScale * 1.05); // == tunnel radius
+  const heightScale = Math.max(1e-6, 2 * Math.max(0, scene.terrain.amplitude) * Math.max(0, scene.worldScale));
+  const data = new Uint8Array(res * res * 4);
+  for (let j = 0; j < res; j++) {
+    const wz = -E + (j / (res - 1)) * 2 * E;
+    for (let i = 0; i < res; i++) {
+      const theta = (i / res) * Math.PI * 2;
+      const h = tunnelFieldHeightAt(theta, wz, scene);
+      const r = scene.tunnelRadius - h * scene.worldScale;
+      const wx = Math.cos(theta) * r;
+      const wy = Math.sin(theta) * r;
+      const occ = occlusionAtPoint(wx, wy, wz, scene);
+      const o = (j * res + i) * 4;
+      data[o] = Math.round(Math.max(0, Math.min(1, occ)) * 255);
+      data[o + 1] = Math.round(Math.max(0, Math.min(1, (h * scene.worldScale) / heightScale + 0.5)) * 255);
+      data[o + 2] = 0;
+      data[o + 3] = 255;
+    }
+  }
+  return { mode: 'tunnel', resolution: res, extent: E, data, heightScale };
 }
 
 /**
@@ -342,6 +513,49 @@ export function bakedShadowMultiplier(
   return 1 - s * occ * atten;
 }
 
+/**
+ * Multiplier a baked-map receiver applies at a world position
+ * while the tunnel presentation is on (the TS twin of the GLSL
+ * receivers' tunnel branch). Inside the tube region (radial
+ * distance <= R + amplitude*worldScale, |z| <= E) the TUNNEL
+ * bake is sampled by the inverse transform (theta, z) and the
+ * height attenuation runs radially outward from the baked wall
+ * surface; outside the region the plane bake applies exactly as
+ * before. The inverse u is theta normalised into [0, 1) — the
+ * bake's theta = u * 2*pi, so u = theta / (2*pi) with theta in
+ * [0, 2*pi).
+ */
+export function bakedTunnelShadowMultiplier(
+  tunnelBake: ShadowOcclusionBake,
+  planeBake: ShadowOcclusionBake | null,
+  wx: number,
+  wy: number,
+  wz: number,
+  strength: number,
+): number {
+  const s = clampShadowStrength(strength);
+  if (s <= 0) return 1;
+  const E = tunnelBake.extent;
+  const rho = Math.hypot(wx, wy);
+  const inside = rho <= E + tunnelBake.heightScale / 2 && Math.abs(wz) <= E;
+  if (!inside) {
+    return planeBake ? bakedShadowMultiplier(planeBake, wx, wy, wz, strength) : 1;
+  }
+  const res = tunnelBake.resolution;
+  let theta = Math.atan2(wy, wx);
+  if (theta < 0) theta += Math.PI * 2;
+  const u = theta / (Math.PI * 2);
+  const v = Math.max(0, Math.min(1, wz / (2 * E) + 0.5));
+  const i = Math.min(res - 1, Math.floor(u * res));
+  const j = Math.min(res - 1, Math.floor(v * res));
+  const o = (j * res + i) * 4;
+  const occ = tunnelBake.data[o] / 255;
+  const surfaceH = (tunnelBake.data[o + 1] / 255 - 0.5) * tunnelBake.heightScale;
+  const rSurface = E - surfaceH;
+  const atten = shadowHeightAttenuation(Math.max(0, rho - rSurface), E);
+  return 1 - s * occ * atten;
+}
+
 // ── Scene assembly from config ──────────────────────────────────
 
 /** The config fields the shadow scene is built from (structural). */
@@ -361,8 +575,9 @@ export interface ShadowSceneConfig {
   gpgpuMorphTerrainErosionThermalPasses: number;
   gpgpuMorphTerrainErosionSeed: number;
   // Erosion mask (Phase 20 stage 3).
-  gpgpuMorphTerrainErosionMaskMode: 'off' | 'height' | 'slope' | 'curvature' | 'image';
+  gpgpuMorphTerrainErosionMaskMode: 'off' | 'height' | 'slope' | 'curvature' | 'image' | 'drawn';
   gpgpuMorphTerrainErosionMaskImageGrid: number[];
+  gpgpuMorphTerrainErosionMaskDrawnGrid: number[];
   gpgpuMorphTerrainErosionMaskStrength: number;
   gpgpuMorphTerrainErosionMaskInvert: boolean;
   gpgpuMorphTerrainErosionMaskLow: number;
@@ -458,6 +673,7 @@ export function buildShadowScene(config: ShadowSceneConfig): ShadowScene {
           low: config.gpgpuMorphTerrainErosionMaskLow,
           high: config.gpgpuMorphTerrainErosionMaskHigh,
         imageGrid: config.gpgpuMorphTerrainErosionMaskImageGrid,
+        drawnGrid: config.gpgpuMorphTerrainErosionMaskDrawnGrid,
         },
         wrapX: config.gpgpuTerrainMeshTunnel,
       },
@@ -470,6 +686,12 @@ export function buildShadowScene(config: ShadowSceneConfig): ShadowScene {
     objSphere,
     objSpheres,
     softness: config.gpgpuShadowSoftness,
+    // Tunnel presentation (Round 83/84 gap 7): geometry follows
+    // lib/terrainMesh.ts — radius = extent (1.05) * worldScale,
+    // length = 2 * extent * worldScale, axis Z.
+    tunnel: config.gpgpuTerrainMeshTunnel === true,
+    tunnelRadius: Math.max(0, worldScale * 1.05),
+    tunnelLength: Math.max(0, worldScale * 2.1),
   };
 }
 

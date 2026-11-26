@@ -37,6 +37,17 @@ export function rigidClusterColorVariantOn(config: ParticleConfig): boolean {
 export function shadowMapVariantOn(config: ParticleConfig): boolean {
   return (config.gpgpuShadowMapStrength ?? 0) > 0;
 }
+
+// Tunnel occlusion bake (Round 83/84 gap 7): the points draw
+// carries the tunnel-bake sampler only while the terrain mesh
+// is a tunnel AND the Phase Z shadow is live — the same
+// condition under which gpgpuVisualUpdates produces the tunnel
+// bake. Off, the draw strings are the stock ones byte-identically.
+export function shadowTunnelVariantOn(config: ParticleConfig): boolean {
+  return config.gpgpuTerrainMeshTunnel === true
+    && config.gpgpuShadowEnabled === true
+    && (config.gpgpuShadowStrength ?? 0) > 0;
+}
 import { AUX_TEX_SIZE, buildAuxDrawFrag, buildAuxDrawVert } from "./gpgpuShaderAux";
 import { WW_DRAW_FRAG, WW_DRAW_VERT, WW_TEX_SIZE } from "./gpgpuShaderWhitewater";
 
@@ -140,6 +151,12 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uShadowReady:       { value: false },
       uShadowExtent:      { value: 1 },
       uShadowHeightScale: { value: 1 },
+      // Tunnel occlusion bake (Round 83/84 gap 7): inert
+      // entries; the tunnel variant's shader declares them,
+      // the stock shader declares none — writes are guarded
+      // in gpgpuVisualUpdates like the Phase Z block.
+      uShadowTunnelMap:   { value: null },
+      uShadowTunnelReady: { value: false },
       // True shadow map (Phase 23, wiring stage 2): no capture
       // yet — texture null, ready 0, and the defaults mirror
       // lib/appStateDefaultGpgpu.ts (bias 0.001, softness 1).
@@ -206,7 +223,7 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uDensityCount:       { value: texSize * texSize },
       uViewportSizePx:     { value: new THREE.Vector2(1, 1) },
     },
-    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config) }),
+    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config), shadowTunnel: shadowTunnelVariantOn(config) }),
     fragmentShader: buildDrawFrag({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -223,17 +240,19 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
     crack: vellumCrackVariantOn(config),
     cluster: rigidClusterColorVariantOn(config),
     shadowMap: shadowMapVariantOn(config),
+    shadowTunnel: shadowTunnelVariantOn(config),
   });
   useEffect(() => {
     const crack = vellumCrackVariantOn(config);
     const cluster = rigidClusterColorVariantOn(config);
     const shadowMap = shadowMapVariantOn(config);
-    if (drawVariantRef.current.crack === crack && drawVariantRef.current.cluster === cluster && drawVariantRef.current.shadowMap === shadowMap) return;
-    drawVariantRef.current = { crack, cluster, shadowMap };
-    drawMat.vertexShader = buildDrawVert({ vellumCrack: crack, clusterColor: cluster, shadowMap });
+    const shadowTunnel = shadowTunnelVariantOn(config);
+    if (drawVariantRef.current.crack === crack && drawVariantRef.current.cluster === cluster && drawVariantRef.current.shadowMap === shadowMap && drawVariantRef.current.shadowTunnel === shadowTunnel) return;
+    drawVariantRef.current = { crack, cluster, shadowMap, shadowTunnel };
+    drawMat.vertexShader = buildDrawVert({ vellumCrack: crack, clusterColor: cluster, shadowMap, shadowTunnel });
     drawMat.fragmentShader = buildDrawFrag({ vellumCrack: crack, clusterColor: cluster, shadowMap });
     drawMat.needsUpdate = true;
-  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuRigidClusterColorEnabled, config.gpgpuRigidEnabled, config.gpgpuShadowMapStrength, drawMat]);
+  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuRigidClusterColorEnabled, config.gpgpuRigidEnabled, config.gpgpuShadowMapStrength, config.gpgpuTerrainMeshTunnel, config.gpgpuShadowEnabled, config.gpgpuShadowStrength, drawMat]);
 
   const drawGeo = useMemo(() => {
     const count = texSize * texSize;

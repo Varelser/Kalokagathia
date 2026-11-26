@@ -801,6 +801,29 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
               <Slider label="Path Radius （回廊半径・0で常時）" value={config.gpgpuSteerSeekPathRadius} min={0} max={100} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekPathRadius', v)} />
             </>
           )}
+          <Toggle label="Crowd （群衆状態機械）" value={config.gpgpuCrowdEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuCrowdEnabled', v)} />
+          {config.gpgpuCrowdEnabled && (
+            <>
+              <Slider label="Crowd Avoid Range （回避距離・0で自動）" value={config.gpgpuCrowdAvoidRange} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuCrowdAvoidRange', v)} />
+              <Slider label="Crowd Avoid Hysteresis （回避の余裕）" value={config.gpgpuCrowdAvoidHysteresis} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuCrowdAvoidHysteresis', v)} />
+              <Slider label="Crowd Idle Speed （待機に入る速度）" value={config.gpgpuCrowdIdleSpeed} min={0} max={2} step={0.01} onChange={(v) => updateConfig('gpgpuCrowdIdleSpeed', v)} />
+              <Slider label="Crowd Idle Speed Out （待機から出る速度）" value={config.gpgpuCrowdIdleSpeedOut} min={0} max={2} step={0.01} onChange={(v) => updateConfig('gpgpuCrowdIdleSpeedOut', v)} />
+              <Slider label="Crowd Idle Radius （到着半径・0で減速半径）" value={config.gpgpuCrowdIdleRadius} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuCrowdIdleRadius', v)} />
+              <Slider label="Crowd Idle Damping （待機の減衰）" value={config.gpgpuCrowdIdleDamping} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuCrowdIdleDamping', v)} />
+              {config.gpgpuSteerSeekMode === 'path' && (
+                <>
+                  <Slider label="Crowd Lane Count （レーン数）" value={config.gpgpuCrowdLaneCount} min={1} max={4} step={1} onChange={(v) => updateConfig('gpgpuCrowdLaneCount', Math.round(v))} />
+                  <Slider label="Crowd Lane Width （レーン幅）" value={config.gpgpuCrowdLaneWidth} min={0} max={100} step={1} onChange={(v) => updateConfig('gpgpuCrowdLaneWidth', v)} />
+                  <Slider label="Crowd Lane Offset （レーンの横ずらし）" value={config.gpgpuCrowdLaneOffset} min={-100} max={100} step={1} onChange={(v) => updateConfig('gpgpuCrowdLaneOffset', v)} />
+                  <Slider label="Crowd Lane Lateral Gain （横復帰の強さ）" value={config.gpgpuCrowdLaneLateralGain} min={0} max={10} step={0.1} onChange={(v) => updateConfig('gpgpuCrowdLaneLateralGain', v)} />
+                  <Slider label="Crowd Lane Look Ahead Scale （先読み倍率）" value={config.gpgpuCrowdLaneLookAheadScale} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuCrowdLaneLookAheadScale', v)} />
+                </>
+              )}
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                群衆状態機械は Steering の上に乗る第1段（記憶なし遷移則）です。粒子は毎フレーム、待機（目標近くで静止）／移動（通常の Steering）／回避（SDF に近い間は推進を止めて回避だけ）を判定します。レーンは Path モードで属性スロット（State Slot と同じ）の値により割り当てます。OFF の間は従来とバイト同一です。
+              </div>
+            </>
+          )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             群衆ステアリングは lib/steering.ts の法則（目標速度−現在速度、上限でクランプ）のGPU配線です。Path の経路点列はキー gpgpuSteerSeekPath（&quot;x,y,z;x,y,z;…&quot;、最大8点）で指定します。State は属性スロットの値で状態0（目標へ Seek）／状態1（第2目標へ Arrive）を切り替えます。OFF の間は従来とバイト同一です。
           </div>

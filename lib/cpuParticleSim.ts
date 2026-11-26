@@ -267,6 +267,7 @@ export function buildCpuMorphData(
           low: config.gpgpuMorphTerrainErosionMaskLow,
           high: config.gpgpuMorphTerrainErosionMaskHigh,
         imageGrid: config.gpgpuMorphTerrainErosionMaskImageGrid,
+        drawnGrid: config.gpgpuMorphTerrainErosionMaskDrawnGrid,
         },
         wrapX: config.gpgpuTerrainMeshTunnel,
       },

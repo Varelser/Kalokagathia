@@ -71,8 +71,10 @@
 import type { ParticleConfig } from '../types';
 import type { FractureCellData } from './voronoiFracture';
 import { xpbdAlphaTilde, xpbdBreakExceeded, xpbdDeltaLambda } from './xpbdConstraints';
-import { buildObbsForCells, obbSatContact, obbSupportPoint, placeObb } from './rigidObb';
+import { buildObbsForCells, obbBoxInertia, obbInertiaFactor, obbInertiaResponse, obbSatContact, obbSupportPoint, placeObb } from './rigidObb';
 import type { RigidObb } from './rigidObb';
+import { sampleCurlFieldFast } from './fieldGlyphSampling';
+import type { CurlFieldParams } from './fieldGlyphSampling';
 
 /** Hard body budget: the fracture clamp (Phase AG) caps cells at 64. */
 export const RIGID_BODY_MAX = 64;
@@ -118,6 +120,12 @@ export interface RigidBody {
    *  for an empty cell). Absent/null keeps every collision on
    *  the legacy bounding-sphere paths. */
   shape?: RigidObb | null;
+  /** Per-axis inverse inertia of the fitted box (Round 84
+   *  gap 6, stage 1), in the shape's axis frame: present only
+   *  alongside `shape`. The step reads it ONLY while the
+   *  Convex Inertia step option is on; otherwise the isotropic
+   *  sphere `invInertia` answers every angular response. */
+  invInertiaAxis?: [number, number, number] | null;
 }
 
 export interface RigidBond {
@@ -300,6 +308,43 @@ export interface RigidStepOptions {
    *  every pair while this is absent/false, run the legacy
    *  sphere paths verbatim. */
   convexEnabled?: boolean;
+  /** OBB box inertia (Round 84 gap 6, stage 1): while true
+   *  (AND convexEnabled), bodies with a fitted shape answer
+   *  angular responses with the box inertia tensor instead of
+   *  the isotropic sphere scalar. Absent/false keeps the sphere
+   *  path verbatim. */
+  convexInertiaEnabled?: boolean;
+  /** External per-body acceleration (Round 84 gap 3, stage 1):
+   *  world units / s², 3 floats per body in state.bodies order,
+   *  sampled by the caller ONCE per frame from a pure field
+   *  function of (body position, solver time) and applied right
+   *  after gravity in the integrator, identically in every
+   *  substep of that frame. Sleeping bodies are not integrated
+   *  and the force never wakes a body (wake-by-force is stage
+   *  1b). Absent / null keeps the legacy path verbatim. */
+  externalAccel?: Float32Array | null;
+}
+
+/** Per-axis inverse inertia of a fitted box (Round 84 gap 6). */
+function invAxisOf(obb: RigidObb, mass: number): [number, number, number] {
+  const I = obbBoxInertia(obb, mass);
+  return [1 / I[0], 1 / I[1], 1 / I[2]];
+}
+
+/** True while the step should answer angular responses with
+ *  the box tensor for this body (both Convex keys on + a fitted
+ *  shape with axis data). Every other case keeps the isotropic
+ *  sphere scalar verbatim. */
+function tensorActive(body: RigidBody, options: RigidStepOptions): boolean {
+  return !!(options.convexEnabled && options.convexInertiaEnabled && body.shape && body.invInertiaAxis);
+}
+
+/** (r × n)ᵀ I⁻¹ (r × n) for the body's active inertia. */
+function inertiaFactor(body: RigidBody, options: RigidStepOptions, rn: [number, number, number]): number {
+  if (tensorActive(body, options)) {
+    return obbInertiaFactor(body.shape as RigidObb, body.quat, body.invInertiaAxis as [number, number, number], rn);
+  }
+  return (rn[0] * rn[0] + rn[1] * rn[1] + rn[2] * rn[2]) * body.invInertia;
 }
 
 // ── Quaternion helpers (plain arrays, allocation-free in the hot loop) ──
@@ -393,6 +438,10 @@ export function createRigidSolver(
       sleepTimer: 0,
       impactDeltaV: 0,
       ...(obbs ? { shape: obbs[i] ?? null } : {}),
+      // Box inertia (Round 84 gap 6, stage 1): derived from the
+      // same fit, stored alongside the shape. Inert data until
+      // the Convex Inertia step option reads it.
+      ...(obbs && obbs[i] ? { invInertiaAxis: invAxisOf(obbs[i] as RigidObb, mass) } : {}),
     });
   }
   const restDist = new Float32Array(RIGID_BODY_MAX * RIGID_BODY_MAX);
@@ -569,9 +618,16 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
   const CONTACT_STRIDE = RIGID_BODY_MAX + 1;
 
   // 1. Integrate forces + positions for awake bodies.
-  for (const body of bodies) {
+  const ext = options.externalAccel ?? null;
+  for (let bi = 0; bi < n; bi++) {
+    const body = bodies[bi];
     if (body.sleeping) continue;
     body.vel[1] += options.gravityY * h;
+    if (ext) {
+      body.vel[0] += ext[bi * 3] * h;
+      body.vel[1] += ext[bi * 3 + 1] * h;
+      body.vel[2] += ext[bi * 3 + 2] * h;
+    }
     body.pos[0] += body.vel[0] * h;
     body.pos[1] += body.vel[1] * h;
     body.pos[2] += body.vel[2] * h;
@@ -662,17 +718,31 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
       const target = state.restDist[i * RIGID_BODY_MAX + j];
       const d2 = dx * dx + dy * dy + dz * dz;
       if (options.convexEnabled && a.shape && b.shape) {
-        // OBB narrow phase (Phase 20 stage 1): the legacy rest
-        // distance stays the broad phase — a pair that has not
-        // approached closer than it started is never pushed
-        // apart (the tiling stability rule). Inside it the SAT
-        // test decides: boxes whose bounding spheres overlap
-        // but which do not touch pass through untouched, and a
-        // hit corrects along the SAT normal by the SAT depth,
+        // OBB narrow phase (Phase 20 stage 1; broad phase
+        // widened in Round 84 gap 6 stage 2): a pair reaches
+        // the SAT test when it has approached closer than it
+        // started (centre distance < rest distance) OR its
+        // bounding spheres overlap (centre distance < rA + rB)
+        // — the second arm admits rotated elongated bodies
+        // whose corners interpenetrate while their centres are
+        // still at or beyond the rest distance, which the
+        // rest-distance gate alone could not see. The tiling
+        // stability rule is preserved on the correction side:
+        // a hit corrects by exactly the SAT depth — never more
+        // than the shapes themselves demand, the same cap the
+        // sphere path states as "never pushed further apart
+        // than the bounding spheres demand" — and boxes that do
+        // not touch pass through untouched. The correction is
         // split by inverse mass, through the same impulse call
         // as the sphere path (friction / restitution / impact
         // bookkeeping / waking all ride the existing code).
-        if (d2 >= target * target || d2 === 0) continue;
+        // Pairs where either body lacks a shape stay on the
+        // sphere path below, deliberately: a null shape means
+        // the OBB fit failed for that cell (its point cloud
+        // always exists), and the sphere is its documented
+        // fallback.
+        const sphereSum = a.radius + b.radius;
+        if (d2 === 0 || (d2 >= target * target && d2 >= sphereSum * sphereSum)) continue;
         const contact = obbSatContact(
           placeObb(a.shape, a.pos, a.quat),
           placeObb(b.shape, b.pos, b.quat),
@@ -845,13 +915,15 @@ function applyContactImpulse(
   const vn = vx * normal[0] + vy * normal[1] + vz * normal[2];
   if (vn >= 0) return;
   const rest = -vn < 1 ? 0 : options.restitution;
-  // Effective mass along the normal at the contact point (sphere inertia).
+  // Effective mass along the normal at the contact point
+  // (sphere inertia, or the box tensor while Convex Inertia
+  // is on — inertiaFactor picks).
   const rnX = ry * normal[2] - rz * normal[1];
   const rnY = rz * normal[0] - rx * normal[2];
   const rnZ = rx * normal[1] - ry * normal[0];
-  const angFactor = (rnX * rnX + rnY * rnY + rnZ * rnZ) * body.invInertia;
+  const angFactor = inertiaFactor(body, options, [rnX, rnY, rnZ]);
   const jn = -(1 + rest) * vn / (body.invMass + angFactor);
-  applyImpulse(body, normal, jn, [rx, ry, rz]);
+  applyImpulse(body, normal, jn, [rx, ry, rz], options);
   // Friction: oppose the tangential contact velocity, clamped to μ·jn.
   const tx = vx - vn * normal[0];
   const ty = vy - vn * normal[1];
@@ -859,7 +931,7 @@ function applyContactImpulse(
   const tLen = Math.hypot(tx, ty, tz);
   if (tLen > 1e-9) {
     const jt = Math.min(tLen / (body.invMass + angFactor), options.friction * jn);
-    applyImpulse(body, [tx / tLen, ty / tLen, tz / tLen], -jt, [rx, ry, rz]);
+    applyImpulse(body, [tx / tLen, ty / tLen, tz / tLen], -jt, [rx, ry, rz], options);
   }
   body.impactDeltaV = Math.max(body.impactDeltaV, Math.abs(jn * body.invMass));
 }
@@ -887,22 +959,22 @@ function applyPairImpulse(
   if (vn >= 0) return;
   const invA = a.sleeping ? 0 : a.invMass;
   const invB = b.sleeping ? 0 : b.invMass;
-  const inertA = a.sleeping ? 0 : a.invInertia;
-  const inertB = b.sleeping ? 0 : b.invInertia;
   const ranX = ray * normal[2] - raz * normal[1];
   const ranY = raz * normal[0] - rax * normal[2];
   const ranZ = rax * normal[1] - ray * normal[0];
   const rbnX = rby * normal[2] - rbz * normal[1];
   const rbnY = rbz * normal[0] - rbx * normal[2];
   const rbnZ = rbx * normal[1] - rby * normal[0];
-  const angFactor = (ranX * ranX + ranY * ranY + ranZ * ranZ) * inertA
-    + (rbnX * rbnX + rbnY * rbnY + rbnZ * rbnZ) * inertB;
+  // A sleeping body is infinite mass: its factor contributes 0
+  // (inertiaFactor would return its tensor form, so gate here).
+  const angFactor = (a.sleeping ? 0 : inertiaFactor(a, options, [ranX, ranY, ranZ]))
+    + (b.sleeping ? 0 : inertiaFactor(b, options, [rbnX, rbnY, rbnZ]));
   const invSum = invA + invB + angFactor;
   if (invSum <= 0) return;
   const rest = -vn < 1 ? 0 : options.restitution;
   const jn = -(1 + rest) * vn / invSum;
-  if (!a.sleeping) applyImpulse(a, normal, -jn, [rax, ray, raz]);
-  if (!b.sleeping) applyImpulse(b, normal, jn, [rbx, rby, rbz]);
+  if (!a.sleeping) applyImpulse(a, normal, -jn, [rax, ray, raz], options);
+  if (!b.sleeping) applyImpulse(b, normal, jn, [rbx, rby, rbz], options);
   // Friction along the tangential relative velocity.
   const tx = rvx - vn * normal[0];
   const ty = rvy - vn * normal[1];
@@ -910,8 +982,8 @@ function applyPairImpulse(
   const tLen = Math.hypot(tx, ty, tz);
   if (tLen > 1e-9) {
     const jt = Math.min(tLen / invSum, options.friction * jn);
-    if (!a.sleeping) applyImpulse(a, [tx / tLen, ty / tLen, tz / tLen], jt, [rax, ray, raz]);
-    if (!b.sleeping) applyImpulse(b, [tx / tLen, ty / tLen, tz / tLen], -jt, [rbx, rby, rbz]);
+    if (!a.sleeping) applyImpulse(a, [tx / tLen, ty / tLen, tz / tLen], jt, [rax, ray, raz], options);
+    if (!b.sleeping) applyImpulse(b, [tx / tLen, ty / tLen, tz / tLen], -jt, [rbx, rby, rbz], options);
   }
   // Impact bookkeeping uses the REAL inverse masses even for a
   // sleeping body: the Δv it WOULD receive is what the wake test
@@ -926,20 +998,33 @@ function applyPairImpulse(
   if (b.sleeping && !a.sleeping && dvB > WAKE_DELTA_V) wakeBody(state, j);
 }
 
-/** Apply impulse J·dir at offset r from the centre: Δv and Δω. */
+/** Apply impulse J·dir at offset r from the centre: Δv and Δω.
+ *  Δω uses the box tensor while Convex Inertia is on for this
+ *  body (tensorActive), the sphere scalar otherwise. */
 function applyImpulse(
   body: RigidBody,
   dir: [number, number, number],
   magnitude: number,
   r: [number, number, number],
+  options: RigidStepOptions,
 ): void {
   body.vel[0] += dir[0] * magnitude * body.invMass;
   body.vel[1] += dir[1] * magnitude * body.invMass;
   body.vel[2] += dir[2] * magnitude * body.invMass;
   const jx = dir[0] * magnitude; const jy = dir[1] * magnitude; const jz = dir[2] * magnitude;
-  body.angVel[0] += (r[1] * jz - r[2] * jy) * body.invInertia;
-  body.angVel[1] += (r[2] * jx - r[0] * jz) * body.invInertia;
-  body.angVel[2] += (r[0] * jy - r[1] * jx) * body.invInertia;
+  const tx = r[1] * jz - r[2] * jy;
+  const ty = r[2] * jx - r[0] * jz;
+  const tz = r[0] * jy - r[1] * jx;
+  if (tensorActive(body, options)) {
+    const dw = obbInertiaResponse(body.shape as RigidObb, body.quat, body.invInertiaAxis as [number, number, number], [tx, ty, tz]);
+    body.angVel[0] += dw[0];
+    body.angVel[1] += dw[1];
+    body.angVel[2] += dw[2];
+    return;
+  }
+  body.angVel[0] += tx * body.invInertia;
+  body.angVel[1] += ty * body.invInertia;
+  body.angVel[2] += tz * body.invInertia;
 }
 
 /**
@@ -1134,6 +1219,20 @@ export interface RigidResolved {
   /** OBB shape collision (Phase 20 stage 1): bodies are built
    *  with fitted OBB shapes and the step uses them while true. */
   convexEnabled: boolean;
+  /** OBB box inertia (Round 84 gap 6, stage 1): while true
+   *  (AND convexEnabled), shaped bodies answer angular
+   *  responses with the box inertia tensor. */
+  convexInertia: boolean;
+  /** Field force coupling (Round 84 gap 3, stage 1): while true
+   *  the caller fills RigidStepOptions.externalAccel from the
+   *  curl field twin once per frame. Inert while false. */
+  forceEnabled: boolean;
+  /** Force source: only 'curl' is wired in stage 1. */
+  forceSource: string;
+  /** Force scale (the calibration ladder picks the working
+   *  value; 1.0 = the raw GPU-equivalent conversion, which is
+   *  10-30x gravity — see fillRigidCurlAccel). */
+  forceScale: number;
 }
 
 /**
@@ -1160,7 +1259,66 @@ export function resolveRigid(config: ParticleConfig): RigidResolved {
     stressBreakEnabled: !!config.gpgpuRigidStressBreakEnabled,
     stressPropagation: Math.max(0, Math.min(1, config.gpgpuRigidStressPropagation ?? 0.5)),
     convexEnabled: !!config.gpgpuRigidConvexEnabled,
+    convexInertia: !!config.gpgpuRigidConvexInertia,
+    forceEnabled: !!config.gpgpuRigidForceEnabled,
+    forceSource: typeof config.gpgpuRigidForceSource === 'string' ? config.gpgpuRigidForceSource : 'curl',
+    forceScale: Number.isFinite(config.gpgpuRigidForceScale) ? Math.max(0, Math.min(4, config.gpgpuRigidForceScale as number)) : 1,
   };
+}
+
+/** Curl field params for the rigid force coupling, from the
+ *  config's curl keys (the gpgpuSimulationPasses mapping: mode /
+ *  symmetry string tables, octaves clamped 1..3, speed clamped
+ *  0..4). The clock is the SOLVER's own time, so the sample is a
+ *  pure function of the stepped substep count. Replica 0's seed
+ *  offset is (0,0,0) (the main stack). */
+export function rigidCurlParamsFromConfig(config: ParticleConfig, time: number): CurlFieldParams {
+  const modeMap: Record<string, number> = { curl: 0, ridged: 1, vortex: 2 };
+  const symMap: Record<string, number> = { none: 0, mirrorX: 1, radial4: 2, radial6: 3, octahedral: 4 };
+  return {
+    enabled: !!config.gpgpuCurlEnabled,
+    scale: config.gpgpuCurlScale,
+    speed: Math.max(0, Math.min(4, config.gpgpuCurlSpeed)),
+    mode: modeMap[config.gpgpuCurlMode] ?? 0,
+    octaves: Math.max(1, Math.min(3, Math.round(config.gpgpuCurlOctaves))),
+    symmetry: symMap[config.gpgpuCurlSymmetry] ?? 0,
+    seedOffset: [0, 0, 0],
+    time,
+  };
+}
+
+/**
+ * Fill `out` (3 floats per body) with the curl coupling
+ * acceleration for every body, sampled at the body's centre of
+ * mass (Round 84 gap 3, stage 1). The conversion follows the
+ * particle gravity precedent in sceneGpgpuSystem: the GPU curl
+ * branch adds curl * uCurlStrength * 20.0 * uDelta * grpCurl to
+ * a velocity that positions integrate at vel * dt * 60, so the
+ * world-space acceleration is
+ *   a = sampleCurlField(pos, params) * uCurlStrength * 20.0 * 60.0 * grpCurl(=1) * forceScale.
+ * At the default keys this is 10-30x gravity — forceScale is
+ * the calibration dial (the prototype ladder is
+ * {0.01, 0.03, 0.1, 0.3, 1.0}). Pure: same (positions, params)
+ * in, same accelerations out.
+ */
+export function fillRigidCurlAccel(
+  state: RigidSolverState,
+  params: CurlFieldParams,
+  curlStrength: number,
+  forceScale: number,
+  out: Float32Array,
+): Float32Array {
+  const k = curlStrength * 20.0 * 60.0 * forceScale;
+  const bodies = state.bodies;
+  for (let i = 0; i < bodies.length; i++) {
+    // The fast sampler returns a shared scratch — consumed
+    // immediately here, before the next call.
+    const s = sampleCurlFieldFast(bodies[i].pos, params);
+    out[i * 3] = s[0] * k;
+    out[i * 3 + 1] = s[1] * k;
+    out[i * 3 + 2] = s[2] * k;
+  }
+  return out;
 }
 
 /**

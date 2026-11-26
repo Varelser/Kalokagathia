@@ -9,6 +9,7 @@ import {
   type ErosionTrailAudioState,
   type TrailLayout,
 } from './sceneErosionTrailSystemShared';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 const tempPos = new THREE.Vector3();
 const nextPos = new THREE.Vector3();
@@ -78,7 +79,7 @@ export function useErosionTrailRuntime({
     const settings = getErosionTrailSettings(config, layerIndex);
     const profile = getErosionProfile(config, layerIndex);
     const globalRadius = config.sphereRadius * settings.radiusScale;
-    const pulse = config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0;
+    const pulse = config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0;
     const bass = config.audioEnabled ? audioRef.current.bass * config.audioBeatScale : 0;
     const treble = config.audioEnabled ? audioRef.current.treble * config.audioTrebleMotionScale : 0;
     const audioBoost = isPlaying ? (pulse + bass * 0.7 + treble * 0.25) * settings.audioReactive : 0;

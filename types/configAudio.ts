@@ -30,6 +30,11 @@ export interface ParticleConfigAudio {
   // central particle audio inputs; '' = the default graph,
   // which is the legacy fixed wiring.
   audioRoutingGraph: string;
+  // Audio scene graph (TD §7 stage 2): JSON wiring for the
+  // direct scene-side readers (burst / screen / camera / hue
+  // / line); '' = the default graph, which is the legacy
+  // fixed direct formulas.
+  audioSceneGraph: string;
   // Custom Frequency Bands
   audioBandALowHz: number;
   audioBandAHighHz: number;

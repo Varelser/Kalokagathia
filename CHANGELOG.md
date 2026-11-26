@@ -4,6 +4,19 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [2.21.0] - 2026-11-26
+
+第39期: ラウンド83/84の未完課題6件を実装（いずれも既定 OFF / 既定値で従来と同一）。
+
+- シャドウ受け手のトンネル対応: トンネル（光管）の内側ではベイク済み遮蔽を展開ホライズンで判定し、管の外の地形が落とす影が管内へ漏れなくなった。新規キーなし。
+- 地形侵食マスクに手描きモード（drawn）を追加: パネルのキャンバスで描いた 129×129 グリッドをマスクに使える。新規キー1件（gpgpuMorphTerrainErosionMaskDrawnGrid）。
+- 剛体へのフォース場連成（第1段）: Curl フィールドを剛体の重心でサンプルし外部加速度として加える。新規キー3件（gpgpuRigidForceEnabled / Source / Scale、既定 OFF）。
+- 剛体の OBB 慣性: 形状衝突時に球近似でなく箱の慣性テンソルで角速度が応答する。新規キー1件（gpgpuRigidConvexInertia、既定 OFF）。
+- 群衆状態機械: Steering の粒子が待機／移動／回避の3状態で動き、SDF プリミティブへの回避とレーン割当てに対応。新規キー12件（gpgpuCrowd*、既定 OFF）。WebGL 経路で実GPU検証済み。WebGPU 経路は式の一致を単体テストで担保し、実GPUでの回避確認は今後の課題。
+- 音のシーン側グラフ: 解析レベルから Burst / Screen / Camera / Hue / Line への接続を JSON グラフで差し替え可能に。新規キー1件（audioSceneGraph、空＝従来の固定式と全ケース一致を単体テストで確認）。
+
+新規キー合計18件（総数 1,541）。Grains DEM 凝集（40°挑戦）は実GPU較正で合格線に届かず、本版には含めない（記録: GRAINS_DEM_COHESION_GATE_RECORD.md）。
+
 ## [2.20.0] — 2026-11-26
 
 Thirty-eighth term: the Grains DEM engine (solver

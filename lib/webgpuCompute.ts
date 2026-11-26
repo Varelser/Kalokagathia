@@ -199,6 +199,33 @@ struct Uniforms {
   attractor4Type : i32,
   attractor4Strength : f32,
   attractor4Scale : f32,
+  // Obstacle avoidance + crowd (Round 84 gap 2): buffer
+  // indices 164-183, appended at the struct tail like every
+  // earlier addition so all previous offsets stay put. The
+  // avoid pair twins the GLSL Phase 15 chunk; the life pair
+  // twins the Phase AB block; the crowd set twins the crowd
+  // variant of the GLSL steer chunk. 20 fields = 80 bytes,
+  // the total stays 16-byte aligned (736 bytes).
+  steerAvoid : f32,
+  steerAvoidRange : f32,
+  lifeAvoid : f32,
+  lifeVisionRange : f32,
+  crowdEnabled : f32,
+  crowdAvoidRange : f32,
+  crowdAvoidHysteresis : f32,
+  crowdAvoidStrength : f32,
+  crowdIdleSpeed : f32,
+  crowdIdleSpeedOut : f32,
+  crowdIdleRadius : f32,
+  crowdIdleDamping : f32,
+  crowdLaneCount : i32,
+  crowdLaneWidth : f32,
+  crowdLaneOffset : f32,
+  crowdLaneLateralGain : f32,
+  crowdLaneLookAheadScale : f32,
+  crowdPad0 : f32,
+  crowdPad1 : f32,
+  crowdPad2 : f32,
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -420,6 +447,43 @@ fn gyroidField(p: vec3f, sc: vec3f, size: f32) -> f32 {
   let q = (p - sc) * (3.14159265 / max(size, 1.0));
   return sin(q.x) * cos(q.y) + sin(q.y) * cos(q.z) + sin(q.z) * cos(q.x);
 }
+// SDF collider queries for the avoidance twins (Round 84
+// gap 2): formula-identical to the GLSL abSdfDistance /
+// abSdfNormal in the WebGL velocity helpers — per-shape
+// distance, normal by central differences (eps 0.5) with a
+// +Y fallback for a degenerate gradient. Scope note (spec
+// M8): like the GLSL originals these cover the single SDF
+// primitive (sphere / box / torus / capsule / gyroid) only;
+// the mesh SDF is a separate query and is NOT part of the
+// avoidance terms on either route.
+fn kaloSdfDistance(p: vec3f) -> f32 {
+  let sc = vec3f(u.sdfX, u.sdfY, u.sdfZ);
+  let d = p - sc;
+  if (u.sdfShape == 0) {
+    return length(d) - u.sdfSize;
+  } else if (u.sdfShape == 1) {
+    let q = abs(d) - vec3f(u.sdfSize);
+    return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+  } else if (u.sdfShape == 2) {
+    let ringD = length(d.xz) - u.sdfSize;
+    return length(vec2f(ringD, d.y)) - u.sdfSize * 0.35;
+  } else if (u.sdfShape == 4) {
+    return gyroidField(p, sc, u.sdfSize) * u.sdfSize * 0.227;
+  }
+  let yc = clamp(d.y, -u.sdfSize, u.sdfSize);
+  return length(vec3f(d.x, d.y - yc, d.z)) - u.sdfSize * 0.4;
+}
+fn kaloSdfNormal(p: vec3f) -> vec3f {
+  let e = 0.5;
+  let g = vec3f(
+    kaloSdfDistance(p + vec3f(e, 0.0, 0.0)) - kaloSdfDistance(p - vec3f(e, 0.0, 0.0)),
+    kaloSdfDistance(p + vec3f(0.0, e, 0.0)) - kaloSdfDistance(p - vec3f(0.0, e, 0.0)),
+    kaloSdfDistance(p + vec3f(0.0, 0.0, e)) - kaloSdfDistance(p - vec3f(0.0, 0.0, e)));
+  let gl = length(g);
+  if (gl > 0.0001) { return g / gl; }
+  return vec3f(0.0, 1.0, 0.0);
+}
+
 fn gyroidNormal(p: vec3f, sc: vec3f, size: f32) -> vec3f {
   let q = (p - sc) * (3.14159265 / max(size, 1.0));
   let g = vec3f(
@@ -542,6 +606,22 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     }
   }
 
+  // General steering avoidance (Round 84 gap 2, M1): the
+  // WGSL twin of the GLSL Phase 15 chunk, formula for formula
+  // (range 0 falls back to 1.5 * the SDF size; quadratic
+  // proximity weight; * delta * 45). While the crowd state
+  // machine is on, the standalone term stands down — the
+  // machine owns avoidance in its AVOID state, exactly as
+  // the GLSL crowd variant omits the 'steer-avoid' chunk.
+  if (u.steerAvoid > 0.0 && u.sdfEnabled > 0.5 && u.crowdEnabled < 0.5) {
+    let sRange = select(max(u.sdfSize * 1.5, 1.0), u.steerAvoidRange, u.steerAvoidRange > 0.0);
+    let sSd = kaloSdfDistance(pos);
+    if (sSd < sRange) {
+      let sw = clamp(1.0 - sSd / sRange, 0.0, 1.0);
+      vel += kaloSdfNormal(pos) * (u.steerAvoid * sw * sw) * u.delta * 45.0;
+    }
+  }
+
   // Crowd steering (Phase 20 stage 2): the WGSL twin of
   // lib/steering.ts, formula for formula with the GLSL chunk
   // (desired = normalize(target - pos) * maxSpeed, arrive ramps
@@ -569,7 +649,24 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       sMode = select(0, 1, isState1);
     }
     var sApply = true;
+    var cLatForce = vec3f(0.0);
     if (sMode == 2) {
+      // Lane grammar (Round 84 gap 2): the lane comes from
+      // the state slot's baked value, as in the GLSL crowd
+      // chunk; the lane look-ahead scales before the walk.
+      var cLane = 0;
+      var cLaneCenter = 0.0;
+      var cLookAhead = u.steerPathLookAhead;
+      if (u.crowdEnabled > 0.5) {
+        let attrData = textureLoad(attrTex, vec2i(i32(idx % texSizeU), i32(idx / texSizeU)), 0);
+        var laneSlot = attrData.r;
+        if (u.steerStateSlot == 1) { laneSlot = attrData.g; }
+        else if (u.steerStateSlot == 2) { laneSlot = attrData.b; }
+        else if (u.steerStateSlot >= 3) { laneSlot = attrData.a; }
+        cLane = i32(min(floor(clamp(laneSlot, 0.0, 1.0) * f32(u.crowdLaneCount)), f32(u.crowdLaneCount) - 1.0));
+        cLaneCenter = u.crowdLaneOffset + (f32(cLane) - f32(u.crowdLaneCount - 1) / 2.0) * (u.crowdLaneWidth * 2.0);
+        cLookAhead = u.steerPathLookAhead * (1.0 + 0.25 * f32(cLane)) * u.crowdLaneLookAheadScale;
+      }
       if (u.steerPathCount <= 0) {
         sApply = false;
       } else if (u.steerPathCount == 1) {
@@ -578,6 +675,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         var bestDistSq = 1e30;
         var bestArc = 0.0;
         var arcBefore = 0.0;
+        var bestProj = pos;
+        var bestTangent = vec3f(1.0, 0.0, 0.0);
         for (var i = 0; i < 7; i++) {
           if (i >= u.steerPathCount - 1) { break; }
           let pa = u.steerPath[i];
@@ -590,10 +689,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
           let pq = pa + ab * pt;
           let pdq = pos - pq;
           let distSq = dot(pdq, pdq);
-          if (distSq < bestDistSq) { bestDistSq = distSq; bestArc = arcBefore + segLen * pt; }
+          if (distSq < bestDistSq) { bestDistSq = distSq; bestArc = arcBefore + segLen * pt; bestProj = pq; bestTangent = ab; }
           arcBefore += segLen;
         }
-        let targetArc = clamp(bestArc + max(u.steerPathLookAhead, 0.0), 0.0, arcBefore);
+        let targetArc = clamp(bestArc + max(cLookAhead, 0.0), 0.0, arcBefore);
         var walkArc = 0.0;
         for (var j = 0; j < 7; j++) {
           if (j >= u.steerPathCount - 1) { break; }
@@ -608,10 +707,63 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
           }
           walkArc += segLen;
         }
+        if (u.crowdEnabled > 0.5) {
+          // Lateral (crowdLateralDir + the corridor law),
+          // formula for formula with the GLSL crowd chunk.
+          var cLat = vec3f(bestTangent.z, 0.0, -bestTangent.x);
+          var cLatLen = length(cLat);
+          if (cLatLen < 1e-4) {
+            cLat = vec3f(-bestTangent.y, bestTangent.x, 0.0);
+            cLatLen = length(cLat);
+            if (cLatLen < 1e-4) { cLat = vec3f(1.0, 0.0, 0.0); cLatLen = 1.0; }
+          }
+          cLat /= cLatLen;
+          sTarget += cLat * cLaneCenter;
+          let cLatDev = dot(pos - bestProj, cLat) - cLaneCenter;
+          if (abs(cLatDev) > u.crowdLaneWidth) {
+            cLatForce = cLat * (-cLatDev * u.crowdLaneLateralGain);
+          }
+        }
         if (u.steerPathRadius > 0.0 && sqrt(bestDistSq) <= u.steerPathRadius) { sApply = false; }
       }
     }
-    if (sApply) {
+    // The state machine (Round 84 gap 2, crowdStateFor,
+    // formula for formula with the GLSL crowd chunk). While
+    // the crowd is off, cState stays at MOVE and the
+    // application below is the Phase 20 one verbatim.
+    var cState = 1;
+    var cSd = 0.0;
+    var cNormal = vec3f(0.0, 1.0, 0.0);
+    var cRin = 1.0;
+    if (u.crowdEnabled > 0.5) {
+      var cVn = 0.0;
+      if (u.sdfEnabled > 0.5) {
+        cSd = kaloSdfDistance(pos);
+        cNormal = kaloSdfNormal(pos);
+        cVn = dot(vel, cNormal);
+      }
+      cRin = select(max(u.sdfSize * 1.5, 1.0), u.crowdAvoidRange, u.crowdAvoidRange > 0.0);
+      let cRout = cRin * (1.0 + u.crowdAvoidHysteresis);
+      let cSpd = length(vel);
+      let cIdleR = select(u.steerSlowingRadius, u.crowdIdleRadius, u.crowdIdleRadius > 0.0);
+      let cToT = sTarget - pos;
+      let cDist = length(cToT);
+      var cToward = 0.0;
+      if (cDist > 0.0) { cToward = dot(vel, cToT / cDist); }
+      if (u.sdfEnabled > 0.5 && (cSd < cRin || (cSd < cRout && cVn > 0.0))) {
+        cState = 2;
+      } else if (cDist < cIdleR && (cSpd < u.crowdIdleSpeed || (cSpd < u.crowdIdleSpeedOut && cToward <= 0.0))) {
+        cState = 0;
+      }
+    }
+    if (u.crowdEnabled > 0.5 && cState == 2) {
+      // AVOID: the avoid law only; the seek gain is 0.
+      let cSw = clamp(1.0 - cSd / cRin, 0.0, 1.0);
+      vel += cNormal * (u.crowdAvoidStrength * cSw * cSw) * u.delta * 45.0;
+    } else if (u.crowdEnabled > 0.5 && cState == 0) {
+      // IDLE: no propulsion; damp toward rest.
+      vel *= pow(clamp(u.crowdIdleDamping, 0.0, 1.0), u.delta * 60.0);
+    } else if (sApply) {
       let toTarget = sTarget - pos;
       let sDist = length(toTarget);
       var effSpeed = u.steerMaxSpeed;
@@ -620,7 +772,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       }
       var desired = vec3f(0.0);
       if (sDist > 0.0) { desired = (toTarget / sDist) * effSpeed; }
-      var steerForce = desired - vel;
+      var steerForce = desired - vel + cLatForce;
       if (u.steerMaxForce > 0.0) {
         let fLen = length(steerForce);
         if (fLen > u.steerMaxForce) { steerForce *= u.steerMaxForce / fLen; }
@@ -677,6 +829,18 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       }
     }
     vel += plForce * u.particleLifeStrength * u.delta * 45.0;
+    // Obstacle avoidance (Round 84 gap 2, M1): the WGSL twin
+    // of the GLSL Phase AB block, formula for formula (range
+    // = the vision range, or the interaction radius while it
+    // is 0; quadratic proximity weight; * delta * 45).
+    if (u.lifeAvoid > 0.0 && u.sdfEnabled > 0.5) {
+      let aRange = select(plRadius, u.lifeVisionRange, u.lifeVisionRange > 0.0);
+      let aSd = kaloSdfDistance(pos);
+      if (aSd < aRange) {
+        let aw = clamp(1.0 - aSd / aRange, 0.0, 1.0);
+        vel += kaloSdfNormal(pos) * (u.lifeAvoid * aw * aw) * u.delta * 45.0;
+      }
+    }
     vel *= pow(clamp(u.particleLifeFriction, 0.0, 1.0), u.delta * 60.0);
   }
 
@@ -2637,7 +2801,7 @@ type GrainsDemState = {
 
 // Vel uniform buffer: 164 f32 slots (see the WGSL Uniforms struct
 // field order; int fields are written through an Int32Array view).
-const VEL_UNIFORM_BYTES = 656;
+const VEL_UNIFORM_BYTES = 736;
 // Pos uniform buffer: 21 f32 slots.
 const POS_UNIFORM_BYTES = 128;
 
@@ -3150,6 +3314,36 @@ export interface WebGPUForceParams {
   // put stateSlot / stateThreshold to work: mode 3 reads the
   // mirrored attribute bake at binding 13.
   steeringSeek: WebGPUSteeringParams | null;
+  // Obstacle avoidance (Round 84 gap 2, M1): the WGSL twins
+  // of the GLSL Phase 15 / Phase AB terms read the same keys
+  // the WebGL uniforms use.
+  steerAvoid: number;
+  steerAvoidRange: number;
+  particleLifeAvoid: number;
+  particleLifeVisionRange: number;
+  // Crowd state machine (Round 84 gap 2): structurally the
+  // CrowdResolved of lib/steering.ts.
+  crowd: WebGPUCrowdParams | null;
+}
+
+/** Per-frame crowd parameters for stepWebGPUCompute (Round 84
+ * gap 2): structurally the CrowdResolved of lib/steering.ts. */
+export interface WebGPUCrowdParams {
+  enabled: boolean;
+  /** Resolved by the caller via crowdAvoidStrength (the
+   *  steer-avoid key while positive, else 1). */
+  avoidStrength: number;
+  avoidRange: number;
+  avoidHysteresis: number;
+  idleSpeed: number;
+  idleSpeedOut: number;
+  idleRadius: number;
+  idleDamping: number;
+  laneCount: number;
+  laneWidth: number;
+  laneOffset: number;
+  laneLateralGain: number;
+  laneLookAheadScale: number;
 }
 
 /** Per-frame fluid field parameters for stepWebGPUCompute
@@ -3451,6 +3645,26 @@ export function stepWebGPUCompute(
   velI[161] = f ? f.attractor4Type : 0;
   velU[162] = f ? f.attractor4Strength : 0;
   velU[163] = f ? f.attractor4Scale : 0;
+  // Obstacle avoidance + crowd (Round 84 gap 2): indices
+  // 164-183 (181-183 are the alignment pads, left 0).
+  velU[164] = f ? f.steerAvoid : 0;
+  velU[165] = f ? f.steerAvoidRange : 0;
+  velU[166] = f ? f.particleLifeAvoid : 0;
+  velU[167] = f ? f.particleLifeVisionRange : 0;
+  const cw = f ? f.crowd : null;
+  velU[168] = cw && cw.enabled ? 1 : 0;
+  velU[169] = cw ? cw.avoidRange : 0;
+  velU[170] = cw ? cw.avoidHysteresis : 0.2;
+  velU[171] = cw ? cw.avoidStrength : 1;
+  velU[172] = cw ? cw.idleSpeed : 0.05;
+  velU[173] = cw ? cw.idleSpeedOut : 0.1;
+  velU[174] = cw ? cw.idleRadius : 0;
+  velU[175] = cw ? cw.idleDamping : 0.9;
+  velI[176] = cw ? cw.laneCount : 1;
+  velU[177] = cw ? cw.laneWidth : 20;
+  velU[178] = cw ? cw.laneOffset : 0;
+  velU[179] = cw ? cw.laneLateralGain : 1;
+  velU[180] = cw ? cw.laneLookAheadScale : 1;
   new Uint32Array(velU.buffer)[0] = texSize; // texSizeはu32なのでUint32Arrayビューで書く
   device.queue.writeBuffer(velUBuf, 0, velU);
 

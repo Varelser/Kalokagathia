@@ -400,6 +400,7 @@ export function terrainOptionsFromConfig(config: ParticleConfig): GpgpuMorphTerr
         low: config.gpgpuMorphTerrainErosionMaskLow,
         high: config.gpgpuMorphTerrainErosionMaskHigh,
         imageGrid: config.gpgpuMorphTerrainErosionMaskImageGrid,
+        drawnGrid: config.gpgpuMorphTerrainErosionMaskDrawnGrid,
       },
       wrapX: config.gpgpuTerrainMeshTunnel,
     },
@@ -434,9 +435,12 @@ function derivedCacheKey(config: ParticleConfig): string {
     config.gpgpuMorphTerrainErosionMaskLow,
     config.gpgpuMorphTerrainErosionMaskHigh,
     // Phase 30: the mask image content re-carves too.
+    // Round 83 gap 1: the hand-drawn grid re-carves the same way.
     config.gpgpuMorphTerrainErosionMaskMode === 'image'
       ? erosionMaskImageGridHash(config.gpgpuMorphTerrainErosionMaskImageGrid)
-      : 'noimg',
+      : config.gpgpuMorphTerrainErosionMaskMode === 'drawn'
+        ? erosionMaskImageGridHash(config.gpgpuMorphTerrainErosionMaskDrawnGrid)
+        : 'noimg',
     config.gpgpuSeed,
   ].join('|');
 }
@@ -520,6 +524,43 @@ export function getTerrainDerivedTexture(kind: TerrainDerivedMapKind, config: Pa
   return { texture: tex, ready: true };
 }
 
+/** Hand-drawn mask sentinel (Round 83 gap 1): the painted
+ *  erosion-mask grid as a Layer Map / raster / kill-mask source,
+ *  sibling to the terrain-derived sentinels. */
+export const HAND_DRAWN_MASK_SOURCE = 'hand-drawn:mask';
+
+/** RGBA bytes of the hand-drawn grid (luma in RGB, A = 255),
+ *  at the grid's own side length. An absent / invalid grid
+ *  yields null — the source then resolves to not-ready, like
+ *  an image that has not loaded. */
+export function handDrawnMaskBytes(grid: readonly number[] | null | undefined): { bytes: Uint8ClampedArray; size: number } | null {
+  if (!Array.isArray(grid) || grid.length < 4) return null;
+  const side = Math.round(Math.sqrt(grid.length));
+  if (side * side !== grid.length) return null;
+  const bytes = new Uint8ClampedArray(grid.length * 4);
+  for (let i = 0; i < grid.length; i++) {
+    const v = Number.isFinite(grid[i]) ? Math.min(1, Math.max(0, grid[i])) : 0;
+    const b = Math.round(v * 255);
+    bytes[i * 4] = b;
+    bytes[i * 4 + 1] = b;
+    bytes[i * 4 + 2] = b;
+    bytes[i * 4 + 3] = 255;
+  }
+  return { bytes, size: side };
+}
+
+let handDrawnCache: { hash: string; tex: THREE.DataTexture } | null = null;
+export function getHandDrawnMaskTexture(config: ParticleConfig): MapImageTextureState {
+  const built = handDrawnMaskBytes(config.gpgpuMorphTerrainErosionMaskDrawnGrid);
+  if (!built) return { texture: null, ready: false };
+  const hash = erosionMaskImageGridHash(config.gpgpuMorphTerrainErosionMaskDrawnGrid);
+  if (!handDrawnCache || handDrawnCache.hash !== hash) {
+    handDrawnCache?.tex.dispose();
+    handDrawnCache = { hash, tex: makeDerivedDataTexture(built.bytes, built.size) };
+  }
+  return { texture: handDrawnCache.tex, ready: true };
+}
+
 /**
  * The single resolution point for Layer Map / mask sources:
  * sentinel sources resolve to the live derived texture (which
@@ -529,6 +570,7 @@ export function getTerrainDerivedTexture(kind: TerrainDerivedMapKind, config: Pa
 export function resolveMapSourceTexture(source: string, config: ParticleConfig): MapImageTextureState {
   const kind = parseTerrainDerivedSource(source);
   if (kind) return getTerrainDerivedTexture(kind, config);
+  if (source === HAND_DRAWN_MASK_SOURCE) return getHandDrawnMaskTexture(config);
   // Phase AF supplies (text / path / edge sentinels) resolve in
   // lib/mapSourceSupply.ts; everything else is an image source.
   const af = resolveAfMapSourceTexture(source, config);

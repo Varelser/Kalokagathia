@@ -6,6 +6,7 @@ import { generateParticleData, type ParticleData } from './particleData';
 import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { getLayerParticleLayoutDeps, getLayerRuntimeVoxelSnapshot } from '../lib/sceneRenderRouting';
 import { applyVoxelProfilePbr } from '../lib/materialGrammar';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 type VoxelSettings = {
   opacity: number;
@@ -231,7 +232,7 @@ export const VoxelLatticeSystem: React.FC<{ config: ParticleConfig; layerIndex: 
     const settings = getSettings(config, layerIndex);
     const t = clock.getElapsedTime();
     const globalRadius = config.sphereRadius * settings.radiusScale;
-    const pulse = config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0;
+    const pulse = config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0;
     const bass = config.audioEnabled ? audioRef.current.bass * config.audioBeatScale : 0;
     const audioDrive = isPlaying ? (pulse + bass * 0.6) * settings.audioReactive : 0;
     const style = applyMaterialStyle(color.set(settings.color), settings.materialStyle, pulse + bass * 0.25);

@@ -87,6 +87,69 @@ export interface ObbContact {
 
 const SEPARATED: ObbContact = { hit: false, normal: [0, 0, 0], depth: 0, point: [0, 0, 0] };
 
+// ── Box inertia (Round 84 gap 6, stage 1) ─────────────────────
+
+/**
+ * Diagonal inertia tensor of a solid box with the OBB's half
+ * extents, in the OBB's own axis frame: for half extents
+ * (a, b, c) the full sizes are (2a, 2b, 2c) and
+ * I_x = m/12 · ((2b)² + (2c)²) = m/3 · (b² + c²), cyclically.
+ */
+export function obbBoxInertia(obb: RigidObb, mass: number): Vec3 {
+  const a = obb.halfExtents[0], b = obb.halfExtents[1], c = obb.halfExtents[2];
+  return [
+    (mass / 3) * (b * b + c * c),
+    (mass / 3) * (a * a + c * c),
+    (mass / 3) * (a * a + b * b),
+  ];
+}
+
+/**
+ * Angular velocity change Δω = R · I⁻¹ · Rᵀ · τ for a world
+ * torque τ, where R is the body's rotation (quat) and I⁻¹ the
+ * per-axis inverse inertia in the OBB axis frame. The chain:
+ * world → body-local (conjugate rotation) → OBB axis components
+ * (dots with the local axes) → scale → recompose → world.
+ */
+export function obbInertiaResponse(
+  obb: RigidObb,
+  quat: [number, number, number, number],
+  invInertiaAxis: Vec3,
+  torque: Vec3,
+): Vec3 {
+  const conj: [number, number, number, number] = [-quat[0], -quat[1], -quat[2], quat[3]];
+  const local = obbQuatRotate(conj, torque);
+  const c0 = dot(local, obb.axes[0]) * invInertiaAxis[0];
+  const c1 = dot(local, obb.axes[1]) * invInertiaAxis[1];
+  const c2 = dot(local, obb.axes[2]) * invInertiaAxis[2];
+  const scaled: Vec3 = [
+    c0 * obb.axes[0][0] + c1 * obb.axes[1][0] + c2 * obb.axes[2][0],
+    c0 * obb.axes[0][1] + c1 * obb.axes[1][1] + c2 * obb.axes[2][1],
+    c0 * obb.axes[0][2] + c1 * obb.axes[1][2] + c2 * obb.axes[2][2],
+  ];
+  return obbQuatRotate(quat, scaled);
+}
+
+/**
+ * The effective-mass quadratic form (r × n)ᵀ · I⁻¹ · (r × n)
+ * for a world lever cross normal `rn`, with the same frame
+ * chain as obbInertiaResponse (the scalar needs no recompose:
+ * the form is invariant under the final rotation).
+ */
+export function obbInertiaFactor(
+  obb: RigidObb,
+  quat: [number, number, number, number],
+  invInertiaAxis: Vec3,
+  rn: Vec3,
+): number {
+  const conj: [number, number, number, number] = [-quat[0], -quat[1], -quat[2], quat[3]];
+  const local = obbQuatRotate(conj, rn);
+  const c0 = dot(local, obb.axes[0]);
+  const c1 = dot(local, obb.axes[1]);
+  const c2 = dot(local, obb.axes[2]);
+  return c0 * c0 * invInertiaAxis[0] + c1 * c1 * invInertiaAxis[1] + c2 * c2 * invInertiaAxis[2];
+}
+
 // ── Vector / quaternion helpers (rigidBodies.ts style) ──────
 
 function dot(a: Vec3, b: Vec3): number {

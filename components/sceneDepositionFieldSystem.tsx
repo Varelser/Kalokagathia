@@ -7,6 +7,7 @@ import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { withCrossFamilyDepositionProfile, withSourceAwareDepositionProfile } from '../lib/sourceAwareShaping';
 import { getLayerRuntimeDepositionSnapshot } from '../lib/sceneRenderRouting';
 import { materialStyleToInt } from '../lib/materialGrammar';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 type DepositionMode = ParticleConfig['layer2Type'];
 
@@ -270,7 +271,7 @@ export const DepositionFieldSystem: React.FC<{
     group.position.copy(center.multiplyScalar(0.32));
     group.rotation.x = -Math.PI / 2 + Math.sin(t * 0.11 + layerIndex) * 0.18 * profile.pitchMul;
     group.rotation.z = Math.cos(t * 0.09 + layerIndex * 0.4) * 0.24 * profile.rotationMul;
-    const pulse = config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0;
+    const pulse = config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0;
     const bass = config.audioEnabled ? audioRef.current.bass * config.audioBeatScale : 0;
     const audioDrive = isPlaying ? (pulse + bass * 0.65) * settings.audioReactive : 0;
     const dotField = profile.dotField;

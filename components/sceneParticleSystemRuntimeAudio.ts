@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { resolveAudioRoutingGraph, resolveAudioRoutingInputs } from '../lib/audioRouting';
+import { resolveAudioSceneGraph, resolveAudioSceneOutputs } from '../lib/audioSceneGraph';
 import type { ParticleSystemAudioRef } from './sceneParticleSystemRuntimeTypes';
 
 export function applyParticleAudioUniforms(
@@ -41,8 +42,18 @@ export function applyParticleAudioUniforms(
     mat.uniforms.uAudioTrebleSize.value = trebleInput * config.audioTrebleSizeScale;
     mat.uniforms.uAudioBassAlpha.value = bassInput * config.audioBassAlphaScale;
     mat.uniforms.uAudioTrebleAlpha.value = trebleInput * config.audioTrebleAlphaScale;
-    mat.uniforms.uAudioBassLine.value = bassInput * config.audioLineScale;
-    mat.uniforms.uAudioTrebleLine.value = trebleInput * config.audioLineScale;
+    // TD §7 stage 2: the line uniforms read the scene graph's
+    // line output, whose sources are the stage-1 inputs above
+    // (the legacy wiring read those inputs directly; with the
+    // default scene graph this is bit-identical).
+    const lineParts = resolveAudioSceneOutputs(
+      resolveAudioSceneGraph(config.audioSceneGraph),
+      audioRef.current,
+      inputs,
+      config,
+    ).line.parts;
+    mat.uniforms.uAudioBassLine.value = lineParts.bass * config.audioLineScale;
+    mat.uniforms.uAudioTrebleLine.value = lineParts.treble * config.audioLineScale;
     mat.uniforms.uAudioBandAMotion.value = bandAInput * config.audioBandAMotionScale;
     mat.uniforms.uAudioBandASize.value = bandAInput * config.audioBandASizeScale;
     mat.uniforms.uAudioBandAAlpha.value = bandAInput * config.audioBandAAlphaScale;

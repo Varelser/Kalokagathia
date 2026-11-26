@@ -71,7 +71,7 @@ import {
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
-import { drainRigidContactEvents, resolveRigid, stepRigidBodies, writeRigidBodyTexture } from '../lib/rigidBodies';
+import { drainRigidContactEvents, fillRigidCurlAccel, resolveRigid, rigidCurlParamsFromConfig, stepRigidBodies, writeRigidBodyTexture, RIGID_BODY_MAX } from '../lib/rigidBodies';
 import { fireEventRulesLive, getEventRuleActionPerformer } from '../lib/eventRules';
 import { getTerrainHeightfield } from '../lib/terrainHeightfield';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
@@ -970,6 +970,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     rigidBodyTexRef,
     rigidBodyDataRef,
     rigidSolverRef,
+    rigidForceAccelRef,
     pyroGridRef,
     flip3dRef,
     webgpuStateRef,
@@ -1349,6 +1350,24 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       const rigidSolver = rigidSolverRef.current;
       if (rigidSolver && rigidBodyTexRef.current && rigidBodyDataRef.current) {
         const rigid = resolveRigid(config);
+        // Field force coupling (Round 84 gap 3, stage 1): while
+        // the Force key is on and the source is 'curl', sample
+        // the curl twin at each body's centre ONCE for this
+        // frame (solver clock — a pure function of position and
+        // stepped time) and hand the accelerations to the step.
+        // Off / other sources pass null and the solver runs the
+        // legacy path verbatim.
+        let externalAccel: Float32Array | null = null;
+        if (rigid.forceEnabled && rigid.forceSource === 'curl') {
+          if (!rigidForceAccelRef.current) rigidForceAccelRef.current = new Float32Array(RIGID_BODY_MAX * 3);
+          externalAccel = fillRigidCurlAccel(
+            rigidSolver,
+            rigidCurlParamsFromConfig(config, rigidSolver.time),
+            config.gpgpuCurlStrength,
+            rigid.forceScale,
+            rigidForceAccelRef.current,
+          );
+        }
         stepRigidBodies(rigidSolver, dt * Math.max(0, config.gpgpuSpeed), {
           // Particle gravity: vel.y -= gravity · dt · 9.8 in the
           // velocity pass, and positions integrate vel · dt · 60,
@@ -1375,6 +1394,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           stressBreakEnabled: rigid.stressBreakEnabled,
           stressPropagation: rigid.stressPropagation,
           convexEnabled: rigid.convexEnabled,
+          convexInertiaEnabled: rigid.convexInertia,
+          externalAccel,
         });
         writeRigidBodyTexture(rigidSolver, rigidBodyDataRef.current);
         rigidBodyTexRef.current.needsUpdate = true;

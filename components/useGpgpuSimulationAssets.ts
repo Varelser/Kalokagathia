@@ -6,7 +6,7 @@ import { grainsNeighborhoodMode, grainsPileActive, grainsProjectionActive, resol
 import { flip3dActive } from "../lib/flip3d";
 import { grainsFullScanDowngradeApplies, resolveGrainsCellSortActive, setFlip3dGrainsDowngrade } from "../lib/flip3dAtlasDowngrade";
 import { getMaxTextureImageUnits } from "../lib/gpuDiagnostics";
-import { resolveSteeringSeek } from "../lib/steering";
+import { resolveCrowd, resolveSteeringSeek } from "../lib/steering";
 import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG, SIM_VELLUM_VEL_FRAG, SIM_VELLUM_VOLUME_APPLY_FRAG, SIM_VELLUM_VOLUME_PROJ_FRAG, SIM_VELLUM_VOLUME_REDUCE_FRAG, SIM_VELLUM_XPBD_CLEAR_FRAG, SIM_VELLUM_XPBD_LAMBDA_FRAG, SIM_VELLUM_XPBD_PROJ_FRAG, SIM_VELLUM_XPBD_VEL_FRAG } from "./gpgpuShaderSimulationVellum";
 import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, buildAuxPosFrag, buildAuxVelFrag } from "./gpgpuShaderAux";
 import { auxSdfSplashActive } from "../lib/auxChain";
@@ -71,6 +71,9 @@ export function velocityVariantOptions(config: ParticleConfig): VelocityFragment
     // Phase 20 stage 2: the steering chunk + uniforms exist in
     // the built string only while the steer-seek keys are on.
     steeringSeek: resolveSteeringSeek(config).active,
+    // Round 84 gap 2: the crowd chunk variant + uniforms exist
+    // in the built string only while the crowd key is on.
+    crowd: resolveCrowd(config).enabled,
     // Phase 24: the Akinci surface-tension chunks exist in the
     // built string only while the Akinci strength key is above
     // zero (and SPH itself is on — the chunks live inside the
@@ -185,6 +188,21 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSteerSeekPathCount:        { value: 0 },
       uSteerSeekPathLookAhead:    { value: 20 },
       uSteerSeekPathRadius:       { value: 0 },
+      // Crowd state machine (Round 84 gap 2): declared in the
+      // shader only in the crowd variant; the passes fill these
+      // from resolveCrowd per frame.
+      uCrowdAvoidRange:           { value: 0 },
+      uCrowdAvoidHysteresis:      { value: 0.2 },
+      uCrowdAvoidStrength:        { value: 1 },
+      uCrowdIdleSpeed:            { value: 0.05 },
+      uCrowdIdleSpeedOut:         { value: 0.1 },
+      uCrowdIdleRadius:           { value: 0 },
+      uCrowdIdleDamping:          { value: 0.9 },
+      uCrowdLaneCount:            { value: 1 },
+      uCrowdLaneWidth:            { value: 20 },
+      uCrowdLaneOffset:           { value: 0 },
+      uCrowdLaneLateralGain:      { value: 1 },
+      uCrowdLaneLookAheadScale:   { value: 1 },
       // Lifecycle grammar (Phase AB): gate off / legacy drag at
       // the defaults; the passes fill them from config per frame.
       uSpawnRate:   { value: 1.0 },
@@ -1362,7 +1380,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // config's variant), so a variant-only change swaps the shader
   // through this same path and the mount behaviour is unchanged.
   const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
-    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}`;
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}${opts.crowd ? 1 : 0}`;
   const appliedForceCodeRef = useRef<string | null>(
     `\n\n${variantKeyOf(velocityVariantOptions(config))}`,
   );

@@ -10,6 +10,7 @@ import type { UpdateParticleSystemFrameArgs } from './sceneParticleSystemRuntime
 import { getLayerRuntimeParticleVisualSnapshot } from '../lib/sceneRenderRouting';
 import { fillGradientLutData, getKinetixGradientPreset } from '../lib/kinetixGradients';
 import { applyParticleAudioUniforms } from './sceneParticleSystemRuntimeAudio';
+import { audioSceneOutputValue } from '../lib/audioSceneGraph';
 import { applyParticleCollisionUniforms, applyParticleGhostUniforms, applyParticleSdfUniforms } from './sceneParticleSystemRuntimeFx';
 import { applyParticleLayerUniforms, buildParticleLayerKey, resolveParticleLayerUniformState } from './sceneParticleSystemRuntimeLayer';
 
@@ -53,8 +54,9 @@ export const updateParticleSystemFrame = ({
   mat.uniforms.uColor.value.setStyle(layerHex);
   mat.uniforms.uContrast.value = config.contrast;
   mat.uniforms.uInkMode.value = config.particleColor === 'black' ? 1 : 0;
+  const hueSceneValue = audioSceneOutputValue(config, audioRef.current, 'hue');
   mat.uniforms.uHueShift.value = config.audioEnabled && config.audioHueShiftScale > 0.001
-    ? (audioRef.current.bass * 0.35 + audioRef.current.treble * 0.2 + audioRef.current.pulse * 0.45) * config.audioHueShiftScale * 0.3
+    ? hueSceneValue.sum * config.audioHueShiftScale * hueSceneValue.coefficient
     : 0;
   mat.uniforms.uSoftness.value = config.particleSoftness;
   const impactGlowBoost = config.interLayerContactFxEnabled && config.interLayerCollisionEnabled

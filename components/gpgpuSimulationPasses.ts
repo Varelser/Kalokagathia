@@ -12,7 +12,7 @@ import { effectiveGrainsFriction, grainsCellGrid, grainsDemConfigEpochValue, gra
 import { resolveGrainsCellSortActive, resolveGrainsNeighborhoodMode } from '../lib/flip3dAtlasDowngrade';
 import { getMaxTextureImageUnits } from '../lib/gpuDiagnostics';
 import { resolveRigid } from '../lib/rigidBodies';
-import { resolveSteeringSeek } from '../lib/steering';
+import { crowdAvoidStrength, resolveCrowd, resolveSteeringSeek } from '../lib/steering';
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
@@ -723,6 +723,20 @@ export function runSimulationPasses(args: {
         // params, from the same single resolution point as the
         // WebGL uniforms below.
         steeringSeek: resolveSteeringSeek(config),
+        // Obstacle avoidance twins (Round 84 gap 2, M1): the
+        // WGSL velocity stage gains the Phase 15 / Phase AB
+        // avoid terms; the values are the same config keys the
+        // WebGL uniforms below read.
+        steerAvoid: Math.max(0, config.gpgpuSteerAvoid || 0),
+        steerAvoidRange: Math.max(0, config.gpgpuSteerAvoidRange || 0),
+        particleLifeAvoid: Math.max(0, config.gpgpuParticleLifeAvoid || 0),
+        particleLifeVisionRange: Math.max(0, config.gpgpuParticleLifeVisionRange || 0),
+        // Crowd state machine (Round 84 gap 2): the WGSL
+        // twin's params, from resolveCrowd.
+        crowd: {
+          ...resolveCrowd(config),
+          avoidStrength: crowdAvoidStrength(Math.max(0, config.gpgpuSteerAvoid || 0)),
+        },
       },
       // Fluid field (Phase 25): the same config values the WebGL
       // branch assigns to the advection material and the velocity
@@ -965,6 +979,25 @@ export function runSimulationPasses(args: {
     if (u.uSteerSeekPathCount) u.uSteerSeekPathCount.value = steer.path.length;
     if (u.uSteerSeekPathLookAhead) u.uSteerSeekPathLookAhead.value = steer.pathLookAhead;
     if (u.uSteerSeekPathRadius) u.uSteerSeekPathRadius.value = steer.pathRadius;
+  }
+  // Crowd state machine (Round 84 gap 2): the crowd variant's
+  // uniforms, from the same resolution points (resolveCrowd +
+  // crowdAvoidStrength over the steer-avoid key).
+  {
+    const crowd = resolveCrowd(config);
+    const u = velSimMat.uniforms;
+    if (u.uCrowdAvoidRange) u.uCrowdAvoidRange.value = crowd.avoidRange;
+    if (u.uCrowdAvoidHysteresis) u.uCrowdAvoidHysteresis.value = crowd.avoidHysteresis;
+    if (u.uCrowdAvoidStrength) u.uCrowdAvoidStrength.value = crowdAvoidStrength(Math.max(0, config.gpgpuSteerAvoid || 0));
+    if (u.uCrowdIdleSpeed) u.uCrowdIdleSpeed.value = crowd.idleSpeed;
+    if (u.uCrowdIdleSpeedOut) u.uCrowdIdleSpeedOut.value = crowd.idleSpeedOut;
+    if (u.uCrowdIdleRadius) u.uCrowdIdleRadius.value = crowd.idleRadius;
+    if (u.uCrowdIdleDamping) u.uCrowdIdleDamping.value = crowd.idleDamping;
+    if (u.uCrowdLaneCount) u.uCrowdLaneCount.value = crowd.laneCount;
+    if (u.uCrowdLaneWidth) u.uCrowdLaneWidth.value = crowd.laneWidth;
+    if (u.uCrowdLaneOffset) u.uCrowdLaneOffset.value = crowd.laneOffset;
+    if (u.uCrowdLaneLateralGain) u.uCrowdLaneLateralGain.value = crowd.laneLateralGain;
+    if (u.uCrowdLaneLookAheadScale) u.uCrowdLaneLookAheadScale.value = crowd.laneLookAheadScale;
   }
   // Lifecycle grammar (Phase AB): spawn gate + global drag / max
   // speed. The clamps mirror lib/gpgpuLifecycle.ts.

@@ -3,6 +3,7 @@ import type { ParticleConfig } from '../types';
 import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { applyCrystalMaterialStyle, getCrystalProfile, getCrystalSettings, type ClusterLayout } from './sceneCrystalAggregateSystemShared';
 import { applyCrystalProfilePbr } from '../lib/materialGrammar';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 const tempPos = new THREE.Vector3();
 const nextPos = new THREE.Vector3();
@@ -41,7 +42,7 @@ export function updateCrystalAggregateFrame({ audioRef, config, isPlaying, layer
   const mode = layerIndex === 2 ? config.layer2Type : config.layer3Type;
   const profile = getCrystalProfile(mode, settings.source, settings.materialStyle);
   const globalRadius = config.sphereRadius * settings.radiusScale;
-  const pulse = config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0;
+  const pulse = config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0;
   const bass = config.audioEnabled ? audioRef.current.bass * config.audioBeatScale : 0;
   const audioDrive = isPlaying ? (pulse + bass * 0.6) * settings.audioReactive : 0;
   const baseColor = color.set(settings.color);

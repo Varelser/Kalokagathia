@@ -461,6 +461,30 @@ const VEL_FRAG_PREAMBLE_STEERING = /* glsl */ `  // Crowd steering (Phase 20 sta
   uniform float uSteerSeekPathLookAhead;
   uniform float uSteerSeekPathRadius;
 `;
+const VEL_FRAG_PREAMBLE_CROWD = /* glsl */ `  // Crowd state machine + lanes (Round 84 gap 2, stage 1):
+  // the uniform set of the crowd variant of the 'steer-seek'
+  // force chunk — the GPU twin of the crowd section of
+  // lib/steering.ts (crowdStateFor / crowdLaneIndex /
+  // crowdLaneCenterOffset / crowdLaneLookAhead /
+  // crowdLateralDir). Spliced in only behind this option, in
+  // the Phase 19 manner. AvoidRange 0 = the Phase 15 fallback
+  // (1.5 * SDF size) resolved in the chunk; IdleRadius 0 = the
+  // steer slowing radius; AvoidStrength is resolved on the CPU
+  // (crowdAvoidStrength: the steer-avoid key while positive,
+  // else 1).
+  uniform float uCrowdAvoidRange;
+  uniform float uCrowdAvoidHysteresis;
+  uniform float uCrowdAvoidStrength;
+  uniform float uCrowdIdleSpeed;
+  uniform float uCrowdIdleSpeedOut;
+  uniform float uCrowdIdleRadius;
+  uniform float uCrowdIdleDamping;
+  uniform int   uCrowdLaneCount;
+  uniform float uCrowdLaneWidth;
+  uniform float uCrowdLaneOffset;
+  uniform float uCrowdLaneLateralGain;
+  uniform float uCrowdLaneLookAheadScale;
+`;
 const VEL_FRAG_PREAMBLE_AKINCI = /* glsl */ `  // Surface tension, Akinci form (Phase 24): the strength of
   // the two-term model accumulated inside the SPH sample loop
   // (sphAkinci variant of the SPH/Grains chunk). Spliced in
@@ -536,6 +560,9 @@ export interface VelocityPreambleVariantOptions {
   // gated identically.
   attractor3?: boolean;
   attractor4?: boolean;
+  // Round 84 gap 2: the crowd state machine uniform set,
+  // gated identically (only while the crowd key is on).
+  crowd?: boolean;
 }
 
 export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions): string {
@@ -549,6 +576,7 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
     + (options?.attractor2 ? VEL_FRAG_PREAMBLE_ATTRACTOR2 : '')
     + (options?.attractor3 ? VEL_FRAG_PREAMBLE_ATTRACTOR3 : '')
     + (options?.attractor4 ? VEL_FRAG_PREAMBLE_ATTRACTOR4 : '')
+    + (options?.crowd ? VEL_FRAG_PREAMBLE_CROWD : '')
     + VEL_FRAG_PREAMBLE_TAIL;
 }
 

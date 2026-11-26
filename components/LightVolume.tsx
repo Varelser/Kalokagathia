@@ -14,7 +14,7 @@ import {
   buildLightTrailRibbon,
   type TrailVec3,
 } from '../lib/lightTrail';
-import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
+import { bakeShadowOcclusionMap, bakeTunnelShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
 
 // Visible light volume + light trail (Phase Y).
 //
@@ -84,6 +84,13 @@ const VOLUME_FRAGMENT = /* glsl */ `
   uniform float uShadowReady;
   uniform float uShadowExtent;
   uniform float uShadowStrength;
+  // Tunnel occlusion bake (Round 83/84 gap 7): while the
+  // terrain is a tunnel, fragments inside the tube region read
+  // the tunnel bake by the (theta, z) inverse transform
+  // instead of the plane bake by world XZ.
+  uniform sampler2D uShadowTunnelMap;
+  uniform float uShadowTunnelReady;
+  uniform float uShadowHeightScale;
   varying vec3 vScene;
   // Scene depth occlusion (Phase 16 stage 1): the shared scene
   // depth capture (lib/sceneDepth.ts). uDepthReady 0 (no texture
@@ -133,8 +140,23 @@ const VOLUME_FRAGMENT = /* glsl */ `
     }
     float a = clamp(uIntensity * acc, 0.0, 1.0);
     if (uShadowReady > 0.5 && uShadowStrength > 0.0) {
-      vec2 suv = clamp(vScene.xz / (2.0 * uShadowExtent) + 0.5, 0.0, 1.0);
-      float occ = texture2D(uShadowMap, suv).r;
+      float occ = 0.0;
+      bool tunnelSampled = false;
+      if (uShadowTunnelReady > 0.5) {
+        // Inside the tube region the tunnel bake applies; the
+        // region test matches bakedTunnelShadowMultiplier.
+        float rho = length(vScene.xy);
+        if (rho <= uShadowExtent + uShadowHeightScale * 0.5 && abs(vScene.z) <= uShadowExtent) {
+          float tu = fract(atan(vScene.y, vScene.x) / 6.28318530718);
+          float tv = clamp(vScene.z / (2.0 * uShadowExtent) + 0.5, 0.0, 1.0);
+          occ = texture2D(uShadowTunnelMap, vec2(tu, tv)).r;
+          tunnelSampled = true;
+        }
+      }
+      if (!tunnelSampled) {
+        vec2 suv = clamp(vScene.xz / (2.0 * uShadowExtent) + 0.5, 0.0, 1.0);
+        occ = texture2D(uShadowMap, suv).r;
+      }
       a *= 1.0 - uShadowStrength * occ * 0.8;
     }
     if (uDepthReady > 0.5 && uDepthOcclusion > 0.0) {
@@ -229,20 +251,34 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
 
   const shadowBake = React.useMemo(() => {
     if (!config.gpgpuShadowEnabled || !(config.gpgpuShadowStrength > 0)) return null;
-    const bake = bakeShadowOcclusionMap(buildShadowScene(config), 64);
+    const scene = buildShadowScene(config);
+    const bake = bakeShadowOcclusionMap(scene, 64);
     const tex = new THREE.DataTexture(bake.data, bake.resolution, bake.resolution, THREE.RGBAFormat);
     tex.needsUpdate = true;
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
-    return { tex, extent: bake.extent };
+    // Tunnel occlusion bake (Round 83/84 gap 7): generated
+    // alongside in tunnel mode; U wraps (periodic circumference).
+    let tunnelTex: THREE.DataTexture | null = null;
+    if (config.gpgpuTerrainMeshTunnel) {
+      const tunnelBake = bakeTunnelShadowOcclusionMap(scene, 64);
+      tunnelTex = new THREE.DataTexture(tunnelBake.data, tunnelBake.resolution, tunnelBake.resolution, THREE.RGBAFormat);
+      tunnelTex.needsUpdate = true;
+      tunnelTex.minFilter = THREE.LinearFilter;
+      tunnelTex.magFilter = THREE.LinearFilter;
+      tunnelTex.wrapS = THREE.RepeatWrapping;
+      tunnelTex.wrapT = THREE.ClampToEdgeWrapping;
+    }
+    return { tex, extent: bake.extent, heightScale: bake.heightScale, tunnelTex };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.gpgpuShadowEnabled, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuMorphTerrainAmplitude, config.gpgpuMorphTerrainFrequency, config.gpgpuMorphTerrainOctaves, config.gpgpuMorphTerrainSeed, config.gpgpuMorphTerrainKind, config.gpgpuMorphTerrainTerraceSteps, config.gpgpuMorphTerrainErosionWater, config.gpgpuMorphTerrainErosionDroplets, config.gpgpuMorphTerrainErosionDeposit, config.gpgpuMorphTerrainErosionThermal, config.gpgpuMorphTerrainErosionTalus, config.gpgpuMorphTerrainErosionThermalPasses, config.gpgpuMorphTerrainErosionSeed, config.gpgpuMorphTerrainErosionMaskMode, config.gpgpuMorphTerrainErosionMaskStrength, config.gpgpuMorphTerrainErosionMaskInvert, config.gpgpuMorphTerrainErosionMaskLow, config.gpgpuMorphTerrainErosionMaskHigh, config.gpgpuTerrainMeshTunnel, config.gpgpuSeed, config.gpgpuMorphScale, config.gpgpuBounceRadius, config.gpgpuTerrainMeshScale, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
 
   React.useEffect(() => {
     return () => {
       shadowBake?.tex.dispose();
+      shadowBake?.tunnelTex?.dispose();
     };
   }, [shadowBake]);
 
@@ -270,6 +306,9 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
         uShadowReady: { value: shadowBake ? 1 : 0 },
         uShadowExtent: { value: shadowBake ? shadowBake.extent : 1 },
         uShadowStrength: { value: config.gpgpuShadowStrength },
+        uShadowTunnelMap: { value: shadowBake ? shadowBake.tunnelTex : null },
+        uShadowTunnelReady: { value: shadowBake && shadowBake.tunnelTex ? 1 : 0 },
+        uShadowHeightScale: { value: shadowBake ? shadowBake.heightScale : 1 },
         // Scene depth occlusion (Phase 16 stage 1): inert defaults;
         // the useFrame sync below binds the captured depth only
         // while gpgpuDepthOcclusion > 0 and a capture exists.

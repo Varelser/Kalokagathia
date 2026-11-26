@@ -182,6 +182,117 @@ export function curlField(p: Vec3, tOff: Vec3, mode: number, octaves: number, sy
   return c;
 }
 
+// ── Allocation-free fast path (Round 84 gap 3) ────────────────
+// The rigid force coupling samples the field once per body per
+// frame (up to 64/frame); the twin above allocates several
+// hundred small arrays per sample (~16us in Node), which made
+// the coupling's sampling cost dominate the solver step. The
+// functions below repeat the twin's arithmetic with scalar
+// locals, in the SAME operation order, so results are
+// bit-identical to the twin in float64 (verified by the phase41
+// test over thousands of points). Coverage: the legacy path
+// (mode 0, octaves <= 1, every symmetry). The generalised path
+// (ridged / vortex / multi-octave) falls back to the twin.
+
+function dmHash11Scalar(n: number): number {
+  const fract = (v: number): number => v - Math.floor(v);
+  let x = fract(n * 0.1031);
+  let y = fract(n * 0.1030);
+  let z = fract(n * 0.0973);
+  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
+  x += d; y += d; z += d;
+  return fract((x + y) * z);
+}
+
+/** vnoise with scalar locals; bit-identical to vnoise(). */
+function vnoiseFast(px: number, py: number, pz: number): number {
+  const ix = Math.floor(px), iy = Math.floor(py), iz = Math.floor(pz);
+  const fx = px - ix, fy = py - iy, fz = pz - iz;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const uz = fz * fz * (3 - 2 * fz);
+  const corner = (ox: number, oy: number, oz: number): number => {
+    const cx = ix + ox, cy = iy + oy, cz = iz + oz;
+    const hx = -1 + 2 * dmHash11Scalar(cx * 127.1 + cy * 311.7 + cz * 74.7);
+    const hy = -1 + 2 * dmHash11Scalar(cx * 269.5 + cy * 183.3 + cz * 246.1);
+    const hz = -1 + 2 * dmHash11Scalar(cx * 113.5 + cy * 271.9 + cz * 124.6);
+    return hx * (fx - ox) + hy * (fy - oy) + hz * (fz - oz);
+  };
+  const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
+  return mix(
+    mix(mix(corner(0, 0, 0), corner(1, 0, 0), ux), mix(corner(0, 1, 0), corner(1, 1, 0), ux), uy),
+    mix(mix(corner(0, 0, 1), corner(1, 0, 1), ux), mix(corner(0, 1, 1), corner(1, 1, 1), ux), uy),
+    uz,
+  );
+}
+
+/** curlNoise with scalar locals; bit-identical to curlNoise(). */
+function curlNoiseFast(px: number, py: number, pz: number, out: Vec3): void {
+  const e = 0.1;
+  const p1x = px + 31.416;
+  const p2y = py + 43.982;
+  const dFzDy = vnoiseFast(px, p2y + e, pz) - vnoiseFast(px, p2y - e, pz);
+  const dFyDz = vnoiseFast(p1x, py, pz + e) - vnoiseFast(p1x, py, pz - e);
+  const dFxDz = vnoiseFast(px, py, pz + e) - vnoiseFast(px, py, pz - e);
+  const dFzDx = vnoiseFast(px + e, p2y, pz) - vnoiseFast(px - e, p2y, pz);
+  const dFyDx = vnoiseFast(p1x + e, py, pz) - vnoiseFast(p1x - e, py, pz);
+  const dFxDy = vnoiseFast(px, py + e, pz) - vnoiseFast(px, py - e, pz);
+  out[0] = (dFzDy - dFyDz) / (2 * e);
+  out[1] = (dFxDz - dFzDx) / (2 * e);
+  out[2] = (dFyDx - dFxDy) / (2 * e);
+}
+
+const CURL_FAST_SCRATCH: Vec3 = [0, 0, 0];
+
+/**
+ * sampleCurlField with an allocation-free legacy path.
+ * Bit-identical to sampleCurlField for every parameter set
+ * (the generalised path delegates to the twin). NOT reentrant
+ * through the shared scratch — callers must consume the result
+ * before the next call (fillRigidCurlAccel does).
+ */
+export function sampleCurlFieldFast(pos: Vec3, params: CurlFieldParams): Vec3 {
+  if (!params.enabled) return [0, 0, 0];
+  if (!(params.mode === 0 && params.octaves <= 1)) return sampleCurlField(pos, params);
+  const curlTime = params.time * 0.15 * params.speed;
+  const px = pos[0] * params.scale + params.seedOffset[0];
+  const py = pos[1] * params.scale + params.seedOffset[1];
+  const pz = pos[2] * params.scale + params.seedOffset[2];
+  const out = CURL_FAST_SCRATCH;
+  if (params.symmetry === 0) {
+    curlNoiseFast(px + curlTime, py + curlTime, pz + curlTime, out);
+    return out;
+  }
+  if (params.symmetry === 1) {
+    const sx = px < 0 ? -1 : 1;
+    curlNoiseFast(Math.abs(px) + curlTime, py + curlTime, pz + curlTime, out);
+    out[0] *= sx;
+    return out;
+  }
+  if (params.symmetry === 4) {
+    curlNoiseFast(Math.abs(px) + curlTime, Math.abs(py) + curlTime, Math.abs(pz) + curlTime, out);
+    out[0] *= px < 0 ? -1 : 1;
+    out[1] *= py < 0 ? -1 : 1;
+    out[2] *= pz < 0 ? -1 : 1;
+    return out;
+  }
+  // Radial symmetries (2 / 3): same fold/unfold as the twin.
+  const k = params.symmetry === 2 ? 4 : 6;
+  const sector = 6.28318530718 / k;
+  const r = Math.hypot(px, pz);
+  const theta = Math.atan2(pz, px);
+  const normTheta = glslMod(theta, sector);
+  const folded = normTheta > sector * 0.5 ? sector - normTheta : normTheta;
+  curlNoiseFast(r * Math.cos(folded) + curlTime, py + curlTime, r * Math.sin(folded) + curlTime, out);
+  const rot = theta - folded;
+  const rc = Math.cos(rot);
+  const rs = Math.sin(rot);
+  const c0 = out[0], c2 = out[2];
+  out[0] = c0 * rc - c2 * rs;
+  out[2] = c0 * rs + c2 * rc;
+  return out;
+}
+
 export interface CurlFieldParams {
   enabled: boolean;
   scale: number;

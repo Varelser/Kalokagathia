@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { withCrossFamilyGlyphProfile, withSourceAwareGlyphProfile } from '../lib/sourceAwareShaping';
 import { getLayerRuntimeGlyphOutlineSnapshot, getLayerRuntimeMode } from '../lib/sceneRenderRouting';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 type GlyphOutlineProfile = {
   copies: number;
@@ -192,7 +193,7 @@ export const GlyphOutlineSystem: React.FC<{
     if (!line) return;
     const material = line.material as THREE.LineBasicMaterial;
     const t = clock.getElapsedTime();
-    const pulse = config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0;
+    const pulse = config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0;
     const bass = config.audioEnabled ? audioRef.current.bass * config.audioBeatScale : 0;
     const shimmer = 0.66 + Math.sin(t * (1.2 + bass * 0.8) * profile.shimmerMul) * 0.12;
     const styleBoost = materialStyle === 'hologram' ? 1.2 : materialStyle === 'chrome' ? 1.05 : materialStyle === 'glass' ? 0.92 : 1;

@@ -13,6 +13,7 @@ import {
   updateFiberGeometry,
   updateFiberMaterial,
 } from './sceneFiberFieldSystemShared';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 export function useFiberFieldRuntime(
   props: FiberFieldSystemProps,
@@ -44,7 +45,7 @@ export function useFiberFieldRuntime(
     const settings = getLayerFiberSettings(config, layerIndex);
     const { layerMode: mode, fiberProfile: profile } = resolveFiberProfile(config, layerIndex);
     const globalRadius = config.sphereRadius * settings.radiusScale;
-    const pulse = config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0;
+    const pulse = config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0;
     const bass = config.audioEnabled ? audioRef.current.bass * config.audioBeatScale : 0;
     const audioBoost = isPlaying ? (pulse + bass * 0.5) * settings.audioReactive : 0;
     const time = clock.getElapsedTime();

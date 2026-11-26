@@ -3,9 +3,10 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { getBurstDriveEnergy } from './sceneBurstDrive';
+import { audioSceneOutputSum, audioSceneOutputValue } from '../lib/audioSceneGraph';
 import { SCREEN_OVERLAY_FRAGMENT_SHADER, SCREEN_OVERLAY_VERTEX_SHADER } from './sceneShaders';
 
-export const ScreenOverlay: React.FC<{ audioRef: React.MutableRefObject<{ bass: number; treble: number; pulse: number }>; config: ParticleConfig; isPlaying: boolean; contactAmount: number; isSequencePlaying: boolean; sequenceStepProgress: number }> = ({ audioRef, config, isPlaying, contactAmount, isSequencePlaying, sequenceStepProgress }) => {
+export const ScreenOverlay: React.FC<{ audioRef: React.MutableRefObject<{ bass: number; treble: number; pulse: number; bandA: number; bandB: number }>; config: ParticleConfig; isPlaying: boolean; contactAmount: number; isSequencePlaying: boolean; sequenceStepProgress: number }> = ({ audioRef, config, isPlaying, contactAmount, isSequencePlaying, sequenceStepProgress }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const screenImpactBoost = config.interLayerContactFxEnabled && config.interLayerCollisionEnabled ? contactAmount * config.interLayerContactScreenBoost : 0;
   const impactFlashAmount = config.interLayerContactFxEnabled && config.interLayerCollisionEnabled ? contactAmount : 0;
@@ -17,9 +18,10 @@ export const ScreenOverlay: React.FC<{ audioRef: React.MutableRefObject<{ bass: 
     if (!meshRef.current) return;
     const material = meshRef.current.material as THREE.ShaderMaterial;
     if (isPlaying) material.uniforms.uTime.value += delta;
-    const pulseDrive = config.audioEnabled ? audioRef.current.pulse * config.audioScreenScale : 0;
-    const trebleDrive = config.audioEnabled ? audioRef.current.treble * config.audioJitterScale * config.audioScreenScale : 0;
-    const burstDriveAmount = getBurstDriveEnergy(config, clock.getElapsedTime(), isPlaying, config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0) * config.screenBurstDrive;
+    const screenParts = audioSceneOutputValue(config, audioRef.current, 'screen').parts;
+    const pulseDrive = config.audioEnabled ? screenParts.pulse * config.audioScreenScale : 0;
+    const trebleDrive = config.audioEnabled ? screenParts.treble * config.audioScreenScale : 0;
+    const burstDriveAmount = getBurstDriveEnergy(config, clock.getElapsedTime(), isPlaying, config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0) * config.screenBurstDrive;
     material.uniforms.uColor.value.set(config.particleColor);
     material.uniforms.uScanlineIntensity.value = Math.min(1.25, config.screenScanlineIntensity + screenImpactBoost * 0.18 + sequenceDriveAmount * 0.08 + pulseDrive * 0.1);
     material.uniforms.uScanlineDensity.value = config.screenScanlineDensity + sequenceDriveAmount * 180.0;
@@ -55,9 +57,10 @@ export const ScreenOverlay: React.FC<{ audioRef: React.MutableRefObject<{ bass: 
     return null;
   }
 
-  const initialPulseDrive = config.audioEnabled ? audioRef.current.pulse * config.audioScreenScale : 0;
-  const initialTrebleDrive = config.audioEnabled ? audioRef.current.treble * config.audioJitterScale * config.audioScreenScale : 0;
-  const burstDriveAmount = getBurstDriveEnergy(config, 0, isPlaying, config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0) * config.screenBurstDrive;
+  const initialScreenParts = audioSceneOutputValue(config, audioRef.current, 'screen').parts;
+  const initialPulseDrive = config.audioEnabled ? initialScreenParts.pulse * config.audioScreenScale : 0;
+  const initialTrebleDrive = config.audioEnabled ? initialScreenParts.treble * config.audioScreenScale : 0;
+  const burstDriveAmount = getBurstDriveEnergy(config, 0, isPlaying, config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0) * config.screenBurstDrive;
 
   return (
     <mesh ref={meshRef} frustumCulled={false} renderOrder={999}>

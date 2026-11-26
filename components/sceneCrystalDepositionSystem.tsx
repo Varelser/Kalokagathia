@@ -6,6 +6,7 @@ import { generateParticleData, type ParticleData } from './particleData';
 import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { getLayerParticleLayoutDeps, getLayerRuntimeCrystalDepositionSnapshot } from '../lib/sceneRenderRouting';
 import { getMaterialStylePbr, materialStyleToInt } from '../lib/materialGrammar';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 type HybridSettings = {
   opacity: number;
@@ -250,7 +251,7 @@ export const CrystalDepositionSystem: React.FC<{
     const t = clock.getElapsedTime();
     const surfaceProfile = getSurfaceProfile(settings.source, settings.materialStyle);
     const globalRadius = config.sphereRadius * settings.radiusScale;
-    const pulse = config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0;
+    const pulse = config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0;
     const bass = config.audioEnabled ? audioRef.current.bass * config.audioBeatScale : 0;
     const audioDrive = isPlaying ? (pulse + bass * 0.65) * settings.audioReactive : 0;
     // center plane around average

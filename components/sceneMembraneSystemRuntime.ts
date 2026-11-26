@@ -12,6 +12,7 @@ import {
   type MembraneLayout,
   withSourceAwareMembraneProfile,
 } from './sceneMembraneSystemShared';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 const tempPos = new THREE.Vector3();
 
@@ -62,7 +63,7 @@ export function useMembraneRuntime({
     const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
     if (!posAttr) return;
 
-    const pulse = config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0;
+    const pulse = config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0;
     const mode = getLayerMode(config, layerIndex);
     const source = layerIndex === 2 ? config.layer2Source : config.layer3Source;
     const sourceProfile = getSourceMembraneProfile(source);

@@ -547,6 +547,10 @@ export type GpgpuRuntimeRefs = {
   rigidBodyTexRef: MutableRefObject<THREE.DataTexture | null>;
   rigidBodyDataRef: MutableRefObject<Float32Array | null>;
   rigidSolverRef: MutableRefObject<RigidSolverState | null>;
+  /** Field force coupling scratch (Round 84 gap 3): the
+   *  per-body external acceleration buffer, filled once per
+   *  frame by sceneGpgpuSystem while the Force key is on. */
+  rigidForceAccelRef: MutableRefObject<Float32Array | null>;
   // Pyro grid (Phase CA): the atlas target set for the grid
   // solver, allocated only while the grid key is on AND the
   // diagnostics gate confirmed float render targets; null at all
@@ -859,13 +863,16 @@ export function buildMorphBakeData(
         talus: config.gpgpuMorphTerrainErosionTalus,
         thermalPasses: config.gpgpuMorphTerrainErosionThermalPasses,
         seed: config.gpgpuMorphTerrainErosionSeed,
-        // Erosion mask (Phase 20 stage 3).
+        // Erosion mask (Phase 20 stage 3). The hand-drawn
+        // grid (Round 83 gap 1) is carried here so the painted
+        // mask reaches the morph bake like the derived maps.
         mask: {
           mode: config.gpgpuMorphTerrainErosionMaskMode,
           strength: config.gpgpuMorphTerrainErosionMaskStrength,
           invert: config.gpgpuMorphTerrainErosionMaskInvert,
           low: config.gpgpuMorphTerrainErosionMaskLow,
           high: config.gpgpuMorphTerrainErosionMaskHigh,
+          drawnGrid: config.gpgpuMorphTerrainErosionMaskDrawnGrid,
         },
       },
     },
@@ -984,6 +991,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const rigidBodyTexRef = useRef<THREE.DataTexture | null>(null);
   const rigidBodyDataRef = useRef<Float32Array | null>(null);
   const rigidSolverRef = useRef<RigidSolverState | null>(null);
+  const rigidForceAccelRef = useRef<Float32Array | null>(null);
   // Latest shared initial arrays (Phase W2): the main effect
   // rebuilds them on every reseed; the replica-stack effect seeds
   // the stacks from them, including when only the independent
@@ -1738,6 +1746,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphTerrainErosionMaskInvert = config.gpgpuMorphTerrainErosionMaskInvert;
   const morphTerrainErosionMaskLow = config.gpgpuMorphTerrainErosionMaskLow;
   const morphTerrainErosionMaskHigh = config.gpgpuMorphTerrainErosionMaskHigh;
+  const morphTerrainErosionMaskDrawnGrid = config.gpgpuMorphTerrainErosionMaskDrawnGrid;
   // Debounce (Phase 20 stage 3): the morph rebake runs the
   // erosion sim synchronously, so ONLY the erosion parameters
   // (mask included) settle for a quiet period before a slider
@@ -1759,6 +1768,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         invert: morphTerrainErosionMaskInvert,
         low: morphTerrainErosionMaskLow,
         high: morphTerrainErosionMaskHigh,
+        drawnGrid: morphTerrainErosionMaskDrawnGrid,
       },
     },
     TERRAIN_EROSION_DEBOUNCE_MS,
@@ -2566,6 +2576,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     rigidBodyTexRef,
     rigidBodyDataRef,
     rigidSolverRef,
+    rigidForceAccelRef,
     pyroGridRef,
     flip3dRef,
     webgpuStateRef,

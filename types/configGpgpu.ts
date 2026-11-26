@@ -600,6 +600,27 @@ export interface ParticleConfigGpgpu {
   // (1.5 * SDF size). When both avoids are on, they add.
   gpgpuSteerAvoid: number;
   gpgpuSteerAvoidRange: number;
+  // Crowd state machine + lanes (Round 84 gap 2, stage 1):
+  // IDLE / MOVE / AVOID as a memoryless transition law over the
+  // steering modes, plus lane grammar on the path mode. The
+  // crowd layer wraps the steer-seek chunk, so it takes effect
+  // only while steering is enabled. Off (default) keeps every
+  // shader string byte-identical.
+  gpgpuCrowdEnabled: boolean;
+  // AVOID entry range; 0 = Phase 15 fallback (1.5 * SDF size).
+  gpgpuCrowdAvoidRange: number;
+  // AVOID exit range = entry * (1 + hysteresis).
+  gpgpuCrowdAvoidHysteresis: number;
+  gpgpuCrowdIdleSpeed: number;
+  gpgpuCrowdIdleSpeedOut: number;
+  // Arrival radius for IDLE; 0 = the steer slowing radius.
+  gpgpuCrowdIdleRadius: number;
+  gpgpuCrowdIdleDamping: number;
+  gpgpuCrowdLaneCount: number;
+  gpgpuCrowdLaneWidth: number;
+  gpgpuCrowdLaneOffset: number;
+  gpgpuCrowdLaneLateralGain: number;
+  gpgpuCrowdLaneLookAheadScale: number;
   // Crowd steering (Phase 20 stage 2, Houdini §3): the GPU wiring
   // of lib/steering.ts — seek / arrive / path following / two-state
   // switching as a velocity-pass force ('steer-seek'). Disabled
@@ -741,12 +762,18 @@ export interface ParticleConfigGpgpu {
   // band over the pre-erosion height / slope / curvature that
   // scales erosion per cell. Mode 'off' (default) = no mask and
   // the Phase AP landscape stays bit-identical.
-  gpgpuMorphTerrainErosionMaskMode: 'off' | 'height' | 'slope' | 'curvature' | 'image';
+  gpgpuMorphTerrainErosionMaskMode: 'off' | 'height' | 'slope' | 'curvature' | 'image' | 'drawn';
   /** Erosion mask image (Phase 30): the luma grid the panel
    *  captured on assignment (129x129, row 0 = the fz = -E side,
    *  values 0..1). Empty = no image; mode 'image' without a
    *  valid grid resolves to no mask. */
   gpgpuMorphTerrainErosionMaskImageGrid: number[];
+  /** Hand-drawn erosion mask (Round 83 gap 1): the same
+   *  129x129 luma grid shape, painted on the panel canvas.
+   *  Held separately from the image grid so the two can be
+   *  switched between; mode 'drawn' without a valid grid
+   *  resolves to no mask, exactly like 'image'. */
+  gpgpuMorphTerrainErosionMaskDrawnGrid: number[];
   gpgpuMorphTerrainErosionMaskStrength: number;
   gpgpuMorphTerrainErosionMaskInvert: boolean;
   gpgpuMorphTerrainErosionMaskLow: number;
@@ -1604,6 +1631,19 @@ export interface ParticleConfigGpgpu {
   // fitted OBB (lib/rigidObb.ts) instead of its bounding
   // sphere. The default (off) keeps the sphere paths verbatim.
   gpgpuRigidConvexEnabled: boolean;
+  // OBB box inertia (Round 84 gap 6, stage 1): while on (AND
+  // the Convex key is on), shaped bodies answer angular
+  // responses with the box inertia tensor instead of the
+  // sphere tensor. Off (default) is bit-identical to before.
+  gpgpuRigidConvexInertia: boolean;
+  // Field force coupling (Round 84 gap 3, stage 1): while on,
+  // the curl field twin is sampled at each body's centre once
+  // per frame and applied to the solver as an external
+  // acceleration. Off (default) is bit-identical to before.
+  // Source: only 'curl' is wired in stage 1.
+  gpgpuRigidForceEnabled: boolean;
+  gpgpuRigidForceSource: string;
+  gpgpuRigidForceScale: number;
   // Cluster colouring (Phase 20 stage 1): while on (AND the
   // rigid solver is on AND a cell texture exists), the points
   // draw takes each particle's base colour from its body's

@@ -20,6 +20,7 @@ import { clampFractureCells } from '../lib/voronoiFracture';
 import { PcgGraphEditorBlock } from './controlPanelPcgGraphEditor';
 import { ErosionRebakeBlock } from './controlPanelErosionRebake';
 import { ErosionMaskImageBlock } from './controlPanelErosionMaskImage';
+import { ErosionMaskDrawBlock } from './controlPanelErosionMaskDraw';
 
 // Mesh SDF bake status (Phase BY): the bake runs async on the
 // CPU; this line polls while it is in flight so the user can see
@@ -354,7 +355,7 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
               <Slider label="Talus （タラス角）" value={config.gpgpuMorphTerrainErosionTalus} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionTalus', v)} />
               <Slider label="Thermal Passes （緩和パス）" value={config.gpgpuMorphTerrainErosionThermalPasses} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionThermalPasses', Math.round(v))} />
               <Slider label="Erosion Seed （侵食シード）" value={config.gpgpuMorphTerrainErosionSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionSeed', Math.round(v))} />
-              <Toggle label="Erosion Mask （侵食マスク）" value={config.gpgpuMorphTerrainErosionMaskMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Height （高度）', val: 'height' as const }, { label: 'Slope （斜度）', val: 'slope' as const }, { label: 'Curvature （曲率）', val: 'curvature' as const }, { label: 'Image （画像）', val: 'image' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskMode', v)} />
+              <Toggle label="Erosion Mask （侵食マスク）" value={config.gpgpuMorphTerrainErosionMaskMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Height （高度）', val: 'height' as const }, { label: 'Slope （斜度）', val: 'slope' as const }, { label: 'Curvature （曲率）', val: 'curvature' as const }, { label: 'Image （画像）', val: 'image' as const }, { label: 'Drawn （手描き）', val: 'drawn' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskMode', v)} />
               {config.gpgpuMorphTerrainErosionMaskMode !== 'off' && (
                 <>
                   <Slider label="Mask Strength （マスクの深さ）" value={config.gpgpuMorphTerrainErosionMaskStrength} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskStrength', v)} />
@@ -363,6 +364,9 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                   <Toggle label="Mask Invert （帯を反転）" value={config.gpgpuMorphTerrainErosionMaskInvert} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskInvert', v)} />
                   {config.gpgpuMorphTerrainErosionMaskMode === 'image' && (
                     <ErosionMaskImageBlock config={config} updateConfig={updateConfig} />
+                  )}
+                  {config.gpgpuMorphTerrainErosionMaskMode === 'drawn' && (
+                    <ErosionMaskDrawBlock config={config} updateConfig={updateConfig} />
                   )}
                 </>
               )}
@@ -548,7 +552,7 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Slider label="Talus （タラス角）" value={config.gpgpuMorphTerrainErosionTalus} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionTalus', v)} />
           <Slider label="Thermal Passes （緩和パス）" value={config.gpgpuMorphTerrainErosionThermalPasses} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionThermalPasses', Math.round(v))} />
           <Slider label="Erosion Seed （侵食シード）" value={config.gpgpuMorphTerrainErosionSeed} min={0} max={999} step={1} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionSeed', Math.round(v))} />
-          <Toggle label="Erosion Mask （侵食マスク）" value={config.gpgpuMorphTerrainErosionMaskMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Height （高度）', val: 'height' as const }, { label: 'Slope （斜度）', val: 'slope' as const }, { label: 'Curvature （曲率）', val: 'curvature' as const }, { label: 'Image （画像）', val: 'image' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskMode', v)} />
+          <Toggle label="Erosion Mask （侵食マスク）" value={config.gpgpuMorphTerrainErosionMaskMode} options={[{ label: 'Off', val: 'off' as const }, { label: 'Height （高度）', val: 'height' as const }, { label: 'Slope （斜度）', val: 'slope' as const }, { label: 'Curvature （曲率）', val: 'curvature' as const }, { label: 'Image （画像）', val: 'image' as const }, { label: 'Drawn （手描き）', val: 'drawn' as const }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskMode', v)} />
           {config.gpgpuMorphTerrainErosionMaskMode !== 'off' && (
             <>
               <Slider label="Mask Strength （マスクの深さ）" value={config.gpgpuMorphTerrainErosionMaskStrength} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskStrength', v)} />
@@ -557,6 +561,9 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
               <Toggle label="Mask Invert （帯を反転）" value={config.gpgpuMorphTerrainErosionMaskInvert} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMorphTerrainErosionMaskInvert', v)} />
                   {config.gpgpuMorphTerrainErosionMaskMode === 'image' && (
                     <ErosionMaskImageBlock config={config} updateConfig={updateConfig} />
+                  )}
+                  {config.gpgpuMorphTerrainErosionMaskMode === 'drawn' && (
+                    <ErosionMaskDrawBlock config={config} updateConfig={updateConfig} />
                   )}
             </>
           )}
@@ -643,6 +650,11 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Toggle label="Start Sleeping （全スリープ開始）" value={config.gpgpuRigidStartSleeping} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidStartSleeping', v)} />
           <Toggle label="Floor Terrain （地形床）" value={config.gpgpuRigidFloorTerrain} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidFloorTerrain', v)} />
           <Toggle label="Cluster Colors （クラスタ色分け）" value={config.gpgpuRigidClusterColorEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidClusterColorEnabled', v)} />
+          <Toggle label="Convex Inertia （OBB慣性）" value={config.gpgpuRigidConvexInertia} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidConvexInertia', v)} />
+          <Toggle label="Field Force （フォース場連成）" value={config.gpgpuRigidForceEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidForceEnabled', v)} />
+          {config.gpgpuRigidForceEnabled && (
+            <Slider label="Force Scale （連成の強さ）" value={config.gpgpuRigidForceScale} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuRigidForceScale', v)} />
+          )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
             破砕ベイクのセル（最大64体）を永続剛体として CPU で解くソルバです（質量・球近似の慣性・逐次インパルス接触・接着と破断・スリープ／活性化）。モーフ点群が前提で、破砕の Cells / Seed がそのまま体の分割になります。有効中は年齢リスポーン／キル条件／スポーンゲート／モーフ引力／レプリカ独立 sim は体を守るため無効化され、Vellum より優先されます。衝突形状はセルのバウンディング球近似のみ（開始時の重なりは初期距離を下限として許容）、凸包・メッシュ衝突・拘束ジョイントは解きません。床とバウンス球には衝突します。地形床 ON のときは、侵食ベイクの高度場がある場面でのみ床がその地形になります（無い場面では平面の床のまま。地形との衝突は体の中心直下の高さで解くため、大きな体は急斜面の脇で地形にめり込むことがあります）。
           </div>

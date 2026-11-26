@@ -706,6 +706,149 @@ export const VEL_FRAG_FORCE_STEER_SEEK = /* glsl */ `
       }
     }
 `;
+export const VEL_FRAG_FORCE_STEER_SEEK_CROWD = /* glsl */ `
+    // Crowd steering + state machine (Round 84 gap 2, stage 1):
+    // the crowd variant of the Phase 20 chunk above — the same
+    // lib/steering.ts formulas, wrapped by the memoryless
+    // three-state machine of the crowd section of
+    // lib/steering.ts (crowdStateFor) and, in path mode, the
+    // lane grammar (crowdLaneIndex / crowdLaneCenterOffset /
+    // crowdLaneLookAhead / crowdLateralDir). States: AVOID —
+    // the Phase 15 avoid law at the resolved crowd strength,
+    // seek gain 0 (the standalone 'steer-avoid' chunk is NOT
+    // spliced in this variant; the state machine owns
+    // avoidance); IDLE — no propulsion, velocity damped by
+    // pow(idleDamping, delta * 60), the Life friction shape;
+    // MOVE — the Phase 20 force unchanged, plus the lane
+    // lateral spring in path mode (an arrive-form proportional
+    // pull toward the lane centre, active only outside the
+    // lane width). This chunk replaces 'steer-seek' ONLY in
+    // the crowd variant (see buildMainForcesFragment): without
+    // the variant the assembly is byte-identical.
+    if (uSteerSeekEnabled) {
+      vec3 sTarget = uSteerSeekTarget;
+      int sMode = uSteerSeekMode;
+      bool sApply = true;
+      vec3 cLatForce = vec3(0.0);
+      if (sMode == 3) {
+        float slotValue = kaloAttrChannel(attrData, uSteerSeekStateSlot);
+        bool isState1 = slotValue >= uSteerSeekStateThreshold;
+        sTarget = isState1 ? uSteerSeekTarget1 : uSteerSeekTarget;
+        sMode = isState1 ? 1 : 0;
+      }
+      if (sMode == 2) {
+        // Path following with lanes: the lane comes from the
+        // state slot's baked value (the spec's fixed option
+        // (a)); the lane look-ahead scales before the walk.
+        float laneSlot = kaloAttrChannel(attrData, uSteerSeekStateSlot);
+        int cLane = int(min(floor(clamp(laneSlot, 0.0, 1.0) * float(uCrowdLaneCount)), float(uCrowdLaneCount) - 1.0));
+        float cLaneCenter = uCrowdLaneOffset + (float(cLane) - float(uCrowdLaneCount - 1) / 2.0) * (uCrowdLaneWidth * 2.0);
+        float cLookAhead = uSteerSeekPathLookAhead * (1.0 + 0.25 * float(cLane)) * uCrowdLaneLookAheadScale;
+        if (uSteerSeekPathCount <= 0) {
+          sApply = false;
+        } else if (uSteerSeekPathCount == 1) {
+          sTarget = uSteerSeekPath[0];
+        } else {
+          float bestDistSq = 1e30;
+          float bestArc = 0.0;
+          float arcBefore = 0.0;
+          vec3 bestProj = pos;
+          vec3 bestTangent = vec3(1.0, 0.0, 0.0);
+          for (int i = 0; i < 7; i++) {
+            if (i >= uSteerSeekPathCount - 1) break;
+            vec3 pa = uSteerSeekPath[i];
+            vec3 pb = uSteerSeekPath[i + 1];
+            vec3 ab = pb - pa;
+            float segLen = length(ab);
+            float lenSq = dot(ab, ab);
+            float pt = 0.0;
+            if (lenSq > 0.0) pt = clamp(dot(pos - pa, ab) / lenSq, 0.0, 1.0);
+            vec3 pq = pa + ab * pt;
+            vec3 pdq = pos - pq;
+            float distSq = dot(pdq, pdq);
+            if (distSq < bestDistSq) { bestDistSq = distSq; bestArc = arcBefore + segLen * pt; bestProj = pq; bestTangent = ab; }
+            arcBefore += segLen;
+          }
+          float targetArc = clamp(bestArc + max(cLookAhead, 0.0), 0.0, arcBefore);
+          float walkArc = 0.0;
+          for (int i = 0; i < 7; i++) {
+            if (i >= uSteerSeekPathCount - 1) break;
+            vec3 pa = uSteerSeekPath[i];
+            vec3 pb = uSteerSeekPath[i + 1];
+            float segLen = length(pb - pa);
+            if (targetArc <= walkArc + segLen || i == uSteerSeekPathCount - 2) {
+              float pt = segLen > 0.0 ? clamp((targetArc - walkArc) / segLen, 0.0, 1.0) : 0.0;
+              sTarget = pa + (pb - pa) * pt;
+              break;
+            }
+            walkArc += segLen;
+          }
+          // Lane lateral (crowdLateralDir + the corridor law):
+          // offset the target onto the lane centre line; the
+          // spring engages only outside the lane width.
+          vec3 cLat = vec3(bestTangent.z, 0.0, -bestTangent.x);
+          float cLatLen = length(cLat);
+          if (cLatLen < 1e-4) {
+            cLat = vec3(-bestTangent.y, bestTangent.x, 0.0);
+            cLatLen = length(cLat);
+            if (cLatLen < 1e-4) { cLat = vec3(1.0, 0.0, 0.0); cLatLen = 1.0; }
+          }
+          cLat /= cLatLen;
+          sTarget += cLat * cLaneCenter;
+          float cLatDev = dot(pos - bestProj, cLat) - cLaneCenter;
+          if (abs(cLatDev) > uCrowdLaneWidth) {
+            cLatForce = cLat * (-cLatDev * uCrowdLaneLateralGain);
+          }
+          // PathRadius > 0: steer only outside the corridor.
+          if (uSteerSeekPathRadius > 0.0 && sqrt(bestDistSq) <= uSteerSeekPathRadius) sApply = false;
+        }
+      }
+      // The state machine (crowdStateFor, formula for formula).
+      float cSd = 0.0;
+      vec3 cNormal = vec3(0.0, 1.0, 0.0);
+      float cVn = 0.0;
+      if (uSdfEnabled) {
+        cSd = abSdfDistance(pos);
+        cNormal = abSdfNormal(pos);
+        cVn = dot(vel, cNormal);
+      }
+      float cRin = uCrowdAvoidRange > 0.0 ? uCrowdAvoidRange : max(uSdfSize * 1.5, 1.0);
+      float cRout = cRin * (1.0 + uCrowdAvoidHysteresis);
+      float cSpd = length(vel);
+      float cIdleR = uCrowdIdleRadius > 0.0 ? uCrowdIdleRadius : uSteerSeekSlowingRadius;
+      vec3 cToT = sTarget - pos;
+      float cDist = length(cToT);
+      float cToward = cDist > 0.0 ? dot(vel, cToT / cDist) : 0.0;
+      int cState = 1;
+      if (uSdfEnabled && (cSd < cRin || (cSd < cRout && cVn > 0.0))) {
+        cState = 2;
+      } else if (cDist < cIdleR && (cSpd < uCrowdIdleSpeed || (cSpd < uCrowdIdleSpeedOut && cToward <= 0.0))) {
+        cState = 0;
+      }
+      if (cState == 2) {
+        // AVOID: the avoid law only; the seek gain is 0.
+        float cSw = clamp(1.0 - cSd / cRin, 0.0, 1.0);
+        vel += cNormal * (uCrowdAvoidStrength * cSw * cSw) * uDelta * 45.0;
+      } else if (cState == 0) {
+        // IDLE: no propulsion; damp toward rest.
+        vel *= pow(clamp(uCrowdIdleDamping, 0.0, 1.0), uDelta * 60.0);
+      } else if (sApply) {
+        vec3 toTarget = sTarget - pos;
+        float sDist = length(toTarget);
+        float effSpeed = uSteerSeekMaxSpeed;
+        if (sMode == 1 && uSteerSeekSlowingRadius > 0.0 && sDist < uSteerSeekSlowingRadius) {
+          effSpeed = uSteerSeekMaxSpeed * sDist / uSteerSeekSlowingRadius;
+        }
+        vec3 desired = sDist > 0.0 ? (toTarget / sDist) * effSpeed : vec3(0.0);
+        vec3 steerForce = desired - vel + cLatForce;
+        if (uSteerSeekMaxForce > 0.0) {
+          float fLen = length(steerForce);
+          if (fLen > uSteerSeekMaxForce) steerForce *= uSteerSeekMaxForce / fLen;
+        }
+        vel += steerForce * uSteerSeekStrength * uDelta * 60.0;
+      }
+    }
+`;
 export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
   'pyro-buoyancy': VEL_FRAG_FORCE_PYRO_BUOYANCY,
   'turbulence': VEL_FRAG_FORCE_TURBULENCE,
@@ -746,6 +889,13 @@ export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
  * byte-identical to the historical assembly. */
 export interface MainForcesVariantOptions {
   steeringSeek?: boolean;
+  // Round 84 gap 2: while set (AND steeringSeek), the
+  // 'steer-seek' name assembles the crowd variant chunk and
+  // the standalone 'steer-avoid' chunk is skipped — the state
+  // machine owns avoidance in AVOID (applying it in both
+  // places would double the push). Without it the assembly
+  // is byte-identical.
+  crowd?: boolean;
   // Phase 27: the 'attractor-2' chunk is variant-gated the
   // same way — spliced in only while the attractor unit-2
   // enable key is on.
@@ -761,13 +911,15 @@ export function buildMainForcesFragment(
   options?: MainForcesVariantOptions,
 ): string {
   const names = normalizeGpgpuForceOrder(order);
+  const crowdActive = !!options?.crowd && !!options?.steeringSeek;
   let out = VEL_FRAG_MAIN_FORCES_HEAD;
   for (const name of names) {
     if (name === 'steer-seek' && !options?.steeringSeek) continue;
+    if (name === 'steer-avoid' && crowdActive) continue;
     if (name === 'attractor-2' && !options?.attractor2) continue;
     if (name === 'attractor-3' && !options?.attractor3) continue;
     if (name === 'attractor-4' && !options?.attractor4) continue;
-    out += VEL_FRAG_FORCE_CHUNKS[name];
+    out += name === 'steer-seek' && crowdActive ? VEL_FRAG_FORCE_STEER_SEEK_CROWD : VEL_FRAG_FORCE_CHUNKS[name];
   }
   return out;
 }

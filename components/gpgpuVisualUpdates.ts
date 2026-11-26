@@ -14,7 +14,7 @@ import { getSpriteImageTexture } from '../lib/spriteImageTexture';
 import { normalizeSpriteFrameFps, normalizeSpriteSheetDimension, spriteFrameModeIndex } from '../lib/spriteSheet';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { normalizeLightDir } from '../lib/gpgpuLight';
-import { bakeShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
+import { bakeShadowOcclusionMap, bakeTunnelShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
 import { getLightShadowSource } from '../lib/lightShadowMap';
 import { normalizeAttrNames, normalizeAttrSlot, resolveAttrColorSlots, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
@@ -30,8 +30,18 @@ import { clampNoiseMapAmount, clampNoiseMapEvolve, clampNoiseMapOctaves, clampNo
 // the light volume bake the same scene on their own side.
 let shadowCacheKey = '';
 let shadowCacheTex: THREE.DataTexture | null = null;
+let shadowCacheTunnelTex: THREE.DataTexture | null = null;
 let shadowCacheExtent = 1;
 let shadowCacheHeightScale = 1;
+function makeShadowDataTexture(data: Uint8Array, res: number, wrapS: THREE.Wrapping): THREE.DataTexture {
+  const tex = new THREE.DataTexture(data, res, res, THREE.RGBAFormat);
+  tex.needsUpdate = true;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = wrapS;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
 function getShadowOcclusionTexture(config: ParticleConfig): THREE.DataTexture | null {
   if (!config.gpgpuShadowEnabled || !(config.gpgpuShadowStrength > 0)) return null;
   const key = JSON.stringify([
@@ -56,20 +66,35 @@ function getShadowOcclusionTexture(config: ParticleConfig): THREE.DataTexture | 
     config.gpgpuMorphTerrainErosionMaskHigh,
   ]);
   if (key !== shadowCacheKey) {
-    const bake = bakeShadowOcclusionMap(buildShadowScene(config), 64);
-    const tex = new THREE.DataTexture(bake.data, bake.resolution, bake.resolution, THREE.RGBAFormat);
-    tex.needsUpdate = true;
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.wrapS = THREE.ClampToEdgeWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
+    const scene = buildShadowScene(config);
+    const bake = bakeShadowOcclusionMap(scene, 64);
     shadowCacheTex?.dispose();
-    shadowCacheTex = tex;
+    shadowCacheTex = makeShadowDataTexture(bake.data, bake.resolution, THREE.ClampToEdgeWrapping);
     shadowCacheExtent = bake.extent;
     shadowCacheHeightScale = bake.heightScale;
+    // Tunnel occlusion bake (Round 83/84 gap 7): built under
+    // the same cache key (the key already carries the tunnel
+    // flag) and only in tunnel mode; its U axis wraps (the
+    // circumference is periodic).
+    shadowCacheTunnelTex?.dispose();
+    if (config.gpgpuTerrainMeshTunnel) {
+      const tunnelBake = bakeTunnelShadowOcclusionMap(scene, 64);
+      shadowCacheTunnelTex = makeShadowDataTexture(tunnelBake.data, tunnelBake.resolution, THREE.RepeatWrapping);
+    } else {
+      shadowCacheTunnelTex = null;
+    }
     shadowCacheKey = key;
   }
   return shadowCacheTex;
+}
+
+/** Tunnel bake texture for the point receiver, or null when
+ *  the shadow is off or the terrain is not a tunnel. Shares the
+ *  plane bake's cache (see getShadowOcclusionTexture). */
+function getShadowTunnelOcclusionTexture(config: ParticleConfig): THREE.DataTexture | null {
+  if (!config.gpgpuTerrainMeshTunnel) return null;
+  getShadowOcclusionTexture(config); // ensure the shared cache is current
+  return shadowCacheTunnelTex;
 }
 
 const GRAD_DRIVER_IDS: Record<ParticleConfig['gpgpuGradDriver'], number> = {
@@ -474,6 +499,14 @@ export function syncVisualUniforms(args: {
     if (drawMat.uniforms.uShadowReady) drawMat.uniforms.uShadowReady.value = shadowTex !== null;
     if (drawMat.uniforms.uShadowExtent) drawMat.uniforms.uShadowExtent.value = shadowCacheExtent;
     if (drawMat.uniforms.uShadowHeightScale) drawMat.uniforms.uShadowHeightScale.value = shadowCacheHeightScale;
+    // Tunnel occlusion bake (Round 83/84 gap 7): the entries
+    // exist on the material from creation; the tunnel variant
+    // declares them, the stock shader declares none.
+    if (drawMat.uniforms.uShadowTunnelMap) {
+      const tunnelTex = getShadowTunnelOcclusionTexture(config);
+      drawMat.uniforms.uShadowTunnelMap.value = tunnelTex;
+      if (drawMat.uniforms.uShadowTunnelReady) drawMat.uniforms.uShadowTunnelReady.value = tunnelTex !== null;
+    }
   }
   // True shadow map (Phase 23, wiring stage 2): the GPGPU
   // points receive from the same shared store the terrain

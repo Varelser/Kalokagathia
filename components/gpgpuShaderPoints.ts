@@ -277,6 +277,14 @@ const DRAW_VERT_CLUSTER_UNIFORMS = /* glsl */ `  // Rigid cluster colouring (Pha
   uniform sampler2D uClusterCellTex;
   uniform sampler2D uClusterColorLutTex;
 `;
+const DRAW_VERT_SHADOWTUNNEL_UNIFORMS = /* glsl */ `  // Tunnel occlusion bake (Round 83/84 gap 7): the Phase Z
+  // occlusion grid baked over the tunnel surface instead of
+  // the plane (lib/shadowOcclusion.ts bakeTunnelShadowOcclusionMap).
+  // Present only in the tunnel variant; the stock strings never
+  // declare these, so tunnel-off draws stay byte-identical.
+  uniform sampler2D uShadowTunnelMap;
+  uniform bool      uShadowTunnelReady;
+`;
 const DRAW_VERT_MID_A = /* glsl */ `  attribute vec2 aTexCoord;
   varying float vSpeed;
   varying float vNormAge;
@@ -304,6 +312,31 @@ const DRAW_VERT_SHADOWMAP_VARYING = /* glsl */ `  // True shadow map (Phase 23, 
   // or the particle is outside the shadow frustum). The
   // fragment unions it with the Phase Z occlusion factor.
   varying float vShadowMapMul;
+`;
+const DRAW_VERT_SHADOWTUNNEL_FN = /* glsl */ `  // Tunnel shadow sample (Round 83/84 gap 7): the twin of
+  // bakedTunnelShadowMultiplier in lib/shadowOcclusion.ts.
+  // Returns the tunnel-bake multiplier when the point is inside
+  // the tube region (radial distance <= extent + half the
+  // height scale, |z| <= extent), or -1.0 when the plane bake
+  // result (already in vShadowMul) must be kept. The inverse
+  // transform is theta normalised into [0, 1) by fract (the
+  // bake's theta = u * 2*pi) and z into [0, 1]; the height
+  // attenuation runs radially outward from the baked wall
+  // surface radius. uShadowExtent is the tunnel radius and
+  // uShadowHeightScale is 2 * amplitude * worldScale, exactly
+  // as in the plane path.
+  float kaloShadowTunnelMultiplier(vec3 worldPos) {
+    float rho = length(worldPos.xy);
+    if (rho > uShadowExtent + uShadowHeightScale * 0.5 || abs(worldPos.z) > uShadowExtent) return -1.0;
+    float u = fract(atan(worldPos.y, worldPos.x) / 6.28318530718);
+    float v = clamp(worldPos.z / (2.0 * uShadowExtent) + 0.5, 0.0, 1.0);
+    vec4 baked = texture2D(uShadowTunnelMap, vec2(u, v));
+    float surfaceH = (baked.g - 0.5) * uShadowHeightScale;
+    float rSurface = uShadowExtent - surfaceH;
+    float above = max(rho - rSurface, 0.0);
+    float atten = exp(-above / max(1.0, uShadowExtent * 0.35));
+    return 1.0 - uShadowStrength * baked.r * atten;
+  }
 `;
 const DRAW_VERT_MID_B = /* glsl */ `
   ${AGE_CURVE_GLSL}
@@ -526,6 +559,15 @@ const DRAW_VERT_SHADOWMAP_COMPUTE = /* glsl */ `    // True shadow map (Phase 23
     // factor above read (nothing moves worldPos in between).
     vShadowMapMul = kaloShadowFactor(worldPos);
 `;
+const DRAW_VERT_SHADOWTUNNEL_COMPUTE = /* glsl */ `    // Tunnel occlusion (Round 83/84 gap 7): inside the tube
+    // region the tunnel bake replaces the plane factor the
+    // Phase Z call above produced; outside it the plane
+    // factor stands (the function returns -1.0 there).
+    if (uShadowEnabled && uShadowTunnelReady && uShadowStrength > 0.0) {
+      float tunnelMul = kaloShadowTunnelMultiplier(worldPos);
+      if (tunnelMul >= 0.0) vShadowMul = tunnelMul;
+    }
+`;
 const DRAW_VERT_TAIL = /* glsl */ `    vec4 mvPos = modelViewMatrix * vec4(worldPos, 1.0);
     float dist = -mvPos.z;
     gl_PointSize = max(0.5, uSize * sizeMul * (dist > 0.5 ? min(4.0, 500.0 / dist) : 1.0));
@@ -563,24 +605,34 @@ export interface DrawShaderVariantOptions {
    *  assembles the Phase 20 strings byte-identically — the
    *  chunk is never part of the stock strings. */
   shadowMap?: boolean;
+  /** Tunnel occlusion bake (Round 83/84 gap 7): splices the
+   *  tunnel-bake uniforms + sampler function into the vertex
+   *  and overrides the Phase Z factor inside the tube region.
+   *  Off (the default) assembles the stock strings
+   *  byte-identically — no tunnel uniform appears. */
+  shadowTunnel?: boolean;
 }
 
 export function buildDrawVert(options?: DrawShaderVariantOptions): string {
   const crack = !!options?.vellumCrack;
   const cluster = !!options?.clusterColor;
   const shadowMap = !!options?.shadowMap;
+  const shadowTunnel = !!options?.shadowTunnel;
   return DRAW_VERT_HEAD
     + (crack ? DRAW_VERT_CRACK_UNIFORMS : '')
     + (cluster ? DRAW_VERT_CLUSTER_UNIFORMS : '')
+    + (shadowTunnel ? DRAW_VERT_SHADOWTUNNEL_UNIFORMS : '')
     + DRAW_VERT_MID_A
     + (crack ? DRAW_VERT_CRACK_VARYING : '')
     + (cluster ? DRAW_VERT_CLUSTER_VARYING : '')
     + (shadowMap ? DRAW_VERT_SHADOWMAP_VARYING : '')
     + (shadowMap ? LIGHT_SHADOW_GLSL : '')
+    + (shadowTunnel ? DRAW_VERT_SHADOWTUNNEL_FN : '')
     + DRAW_VERT_MID_B
     + (crack ? DRAW_VERT_CRACK_COMPUTE : '')
     + (cluster ? DRAW_VERT_CLUSTER_COMPUTE : '')
     + (shadowMap ? DRAW_VERT_SHADOWMAP_COMPUTE : '')
+    + (shadowTunnel ? DRAW_VERT_SHADOWTUNNEL_COMPUTE : '')
     + DRAW_VERT_TAIL;
 }
 
@@ -588,6 +640,7 @@ export const DRAW_VERT = buildDrawVert();
 export const DRAW_VERT_PHASE19 = buildDrawVert({ vellumCrack: true });
 export const DRAW_VERT_PHASE20 = buildDrawVert({ clusterColor: true });
 export const DRAW_VERT_PHASE23 = buildDrawVert({ shadowMap: true });
+export const DRAW_VERT_SHADOW_TUNNEL = buildDrawVert({ shadowTunnel: true });
 
 // ── Draw fragment ──
 const DRAW_FRAG_HEAD = /* glsl */ `

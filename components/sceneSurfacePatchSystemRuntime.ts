@@ -6,6 +6,7 @@ import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { materialStyleToInt } from '../lib/materialGrammar';
 import type { PatchLayout, PatchProfile, PatchSourceProfile } from './sceneSurfacePatchSystemShared';
 import { getLayerPatchSettings } from './sceneSurfacePatchSystemShared';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 const tempPos = new THREE.Vector3();
 const accumPos = new THREE.Vector3();
@@ -66,7 +67,7 @@ export function useSurfacePatchRuntime({
     const profile = patchProfile;
     const sourceShape = sourceProfile;
     const globalRadius = config.sphereRadius * (layerIndex === 2 ? config.layer2RadiusScale : config.layer3RadiusScale);
-    const pulse = config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0;
+    const pulse = config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0;
     const bass = config.audioEnabled ? audioRef.current.bass * config.audioBeatScale : 0;
     const audioBoost = isPlaying ? (pulse + bass * 0.5) * settings.audioReactive : 0;
     const t = clock.getElapsedTime();

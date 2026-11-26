@@ -1010,7 +1010,7 @@ export function terrainScatterFinishNormal(
  * is baked, like the derived maps.
  */
 /** Which field of the PRE-erosion grid the erosion mask reads. */
-export type TerrainErosionMaskMode = 'off' | 'height' | 'slope' | 'curvature' | 'image';
+export type TerrainErosionMaskMode = 'off' | 'height' | 'slope' | 'curvature' | 'image' | 'drawn';
 
 /**
  * Erosion mask (Phase 20 stage 3): a per-cell coefficient grid
@@ -1029,6 +1029,13 @@ export interface TerrainErosionMaskOptions {
    *  129x129 and resampled to the working grid at build time.
    *  Absent / invalid = the mask resolves to null (identity). */
   imageGrid?: number[] | null;
+  /** Hand-drawn mask (Round 83 gap 1): the same 129x129 luma
+   *  grid shape as imageGrid, painted on the panel canvas
+   *  instead of captured from an image file. Used while mode
+   *  is 'drawn'; kept in a separate field so the image and the
+   *  drawing can be held (and switched between) independently.
+   *  Absent / invalid = the mask resolves to null (identity). */
+  drawnGrid?: number[] | null;
   /** Mask depth 0..1: 1 = the window fully gates the sim,
    *  0 = no gating anywhere (mask value 1 at every cell). */
   strength: number;
@@ -1160,15 +1167,18 @@ export function resolveTerrainErosionMask(
 ): ResolvedTerrainErosionMask | null {
   const mask = erosion?.mask;
   if (!mask) return null;
-  if (mask.mode !== 'height' && mask.mode !== 'slope' && mask.mode !== 'curvature' && mask.mode !== 'image') return null;
+  if (mask.mode !== 'height' && mask.mode !== 'slope' && mask.mode !== 'curvature' && mask.mode !== 'image' && mask.mode !== 'drawn') return null;
   // Image field (Phase 30): validate the captured grid (square,
   // at least 2x2, finite values clamped to 0..1). An invalid or
   // missing grid makes mode 'image' resolve to NO mask — the
-  // identity — rather than a wrong one.
+  // identity — rather than a wrong one. Mode 'drawn' (Round 83
+  // gap 1) validates its painted grid the same way and resolves
+  // to the same 'image' field downstream: the sim cannot tell
+  // whether the grid was captured or painted.
   let imageGrid: Float32Array | null = null;
   let imageSize = 0;
-  if (mask.mode === 'image') {
-    const raw = mask.imageGrid;
+  if (mask.mode === 'image' || mask.mode === 'drawn') {
+    const raw = mask.mode === 'drawn' ? mask.drawnGrid : mask.imageGrid;
     if (Array.isArray(raw) && raw.length >= 4) {
       const side = Math.round(Math.sqrt(raw.length));
       if (side * side === raw.length) {
@@ -1183,7 +1193,8 @@ export function resolveTerrainErosionMask(
     if (!imageGrid) return null;
   }
   return {
-    mode: mask.mode,
+    // 'drawn' resolves onto the image field (see above).
+    mode: mask.mode === 'drawn' ? 'image' : mask.mode,
     strength: clampErosion01(mask.strength, 1),
     invert: !!mask.invert,
     low: clampErosion01(mask.low, 0),
@@ -1640,7 +1651,8 @@ function erodedFieldCacheKey(terrain: GpgpuMorphTerrainOptions, fieldSeed: numbe
     // parameters are part of the cache identity too (a miss
     // would serve the un-masked landscape against a masked one).
     m?.mode ?? 'off', m?.strength ?? 1, m?.invert ? 1 : 0, m?.low ?? 0, m?.high ?? 1,
-    m?.mode === 'image' ? erosionMaskImageGridHash(m.imageGrid) : 'noimg',
+    m?.mode === 'image' ? erosionMaskImageGridHash(m.imageGrid)
+      : m?.mode === 'drawn' ? erosionMaskImageGridHash(m.drawnGrid) : 'noimg',
     // Phase 30: the tunnel wrap re-carves the field too.
     e?.wrapX ? 1 : 0,
     fieldSeed,

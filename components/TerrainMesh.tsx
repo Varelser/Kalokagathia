@@ -93,6 +93,7 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
         mode: erosionMaskMode, strength: erosionMaskStrength, invert: erosionMaskInvert,
         low: erosionMaskLow, high: erosionMaskHigh,
         imageGrid: config.gpgpuMorphTerrainErosionMaskImageGrid,
+        drawnGrid: config.gpgpuMorphTerrainErosionMaskDrawnGrid,
       },
     },
     TERRAIN_EROSION_DEBOUNCE_MS,
@@ -111,11 +112,13 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
   const tunnelSpeed = config.gpgpuTunnelSpeed;
   // Occlusion-map shadow (Phase Z): per-vertex colours from the
   // same pure occlusion function the bake uses, evaluated at the
-  // vertex positions (plane mode only — the tunnel's wrapped
-  // frame has no single light horizon, documented limit). With
-  // the shadow off no colour attribute exists and the materials
+  // vertex positions. Tunnel mode is covered since Round 83/84
+  // gap 7: occlusionAtPoint switches its terrain term to the
+  // radial tunnel horizon test when the scene is a tunnel, so
+  // the wrapped mesh receives terrain occlusion too. With the
+  // shadow off no colour attribute exists and the materials
   // render exactly as before.
-  const shadowActive = config.gpgpuShadowEnabled && config.gpgpuShadowStrength > 0 && !tunnel;
+  const shadowActive = config.gpgpuShadowEnabled && config.gpgpuShadowStrength > 0;
 
   // True shadow map (Phase 22 stage 4, wiring stage 1): this
   // mesh is the stage-1 receiver. While gpgpuShadowMapStrength

@@ -689,6 +689,20 @@ f 8 1 105`,
   // General steering avoidance (Phase 15): 0 = off.
   gpgpuSteerAvoid: 0,
   gpgpuSteerAvoidRange: 0,
+  // Crowd state machine + lanes (Round 84 gap 2, stage 1):
+  // off = byte-identical; defaults per spec R84-02 §1.4/§2.
+  gpgpuCrowdEnabled: false,
+  gpgpuCrowdAvoidRange: 0,
+  gpgpuCrowdAvoidHysteresis: 0.2,
+  gpgpuCrowdIdleSpeed: 0.05,
+  gpgpuCrowdIdleSpeedOut: 0.1,
+  gpgpuCrowdIdleRadius: 0,
+  gpgpuCrowdIdleDamping: 0.9,
+  gpgpuCrowdLaneCount: 1,
+  gpgpuCrowdLaneWidth: 20,
+  gpgpuCrowdLaneOffset: 0,
+  gpgpuCrowdLaneLateralGain: 1,
+  gpgpuCrowdLaneLookAheadScale: 1,
   // Crowd steering (Phase 20 stage 2): off = byte-identical.
   gpgpuSteerSeekEnabled: false,
   gpgpuSteerSeekMode: 'seek' as const,
@@ -755,6 +769,7 @@ f 8 1 105`,
   // Erosion mask (Phase 20 stage 3): off by default (identity).
   gpgpuMorphTerrainErosionMaskMode: 'off' as const,
   gpgpuMorphTerrainErosionMaskImageGrid: [],
+  gpgpuMorphTerrainErosionMaskDrawnGrid: [],
   gpgpuMorphTerrainErosionMaskStrength: 1,
   gpgpuMorphTerrainErosionMaskInvert: false,
   gpgpuMorphTerrainErosionMaskLow: 0,
@@ -1170,6 +1185,14 @@ f 8 1 105`,
   gpgpuRigidStressBreakEnabled: false,
   gpgpuRigidStressPropagation: 0.5,
   gpgpuRigidConvexEnabled: false,
+  // OBB box inertia (Round 84 gap 6, stage 1): off by default.
+  gpgpuRigidConvexInertia: false,
+  // Field force coupling (Round 84 gap 3, stage 1): off by
+  // default — identity. Scale 1.0 is the raw conversion
+  // (10-30x gravity); the working range is found by calibration.
+  gpgpuRigidForceEnabled: false,
+  gpgpuRigidForceSource: 'curl',
+  gpgpuRigidForceScale: 1,
   // Cluster colouring (Phase 20 stage 1): off = legacy draw.
   gpgpuRigidClusterColorEnabled: false,
   // WebGPU Compute Backend

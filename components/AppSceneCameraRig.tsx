@@ -6,6 +6,7 @@ import type { ParticleConfig } from '../types';
 import { getConfigPerformanceScore } from '../lib/performanceHints';
 import { isCameraDeterminismLocked } from '../lib/cameraDeterminism';
 import { getBurstDriveEnergy } from './sceneBurstDrive';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 import { applySceneEnvIntensityToMaterials, createPmremEnvironmentFromEquirect, resolveIblEnvironment, shouldApplySceneEnvironment } from '../lib/iblEnvironment';
 import type { SceneAudioRef } from './AppSceneTypes';
 
@@ -178,9 +179,9 @@ export const CameraImpulseRig: React.FC<{
     const controls = controlsRef.current;
     const impulse = config.cameraImpulseStrength;
     const cameraAudioInput = config.audioEnabled
-      ? (audioRef.current.bass * config.audioBeatScale + audioRef.current.pulse * config.audioBurstScale * 0.65) * config.audioCameraScale
+      ? audioSceneOutputSum(config, audioRef.current, 'camera') * config.audioCameraScale
       : 0;
-    const burstEnergy = getBurstDriveEnergy(config, t, isPlaying, config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0);
+    const burstEnergy = getBurstDriveEnergy(config, t, isPlaying, config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0);
     const needsSync =
       !initializedRef.current ||
       isInteractingRef.current ||

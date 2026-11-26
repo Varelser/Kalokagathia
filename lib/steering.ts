@@ -313,6 +313,178 @@ export function resolveSteeringSeek(config: ParticleConfig): SteeringSeekResolve
   };
 }
 
+// ---------------------------------------------------------------------------
+// Crowd state machine + lanes (Round 84 gap 2, stage 1: design
+// R83-02 #8 dbgame, numeric spec R84-02 #2 staff). A three-state
+// machine — IDLE / MOVE / AVOID — evaluated as a MEMORYLESS pure
+// function of the current frame's inputs (position-derived SDF
+// distance, velocity, target distance), plus lane grammar on top
+// of the path mode. The GPU twins (the crowd variant of the
+// GLSL steer chunk, the WGSL steer block) mirror these formulas
+// exactly, the same discipline as the steering twins above.
+// Stage 1 limits, by design: no per-particle memory exists
+// (pos.w is age, vel.w is the Kuramoto phase, the velocity
+// fragment is at 16/16 samplers, the WGSL velocity stage at
+// 8/8 storage buffers), so hysteresis is approximated by using
+// the current velocity as the previous state's proxy — inside
+// the hysteresis band a state persists only while the velocity
+// still points the way that state would push it.
+
+/** Crowd state ids shared by the CPU spec and the GPU twins. */
+export const CROWD_STATE_IDS = { idle: 0, move: 1, avoid: 2 } as const;
+
+/** The AVOID entry range: the key value, or the Phase 15
+ *  fallback (1.5 * the SDF size, at least 1) while it is 0. */
+export function crowdAvoidRangeResolved(range: number, sdfSize: number): number {
+  return range > 0 ? range : Math.max(sdfSize * 1.5, 1.0);
+}
+
+export interface CrowdStateInputs {
+  /** Whether the SDF collider is enabled (sd/normal valid). */
+  sdfEnabled: boolean;
+  /** Signed distance to the SDF collider surface. */
+  sd: number;
+  /** Velocity component along the SDF normal (>0 = leaving). */
+  velNormal: number;
+  /** Speed magnitude. */
+  speed: number;
+  /** Distance to the current steering target. */
+  distToTarget: number;
+  /** Velocity component toward the target (>0 = approaching). */
+  towardTarget: number;
+}
+
+export interface CrowdStateParams {
+  /** Resolved AVOID entry range (crowdAvoidRangeResolved). */
+  avoidRange: number;
+  /** AVOID exit range = avoidRange * (1 + hysteresis). */
+  avoidHysteresis: number;
+  idleSpeed: number;
+  idleSpeedOut: number;
+  /** Resolved arrival radius (key, or the slowing radius). */
+  idleRadius: number;
+}
+
+/**
+ * The stage-1 transition table (spec R84-02 §1.2, P1-P5) as a
+ * pure function. Priority order:
+ * - P1: sd < Rin -> AVOID (avoidance beats everything).
+ * - P2 (band): Rin <= sd < Rout and still moving away from the
+ *   surface (velNormal > 0) -> AVOID persists; otherwise the
+ *   band does not capture the particle.
+ * - P3: distToTarget < idleRadius and speed < idleSpeed ->
+ *   IDLE. In the speed band [idleSpeed, idleSpeedOut) IDLE
+ *   persists only while not approaching the target
+ *   (towardTarget <= 0) — the velocity-as-proxy hysteresis.
+ * - P4/P5: everything else -> MOVE.
+ */
+export function crowdStateFor(input: CrowdStateInputs, params: CrowdStateParams): number {
+  if (input.sdfEnabled) {
+    const rOut = params.avoidRange * (1 + params.avoidHysteresis);
+    if (input.sd < params.avoidRange) return CROWD_STATE_IDS.avoid;
+    if (input.sd < rOut && input.velNormal > 0) return CROWD_STATE_IDS.avoid;
+  }
+  if (input.distToTarget < params.idleRadius) {
+    if (input.speed < params.idleSpeed) return CROWD_STATE_IDS.idle;
+    if (input.speed < params.idleSpeedOut && input.towardTarget <= 0) return CROWD_STATE_IDS.idle;
+  }
+  return CROWD_STATE_IDS.move;
+}
+
+/**
+ * Lane assignment (spec R84-02 §2, option (a) fixed): the baked
+ * attribute slot value picks the lane deterministically —
+ * lane = min(floor(slot * laneCount), laneCount - 1), with the
+ * slot clamped to 0..1 (non-finite reads as 0).
+ */
+export function crowdLaneIndex(slotValue: number, laneCount: number): number {
+  const c = Math.max(1, Math.min(4, Math.round(laneCount)));
+  const s = Number.isFinite(slotValue) ? Math.max(0, Math.min(1, slotValue)) : 0;
+  return Math.min(Math.floor(s * c), c - 1);
+}
+
+/** Lane centre offset from the centre path: lanes are spaced
+ *  two widths apart, centred on the path, shifted by the base
+ *  offset (spec R84-02 §2). */
+export function crowdLaneCenterOffset(lane: number, laneCount: number, laneWidth: number, laneOffset: number): number {
+  return laneOffset + (lane - (laneCount - 1) / 2) * (laneWidth * 2);
+}
+
+/** Per-lane look-ahead: faster lanes look further ahead
+ *  (spec R84-02 §2). */
+export function crowdLaneLookAhead(baseLookAhead: number, lane: number, scale: number): number {
+  return baseLookAhead * (1 + 0.25 * lane) * scale;
+}
+
+/**
+ * The lateral direction of a path tangent: normalize(cross(+Y,
+ * tangent)). When the tangent is (near-)parallel to +Y the
+ * cross degenerates; the fallback is cross(+Z, tangent), and
+ * for a zero tangent +X (spec R84-02 §2 / design U9, decided
+ * here and mirrored by the GPU twins).
+ */
+export function crowdLateralDir(tangent: Vec3Like): Vec3Like {
+  let lx = tangent.z; let ly = 0; let lz = -tangent.x;
+  let len = Math.hypot(lx, ly, lz);
+  if (len < 1e-4) {
+    lx = -tangent.y; ly = tangent.x; lz = 0;
+    len = Math.hypot(lx, ly, lz);
+    if (len < 1e-4) return vec(1, 0, 0);
+  }
+  return vec(lx / len, ly / len, lz / len);
+}
+
+/**
+ * The AVOID state's push strength: the Phase 15 steer-avoid
+ * strength while the user set one; otherwise 1, so the state
+ * machine can avoid on its own (the crowd keys alone enable a
+ * working machine; the avoid strength key still scales it
+ * whenever it is positive).
+ */
+export function crowdAvoidStrength(steerAvoid: number): number {
+  return steerAvoid > 0 ? steerAvoid : 1;
+}
+
+export interface CrowdResolved {
+  enabled: boolean;
+  /** Raw key value: 0 = the Phase 15 fallback at shader time. */
+  avoidRange: number;
+  avoidHysteresis: number;
+  idleSpeed: number;
+  idleSpeedOut: number;
+  /** Raw key value: 0 = the steer slowing radius at shader time. */
+  idleRadius: number;
+  idleDamping: number;
+  laneCount: number;
+  laneWidth: number;
+  laneOffset: number;
+  laneLateralGain: number;
+  laneLookAheadScale: number;
+}
+
+/**
+ * The single resolution point for the crowd keys (Round 84
+ * gap 2). Every consumer (GLSL variant selection + uniforms,
+ * WebGPU force params) reads through here so the clamps can
+ * never drift — the resolveSteeringSeek discipline.
+ */
+export function resolveCrowd(config: ParticleConfig): CrowdResolved {
+  return {
+    enabled: !!config.gpgpuCrowdEnabled,
+    avoidRange: clampNum(config.gpgpuCrowdAvoidRange, 0, 1e6, 0),
+    avoidHysteresis: clampNum(config.gpgpuCrowdAvoidHysteresis, 0, 1, 0.2),
+    idleSpeed: clampNum(config.gpgpuCrowdIdleSpeed, 0, 1e6, 0.05),
+    idleSpeedOut: clampNum(config.gpgpuCrowdIdleSpeedOut, 0, 1e6, 0.1),
+    idleRadius: clampNum(config.gpgpuCrowdIdleRadius, 0, 1e6, 0),
+    idleDamping: clampNum(config.gpgpuCrowdIdleDamping, 0, 1, 0.9),
+    laneCount: Math.round(clampNum(config.gpgpuCrowdLaneCount, 1, 4, 1)),
+    laneWidth: clampNum(config.gpgpuCrowdLaneWidth, 0, 1e6, 20),
+    laneOffset: clampNum(config.gpgpuCrowdLaneOffset, -1e6, 1e6, 0),
+    laneLateralGain: clampNum(config.gpgpuCrowdLaneLateralGain, 0, 100, 1),
+    laneLookAheadScale: clampNum(config.gpgpuCrowdLaneLookAheadScale, 0, 10, 1),
+  };
+}
+
 export function steeringForState(
   pos: Vec3Like,
   vel: Vec3Like,

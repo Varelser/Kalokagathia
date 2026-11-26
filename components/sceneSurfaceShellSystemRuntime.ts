@@ -8,6 +8,7 @@ import type { HullLayout, ShellProfile, ShellSourceGeometryProfile } from './sce
 import { createConvexHullGeometry } from './sceneSurfaceShellSystemShared';
 import { getLayerRuntimeHullSnapshot } from '../lib/sceneRenderRouting';
 import { materialStyleToInt } from '../lib/materialGrammar';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 const tempPos = new THREE.Vector3();
 const scratchVec = new THREE.Vector3();
@@ -61,7 +62,7 @@ export function useSurfaceShellSystemRuntime({
     const runtime = getLayerRuntimeHullSnapshot(config, layerIndex);
     const globalRadius = config.sphereRadius * runtime.radiusScale;
     const jitter = runtime.jitter * profile.jitterMul;
-    const pulse = config.audioEnabled ? audioRef.current.pulse * config.audioBurstScale : 0;
+    const pulse = config.audioEnabled ? audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale : 0;
     const bass = config.audioEnabled ? audioRef.current.bass * config.audioBeatScale : 0;
     const audioReactive = runtime.audioReactive;
     const t = clock.getElapsedTime();

@@ -18,8 +18,10 @@ import {
   type AfMapSourceKind,
 } from '../lib/mapSourceSupply';
 import {
+  HAND_DRAWN_MASK_SOURCE,
   TERRAIN_DERIVED_KINDS,
   getTerrainDerivedMapCanvas,
+  handDrawnMaskBytes,
   isTerrainDerivedSource,
   parseTerrainDerivedSource,
   terrainDerivedSource,
@@ -226,7 +228,8 @@ const AfSourceButtons: React.FC<{
 const DerivedSourceButtons: React.FC<{
   source: string;
   onPick: (kind: TerrainDerivedMapKind) => void;
-}> = ({ source, onPick }) => (
+  onPickHandDrawn?: () => void;
+}> = ({ source, onPick, onPickHandDrawn }) => (
   <div className="mt-2 flex flex-wrap items-center gap-1.5">
     <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">地形派生</span>
     {TERRAIN_DERIVED_KINDS.map((kind) => {
@@ -241,6 +244,14 @@ const DerivedSourceButtons: React.FC<{
         </button>
       );
     })}
+    {onPickHandDrawn && (
+      <button
+        onClick={onPickHandDrawn}
+        className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest transition-colors ${source === HAND_DRAWN_MASK_SOURCE ? 'border-white/70 bg-white/20 text-white' : 'border-white/15 text-white/60 hover:bg-white/10'}`}
+      >
+        手描きマスク
+      </button>
+    )}
   </div>
 );
 
@@ -356,7 +367,7 @@ export const MapSourceBlock: React.FC<{
           </>
         )}
       </div>
-      <DerivedSourceButtons source={source} onPick={(kind) => onSource(terrainDerivedSource(kind))} />
+      <DerivedSourceButtons source={source} onPick={(kind) => onSource(terrainDerivedSource(kind))} onPickHandDrawn={() => onSource(HAND_DRAWN_MASK_SOURCE)} />
       <AfSourceButtons
         source={source}
         onPick={(kind) => onSource(afMapSource(kind))}
@@ -436,6 +447,21 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
       updateConfig('gpgpuMaskMap', map);
       updateConfig('gpgpuMaskMapWidth', 128);
       updateConfig('gpgpuMaskMapHeight', 128);
+    }
+  };
+  // Hand-drawn mask supply (Round 83 gap 1): the painted grid
+  // becomes the kill-mask source; the numeric luma map is the
+  // grid itself (129, its own side — the capture convention
+  // carries width/height alongside).
+  const applyHandDrawn = () => {
+    const built = handDrawnMaskBytes(config.gpgpuMorphTerrainErosionMaskDrawnGrid);
+    updateConfig('gpgpuMaskSource', HAND_DRAWN_MASK_SOURCE);
+    if (built) {
+      const map: number[] = new Array(built.size * built.size);
+      for (let i = 0; i < map.length; i++) map[i] = built.bytes[i * 4] / 255;
+      updateConfig('gpgpuMaskMap', map);
+      updateConfig('gpgpuMaskMapWidth', built.size);
+      updateConfig('gpgpuMaskMapHeight', built.size);
     }
   };
   // Internal supply (Phase AF): text and path capture their
@@ -669,7 +695,7 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
           </>
         )}
       </div>
-      <DerivedSourceButtons source={source} onPick={applyDerived} />
+      <DerivedSourceButtons source={source} onPick={applyDerived} onPickHandDrawn={applyHandDrawn} />
       <AfSourceButtons source={source} onPick={applyAf} onPickFill={applyAfFill} />
       {parseAfMapSource(source) === 'path' && (
         <Slider label="Path Stroke Width （パスの線幅）" value={config.gpgpuPathRasterStrokeWidth} min={0.005} max={0.2} step={0.005} onChange={(v) => updateConfig('gpgpuPathRasterStrokeWidth', v)} />

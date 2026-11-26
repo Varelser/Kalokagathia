@@ -15,6 +15,7 @@ import {
   simVertex,
 } from './sceneReactionDiffusionSystemShared';
 import { buildLeniaKernelTexture } from './sceneReactionDiffusionLeniaKernel';
+import { audioSceneOutputSum } from '../lib/audioSceneGraph';
 
 export function useReactionDiffusionRuntime({ config, layerIndex, audioRef, isPlaying }: ReactionDiffusionSystemProps) {
   const size = 256;
@@ -163,7 +164,7 @@ export function useReactionDiffusionRuntime({ config, layerIndex, audioRef, isPl
 
   useFrame(({ clock }) => {
     if (!seededRef.current) return;
-    const pulse = config.audioEnabled ? (audioRef.current.pulse * config.audioBurstScale + audioRef.current.bass * config.audioBeatScale * 0.5) : 0;
+    const pulse = config.audioEnabled ? (audioSceneOutputSum(config, audioRef.current, 'burst') * config.audioBurstScale + audioRef.current.bass * config.audioBeatScale * 0.5) : 0;
     simMaterial.uniforms.feed.value = params.feed + profile.feedAdd;
     simMaterial.uniforms.kill.value = params.kill + profile.killAdd;
     simMaterial.uniforms.dA.value = profile.diffusionA;
