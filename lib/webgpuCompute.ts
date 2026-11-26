@@ -226,6 +226,13 @@ struct Uniforms {
   crowdPad0 : f32,
   crowdPad1 : f32,
   crowdPad2 : f32,
+  // Particle rules (G10 stage 3): buffer index 184, appended
+  // at the tail like every earlier addition (185-187 are the
+  // alignment pads, left 0). The total grows to 752 bytes.
+  particleRulesEnabled : f32,
+  particleRulesPad0 : f32,
+  particleRulesPad1 : f32,
+  particleRulesPad2 : f32,
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -521,14 +528,37 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   var vel = velIn[idx].xyz;
   var phaseState = velIn[idx].w;
 
-  vel.y -= u.gravity * u.delta * 9.8;
+  // Particle rules (G10 stage 3): the baked permit mask in the
+  // attribute texture's slot 3 (.a) — the same data the WebGL
+  // velocity pass reads. Permits default to 1 (no rule effect);
+  // with rules enabled, each of the five gated forces below
+  // multiplies its contribution by its permit bit, mirroring
+  // the GLSL grp* multipliers. The mask is an exact small
+  // integer in a float texel, so +0.5 then u32() recovers it
+  // (the DEM generation counter at the tail of this file reads
+  // a packed integer back the same way).
+  var rulePermitGravity = 1.0;
+  var rulePermitTurbulence = 1.0;
+  var rulePermitCurl = 1.0;
+  var rulePermitWind = 1.0;
+  var rulePermitMorph = 1.0;
+  if (u.particleRulesEnabled > 0.5) {
+    let ruleMask = u32(textureLoad(attrTex, vec2i(i32(idx % texSizeU), i32(idx / texSizeU)), 0).a + 0.5);
+    rulePermitGravity = select(0.0, 1.0, (ruleMask & 1u) != 0u);
+    rulePermitTurbulence = select(0.0, 1.0, (ruleMask & 2u) != 0u);
+    rulePermitCurl = select(0.0, 1.0, (ruleMask & 4u) != 0u);
+    rulePermitWind = select(0.0, 1.0, (ruleMask & 8u) != 0u);
+    rulePermitMorph = select(0.0, 1.0, (ruleMask & 16u) != 0u);
+  }
+
+  vel.y -= u.gravity * u.delta * 9.8 * rulePermitGravity;
 
   if (u.turbulence > 0.001) {
     let t = u.time * 0.25;
     let np = pos * 0.007;
     vel += vec3f(vnoise(np+vec3f(t,0,0)),
                  vnoise(np+vec3f(0,t+13.7,0)),
-                 vnoise(np+vec3f(0,0,t+27.4))) * u.turbulence * 18.0 * u.delta;
+                 vnoise(np+vec3f(0,0,t+27.4))) * u.turbulence * 18.0 * u.delta * rulePermitTurbulence;
   }
 
   // Audio blast (radial impulse from the audio analysis value).
@@ -576,7 +606,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     } else {
       curl = curlField(pos * u.curlScale, vec3f(u.time * 0.15));
     }
-    vel += curl * u.curlStrength * 20.0 * u.delta;
+    vel += curl * u.curlStrength * 20.0 * u.delta * rulePermitCurl;
   }
 
   // Boids over the strided sample set.
@@ -1056,7 +1086,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       vnoise(pos * 0.01 + vec3f(1.7, u.time * 0.25, 0.0)),
       vnoise(pos * 0.01 + vec3f(0.0, 3.1, u.time * 0.2))
     ) * u.windGust;
-    vel += (normalize(vec3f(u.windX, u.windY, u.windZ) + vec3f(0.0001)) * u.windStrength + gust) * u.delta * 30.0;
+    vel += (normalize(vec3f(u.windX, u.windY, u.windZ) + vec3f(0.0001)) * u.windStrength + gust) * u.delta * 30.0 * rulePermitWind;
   }
 
   // Gravity well(s): count 1 is the legacy single well at the
@@ -1196,7 +1226,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
                     mTarget.x * mSin + mTarget.z * mCos);
     let mf = 1.0 - exp(-u.morphStrength * u.delta * 3.0);
     let vWant = (mTarget - pos) * (mf / max(u.delta * u.speed * 60.0, 0.001));
-    vel += (vWant - vel) * clamp(mf + u.delta * 6.0, 0.0, 1.0);
+    vel += (vWant - vel) * clamp(mf + u.delta * 6.0, 0.0, 1.0) * rulePermitMorph;
 
     // OBJ normal initial velocity (Phase O, ported in Phase X3):
     // an emission-style kick along the particle's baked sample
@@ -1382,12 +1412,20 @@ struct Uniforms {
   emitLightPosX : f32,
   emitLightPosY : f32,
   emitLightPosZ : f32,
+  // Particle rules (G10 stage 3): buffer index 30, appended
+  // at the tail (31 is the alignment pad, left 0) — the
+  // total stays 128 bytes.
+  particleRuleKillEnabled : f32,
+  particleRulePad0 : f32,
 };
 @group(0) @binding(0) var<uniform>             u      : Uniforms;
 @group(0) @binding(1) var<storage, read>       posIn  : array<vec4f>;
 @group(0) @binding(2) var<storage, read>       velIn  : array<vec4f>;
 @group(0) @binding(3) var<storage, read_write> posOut : array<vec4f>;
 @group(0) @binding(4) var<storage, read>       prevPosIn : array<vec4f>;
+// Particle rules (G10 stage 3): the baked attribute texture,
+// the same mirror the velocity pass binds at its binding 13.
+@group(0) @binding(5) var attrTex : texture_2d<f32>;
 
 
 fn hash1(p: vec2f) -> f32 {
@@ -1530,6 +1568,36 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       }
       // Replica restart age: idx is the texel index, the same
       // contiguous mapping the WebGL pass derives from vUv.
+      var replicaIdx = 0.0;
+      if (u.ageReplicaCount > 1.5) {
+        replicaIdx = floor(f32(idx) * u.ageReplicaCount / max(texSizeF * texSizeF, 1.0));
+      }
+      age = replicaIdx * u.ageReplicaStep * u.ageMax + u.replicaAgeBase;
+    }
+  }
+
+  // Particle rules (G10 stage 3): the kill bit of the baked
+  // mask (slot 3, bit 5). A set bit respawns the particle
+  // through the age block's placement law above (hash ball,
+  // emit-light variant, replica restart age) — the WGSL twin
+  // of the WebGL pass, where the rule kill is a plain OR into
+  // the shared respawn block. Runs regardless of the age
+  // lifecycle switch, as in WebGL. While the DEM engine
+  // replaces this pass the kill is not consumed (declared in
+  // the capability registry).
+  if (u.particleRuleKillEnabled > 0.5) {
+    let ruleMask = u32(textureLoad(attrTex, vec2i(i32(idx % texSizeU), i32(idx / texSizeU)), 0).a + 0.5);
+    if ((ruleMask & 32u) != 0u) {
+      let r = u.bounceRadius * (0.05 + hash1Age(vUv + vec2f(age)) * 0.9);
+      let th = hash1Age(vUv + vec2f(1.3)) * 6.2832;
+      let phi = acos(2.0 * hash1Age(vUv + vec2f(2.7)) - 1.0);
+      if (u.emitLightEnabled > 0.5) {
+        let jr = r * 0.05;
+        pos = vec3f(u.emitLightPosX, u.emitLightPosY, u.emitLightPosZ)
+          + vec3f(jr * sin(phi) * cos(th), jr * sin(phi) * sin(th), jr * cos(phi));
+      } else {
+        pos = vec3f(r * sin(phi) * cos(th), r * sin(phi) * sin(th), r * cos(phi));
+      }
       var replicaIdx = 0.0;
       if (u.ageReplicaCount > 1.5) {
         replicaIdx = floor(f32(idx) * u.ageReplicaCount / max(texSizeF * texSizeF, 1.0));
@@ -2801,7 +2869,7 @@ type GrainsDemState = {
 
 // Vel uniform buffer: 164 f32 slots (see the WGSL Uniforms struct
 // field order; int fields are written through an Int32Array view).
-const VEL_UNIFORM_BYTES = 736;
+const VEL_UNIFORM_BYTES = 752;
 // Pos uniform buffer: 21 f32 slots.
 const POS_UNIFORM_BYTES = 128;
 
@@ -2918,6 +2986,7 @@ export async function initWebGPUCompute(
       { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
       { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
       { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 5, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
     ],
   });
 
@@ -3281,6 +3350,11 @@ export interface WebGPUMorphParams {
  * WebGL branch's gating. Enum fields carry the same integer ids
  * the WebGL branch resolves from the config's string unions. */
 export interface WebGPUForceParams {
+  // Particle rules (G10 stage 3): optional — the pass layer
+  // sets them while effective rules exist (velocity permits /
+  // position kill consuming the baked mask).
+  particleRulesEnabled?: boolean;
+  particleRuleKillEnabled?: boolean;
   audioBlast: number;
   nBodyEnabled: boolean; nBodyStrength: number; nBodySoftening: number; nBodyRepulsion: number; nBodySamples: number;
   curlEnabled: boolean; curlStrength: number; curlScale: number; curlSymmetry: number; curlMode: number; curlOctaves: number;
@@ -3665,6 +3739,8 @@ export function stepWebGPUCompute(
   velU[178] = cw ? cw.laneOffset : 0;
   velU[179] = cw ? cw.laneLateralGain : 1;
   velU[180] = cw ? cw.laneLookAheadScale : 1;
+  // Particle rules (G10 stage 3): index 184 (185-187 pads, left 0).
+  velU[184] = f && f.particleRulesEnabled ? 1 : 0;
   new Uint32Array(velU.buffer)[0] = texSize; // texSizeはu32なのでUint32Arrayビューで書く
   device.queue.writeBuffer(velUBuf, 0, velU);
 
@@ -3708,6 +3784,8 @@ export function stepWebGPUCompute(
   posU[27] = f ? f.emitLightPos.x : 0;
   posU[28] = f ? f.emitLightPos.y : 0;
   posU[29] = f ? f.emitLightPos.z : 0;
+  // Particle rules (G10 stage 3): index 30 (31 is the pad, left 0).
+  posU[30] = f && f.particleRuleKillEnabled ? 1 : 0;
   new Uint32Array(posU.buffer)[0] = texSize;
   device.queue.writeBuffer(posUBuf, 0, posU);
 
@@ -4065,6 +4143,7 @@ export function stepWebGPUCompute(
         { binding: 2, resource: { buffer: velOut } },
         { binding: 3, resource: { buffer: posOut } },
         { binding: 4, resource: { buffer: prevPosBuf } },
+        { binding: 5, resource: state.attrTexture.createView() },
       ],
     });
     const posPass = enc.beginComputePass();

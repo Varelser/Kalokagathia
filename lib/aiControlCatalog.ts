@@ -539,6 +539,7 @@ const NUMS: NumDef[] = [
   ['gpgpuGroupTarget', 'グループがゲートするフォース（all/gravity/turbulence/curl/wind/morph）'],
   ['gpgpuGroupInvert', 'グループ条件の反転'],
   ['gpgpuGroupsData', '名前付きグループの定義一覧（JSON文字列）'],
+  ['gpgpuParticleRules', 'パーティクルルール列（JSON文字列）'],
   ['gpgpuGroupRef', 'フォースゲートが使う名前付きグループのID'],
   ['gpgpuGroupKillEnabled', 'グループキル（非メンバーを消滅→リスポーン）'],
   ['gpgpuGroupColorEnabled', 'グループ色駆動（属性色をメンバーだけに適用）'],

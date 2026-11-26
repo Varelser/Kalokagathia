@@ -67,6 +67,10 @@ export interface VelocityFragmentVariantOptions {
   // + the crowd variant of the 'steer-seek' chunk), spliced
   // in in the same manner — only while the crowd key is on.
   crowd?: boolean;
+  // G10 stage 1: particle rules (main-forces mask segment),
+  // spliced in in the same manner — only while an effective
+  // rule list exists.
+  particleRules?: boolean;
 }
 
 export const SIM_VEL_FRAG_PHASE19 =
@@ -145,7 +149,7 @@ export function buildVelocityFragment(customCode: string, forceOrder?: string, o
   // Phase 19 gate fix: a Phase 19 variant option rebuilds the
   // affected chunks in their variant form. With no variant on,
   // the historical paths above are untouched.
-  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci || !!options?.attractor2 || !!options?.attractor3 || !!options?.attractor4 || !!options?.grainsPileXsph || !!options?.crowd;
+  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci || !!options?.attractor2 || !!options?.attractor3 || !!options?.attractor4 || !!options?.grainsPileXsph || !!options?.crowd || !!options?.particleRules;
   const base = !hasVariant && (!forceOrder || isDefaultGpgpuForceOrder(forceOrder))
     ? SIM_VEL_FRAG
     : buildVelocityPreamble(options) + VEL_FRAG_HELPERS + buildMainForcesFragment(forceOrder, options)

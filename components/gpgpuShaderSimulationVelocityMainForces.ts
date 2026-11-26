@@ -887,8 +887,30 @@ export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
  * runs (the Phase 19 lesson). Without the option the chunk is
  * skipped wherever the order names it, and the result stays
  * byte-identical to the historical assembly. */
+// Particle rules (G10 stage 1): spliced in right after the
+// head (which has already fetched attrData and resolved the
+// legacy group gate) and before every force chunk, so the
+// permit bits AND into all five gated forces at once. The
+// mask is the integer 0..63 the bake burned into slot 3
+// (attrData.a); bit extraction uses the bitonic sort's
+// arithmetic form — GLSL ES 1.00 has no bit operators (U1).
+const VEL_FRAG_PARTICLE_RULES_SEGMENT = /* glsl */ `
+    // Particle rules (G10 stage 1): baked permit mask, slot 3.
+    if (uAttrEnabled) {
+      float ruleMask = attrData.a;
+      grpGravity *= mod(floor(ruleMask / 1.0), 2.0);
+      grpTurbulence *= mod(floor(ruleMask / 2.0), 2.0);
+      grpCurl *= mod(floor(ruleMask / 4.0), 2.0);
+      grpWind *= mod(floor(ruleMask / 8.0), 2.0);
+      grpMorph *= mod(floor(ruleMask / 16.0), 2.0);
+    }
+`;
+
 export interface MainForcesVariantOptions {
   steeringSeek?: boolean;
+  // G10 stage 1: the particle-rule mask segment above is
+  // spliced in only while an effective rule list exists.
+  particleRules?: boolean;
   // Round 84 gap 2: while set (AND steeringSeek), the
   // 'steer-seek' name assembles the crowd variant chunk and
   // the standalone 'steer-avoid' chunk is skipped — the state
@@ -912,7 +934,7 @@ export function buildMainForcesFragment(
 ): string {
   const names = normalizeGpgpuForceOrder(order);
   const crowdActive = !!options?.crowd && !!options?.steeringSeek;
-  let out = VEL_FRAG_MAIN_FORCES_HEAD;
+  let out = VEL_FRAG_MAIN_FORCES_HEAD + (options?.particleRules ? VEL_FRAG_PARTICLE_RULES_SEGMENT : '');
   for (const name of names) {
     if (name === 'steer-seek' && !options?.steeringSeek) continue;
     if (name === 'steer-avoid' && crowdActive) continue;

@@ -229,6 +229,10 @@ export interface ParticleConfigGpgpu {
   // presets, never share links.
   gpgpuGroupsData: string;
   gpgpuGroupRef: string;
+  // Particle rules (G10): the rule list as one serialised JSON
+  // string (lib/gpgpuParticleRules.ts; '' = no rules = legacy
+  // behaviour).
+  gpgpuParticleRules: string;
   // Phase DG: the named group referenced by gpgpuGroupRef also
   // drives two more consumers — a position-pass kill (non-members
   // respawn) and the draw-side attribute colour (members only).

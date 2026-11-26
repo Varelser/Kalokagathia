@@ -211,7 +211,7 @@ const {
   check('WGSL: steering block present', src.includes('if (u.steerEnabled > 0.5)'));
   check('WGSL: same application law', src.includes('vel += steerForce * u.steerStrength * u.delta * 60.0;'));
   check('WGSL: arrive ramp mirrors', src.includes('u.steerMaxSpeed * sDist / u.steerSlowingRadius'));
-  check('WGSL: uniform buffer is 736 bytes (656 through Phase 29; Round 84 gap 2 appended the avoidance + crowd fields)', src.includes('const VEL_UNIFORM_BYTES = 736;'));
+  check('WGSL: uniform buffer is 752 bytes (736 through G10 stage 2; stage 3 appended the particle-rules field at index 184)', src.includes('const VEL_UNIFORM_BYTES = 752;'));
   check('WGSL: writes at indices 99..116', src.includes('velU[99] = st && st.active ? 1 : 0;') && src.includes('velU[116 + pi * 4]'));
   check('WGSL: state mode implemented (Phase 28, 9-5)', src.includes('slotValue >= u.steerStateThreshold') && src.includes('@binding(13) var attrTex'));
 }

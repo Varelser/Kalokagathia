@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLIP_VORTICITY_CURL_FRAG, FLIP_VORTICITY_FORCE_FRAG, FLUID_ADVECT_FRAG, GRAINS_CELL_KEY_FRAG, GRAINS_PILE_DELTA_FRAG, GRAINS_PILE_LAMBDA_FRAG, GRAINS_VELOCITY_UPDATE_FRAG, SIM_VERT, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildPositionFragment, buildVelocityFragment } from "./gpgpuShaders";
 import type { VelocityFragmentVariantOptions } from "./gpgpuShaderSimulationVelocity";
 import { grainsNeighborhoodMode, grainsPileActive, grainsProjectionActive, resolveGrainsXsphStrength } from "../lib/gpgpuGrains";
+import { hasEffectiveParticleRules } from "../lib/gpgpuParticleRules";
 import { flip3dActive } from "../lib/flip3d";
 import { grainsFullScanDowngradeApplies, resolveGrainsCellSortActive, setFlip3dGrainsDowngrade } from "../lib/flip3dAtlasDowngrade";
 import { getMaxTextureImageUnits } from "../lib/gpuDiagnostics";
@@ -91,6 +92,10 @@ export function velocityVariantOptions(config: ParticleConfig): VelocityFragment
     // built string only while the pile plan is active with a
     // positive XSPH strength.
     grainsPileXsph: grainsPileActive(config) && resolveGrainsXsphStrength(config) > 0,
+    // G10 stage 1: the particle-rule mask segment exists in
+    // the built string only while an effective rule list
+    // exists (the Phase 19 splicing discipline).
+    particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''),
   };
 }
 
@@ -552,6 +557,9 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       // Group kill (Phase DG): attribute bake + gate uniforms,
       // resolved per frame in runSimulationPasses.
       uGroupKillEnabled: { value: false },
+      // Particle rule kill (G10 stage 1), resolved per frame
+      // in runSimulationPasses alongside the group kill.
+      uParticleRuleKillEnabled: { value: false },
       uAttrTex:      { value: null },
       uGroupSlot:    { value: 0 },
       uGroupMode:    { value: 1 },
@@ -559,7 +567,7 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uGroupHigh:    { value: 0.75 },
       uGroupInvert:  { value: false },
     },
-    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()) }),
+    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()), particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? '') }),
   });
 }
 
@@ -1380,7 +1388,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // config's variant), so a variant-only change swaps the shader
   // through this same path and the mount behaviour is unchanged.
   const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
-    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}${opts.crowd ? 1 : 0}`;
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}${opts.crowd ? 1 : 0}${opts.particleRules ? 1 : 0}`;
   const appliedForceCodeRef = useRef<string | null>(
     `\n\n${variantKeyOf(velocityVariantOptions(config))}`,
   );
@@ -1424,7 +1432,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     velSimMat.needsUpdate = true;
     appliedForceCodeRef.current = appliedKey;
     setCustomForceStatus({ state: 'active' });
-  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuGrainsPileEnabled, config.gpgpuGrainsXsphStrength, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, config.gpgpuAttractor2Enabled, gl, velSimMat]);
+  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuGrainsPileEnabled, config.gpgpuGrainsXsphStrength, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, config.gpgpuAttractor2Enabled, config.gpgpuAttractor3Enabled, config.gpgpuAttractor4Enabled, config.gpgpuParticleRules, gl, velSimMat]);
 
   // Phase 19 gate fix: the position material's string variant
   // follows the Grains projection activity (the same condition
@@ -1435,7 +1443,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // (Grains on + complete neighbourhood) — while it holds, the
   // projection segment searches the sorted cell index instead
   // of walking the whole texture.
-  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${resolveGrainsCellSortActive(c, getMaxTextureImageUnits())}`;
+  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${resolveGrainsCellSortActive(c, getMaxTextureImageUnits())}:${hasEffectiveParticleRules(c.gpgpuParticleRules ?? '')}`;
   const posProjectionRef = useRef(posVariantKey(config));
   useEffect(() => {
     const key = posVariantKey(config);
@@ -1444,9 +1452,10 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     posSimMat.fragmentShader = buildPositionFragment({
       grainsProjection: grainsProjectionActive(config),
       grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()),
+      particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''),
     });
     posSimMat.needsUpdate = true;
-  }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, posSimMat]);
+  }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, config.gpgpuParticleRules, posSimMat]);
 
   // Phase 20 stage 4 (UE5 #22): the Aux pair's string variant
   // follows the SDF-splash activity (SDF collider on + bounceSplash

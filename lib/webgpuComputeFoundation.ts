@@ -6,6 +6,7 @@ import {
 } from './gpgpuAttributes';
 import { flip3dMode } from './flip3d';
 import { GRAINS_DEM_FEATURE, resolveGrainsDemPlan } from './gpgpuGrains';
+import { hasEffectiveParticleRules } from './gpgpuParticleRules';
 
 export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   'particles',
@@ -82,6 +83,17 @@ export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   // does this); the runtime disables DEM when the granted limit
   // is still too small.
   'grains-dem',
+  // Particle rules (G10 stage 3): the WGSL velocity pass now
+  // multiplies the five forces by the baked permit mask (slot
+  // 3 of the attribute texture, bits 0-4) and the WGSL position
+  // pass consumes the kill bit (bit 5) through the age block's
+  // placement law — the same consumption the WebGL passes have
+  // had since stage 1. One combination stays narrower than
+  // WebGL: while the DEM engine replaces the position pass,
+  // the rule kill is not consumed (the DEM lifecycle owns
+  // respawn there), exactly like the other position-side
+  // lifecycle entries under DEM.
+  'particle-rules',
 ] as const;
 
 export type WebgpuComputeFeature = typeof WEBGPU_COMPUTE_SUPPORTED_FEATURES[number];
@@ -194,6 +206,13 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   const groupConsumerActive = !!config.gpgpuGroupEnabled
     || (typeof config.gpgpuGroupRef === 'string' && config.gpgpuGroupRef.length > 0);
   if (groupConsumerActive) features.push('attr-group');
+  // Particle rules (G10): requested while effective rules
+  // exist. Stage 1 implemented the consumption on the WebGL
+  // passes only, so the feature was declared unsupported and
+  // rule configs routed to WebGL; stage 3 added the WGSL
+  // consumption (velocity permits + position kill) and the
+  // feature joined the supported list above.
+  if (hasEffectiveParticleRules(config.gpgpuParticleRules ?? '')) features.push('particle-rules');
   // Attribute feedback (Phase BV): the feedback pass's output
   // reaches the draw-side drives on every path (the draw shader
   // is WebGL throughout, exactly as with Phase BO's dynamic

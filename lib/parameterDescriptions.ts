@@ -500,6 +500,7 @@ const DESCRIPTIONS: Record<string, string> = {
   gpgpuGroupTarget: 'グループがゲートするフォース（all／gravity／turbulence／curl／wind／morph）',
   gpgpuGroupInvert: 'グループ条件の反転（メンバーと非メンバーを入れ替える）',
   gpgpuGroupsData: '名前付きグループの定義一覧（JSON文字列。述語／凍結スナップショット／合成。空＝グループなし）',
+  gpgpuParticleRules: 'パーティクルルール列（JSON文字列。条件→適用の組み立て文法 G10。空＝ルールなし＝従来動作）',
   gpgpuGroupRef: 'フォースゲートが使う名前付きグループのID（空＝従来の単一グループ条件を使う）',
   gpgpuGroupKillEnabled: 'グループキル（Gate Group の非メンバーを消滅→リスポーンさせる。OFFで従来同一）',
   gpgpuGroupColorEnabled: 'グループ色駆動（属性→色駆動を Gate Group のメンバーだけに適用する。OFFで従来同一）',

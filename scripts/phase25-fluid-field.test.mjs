@@ -62,7 +62,7 @@ check('VEL_WGSL coupling uv law', velWgsl.includes('pos.xz / (u.bounceRadius * f
 check('VEL_WGSL coupling x300, field.y -> vel.z',
   velWgsl.includes('vel.x += fieldVel.x * fu.influence * u.delta * 300.0;') &&
   velWgsl.includes('vel.z += fieldVel.y * fu.influence * u.delta * 300.0;'));
-check('VEL uniform buffer 736 (Round 84 gap 2 appended the avoidance + crowd fields; 656 through Phase 29)', src.includes('const VEL_UNIFORM_BYTES = 736;'));
+check('VEL uniform buffer 752 (736 through G10 stage 2; stage 3 appended the particle-rules field at index 184)', src.includes('const VEL_UNIFORM_BYTES = 752;'));
 
 // The WebGL side must stay byte-identical in law: the GLSL
 // advection source still carries its original expressions.

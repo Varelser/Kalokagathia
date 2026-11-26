@@ -86,6 +86,11 @@ import {
   attrExprsReferenceDensity,
 } from '../lib/gpgpuAttributes';
 import { evaluateGpgpuGroup, parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
+import {
+  applyParticleRulesToBake,
+  particleRulesReferenceExtSlots,
+  resolveParticleRules,
+} from '../lib/gpgpuParticleRules';
 import { resolveGrainsCellSortActive } from '../lib/flip3dAtlasDowngrade';
 import { grainsPileActive } from '../lib/gpgpuGrains';
 import { getMaxTextureImageUnits } from '../lib/gpuDiagnostics';
@@ -2322,7 +2327,13 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const attrDenKey = attrExprsReferenceDensity(
     config.gpgpuAttrExprs, config.gpgpuAttrNames, config.gpgpuAttrNames2,
   ) ? `${config.gpgpuSphRadius}/${config.gpgpuSphRestDensity}` : '';
-  const attrSignature = attrConsumers.anyActive
+  // Particle rules (G10 stage 1): an effective rule list is an
+  // attribute consumer of its own — the bake must stand even
+  // when no other consumer is on. Resolved here (component
+  // layer) rather than inside resolveAttrConsumers, to keep
+  // lib/gpgpuAttributes free of the import cycle.
+  const particleRules = resolveParticleRules(config.gpgpuParticleRules ?? '');
+  const attrSignature = (attrConsumers.anyActive || particleRules.length > 0)
     ? [
       texSize,
       config.gpgpuSeed,
@@ -2352,6 +2363,16 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       // a bake input — but only while a ref is set, so legacy
       // signatures (and bakes) stay untouched otherwise.
       config.gpgpuGroupRef ? JSON.stringify([config.gpgpuGroupRef, config.gpgpuGroupsData]) : '',
+      // Particle rules (G10): the rule list and the group
+      // definitions its targets may reference are bake inputs —
+      // only while a rule list is set, so legacy signatures
+      // stay untouched otherwise. When a condition reads an
+      // ext slot, the ext bake's own inputs join too (that
+      // bake is then built inside the effect, U4).
+      particleRules.length > 0 ? JSON.stringify([config.gpgpuParticleRules, config.gpgpuGroupsData]) : '',
+      particleRules.length > 0 && particleRulesReferenceExtSlots(particleRules, config.gpgpuAttrNames, config.gpgpuAttrNames2)
+        ? JSON.stringify([config.gpgpuAttrNames2, config.gpgpuAttrSources2, config.gpgpuAttrExprs2])
+        : '',
     ].join('|')
     : '';
   useEffect(() => {
@@ -2409,7 +2430,61 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       parseGpgpuGroups(config.gpgpuGroupsData ?? ''),
       config.gpgpuGroupRef ?? '',
     );
-    if (groupGate.kind === 'baked') {
+    if (particleRules.length > 0) {
+      // Particle rules (G10 stage 1): while any rule is
+      // effective the rule engine owns slot 3 (design 3.5), so
+      // the baked-group write below is skipped and the passes
+      // suppress the baked gate resolution. The rules evaluate
+      // against the pristine bake; the mask + colour result
+      // lands on a copy, exactly like the group write.
+      let extData: Float32Array | null = null;
+      if (particleRulesReferenceExtSlots(particleRules, config.gpgpuAttrNames, config.gpgpuAttrNames2)) {
+        // U4: a condition reading slots 4..7 needs the ext
+        // bake before evaluation. It is built here, from the
+        // pristine first bake, with the ext effect's own
+        // inputs (that effect later builds the same array for
+        // its texture; the builder is a pure function).
+        const sources2 = normalizeAttrSources(config.gpgpuAttrSources2);
+        const bake2 = (needsTarget || sources2.includes('target'))
+          ? (bake ?? buildMorphBakeData(config, texSize))
+          : null;
+        extData = buildAttributeDataExt({
+          texSize,
+          posData: initDataRef.current.posData,
+          velData: initDataRef.current.velData,
+          ageMax: config.gpgpuAgeMax,
+          bounceRadius: config.gpgpuBounceRadius,
+          sphRadius: config.gpgpuSphRadius,
+          sphRestDensity: config.gpgpuSphRestDensity,
+          speciesCount: config.gpgpuParticleLifeSpecies,
+          morphData: bake2 ? bake2.data : null,
+          morphWorldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,
+          cloud: getAttrPointCloud(),
+          firstBake: data,
+          names: normalizeAttrNames(config.gpgpuAttrNames),
+          names2: normalizeAttrNames2(config.gpgpuAttrNames2),
+          sources2,
+          exprs2: config.gpgpuAttrExprs2,
+        });
+      }
+      const applied = applyParticleRulesToBake({
+        rules: particleRules,
+        groupDefs: parseGpgpuGroups(config.gpgpuGroupsData ?? ''),
+        attrData: data,
+        extData,
+        count: texSize * texSize,
+        names: config.gpgpuAttrNames,
+        names2: config.gpgpuAttrNames2,
+        posData: initDataRef.current.posData,
+        velData: initDataRef.current.velData,
+        ageMax: config.gpgpuAgeMax,
+        bounceRadius: config.gpgpuBounceRadius,
+        colorSlots: attrConsumers.colorActive
+          ? resolveAttrColorSlots(normalizeAttrNames(config.gpgpuAttrNames))
+          : null,
+      });
+      if (applied) texData = applied;
+    } else if (groupGate.kind === 'baked') {
       const membership = evaluateGpgpuGroup(
         parseGpgpuGroups(config.gpgpuGroupsData ?? ''),
         config.gpgpuGroupRef,

@@ -15,6 +15,7 @@ import { resolveRigid } from '../lib/rigidBodies';
 import { crowdAvoidStrength, resolveCrowd, resolveSteeringSeek } from '../lib/steering';
 import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
+import { hasEffectiveParticleRules, particleRulesHaveAction } from '../lib/gpgpuParticleRules';
 import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
 import { isFreeCurveIdentity, normalizeFreeCurvePoints, FREE_CURVE_MAX_POINTS } from '../lib/freeCurve';
 import {
@@ -608,6 +609,15 @@ export function runSimulationPasses(args: {
       // WebGL branch below assigns to its uniforms, with the same
       // clamps and the same enum-id maps.
       {
+        // Particle rules (G10 stage 3): the WGSL passes consume
+        // the same baked mask the WebGL branch below reads
+        // (velocity permits + position kill). The vellum /
+        // rigid suppression of the WebGL kill needs no mirror
+        // here — those configs route to WebGL in the capability
+        // registry, so they never run on this path.
+        particleRulesEnabled: !!args.attrTex && hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''),
+        particleRuleKillEnabled: !!args.attrTex && hasEffectiveParticleRules(config.gpgpuParticleRules ?? '')
+          && particleRulesHaveAction(config.gpgpuParticleRules ?? '', 'kill') && !args.suppressGroupKill,
         audioBlast: blast,
         nBodyEnabled: config.gpgpuNBodyEnabled,
         nBodyStrength: config.gpgpuNBodyStrength,
@@ -1117,7 +1127,14 @@ export function runSimulationPasses(args: {
     const attrConsumers = resolveAttrConsumers(config);
     const attrTex = args.attrTex ?? null;
     if (velSimMat.uniforms.uAttrTex) velSimMat.uniforms.uAttrTex.value = attrTex;
-    if (velSimMat.uniforms.uAttrEnabled) velSimMat.uniforms.uAttrEnabled.value = !!attrTex && (attrConsumers.forceActive || attrConsumers.groupActive || attrConsumers.steerStateActive);
+    // Particle rules (G10 stage 1): an effective rule list is
+    // itself an attribute consumer (its mask rides slot 3 of
+    // the same texture), and while rules are effective the
+    // baked-group gate resolution is suppressed — the rule
+    // engine owns slot 3 then (design 3.5), so the channel
+    // must not also be read as group membership.
+    const particleRulesActive = hasEffectiveParticleRules(config.gpgpuParticleRules ?? '');
+    if (velSimMat.uniforms.uAttrEnabled) velSimMat.uniforms.uAttrEnabled.value = !!attrTex && (attrConsumers.forceActive || attrConsumers.groupActive || attrConsumers.steerStateActive || particleRulesActive);
     if (velSimMat.uniforms.uAttrForceEnabled) velSimMat.uniforms.uAttrForceEnabled.value = !!attrTex && attrConsumers.forceActive;
     if (velSimMat.uniforms.uAttrForceSlot) velSimMat.uniforms.uAttrForceSlot.value = normalizeAttrSlot(config.gpgpuAttrForceSlot);
     if (velSimMat.uniforms.uAttrForceAmount) velSimMat.uniforms.uAttrForceAmount.value = Math.max(0, Math.min(1, config.gpgpuAttrForceAmount ?? 1));
@@ -1130,7 +1147,7 @@ export function runSimulationPasses(args: {
     const groupGate = resolveGroupGate(parseGpgpuGroups(config.gpgpuGroupsData ?? ''), config.gpgpuGroupRef ?? '');
     const gatePredicate = groupGate.kind === 'predicate'
       ? groupGate.predicate
-      : groupGate.kind === 'baked'
+      : groupGate.kind === 'baked' && !particleRulesActive
         ? { slot: groupGate.slot, mode: 'above' as const, low: 0.5, high: 1, invert: false }
         : null;
     if (velSimMat.uniforms.uGroupEnabled) velSimMat.uniforms.uGroupEnabled.value = !!attrTex && (gatePredicate !== null || attrConsumers.groupActive);
@@ -1466,14 +1483,24 @@ export function runSimulationPasses(args: {
   {
     const attrConsumers = resolveAttrConsumers(config);
     const groupGate = resolveGroupGate(parseGpgpuGroups(config.gpgpuGroupsData ?? ''), config.gpgpuGroupRef ?? '');
+    // Particle rules (G10 stage 1): while rules are effective
+    // the rule engine owns slot 3, so the baked branch of the
+    // gate resolution is not used as a gate (design 3.5).
+    const particleRulesActive = hasEffectiveParticleRules(config.gpgpuParticleRules ?? '');
     const gatePredicate = groupGate.kind === 'predicate'
       ? groupGate.predicate
-      : groupGate.kind === 'baked'
+      : groupGate.kind === 'baked' && !particleRulesActive
         ? { slot: groupGate.slot, mode: 'above' as const, low: 0.5, high: 1, invert: false }
         : null;
     const groupKillOn = !!args.attrTex && attrConsumers.groupKillActive && gatePredicate !== null
       && !vellum.active && !rigidActive && !args.suppressGroupKill;
     if (posSimMat.uniforms.uGroupKillEnabled) posSimMat.uniforms.uGroupKillEnabled.value = groupKillOn;
+    // Rule kill (G10): same suppression discipline as the
+    // group kill (vellum / rigid / replica stacks).
+    const ruleKillOn = !!args.attrTex && particleRulesActive
+      && particleRulesHaveAction(config.gpgpuParticleRules ?? '', 'kill')
+      && !vellum.active && !rigidActive && !args.suppressGroupKill;
+    if (posSimMat.uniforms.uParticleRuleKillEnabled) posSimMat.uniforms.uParticleRuleKillEnabled.value = ruleKillOn;
     if (posSimMat.uniforms.uAttrTex) posSimMat.uniforms.uAttrTex.value = args.attrTex ?? null;
     if (gatePredicate) {
       if (posSimMat.uniforms.uGroupSlot) posSimMat.uniforms.uGroupSlot.value = gatePredicate.slot;

@@ -749,20 +749,55 @@ const POS_FRAG_PROJECTION_SEGMENT_CELL = POS_FRAG_PROJECTION_SEGMENT_A
   + POS_FRAG_PROJECTION_SEGMENT_CELL_CLOSE
   + POS_FRAG_PROJECTION_SEGMENT_B;
 
+// Particle rules (G10 stage 1): the kill bit of the baked
+// mask. The uniform is declared only in this variant (the
+// uAttrTex sampler itself is already declared with the Phase
+// DG uniforms in POS_FRAG_MID). The tail segment is spliced
+// in right after the Phase DG group-kill block: polarity was
+// unified at bake time ("kill = bit set"), so the rule kill
+// is a plain OR into the shared respawn block. Bit extraction
+// is the arithmetic mod/floor form (GLSL ES 1.00, U1).
+const POS_FRAG_PARTICLE_RULES_UNIFORMS = /* glsl */ `
+uniform bool uParticleRuleKillEnabled;
+`;
+const POS_FRAG_GROUP_KILL_BLOCK = /* glsl */ `    if (uGroupKillEnabled) {
+      vec4 attrData = texture2D(uAttrTex, vUv);
+      float grp = kaloGroupMembership(kaloAttrChannel(attrData, uGroupSlot), uGroupMode, uGroupLow, uGroupHigh, uGroupInvert);
+      if (grp < 0.5) doRespawn = true;
+    }
+`;
+const POS_FRAG_PARTICLE_RULES_SEGMENT = /* glsl */ `    // Particle rule kill (G10 stage 1): bit 5 of the baked
+    // mask in slot 3 respawns matched particles.
+    if (uParticleRuleKillEnabled) {
+      vec4 ruleAttrData = texture2D(uAttrTex, vUv);
+      if (mod(floor(ruleAttrData.a / 32.0), 2.0) > 0.5) doRespawn = true;
+    }
+`;
+
 export interface PositionFragmentVariantOptions {
   grainsProjection?: boolean;
   grainsCellSort?: boolean;
+  // G10 stage 1: particle-rule kill segment, spliced in only
+  // while an effective rule list exists.
+  particleRules?: boolean;
 }
 
 export function buildPositionFragment(options?: PositionFragmentVariantOptions): string {
   const projection = !!options?.grainsProjection;
   const cell = projection && !!options?.grainsCellSort;
+  const tail = options?.particleRules
+    ? POS_FRAG_TAIL.replace(
+        POS_FRAG_GROUP_KILL_BLOCK,
+        POS_FRAG_GROUP_KILL_BLOCK + POS_FRAG_PARTICLE_RULES_SEGMENT,
+      )
+    : POS_FRAG_TAIL;
   return POS_FRAG_HEAD
+    + (options?.particleRules ? POS_FRAG_PARTICLE_RULES_UNIFORMS : '')
     + (projection ? POS_FRAG_PROJECTION_UNIFORMS : '')
     + (cell ? POS_FRAG_PROJECTION_CELL : '')
     + POS_FRAG_MID
     + (projection ? (cell ? POS_FRAG_PROJECTION_SEGMENT_CELL : POS_FRAG_PROJECTION_SEGMENT) : '')
-    + POS_FRAG_TAIL;
+    + tail;
 }
 
 export const SIM_POS_FRAG = buildPositionFragment();

@@ -3,6 +3,7 @@ import React from 'react';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
 import { GlobalDisplayGpgpuAdvancedRenderSection } from './controlPanelGlobalDisplayGpgpuAdvancedRender';
 import { GlobalDisplayGpgpuForcesSection } from './controlPanelGlobalDisplayGpgpuForces';
+import { GlobalDisplayGpgpuParticleRulesSection } from './controlPanelGlobalDisplayGpgpuParticleRules';
 import { GlobalDisplayGpgpuTrailsSection } from './controlPanelGlobalDisplayGpgpuTrails';
 import { Slider, Toggle } from './controlPanelParts';
 
@@ -277,6 +278,7 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
           <GlobalDisplayGpgpuTrailsSection config={config} updateConfig={updateConfig} />
           <GlobalDisplayGpgpuAdvancedRenderSection config={config} updateConfig={updateConfig} />
           <GlobalDisplayGpgpuForcesSection config={config} updateConfig={updateConfig} />
+          <GlobalDisplayGpgpuParticleRulesSection config={config} updateConfig={updateConfig} />
         </>
       )}
     </div>
