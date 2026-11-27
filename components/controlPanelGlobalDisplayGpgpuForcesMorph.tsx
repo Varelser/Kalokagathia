@@ -738,6 +738,16 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           {config.gpgpuRigidForceEnabled && (
             <Slider label="Force Scale （連成の強さ）" value={config.gpgpuRigidForceScale} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuRigidForceScale', v)} />
           )}
+          {config.gpgpuRigidForceEnabled && (
+            <Toggle label="Force Torque （トルク連成）" value={config.gpgpuRigidForceTorque} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidForceTorque', v)} />
+          )}
+          {config.gpgpuRigidForceEnabled && (
+            <Slider label="Force Wake Threshold （力で起こす閾値）" value={config.gpgpuRigidForceWakeThreshold} min={0} max={500} step={5} onChange={(v) => updateConfig('gpgpuRigidForceWakeThreshold', v)} />
+          )}
+          <Toggle label="Free Particles （自由粒子の混在）" value={config.gpgpuRigidFreeEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidFreeEnabled', v)} />
+          {config.gpgpuRigidFreeEnabled && (
+            <Slider label="Free Fraction （自由粒子の割合）" value={config.gpgpuRigidFreeFraction} min={0} max={0.95} step={0.05} onChange={(v) => updateConfig('gpgpuRigidFreeFraction', v)} />
+          )}
           <Toggle label="Joint Anchor （アンカー拘束）" value={config.gpgpuRigidJointAnchorEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidJointAnchorEnabled', v)} />
           {config.gpgpuRigidJointAnchorEnabled && (
             <Slider label="Joint Angle Limit （角度制限・度）" value={config.gpgpuRigidJointAngleLimitDeg} min={0} max={180} step={1} onChange={(v) => updateConfig('gpgpuRigidJointAngleLimitDeg', Math.round(v))} />

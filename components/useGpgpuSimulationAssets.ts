@@ -96,6 +96,10 @@ export function velocityVariantOptions(config: ParticleConfig): VelocityFragment
     // the built string only while an effective rule list
     // exists (the Phase 19 splicing discipline).
     particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''),
+    // Coupling stage 2: the free-particle segments exist in
+    // the built string only while the free-particles key is
+    // on (same discipline).
+    rigidFree: !!config.gpgpuRigidFreeEnabled,
   };
 }
 
@@ -208,6 +212,7 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uCrowdLaneOffset:           { value: 0 },
       uCrowdLaneLateralGain:      { value: 1 },
       uCrowdLaneLookAheadScale:   { value: 1 },
+      uCrowdMultiObstacleEnabled: { value: false },
       // Lifecycle grammar (Phase AB): gate off / legacy drag at
       // the defaults; the passes fill them from config per frame.
       uSpawnRate:   { value: 1.0 },
@@ -327,6 +332,11 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uRigidEnabled:      { value: false },
       uRigidCellTex:      { value: null },
       uRigidBodyTex:      { value: null },
+      // Coupling stage 2: free-particle mix (off = verbatim).
+      uRigidFreeEnabled:  { value: false },
+      uRigidFreeFraction: { value: 0 },
+      uRigidBodyCount:    { value: 0 },
+      uRigidFreeBounce:   { value: 0 },
       // Pyro (Phase AS): disabled is the exact legacy path.
       uPyroEnabled:       { value: false },
       uPyroTemperature:   { value: 1.0 },
@@ -496,6 +506,10 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uRigidEnabled:  { value: false },
       uRigidCellTex:  { value: null },
       uRigidBodyTex:  { value: null },
+      // Coupling stage 2: free-particle mix (off = verbatim).
+      uRigidFreeEnabled:  { value: false },
+      uRigidFreeFraction: { value: 0 },
+      uRigidBodyCount:    { value: 0 },
       uVerletEnabled: { value: false },
       uPrevPosTex:    { value: null },
       uSdfEnabled:    { value: false },
@@ -587,7 +601,7 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uGroupHigh:    { value: 0.75 },
       uGroupInvert:  { value: false },
     },
-    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()), particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? '') }),
+    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()), particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''), rigidFree: !!config.gpgpuRigidFreeEnabled }),
   });
 }
 
@@ -1408,7 +1422,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // config's variant), so a variant-only change swaps the shader
   // through this same path and the mount behaviour is unchanged.
   const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
-    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}${opts.crowd ? 1 : 0}${opts.particleRules ? 1 : 0}`;
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}${opts.crowd ? 1 : 0}${opts.particleRules ? 1 : 0}${opts.rigidFree ? 1 : 0}`;
   const appliedForceCodeRef = useRef<string | null>(
     `\n\n${variantKeyOf(velocityVariantOptions(config))}`,
   );
@@ -1463,7 +1477,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // (Grains on + complete neighbourhood) — while it holds, the
   // projection segment searches the sorted cell index instead
   // of walking the whole texture.
-  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${resolveGrainsCellSortActive(c, getMaxTextureImageUnits())}:${hasEffectiveParticleRules(c.gpgpuParticleRules ?? '')}`;
+  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${resolveGrainsCellSortActive(c, getMaxTextureImageUnits())}:${hasEffectiveParticleRules(c.gpgpuParticleRules ?? '')}:${!!c.gpgpuRigidFreeEnabled}`;
   const posProjectionRef = useRef(posVariantKey(config));
   useEffect(() => {
     const key = posVariantKey(config);
@@ -1473,9 +1487,10 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       grainsProjection: grainsProjectionActive(config),
       grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()),
       particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''),
+      rigidFree: !!config.gpgpuRigidFreeEnabled,
     });
     posSimMat.needsUpdate = true;
-  }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, config.gpgpuParticleRules, posSimMat]);
+  }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, config.gpgpuParticleRules, config.gpgpuRigidFreeEnabled, posSimMat]);
 
   // Phase 20 stage 4 (UE5 #22): the Aux pair's string variant
   // follows the SDF-splash activity (SDF collider on + bounceSplash

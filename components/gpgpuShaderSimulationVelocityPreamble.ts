@@ -497,6 +497,12 @@ const VEL_FRAG_PREAMBLE_CROWD = /* glsl */ `  // Crowd state machine + lanes (Ro
   uniform float uCrowdLaneOffset;
   uniform float uCrowdLaneLateralGain;
   uniform float uCrowdLaneLookAheadScale;
+  // Multi-obstacle stage: while true the crowd chunk also
+  // evaluates the mesh SDF colliders as obstacles (the atlas
+  // bodies / the single mesh body, over the already-bound
+  // uMeshSdfTex — no new sampler). False = the analytic
+  // primitive only, the Gate 43 behaviour.
+  uniform bool  uCrowdMultiObstacleEnabled;
 `;
 const VEL_FRAG_PREAMBLE_AKINCI = /* glsl */ `  // Surface tension, Akinci form (Phase 24): the strength of
   // the two-term model accumulated inside the SPH sample loop
@@ -541,6 +547,19 @@ export function buildAttractorUnitPreamble(unit: number, ordinal: string, phaseN
 const VEL_FRAG_PREAMBLE_ATTRACTOR2 = buildAttractorUnitPreamble(2, 'second', 'Phase 27, 9-6 stage 1');
 const VEL_FRAG_PREAMBLE_ATTRACTOR3 = buildAttractorUnitPreamble(3, 'third', 'Phase 29, 9-6 stage 2');
 const VEL_FRAG_PREAMBLE_ATTRACTOR4 = buildAttractorUnitPreamble(4, 'fourth', 'Phase 29, 9-6 stage 2');
+// Coupling stage 2 (rigid ⇄ particle): the free-particle
+// uniform set. Spliced in only behind the rigidFree option, in
+// the Phase 19 manner — the stock preamble carries no trace of
+// it. While uRigidFreeEnabled, texels whose spawn hash falls
+// below uRigidFreeFraction are NOT attached to a body: they run
+// the normal force path and collide with the body spheres
+// (uRigidBodyCount entries of the body texture, row 0).
+// uRigidFreeBounce is the restitution for that collision.
+const VEL_FRAG_PREAMBLE_RIGID_FREE = /* glsl */ `  uniform bool  uRigidFreeEnabled;
+  uniform float uRigidFreeFraction;
+  uniform float uRigidBodyCount;
+  uniform float uRigidFreeBounce;
+`;
 const VEL_FRAG_PREAMBLE_TAIL = /* glsl */ `  varying vec2 vUv;
 
 `;
@@ -576,6 +595,9 @@ export interface VelocityPreambleVariantOptions {
   // Round 84 gap 2: the crowd state machine uniform set,
   // gated identically (only while the crowd key is on).
   crowd?: boolean;
+  // Coupling stage 2: the free-particle uniform set, gated
+  // identically (only while the free-particles key is on).
+  rigidFree?: boolean;
 }
 
 export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions): string {
@@ -590,6 +612,7 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
     + (options?.attractor3 ? VEL_FRAG_PREAMBLE_ATTRACTOR3 : '')
     + (options?.attractor4 ? VEL_FRAG_PREAMBLE_ATTRACTOR4 : '')
     + (options?.crowd ? VEL_FRAG_PREAMBLE_CROWD : '')
+    + (options?.rigidFree ? VEL_FRAG_PREAMBLE_RIGID_FREE : '')
     + VEL_FRAG_PREAMBLE_TAIL;
 }
 

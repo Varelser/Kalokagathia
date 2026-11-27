@@ -398,6 +398,20 @@ export interface RigidStepOptions {
    *  and the force never wakes a body (wake-by-force is stage
    *  1b). Absent / null keeps the legacy path verbatim. */
   externalAccel?: Float32Array | null;
+  /** External per-body ANGULAR acceleration (coupling stage
+   *  1b): world units / s², 3 floats per body, filled by the
+   *  caller from the same field sample as externalAccel (the
+   *  torque of the surface-point force, divided by the body's
+   *  inertia — see fillRigidCurlAngAccel). Applied to angVel
+   *  right after the linear acceleration in the integrator.
+   *  Absent / null keeps stage 1 verbatim. */
+  externalAngAccel?: Float32Array | null;
+  /** Wake-by-force threshold (coupling stage 1b): while > 0, a
+   *  sleeping body whose sampled |externalAccel| reaches the
+   *  threshold (world / s²) is woken at the start of the
+   *  substep, so the force integrates it in that same substep.
+   *  0 / absent = stage 1 behaviour (force never wakes). */
+  externalWakeThreshold?: number;
 }
 
 /** Per-axis inverse inertia of a fitted box (Round 84 gap 6). */
@@ -841,6 +855,19 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
 
   // 1. Integrate forces + positions for awake bodies.
   const ext = options.externalAccel ?? null;
+  const extAng = options.externalAngAccel ?? null;
+  // Stage 1b wake-by-force: a sleeping body whose sampled
+  // acceleration reaches the threshold wakes BEFORE the
+  // integrator, so the force acts on it in this same substep.
+  // The threshold is inert at 0 / absent (stage 1 verbatim).
+  const wakeThreshold = options.externalWakeThreshold ?? 0;
+  if (ext && wakeThreshold > 0) {
+    for (let bi = 0; bi < n; bi++) {
+      if (!bodies[bi].sleeping) continue;
+      const ax = ext[bi * 3]; const ay = ext[bi * 3 + 1]; const az = ext[bi * 3 + 2];
+      if (Math.sqrt(ax * ax + ay * ay + az * az) >= wakeThreshold) wakeBody(state, bi);
+    }
+  }
   for (let bi = 0; bi < n; bi++) {
     const body = bodies[bi];
     if (body.sleeping) continue;
@@ -849,6 +876,11 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
       body.vel[0] += ext[bi * 3] * h;
       body.vel[1] += ext[bi * 3 + 1] * h;
       body.vel[2] += ext[bi * 3 + 2] * h;
+    }
+    if (extAng) {
+      body.angVel[0] += extAng[bi * 3] * h;
+      body.angVel[1] += extAng[bi * 3 + 1] * h;
+      body.angVel[2] += extAng[bi * 3 + 2] * h;
     }
     body.pos[0] += body.vel[0] * h;
     body.pos[1] += body.vel[1] * h;
@@ -1838,6 +1870,21 @@ export interface RigidResolved {
    *  value; 1.0 = the raw GPU-equivalent conversion, which is
    *  10-30x gravity — see fillRigidCurlAccel). */
   forceScale: number;
+  /** Torque (coupling stage 1b): while true the caller also
+   *  fills RigidStepOptions.externalAngAccel from the surface
+   *  point sample. Inert while false (stage 1 verbatim). */
+  forceTorque: boolean;
+  /** Wake-by-force threshold (coupling stage 1b), world / s²:
+   *  a sleeping body wakes when its sampled |accel| reaches
+   *  this. 0 = force never wakes (stage 1 behaviour). */
+  forceWakeThreshold: number;
+  /** Free particles (coupling stage 2): while true (AND the
+   *  solver active), a hash-split subset of the pool runs as
+   *  free particles that collide with the body spheres instead
+   *  of being kinematically attached. Inert while false. */
+  freeEnabled: boolean;
+  /** Free subset fraction (0..0.95) for stage 2. */
+  freeFraction: number;
 }
 
 /**
@@ -1874,6 +1921,10 @@ export function resolveRigid(config: ParticleConfig): RigidResolved {
     forceEnabled: !!config.gpgpuRigidForceEnabled,
     forceSource: typeof config.gpgpuRigidForceSource === 'string' ? config.gpgpuRigidForceSource : 'curl',
     forceScale: Number.isFinite(config.gpgpuRigidForceScale) ? Math.max(0, Math.min(4, config.gpgpuRigidForceScale as number)) : 1,
+    forceTorque: !!config.gpgpuRigidForceTorque,
+    forceWakeThreshold: Number.isFinite(config.gpgpuRigidForceWakeThreshold) ? Math.max(0, Math.min(4000, config.gpgpuRigidForceWakeThreshold as number)) : 0,
+    freeEnabled: !!config.gpgpuRigidFreeEnabled,
+    freeFraction: Number.isFinite(config.gpgpuRigidFreeFraction) ? Math.max(0, Math.min(0.95, config.gpgpuRigidFreeFraction as number)) : 0.25,
   };
 }
 
@@ -1930,6 +1981,86 @@ export function fillRigidCurlAccel(
     out[i * 3 + 2] = s[2] * k;
   }
   return out;
+}
+
+/**
+ * Fill `out` (3 floats per body) with the ANGULAR acceleration
+ * of the stage 1b torque (coupling stage 1b). The field force
+ * is sampled at a body-fixed surface point — the local +X pole,
+ * r = quatRotate(quat, (radius, 0, 0)) — and the torque about
+ * the centre is τ = r × F with F = a_surface · mass; the
+ * angular acceleration is α = τ · invInertia (the isotropic
+ * sphere scalar; the OBB tensor path is not used for the
+ * field torque in this stage). Same conversion constant as
+ * fillRigidCurlAccel. Pure in (positions, orientations,
+ * params), like the linear filler.
+ */
+export function fillRigidCurlAngAccel(
+  state: RigidSolverState,
+  params: CurlFieldParams,
+  curlStrength: number,
+  forceScale: number,
+  out: Float32Array,
+): Float32Array {
+  const k = curlStrength * 20.0 * 60.0 * forceScale;
+  const bodies = state.bodies;
+  for (let i = 0; i < bodies.length; i++) {
+    const body = bodies[i];
+    const r = quatRotate(body.quat, [body.radius, 0, 0]);
+    const ps: [number, number, number] = [body.pos[0] + r[0], body.pos[1] + r[1], body.pos[2] + r[2]];
+    const s = sampleCurlFieldFast(ps, params);
+    const fx = s[0] * k * body.mass;
+    const fy = s[1] * k * body.mass;
+    const fz = s[2] * k * body.mass;
+    out[i * 3] = (r[1] * fz - r[2] * fy) * body.invInertia;
+    out[i * 3 + 1] = (r[2] * fx - r[0] * fz) * body.invInertia;
+    out[i * 3 + 2] = (r[0] * fy - r[1] * fx) * body.invInertia;
+  }
+  return out;
+}
+
+/**
+ * CPU twin of the stage 2 free-particle body-sphere collision
+ * (coupling stage 2): push a free particle out of every body
+ * sphere it penetrates and reflect its velocity about the
+ * contact normal with `bounce` restitution — the exact law
+ * the GLSL position/velocity passes apply (position pass:
+ * push-out along the normal; velocity pass: vn reflection
+ * while approaching). Bodies are visited in index order and
+ * corrections apply sequentially, mirroring the shader loops.
+ * Pure: (pos, vel, bodies) in, corrected (pos, vel) out.
+ */
+export function collideFreeParticleWithBodies(
+  pos: [number, number, number],
+  vel: [number, number, number],
+  bodies: readonly { pos: [number, number, number]; radius: number }[],
+  bounce: number,
+): { pos: [number, number, number]; vel: [number, number, number]; contacts: number } {
+  const p: [number, number, number] = [pos[0], pos[1], pos[2]];
+  const v: [number, number, number] = [vel[0], vel[1], vel[2]];
+  let contacts = 0;
+  for (let b = 0; b < bodies.length; b++) {
+    const c = bodies[b].pos;
+    const dx = p[0] - c[0]; const dy = p[1] - c[1]; const dz = p[2] - c[2];
+    const d2 = dx * dx + dy * dy + dz * dz;
+    const r = bodies[b].radius;
+    if (d2 >= r * r) continue;
+    const d = Math.sqrt(d2);
+    // Degenerate centre hit: exit along +Y (the shader adds the
+    // same epsilon offset before normalising).
+    const nx = d > 1e-6 ? dx / d : 0;
+    const ny = d > 1e-6 ? dy / d : 1;
+    const nz = d > 1e-6 ? dz / d : 0;
+    p[0] = c[0] + nx * r; p[1] = c[1] + ny * r; p[2] = c[2] + nz * r;
+    const vn = v[0] * nx + v[1] * ny + v[2] * nz;
+    if (vn < 0) {
+      v[0] -= nx * vn * (1 + bounce);
+      v[1] -= ny * vn * (1 + bounce);
+      v[2] -= nz * vn * (1 + bounce);
+    }
+    contacts++;
+  }
+  return { pos: p, vel: v, contacts };
 }
 
 /**

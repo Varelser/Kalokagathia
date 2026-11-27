@@ -288,10 +288,16 @@ const POS_FRAG_MID = /* glsl */ `  // Rigid bodies (Phase AU): while the CPU rig
   // Mesh SDF (Phase BY): identical copy of the velocity pass's
   // baked-grid query (same contract: negative = inside, world
   // units, degenerate normal = +Y; outside the domain cube the
-  // query is +1e6, no collision).
+  // query applies the domain extension documented on the
+  // velocity copy — always positive there, so the push-out
+  // below stays a no-op outside, exactly as with the old +1e6).
   float meshSdfDistance(vec3 p) {
     vec3 q = (p - uMeshSdfOrigin) / uMeshSdfDomainWorld;
-    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) return 1.0e6;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) {
+      vec3 qc = clamp(q, vec3(0.0), vec3(1.0));
+      return texture2D(uMeshSdfTex, qc).r * uMeshSdfScale
+        + length((q - qc) * uMeshSdfDomainWorld);
+    }
     return texture2D(uMeshSdfTex, q).r * uMeshSdfScale;
   }
   vec3 meshSdfNormal(vec3 p) {
@@ -306,25 +312,53 @@ const POS_FRAG_MID = /* glsl */ `  // Rigid bodies (Phase AU): while the CPU rig
 
   // Multi-body mesh SDF: identical copy of the velocity pass's
   // per-body atlas query (cell-clamped; outside the body domain
-  // the query is +1e6, no collision).
+  // the query applies the domain extension documented on the
+  // velocity copy; an absent body stays +1e6).
   float meshSdfBodyDistance(int i, vec3 p) {
     float domain = uMeshSdfBodyDomain[i];
     if (domain <= 0.0) return 1.0e6;
     vec3 q = (p - uMeshSdfBodyOrigin[i]) / domain;
-    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) return 1.0e6;
     float eps = 0.5 * uMeshSdfBodyVoxel[i] / domain;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) {
+      vec3 qo = clamp(q, vec3(0.0), vec3(1.0));
+      vec3 qc = clamp(qo, vec3(eps), vec3(1.0 - eps));
+      vec3 aq = vec3(uMeshSdfBodyCell[i] + qc.xy * 0.5, qc.z);
+      return texture2D(uMeshSdfTex, aq).r * uMeshSdfBodyScale[i]
+        + length((q - qo) * domain);
+    }
     vec3 qc = clamp(q, vec3(eps), vec3(1.0 - eps));
     vec3 aq = vec3(uMeshSdfBodyCell[i] + qc.xy * 0.5, qc.z);
     return texture2D(uMeshSdfTex, aq).r * uMeshSdfBodyScale[i];
   }
   vec3 meshSdfBodyNormal(int i, vec3 p) {
     float e = uMeshSdfBodyVoxel[i] * 0.5;
+    // Domain extension (Gate 58h fix): for a point outside the
+    // domain, the clamped taps below would all land on the same
+    // face point and collapse the gradient, so take unclamped
+    // taps on the extended distance instead — the extension
+    // made the field continuous across the face, so the
+    // differences are well defined there. In-domain points
+    // keep the clamped-tap path below, bit-identical.
+    if (uMeshSdfBodyDomain[i] > 0.0) {
+      vec3 domLo = uMeshSdfBodyOrigin[i];
+      vec3 domHi = domLo + vec3(uMeshSdfBodyDomain[i]);
+      if (any(lessThan(p, domLo)) || any(greaterThan(p, domHi))) {
+        vec3 g = vec3(
+          meshSdfBodyDistance(i, p + vec3(e, 0.0, 0.0)) - meshSdfBodyDistance(i, p - vec3(e, 0.0, 0.0)),
+          meshSdfBodyDistance(i, p + vec3(0.0, e, 0.0)) - meshSdfBodyDistance(i, p - vec3(0.0, e, 0.0)),
+          meshSdfBodyDistance(i, p + vec3(0.0, 0.0, e)) - meshSdfBodyDistance(i, p - vec3(0.0, 0.0, e)));
+        float gl = length(g);
+        return gl > 0.0001 ? g / gl : vec3(0.0, 1.0, 0.0);
+      }
+    }
     // Defect fix 2026-11-27: clamp the taps into the domain box
-    // (shrunk by e) before sampling. Outside the domain the
-    // distance function returns 1e6, so an unclamped tap within
+    // (shrunk by e) before sampling. When the distance function
+    // returned 1e6 outside the domain, an unclamped tap within
     // e of a face collapsed the gradient onto the face axis —
     // reachable at small scales, where the velocity pass already
-    // engages at sd < 2 near the boundary.
+    // engages at sd < 2 near the boundary. The clamp is kept for
+    // in-domain points so their gradients stay bit-identical;
+    // outside points take the unclamped branch above.
     vec3 nLo = uMeshSdfBodyOrigin[i] + vec3(e);
     vec3 nHi = max(nLo, uMeshSdfBodyOrigin[i] + vec3(uMeshSdfBodyDomain[i] - e));
     vec3 g = vec3(
@@ -565,8 +599,8 @@ const POS_FRAG_TAIL = /* glsl */ `    // Collision life (Phase 15): contact book
 
     // Mesh SDF Collider (Phase BY) — position push-out on the
     // baked mesh grid, after the analytic SDF push-out (both may
-    // be live). Outside the domain the query is +1e6, so this is
-    // a no-op there.
+    // be live). Outside the domain the query's extended value is
+    // always positive, so the sd < 0 push-out is a no-op there.
     // Multi-body mesh SDF — min synthesis: evaluate every body,
     // push out once along the deepest body's normal. While multi
     // is live the passes leave uMeshSdfEnabled false.
@@ -831,28 +865,89 @@ const POS_FRAG_PARTICLE_RULES_SEGMENT = /* glsl */ `    // Particle rule kill (G
     }
 `;
 
+// Coupling stage 2 (rigid ⇄ particle): the free-particle
+// pieces of this pass, spliced in only behind the rigidFree
+// option (in the Phase 19 manner — the stock strings stay
+// byte-identical). The uniform set mirrors the velocity pass's.
+const POS_FRAG_RIGID_FREE_UNIFORMS = /* glsl */ `
+uniform bool uRigidFreeEnabled;
+uniform float uRigidFreeFraction;
+uniform float uRigidBodyCount;
+`;
+const POS_FRAG_RIGID_BRANCH_OPEN = `    // Rigid bodies (Phase AU): the particle IS a point of its
+    // body — world position = body position + rotated local
+    // offset. Age is carried verbatim (frozen: the lifecycle is
+    // resolved off while the solver is bound).
+    if (uRigidEnabled) {`;
+const POS_FRAG_RIGID_BRANCH_OPEN_FREE = `    // Coupling stage 2: the free subset (same spawn-hash test
+    // as the velocity pass) skips the rigid overwrite and
+    // integrates normally, colliding with the body spheres in
+    // the tail below.
+    bool rigidFree = uRigidEnabled && uRigidFreeEnabled && spawnGateValue(vUv) < uRigidFreeFraction;
+
+    // Rigid bodies (Phase AU): the particle IS a point of its
+    // body — world position = body position + rotated local
+    // offset. Age is carried verbatim (frozen: the lifecycle is
+    // resolved off while the solver is bound).
+    if (uRigidEnabled && !rigidFree) {`;
+// Free particles are pushed out of every body sphere they
+// penetrate (position half of the collision; the velocity
+// pass owns the reflection). Body order is index order,
+// corrections sequential — the TS twin is
+// collideFreeParticleWithBodies in lib/rigidBodies.ts.
+const POS_FRAG_RIGID_FREE_SEGMENT = /* glsl */ `    if (rigidFree) {
+      for (int b = 0; b < 256; b++) {
+        if (float(b) >= uRigidBodyCount) break;
+        vec4 bp = texture2D(uRigidBodyTex, vec2((float(b) + 0.5) / 256.0, 0.125));
+        vec3 d = pos - bp.xyz;
+        float dist = length(d);
+        if (dist < bp.w) {
+          vec3 n = dist > 0.000001 ? d / dist : vec3(0.0, 1.0, 0.0);
+          pos = bp.xyz + n * bp.w;
+          if (collisionTrack) collisionContact = true;
+        }
+      }
+    }
+
+`;
+const POS_FRAG_FLOOR_CLAMP_OPEN = '    // Floor clamp (B3): Kinetix resolves penetration as';
+
 export interface PositionFragmentVariantOptions {
   grainsProjection?: boolean;
   grainsCellSort?: boolean;
   // G10 stage 1: particle-rule kill segment, spliced in only
   // while an effective rule list exists.
   particleRules?: boolean;
+  // Coupling stage 2: free particles inside rigid mode,
+  // gated identically (only while the free-particles key is
+  // on).
+  rigidFree?: boolean;
 }
 
 export function buildPositionFragment(options?: PositionFragmentVariantOptions): string {
   const projection = !!options?.grainsProjection;
   const cell = projection && !!options?.grainsCellSort;
-  const tail = options?.particleRules
+  let tail = options?.particleRules
     ? POS_FRAG_TAIL.replace(
         POS_FRAG_GROUP_KILL_BLOCK,
         POS_FRAG_GROUP_KILL_BLOCK + POS_FRAG_PARTICLE_RULES_SEGMENT,
       )
     : POS_FRAG_TAIL;
+  if (options?.rigidFree) {
+    tail = tail.replace(
+      POS_FRAG_FLOOR_CLAMP_OPEN,
+      POS_FRAG_RIGID_FREE_SEGMENT + POS_FRAG_FLOOR_CLAMP_OPEN,
+    );
+  }
+  const mid = options?.rigidFree
+    ? POS_FRAG_MID.replace(POS_FRAG_RIGID_BRANCH_OPEN, POS_FRAG_RIGID_BRANCH_OPEN_FREE)
+    : POS_FRAG_MID;
   return POS_FRAG_HEAD
     + (options?.particleRules ? POS_FRAG_PARTICLE_RULES_UNIFORMS : '')
+    + (options?.rigidFree ? POS_FRAG_RIGID_FREE_UNIFORMS : '')
     + (projection ? POS_FRAG_PROJECTION_UNIFORMS : '')
     + (cell ? POS_FRAG_PROJECTION_CELL : '')
-    + POS_FRAG_MID
+    + mid
     + (projection ? (cell ? POS_FRAG_PROJECTION_SEGMENT_CELL : POS_FRAG_PROJECTION_SEGMENT) : '')
     + tail;
 }

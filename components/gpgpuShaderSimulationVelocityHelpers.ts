@@ -243,12 +243,31 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  float dmHash11(float n) {
   // Mesh SDF (Phase BY): the baked grid's query, under the same
   // contract as abSdfDistance / abSdfNormal (negative = inside,
   // world units, degenerate normal = +Y). The texture holds
-  // normalised distances; outside the domain cube the query is
-  // +1e6 (no collision), never a clamped underestimate. An
-  // identical copy lives in the position pass.
+  // normalised distances. An identical copy lives in the
+  // position pass.
+  // Domain extension (Gate 58h fix, 2026-11-27): outside the
+  // domain cube the query returns the boundary sample plus the
+  // Euclidean distance to the cube, instead of the +1e6 it
+  // returned before. The bake domain is sized for the
+  // collision contract (the mesh sits inside the cube with a
+  // margin band), but steering reads the same field out to
+  // its avoid range (Rout), where +1e6 made the body vanish
+  // from the min(sd) synthesis (diagnosis:
+  // GATE58H_BAKE_SDF_DIAGNOSIS — the switch point against the
+  // analytic primitive sat on the cube face, not at the
+  // midpoint). The extension keeps the field in the same
+  // units and continuous across the face, and it is always
+  // positive outside (the boundary sample of a mesh baked
+  // strictly inside the cube is positive), so the position
+  // push-out (sd < 0) can never fire on an extended value and
+  // every in-domain value is bit-identical to before.
   float meshSdfDistance(vec3 p) {
     vec3 q = (p - uMeshSdfOrigin) / uMeshSdfDomainWorld;
-    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) return 1.0e6;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) {
+      vec3 qc = clamp(q, vec3(0.0), vec3(1.0));
+      return texture2D(uMeshSdfTex, qc).r * uMeshSdfScale
+        + length((q - qc) * uMeshSdfDomainWorld);
+    }
     return texture2D(uMeshSdfTex, q).r * uMeshSdfScale;
   }
   vec3 meshSdfNormal(vec3 p) {
@@ -265,25 +284,56 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  float dmHash11(float n) {
   // in uMeshSdfTex. q is clamped to the body's own texel centres
   // (half a voxel in UV) before the cell offset is applied, so
   // trilinear filtering can never bleed into a neighbouring
-  // cell. Outside the body's domain the query is +1e6.
+  // cell. Outside the body's domain the query applies the
+  // domain extension documented on meshSdfDistance above (the
+  // boundary sample of the body's own cell, plus the distance
+  // to the domain cube); an absent body (domain <= 0) stays
+  // +1e6.
   float meshSdfBodyDistance(int i, vec3 p) {
     float domain = uMeshSdfBodyDomain[i];
     if (domain <= 0.0) return 1.0e6;
     vec3 q = (p - uMeshSdfBodyOrigin[i]) / domain;
-    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) return 1.0e6;
     float eps = 0.5 * uMeshSdfBodyVoxel[i] / domain;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z < 0.0 || q.z > 1.0) {
+      vec3 qo = clamp(q, vec3(0.0), vec3(1.0));
+      vec3 qc = clamp(qo, vec3(eps), vec3(1.0 - eps));
+      vec3 aq = vec3(uMeshSdfBodyCell[i] + qc.xy * 0.5, qc.z);
+      return texture2D(uMeshSdfTex, aq).r * uMeshSdfBodyScale[i]
+        + length((q - qo) * domain);
+    }
     vec3 qc = clamp(q, vec3(eps), vec3(1.0 - eps));
     vec3 aq = vec3(uMeshSdfBodyCell[i] + qc.xy * 0.5, qc.z);
     return texture2D(uMeshSdfTex, aq).r * uMeshSdfBodyScale[i];
   }
   vec3 meshSdfBodyNormal(int i, vec3 p) {
     float e = uMeshSdfBodyVoxel[i] * 0.5;
+    // Domain extension (Gate 58h fix): for a point outside the
+    // domain, the clamped taps below would all land on the same
+    // face point and collapse the gradient, so take unclamped
+    // taps on the extended distance instead — the extension
+    // made the field continuous across the face, so the
+    // differences are well defined there. In-domain points
+    // keep the clamped-tap path below, bit-identical.
+    if (uMeshSdfBodyDomain[i] > 0.0) {
+      vec3 domLo = uMeshSdfBodyOrigin[i];
+      vec3 domHi = domLo + vec3(uMeshSdfBodyDomain[i]);
+      if (any(lessThan(p, domLo)) || any(greaterThan(p, domHi))) {
+        vec3 g = vec3(
+          meshSdfBodyDistance(i, p + vec3(e, 0.0, 0.0)) - meshSdfBodyDistance(i, p - vec3(e, 0.0, 0.0)),
+          meshSdfBodyDistance(i, p + vec3(0.0, e, 0.0)) - meshSdfBodyDistance(i, p - vec3(0.0, e, 0.0)),
+          meshSdfBodyDistance(i, p + vec3(0.0, 0.0, e)) - meshSdfBodyDistance(i, p - vec3(0.0, 0.0, e)));
+        float gl = length(g);
+        return gl > 0.0001 ? g / gl : vec3(0.0, 1.0, 0.0);
+      }
+    }
     // Defect fix 2026-11-27: clamp the taps into the domain box
-    // (shrunk by e) before sampling. Outside the domain the
-    // distance function returns 1e6, so an unclamped tap within
+    // (shrunk by e) before sampling. When the distance function
+    // returned 1e6 outside the domain, an unclamped tap within
     // e of a face collapsed the gradient onto the face axis —
     // reachable at small scales, where the velocity pass already
-    // engages at sd < 2 near the boundary.
+    // engages at sd < 2 near the boundary. The clamp is kept for
+    // in-domain points so their gradients stay bit-identical;
+    // outside points take the unclamped branch above.
     vec3 nLo = uMeshSdfBodyOrigin[i] + vec3(e);
     vec3 nHi = max(nLo, uMeshSdfBodyOrigin[i] + vec3(uMeshSdfBodyDomain[i] - e));
     vec3 g = vec3(

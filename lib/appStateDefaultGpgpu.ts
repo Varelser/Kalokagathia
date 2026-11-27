@@ -704,6 +704,7 @@ f 8 1 105`,
   gpgpuCrowdLaneOffset: 0,
   gpgpuCrowdLaneLateralGain: 1,
   gpgpuCrowdLaneLookAheadScale: 1,
+  gpgpuCrowdMultiObstacleEnabled: false,
   // Crowd steering (Phase 20 stage 2): off = byte-identical.
   gpgpuSteerSeekEnabled: false,
   gpgpuSteerSeekMode: 'seek' as const,
@@ -1222,6 +1223,11 @@ f 8 1 105`,
   gpgpuRigidForceEnabled: false,
   gpgpuRigidForceSource: 'curl',
   gpgpuRigidForceScale: 1,
+  // Coupling stage 1b/2: all off by default — identity.
+  gpgpuRigidForceTorque: false,
+  gpgpuRigidForceWakeThreshold: 0,
+  gpgpuRigidFreeEnabled: false,
+  gpgpuRigidFreeFraction: 0.25,
   // Cluster colouring (Phase 20 stage 1): off = legacy draw.
   gpgpuRigidClusterColorEnabled: false,
   // WebGPU Compute Backend

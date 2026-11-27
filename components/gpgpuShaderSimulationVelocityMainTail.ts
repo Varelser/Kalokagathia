@@ -430,6 +430,33 @@ const VEL_FRAG_TAIL_REST = /* glsl */ `    // __CUSTOM_FORCE__
   }
 `;
 
+// Coupling stage 2 (rigid ⇄ particle): the free-particle
+// reflection segment. Spliced in only behind the rigidFree
+// option, right before the tail's final write (in the Phase
+// 19 manner — the stock tail string stays byte-identical).
+// A free particle inside a body sphere and moving toward its
+// centre has the normal component of its velocity reflected
+// with the rigid restitution — the velocity half of the
+// body-sphere collision (the position pass owns the push-out).
+// Uses the frame-start position, the same snapshot discipline
+// as the grains projection. TS twin:
+// collideFreeParticleWithBodies in lib/rigidBodies.ts.
+const VEL_FRAG_TAIL_RIGID_FREE = /* glsl */ `    if (rigidFree) {
+      for (int b = 0; b < 256; b++) {
+        if (float(b) >= uRigidBodyCount) break;
+        vec4 bp = texture2D(uRigidBodyTex, vec2((float(b) + 0.5) / 256.0, 0.125));
+        vec3 d = pos - bp.xyz;
+        float dist = length(d);
+        if (dist < bp.w && dist > 0.000001) {
+          vec3 n = d / dist;
+          float vn = dot(vel, n);
+          if (vn < 0.0) vel -= n * vn * (1.0 + uRigidFreeBounce);
+        }
+      }
+    }
+
+`;
+
 // ── Phase 19 gate fix: string-level shader variants ──
 // On the target GPU, ANY code-text change in these shaders
 // breaks bit-identity with v2.00 — even code gated off by a
@@ -440,12 +467,22 @@ const VEL_FRAG_TAIL_REST = /* glsl */ `    // __CUSTOM_FORCE__
 // strings (both pinned by scripts/phase18-shader-hash.mjs).
 export interface VelocityTailVariantOptions {
   flip3dCouple?: boolean;
+  // Coupling stage 2: the free-particle reflection segment,
+  // gated identically (only while the free-particles key is
+  // on). Assumes the main-forces rigidFree splice declared
+  // the rigidFree flag earlier in main().
+  rigidFree?: boolean;
 }
 
+const VEL_FRAG_TAIL_FINAL_WRITE = '    gl_FragColor = vec4(vel, phaseState);';
+
 export function buildVelocityTail(options?: VelocityTailVariantOptions): string {
+  const rest = options?.rigidFree
+    ? VEL_FRAG_TAIL_REST.replace(VEL_FRAG_TAIL_FINAL_WRITE, VEL_FRAG_TAIL_RIGID_FREE + VEL_FRAG_TAIL_FINAL_WRITE)
+    : VEL_FRAG_TAIL_REST;
   return VEL_FRAG_TAIL_HEAD
     + (options?.flip3dCouple ? VEL_FRAG_TAIL_FLIP3D_COUPLE : '')
-    + VEL_FRAG_TAIL_REST;
+    + rest;
 }
 
 export const VEL_FRAG_MAIN_TAIL = buildVelocityTail();

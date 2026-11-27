@@ -725,6 +725,11 @@ export const VEL_FRAG_FORCE_STEER_SEEK_CROWD = /* glsl */ `
     // lane width). This chunk replaces 'steer-seek' ONLY in
     // the crowd variant (see buildMainForcesFragment): without
     // the variant the assembly is byte-identical.
+    // Multi-obstacle stage: while uCrowdMultiObstacleEnabled
+    // the state machine's obstacle set also includes the mesh
+    // SDF colliders (see the selection block at the state
+    // machine); off, the analytic primitive is the only
+    // obstacle, as at Gate 43.
     if (uSteerSeekEnabled) {
       vec3 sTarget = uSteerSeekTarget;
       int sMode = uSteerSeekMode;
@@ -804,13 +809,48 @@ export const VEL_FRAG_FORCE_STEER_SEEK_CROWD = /* glsl */ `
         }
       }
       // The state machine (crowdStateFor, formula for formula).
+      // Multi-obstacle stage: the obstacle set is the analytic
+      // primitive plus — while uCrowdMultiObstacleEnabled — the
+      // mesh SDF colliders (the multi-body atlas bodies, or the
+      // single mesh body), whose queries already live in this
+      // pass over the bound uMeshSdfTex. Selection mirrors the
+      // position pass's min synthesis and the CPU spec
+      // (crowdSelectObstacle): distances first, the smallest sd
+      // wins (ties keep the earlier obstacle), and only the
+      // winner's normal is evaluated. With the multi flag off
+      // the set is the analytic primitive alone and every value
+      // below is the Gate 43 one, computed the same way.
       float cSd = 0.0;
       vec3 cNormal = vec3(0.0, 1.0, 0.0);
       float cVn = 0.0;
-      if (uSdfEnabled) {
-        cSd = abSdfDistance(pos);
-        cNormal = abSdfNormal(pos);
-        cVn = dot(vel, cNormal);
+      bool cHasObstacle = false;
+      {
+        float bestSd = 1.0e30;
+        int bestObs = -2;
+        if (uSdfEnabled) {
+          float oSd = abSdfDistance(pos);
+          if (oSd < bestSd) { bestSd = oSd; bestObs = -1; }
+        }
+        if (uCrowdMultiObstacleEnabled) {
+          if (uMeshSdfMultiEnabled) {
+            for (int bi = 0; bi < 4; bi++) {
+              if (bi >= uMeshSdfBodyCount) break;
+              float bSd = meshSdfBodyDistance(bi, pos);
+              if (bSd < bestSd) { bestSd = bSd; bestObs = bi; }
+            }
+          } else if (uMeshSdfEnabled) {
+            float mSd = meshSdfDistance(pos);
+            if (mSd < bestSd) { bestSd = mSd; bestObs = 4; }
+          }
+        }
+        if (bestObs != -2) {
+          cHasObstacle = true;
+          cSd = bestSd;
+          if (bestObs == -1) cNormal = abSdfNormal(pos);
+          else if (bestObs == 4) cNormal = meshSdfNormal(pos);
+          else cNormal = meshSdfBodyNormal(bestObs, pos);
+          cVn = dot(vel, cNormal);
+        }
       }
       float cRin = uCrowdAvoidRange > 0.0 ? uCrowdAvoidRange : max(uSdfSize * 1.5, 1.0);
       float cRout = cRin * (1.0 + uCrowdAvoidHysteresis);
@@ -820,7 +860,7 @@ export const VEL_FRAG_FORCE_STEER_SEEK_CROWD = /* glsl */ `
       float cDist = length(cToT);
       float cToward = cDist > 0.0 ? dot(vel, cToT / cDist) : 0.0;
       int cState = 1;
-      if (uSdfEnabled && (cSd < cRin || (cSd < cRout && cVn > 0.0))) {
+      if (cHasObstacle && (cSd < cRin || (cSd < cRout && cVn > 0.0))) {
         cState = 2;
       } else if (cDist < cIdleR && (cSpd < uCrowdIdleSpeed || (cSpd < uCrowdIdleSpeedOut && cToward <= 0.0))) {
         cState = 0;
@@ -926,7 +966,36 @@ export interface MainForcesVariantOptions {
   // enable keys.
   attractor3?: boolean;
   attractor4?: boolean;
+  // Coupling stage 2: the rigid branch gains the free-texel
+  // guard, gated identically (only while the free-particles
+  // key is on).
+  rigidFree?: boolean;
 }
+
+// Coupling stage 2 (rigid ⇄ particle): the free-particle
+// splice for the rigid branch. Behind the rigidFree option the
+// head's branch opening is replaced (in the Phase 19 manner —
+// the stock head string stays byte-identical): a free texel
+// (spawn hash below the free fraction) skips the rigid branch
+// and runs the normal forces; it collides with the bodies in
+// the tail instead.
+const RIGID_BRANCH_OPEN = `    // Rigid bodies (Phase AU): the velocity of a point rigidly
+    // attached to its body. The phase state is preserved
+    // verbatim; every force below is superseded whole.
+    if (uRigidEnabled) {`;
+const RIGID_BRANCH_OPEN_FREE = `    // Coupling stage 2: the free subset of the pool (spawn
+    // hash below the fraction) is not attached to any body —
+    // it skips the rigid overwrite and runs every force below,
+    // colliding with the body spheres at the tail of the pass.
+    // While rigid mode is bound the spawn order mode resolves
+    // to 0, so spawnGateValue here is the legacy spawn hash —
+    // the same value the position pass computes.
+    bool rigidFree = uRigidEnabled && uRigidFreeEnabled && spawnGateValue(vUv) < uRigidFreeFraction;
+
+    // Rigid bodies (Phase AU): the velocity of a point rigidly
+    // attached to its body. The phase state is preserved
+    // verbatim; every force below is superseded whole.
+    if (uRigidEnabled && !rigidFree) {`;
 
 export function buildMainForcesFragment(
   order?: string | readonly string[],
@@ -934,7 +1003,10 @@ export function buildMainForcesFragment(
 ): string {
   const names = normalizeGpgpuForceOrder(order);
   const crowdActive = !!options?.crowd && !!options?.steeringSeek;
-  let out = VEL_FRAG_MAIN_FORCES_HEAD + (options?.particleRules ? VEL_FRAG_PARTICLE_RULES_SEGMENT : '');
+  const head = options?.rigidFree
+    ? VEL_FRAG_MAIN_FORCES_HEAD.replace(RIGID_BRANCH_OPEN, RIGID_BRANCH_OPEN_FREE)
+    : VEL_FRAG_MAIN_FORCES_HEAD;
+  let out = head + (options?.particleRules ? VEL_FRAG_PARTICLE_RULES_SEGMENT : '');
   for (const name of names) {
     if (name === 'steer-seek' && !options?.steeringSeek) continue;
     if (name === 'steer-avoid' && crowdActive) continue;

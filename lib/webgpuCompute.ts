@@ -3449,6 +3449,11 @@ export interface WebGPUCrowdParams {
   laneOffset: number;
   laneLateralGain: number;
   laneLookAheadScale: number;
+  /** Carried for structural parity with CrowdResolved. The
+   *  WGSL route has no mesh SDF subsystem (the mesh colliders
+   *  are WebGL-only), so the flag is not consumed here: the
+   *  WGSL crowd evaluates the analytic obstacle only. */
+  multiObstacleEnabled: boolean;
 }
 
 /** Per-frame fluid field parameters for stepWebGPUCompute

@@ -73,7 +73,7 @@ import {
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
-import { drainRigidContactEvents, fillRigidCurlAccel, resolveRigid, rigidCurlParamsFromConfig, stepRigidBodies, writeRigidBodyTexture, RIGID_BODY_MAX } from '../lib/rigidBodies';
+import { drainRigidContactEvents, fillRigidCurlAccel, fillRigidCurlAngAccel, resolveRigid, rigidCurlParamsFromConfig, stepRigidBodies, writeRigidBodyTexture, RIGID_BODY_MAX } from '../lib/rigidBodies';
 import { fireEventRulesLive, getEventRuleActionPerformer } from '../lib/eventRules';
 import { getTerrainHeightfield } from '../lib/terrainHeightfield';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
@@ -994,6 +994,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     rigidBodyDataRef,
     rigidSolverRef,
     rigidForceAccelRef,
+    rigidForceAngAccelRef,
     pyroGridRef,
     flip3dRef,
     webgpuStateRef,
@@ -1381,6 +1382,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         // Off / other sources pass null and the solver runs the
         // legacy path verbatim.
         let externalAccel: Float32Array | null = null;
+        let externalAngAccel: Float32Array | null = null;
         if (rigid.forceEnabled && rigid.forceSource === 'curl') {
           if (!rigidForceAccelRef.current) rigidForceAccelRef.current = new Float32Array(RIGID_BODY_MAX * 3);
           externalAccel = fillRigidCurlAccel(
@@ -1390,6 +1392,20 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
             rigid.forceScale,
             rigidForceAccelRef.current,
           );
+          // Stage 1b torque: the same field sampled at each
+          // body's surface pole, as angular acceleration. Only
+          // filled while the Torque key is on; null otherwise
+          // (stage 1 verbatim).
+          if (rigid.forceTorque) {
+            if (!rigidForceAngAccelRef.current) rigidForceAngAccelRef.current = new Float32Array(RIGID_BODY_MAX * 3);
+            externalAngAccel = fillRigidCurlAngAccel(
+              rigidSolver,
+              rigidCurlParamsFromConfig(config, rigidSolver.time),
+              config.gpgpuCurlStrength,
+              rigid.forceScale,
+              rigidForceAngAccelRef.current,
+            );
+          }
         }
         stepRigidBodies(rigidSolver, dt * Math.max(0, config.gpgpuSpeed), {
           // Particle gravity: vel.y -= gravity · dt · 9.8 in the
@@ -1425,6 +1441,9 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           convexEnabled: rigid.convexEnabled,
           convexInertiaEnabled: rigid.convexInertia,
           externalAccel,
+          externalAngAccel,
+          // Stage 1b wake-by-force: inert at the default 0.
+          externalWakeThreshold: rigid.forceWakeThreshold,
         });
         writeRigidBodyTexture(rigidSolver, rigidBodyDataRef.current);
         rigidBodyTexRef.current.needsUpdate = true;
@@ -1534,6 +1553,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         grainsPileSpareRT: prevPosRTRef.current,
         rigidCellTex: rigidCellTexRef.current,
         rigidBodyTex: rigidBodyTexRef.current,
+        rigidBodyCount: rigidSolverRef.current ? rigidSolverRef.current.bodies.length : 0,
         webgpuState: webgpuStateRef.current,
         webgpuPosTex: webgpuPosTexRef.current,
         webgpuPingIsARef,

@@ -810,6 +810,7 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
               <Slider label="Crowd Idle Speed Out （待機から出る速度）" value={config.gpgpuCrowdIdleSpeedOut} min={0} max={2} step={0.01} onChange={(v) => updateConfig('gpgpuCrowdIdleSpeedOut', v)} />
               <Slider label="Crowd Idle Radius （到着半径・0で減速半径）" value={config.gpgpuCrowdIdleRadius} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuCrowdIdleRadius', v)} />
               <Slider label="Crowd Idle Damping （待機の減衰）" value={config.gpgpuCrowdIdleDamping} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuCrowdIdleDamping', v)} />
+              <Toggle label="Crowd Multi Obstacle （複数障害物・メッシュSDFも回避）" value={config.gpgpuCrowdMultiObstacleEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuCrowdMultiObstacleEnabled', v)} />
               {config.gpgpuSteerSeekMode === 'path' && (
                 <>
                   <Slider label="Crowd Lane Count （レーン数）" value={config.gpgpuCrowdLaneCount} min={1} max={4} step={1} onChange={(v) => updateConfig('gpgpuCrowdLaneCount', Math.round(v))} />

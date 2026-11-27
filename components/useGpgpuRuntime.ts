@@ -556,6 +556,8 @@ export type GpgpuRuntimeRefs = {
    *  per-body external acceleration buffer, filled once per
    *  frame by sceneGpgpuSystem while the Force key is on. */
   rigidForceAccelRef: MutableRefObject<Float32Array | null>;
+  /** Stage 1b torque scratch: per-body angular acceleration. */
+  rigidForceAngAccelRef: MutableRefObject<Float32Array | null>;
   // Pyro grid (Phase CA): the atlas target set for the grid
   // solver, allocated only while the grid key is on AND the
   // diagnostics gate confirmed float render targets; null at all
@@ -997,6 +999,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const rigidBodyDataRef = useRef<Float32Array | null>(null);
   const rigidSolverRef = useRef<RigidSolverState | null>(null);
   const rigidForceAccelRef = useRef<Float32Array | null>(null);
+  const rigidForceAngAccelRef = useRef<Float32Array | null>(null);
   // Latest shared initial arrays (Phase W2): the main effect
   // rebuilds them on every reseed; the replica-stack effect seeds
   // the stacks from them, including when only the independent
@@ -2657,6 +2660,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     rigidBodyDataRef,
     rigidSolverRef,
     rigidForceAccelRef,
+    rigidForceAngAccelRef,
     pyroGridRef,
     flip3dRef,
     webgpuStateRef,

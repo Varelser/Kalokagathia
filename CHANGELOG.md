@@ -4,6 +4,17 @@ All notable changes to Kalokagathia / Monosphere are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versions
 match the GitHub releases of this repository.
 
+## [2.25.0] - 2026-11-27
+
+第43期: 未完課題「剛体⇄粒子の二方向連成（第1段b＋第2段）」と「群衆の複数障害物対応」を取り込み、あわせて群衆側で見つかったベイクSDFドメイン截断の欠陥を修正した。新規キー5件（総数 1,574）。
+
+- 連成 第1段b（表面点トルク＋力覚醒）: 剛体への力を表面点で受けてトルクを発生させ、閾値を超えた力で眠っている剛体を起こす。新規キー2件（gpgpuRigidForceTorque／gpgpuRigidForceWakeThreshold）。
+- 連成 第2段（自由粒子の衝突体化）: spawn ハッシュで切り分けた自由粒子の部分集合が、剛体との衝突体として振る舞う。新規キー2件（gpgpuRigidFreeEnabled／gpgpuRigidFreeFraction）。
+- 群衆の複数障害物対応: 回避は最も近い障害物1体で決める方式で最大5体（解析SDF 1体＋メッシュSDF最大4体）まで同時に扱える。新規キー1件（gpgpuCrowdMultiObstacleEnabled、既定OFF）。障害物1体の場合は従来とビット同一。
+- ベイクSDFドメイン截断の修正: メッシュSDFのベイクセル半幅（33.10）より外側では距離が番兵値になり、回避殻（54までの距離が必要）の大半でメッシュ体が効いていなかった。共有クエリ関数のドメイン外を解析的に延長し、ドメイン内は従来とバイト同一に保った（衝突経路の挙動は不変）。
+- 連成 第3段（粒子→剛体の反作用）は、GPU集計の1フレーム遅れと順序依存で固定dtの決定性を壊すため見送り（従来どおり）。
+- 検証: 単体テスト新規3本、全86スイート PASS。実GPUゲートで、連成は全線充足（Gate 58系）、群衆は M1・M2・M4 成立に加え M3 が修正後に strong-pass（Gate 58i）。
+
 ## [2.24.0] - 2026-11-27
 
 第42期: 未完課題の剛体系6件（UE5 #35 の広域分割・上限拡張・ジョイント・床・静的コライダと、TD §7 面4 のモジュレーション同梱）を取り込んだ。新規キー5件（総数 1,569）。いずれも既定OFF／空で、未設定時は従来と同一。

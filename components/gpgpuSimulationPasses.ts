@@ -590,6 +590,10 @@ export function runSimulationPasses(args: {
   // bind) keeps the rigid uniforms off and every path verbatim.
   rigidCellTex?: THREE.Texture | null;
   rigidBodyTex?: THREE.Texture | null;
+  /** Coupling stage 2: the solver's live body count (the body
+   *  texture is RIGID_BODY_MAX wide; only this many entries are
+   *  real bodies for the free-particle collider loops). */
+  rigidBodyCount?: number;
   webgpuState: WebGPUComputeState | null;
   webgpuPosTex: THREE.DataTexture | null;
   webgpuPingIsARef: MutableRefObject<boolean>;
@@ -1052,6 +1056,7 @@ export function runSimulationPasses(args: {
     if (u.uCrowdLaneOffset) u.uCrowdLaneOffset.value = crowd.laneOffset;
     if (u.uCrowdLaneLateralGain) u.uCrowdLaneLateralGain.value = crowd.laneLateralGain;
     if (u.uCrowdLaneLookAheadScale) u.uCrowdLaneLookAheadScale.value = crowd.laneLookAheadScale;
+    if (u.uCrowdMultiObstacleEnabled) u.uCrowdMultiObstacleEnabled.value = crowd.multiObstacleEnabled;
   }
   // Lifecycle grammar (Phase AB): spawn gate + global drag / max
   // speed. The clamps mirror lib/gpgpuLifecycle.ts.
@@ -1312,6 +1317,16 @@ export function runSimulationPasses(args: {
     velSimMat.uniforms.uRigidCellTex.value = rigidActive ? args.rigidCellTex : null;
     velSimMat.uniforms.uRigidBodyTex.value = rigidActive ? args.rigidBodyTex : null;
   }
+  // Coupling stage 2: free-particle mix. Guarded like the
+  // rigid block; inert unless the solver is bound AND the
+  // Free key is on.
+  if (velSimMat.uniforms.uRigidFreeEnabled) {
+    const freeOn = rigidActive && rigid.freeEnabled;
+    velSimMat.uniforms.uRigidFreeEnabled.value = freeOn;
+    velSimMat.uniforms.uRigidFreeFraction.value = rigid.freeFraction;
+    velSimMat.uniforms.uRigidBodyCount.value = args.rigidBodyCount ?? 0;
+    velSimMat.uniforms.uRigidFreeBounce.value = rigid.restitution;
+  }
   // Pyro (Phase AS): guarded like Grains — stack materials
   // built before this phase simply lack the uniforms.
   if (velSimMat.uniforms.uPyroEnabled) {
@@ -1426,6 +1441,12 @@ export function runSimulationPasses(args: {
     posSimMat.uniforms.uRigidEnabled.value = rigidActive;
     posSimMat.uniforms.uRigidCellTex.value = rigidActive ? args.rigidCellTex : null;
     posSimMat.uniforms.uRigidBodyTex.value = rigidActive ? args.rigidBodyTex : null;
+  }
+  if (posSimMat.uniforms.uRigidFreeEnabled) {
+    const freeOn = rigidActive && rigid.freeEnabled;
+    posSimMat.uniforms.uRigidFreeEnabled.value = freeOn;
+    posSimMat.uniforms.uRigidFreeFraction.value = rigid.freeFraction;
+    posSimMat.uniforms.uRigidBodyCount.value = args.rigidBodyCount ?? 0;
   }
   posSimMat.uniforms.uAgeMax.value = config.gpgpuAgeMax;
   // Replica age phase (Phase M): gated exactly like the initial

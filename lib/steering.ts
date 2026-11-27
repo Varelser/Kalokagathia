@@ -391,6 +391,82 @@ export function crowdStateFor(input: CrowdStateInputs, params: CrowdStateParams)
   return CROWD_STATE_IDS.move;
 }
 
+// ---------------------------------------------------------------------------
+// Multi-obstacle crowd avoidance (crowd multi-obstacle stage).
+// Gate 43's M8 finding limited the crowd's obstacle to the ONE
+// analytic SDF primitive. The scene's other colliders are the
+// mesh SDF bodies (Phase 41: up to 4 atlas bodies, or the single
+// mesh body), whose distance queries already live in the GLSL
+// velocity pass (meshSdfBodyDistance / meshSdfDistance in the
+// velocity helpers, over the already-bound uMeshSdfTex — no new
+// sampler). The composition mirrors the position pass's
+// multi-body min synthesis: every obstacle is evaluated, the
+// SMALLEST sd wins, and that one body drives the state machine
+// and the AVOID normal (the position pass pushes out once,
+// along the deepest body; the crowd steers once, away from the
+// nearest body). Obstacle order is fixed — analytic primitive
+// first, then mesh bodies by index, then the single mesh body —
+// and ties keep the earlier obstacle (strict <), exactly as the
+// position pass's best-body scan does. The obstacle cap is
+// therefore 1 + 4 = 5, set by the multi-body atlas cap.
+//
+// The WGSL route has no mesh SDF subsystem at all (the mesh
+// colliders themselves are WebGL-only, like the rigid bodies),
+// so the WGSL crowd keeps evaluating the analytic obstacle
+// only; the composition below is the CPU spec of the selection
+// both routes share for that obstacle.
+
+/** One obstacle's crowd sample for a particle: its signed
+ *  distance and the velocity component along its outward
+ *  normal (>0 = leaving that obstacle). */
+export interface CrowdObstacleSample {
+  sd: number;
+  velNormal: number;
+}
+
+/** The most imminent obstacle: the index of the smallest sd in
+ *  `samples` (ties keep the lowest index), or -1 when the list
+ *  is empty or every sd is non-finite (a NaN distance never
+ *  wins, mirroring the shaders' +1e6 "no collision" answer for
+ *  out-of-domain mesh queries). */
+export function crowdSelectObstacle(samples: readonly CrowdObstacleSample[]): number {
+  let best = -1;
+  let bestSd = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < samples.length; i++) {
+    const sd = samples[i].sd;
+    if (Number.isFinite(sd) && sd < bestSd) {
+      bestSd = sd;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** The rest of the crowd inputs, without the obstacle fields
+ *  (CrowdStateInputs minus sdfEnabled / sd / velNormal). */
+export type CrowdStateRestInputs = Omit<CrowdStateInputs, 'sdfEnabled' | 'sd' | 'velNormal'>;
+
+/**
+ * The multi-obstacle transition law: select the most imminent
+ * obstacle (crowdSelectObstacle) and run the stage-1 table
+ * (crowdStateFor) on that obstacle alone. With zero obstacles
+ * the machine sees sdfEnabled = false; with exactly one
+ * obstacle the result is crowdStateFor's, bit for bit — the
+ * single-obstacle scene is the Gate 43 special case.
+ */
+export function crowdStateForObstacles(
+  samples: readonly CrowdObstacleSample[],
+  rest: CrowdStateRestInputs,
+  params: CrowdStateParams,
+): number {
+  const winner = crowdSelectObstacle(samples);
+  if (winner < 0) {
+    return crowdStateFor({ ...rest, sdfEnabled: false, sd: 0, velNormal: 0 }, params);
+  }
+  const w = samples[winner];
+  return crowdStateFor({ ...rest, sdfEnabled: true, sd: w.sd, velNormal: w.velNormal }, params);
+}
+
 /**
  * Lane assignment (spec R84-02 §2, option (a) fixed): the baked
  * attribute slot value picks the lane deterministically —
@@ -460,6 +536,10 @@ export interface CrowdResolved {
   laneOffset: number;
   laneLateralGain: number;
   laneLookAheadScale: number;
+  /** Multi-obstacle stage: the mesh SDF colliders also count
+   *  as crowd obstacles (GLSL route; see the multi-obstacle
+   *  section above). Default false = Gate 43 behaviour. */
+  multiObstacleEnabled: boolean;
 }
 
 /**
@@ -482,6 +562,7 @@ export function resolveCrowd(config: ParticleConfig): CrowdResolved {
     laneOffset: clampNum(config.gpgpuCrowdLaneOffset, -1e6, 1e6, 0),
     laneLateralGain: clampNum(config.gpgpuCrowdLaneLateralGain, 0, 100, 1),
     laneLookAheadScale: clampNum(config.gpgpuCrowdLaneLookAheadScale, 0, 10, 1),
+    multiObstacleEnabled: !!config.gpgpuCrowdMultiObstacleEnabled,
   };
 }
 

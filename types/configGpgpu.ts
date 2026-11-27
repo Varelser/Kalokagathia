@@ -625,6 +625,13 @@ export interface ParticleConfigGpgpu {
   gpgpuCrowdLaneOffset: number;
   gpgpuCrowdLaneLateralGain: number;
   gpgpuCrowdLaneLookAheadScale: number;
+  // Multi-obstacle crowd avoidance (crowd multi-obstacle stage):
+  // while on, the crowd state machine also treats the mesh SDF
+  // colliders (the multi-body atlas bodies, or the single mesh
+  // body) as obstacles, selecting the smallest-sd body per frame
+  // (the position pass's min synthesis). Off (default) the crowd
+  // sees only the analytic SDF primitive, exactly as Gate 43.
+  gpgpuCrowdMultiObstacleEnabled: boolean;
   // Crowd steering (Phase 20 stage 2, Houdini §3): the GPU wiring
   // of lib/steering.ts — seek / arrive / path following / two-state
   // switching as a velocity-pass force ('steer-seek'). Disabled
@@ -1687,6 +1694,17 @@ export interface ParticleConfigGpgpu {
   gpgpuRigidForceEnabled: boolean;
   gpgpuRigidForceSource: string;
   gpgpuRigidForceScale: number;
+  // Coupling stage 1b: torque from the surface-point sample
+  // (off = stage 1 verbatim) and the wake-by-force threshold
+  // in world/s² (0 = force never wakes, stage 1 behaviour).
+  gpgpuRigidForceTorque: boolean;
+  gpgpuRigidForceWakeThreshold: number;
+  // Coupling stage 2: free particles mixed into rigid mode —
+  // a hash-split subset (fraction of the pool) that is NOT
+  // attached to a body and collides with the body spheres.
+  // Off (default) is bit-identical to before.
+  gpgpuRigidFreeEnabled: boolean;
+  gpgpuRigidFreeFraction: number;
   // Cluster colouring (Phase 20 stage 1): while on (AND the
   // rigid solver is on AND a cell texture exists), the points
   // draw takes each particle's base colour from its body's
