@@ -518,3 +518,72 @@ export function obbSatContact(a: RigidObb, b: RigidObb): ObbContact {
     ],
   };
 }
+
+/**
+ * Sphere vs OBB contact (UE5 #35 G-D stage D2 — static boxes).
+ * The result follows the ObbContact convention with A = the box
+ * and B = the sphere: `normal` is the direction the SPHERE must
+ * move to separate, `depth` the distance it must move, `point`
+ * the closest point on the box surface (or, when the centre is
+ * inside the box, the surface point along the push direction).
+ * Deterministic: the inside case resolves ties toward the
+ * lowest axis index, and a centre exactly on a face plane takes
+ * the + side of that axis.
+ */
+export function sphereObbContact(center: Vec3, radius: number, obb: RigidObb): ObbContact {
+  const d: Vec3 = [
+    center[0] - obb.center[0],
+    center[1] - obb.center[1],
+    center[2] - obb.center[2],
+  ];
+  const local: Vec3 = [dot(d, obb.axes[0]), dot(d, obb.axes[1]), dot(d, obb.axes[2])];
+  const clamped: Vec3 = [
+    Math.max(-obb.halfExtents[0], Math.min(obb.halfExtents[0], local[0])),
+    Math.max(-obb.halfExtents[1], Math.min(obb.halfExtents[1], local[1])),
+    Math.max(-obb.halfExtents[2], Math.min(obb.halfExtents[2], local[2])),
+  ];
+  const dl: Vec3 = [local[0] - clamped[0], local[1] - clamped[1], local[2] - clamped[2]];
+  if (dl[0] !== 0 || dl[1] !== 0 || dl[2] !== 0) {
+    // Centre outside the box: the closest surface point is the
+    // clamped point; separation is measured along the delta.
+    const delta: Vec3 = [
+      obb.axes[0][0] * dl[0] + obb.axes[1][0] * dl[1] + obb.axes[2][0] * dl[2],
+      obb.axes[0][1] * dl[0] + obb.axes[1][1] * dl[1] + obb.axes[2][1] * dl[2],
+      obb.axes[0][2] * dl[0] + obb.axes[1][2] * dl[1] + obb.axes[2][2] * dl[2],
+    ];
+    const dist = Math.hypot(delta[0], delta[1], delta[2]);
+    if (dist >= radius || dist === 0) return { ...SEPARATED, normal: [0, 0, 0], point: [0, 0, 0] };
+    const point: Vec3 = [
+      obb.center[0] + obb.axes[0][0] * clamped[0] + obb.axes[1][0] * clamped[1] + obb.axes[2][0] * clamped[2],
+      obb.center[1] + obb.axes[0][1] * clamped[0] + obb.axes[1][1] * clamped[1] + obb.axes[2][1] * clamped[2],
+      obb.center[2] + obb.axes[0][2] * clamped[0] + obb.axes[1][2] * clamped[1] + obb.axes[2][2] * clamped[2],
+    ];
+    return {
+      hit: true,
+      normal: [delta[0] / dist, delta[1] / dist, delta[2] / dist],
+      depth: radius - dist,
+      point,
+    };
+  }
+  // Centre inside the box: push out along the axis with the
+  // least remaining distance to its face.
+  let axis = 0;
+  let least = Infinity;
+  for (let i = 0; i < 3; i++) {
+    const rem = obb.halfExtents[i] - Math.abs(local[i]);
+    if (rem < least) { least = rem; axis = i; }
+  }
+  const sign = local[axis] < 0 ? -1 : 1;
+  const a = obb.axes[axis];
+  const normal: Vec3 = [a[0] * sign, a[1] * sign, a[2] * sign];
+  return {
+    hit: true,
+    normal,
+    depth: radius + least,
+    point: [
+      center[0] + normal[0] * least,
+      center[1] + normal[1] * least,
+      center[2] + normal[2] * least,
+    ],
+  };
+}

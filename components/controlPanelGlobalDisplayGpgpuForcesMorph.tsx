@@ -719,14 +719,31 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
           <Slider label="Glue Strength （破断閾値）" value={config.gpgpuRigidGlueStrength} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuRigidGlueStrength', Math.round(v))} />
           <Toggle label="Start Sleeping （全スリープ開始）" value={config.gpgpuRigidStartSleeping} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidStartSleeping', v)} />
           <Toggle label="Floor Terrain （地形床）" value={config.gpgpuRigidFloorTerrain} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidFloorTerrain', v)} />
+          <Toggle label="Floor Multi-Sample （床の複数サンプル）" value={config.gpgpuRigidFloorMultiSample} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidFloorMultiSample', v)} />
+          <div className="mt-3">
+            <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Static Boxes （静的コライダ・箱）</div>
+            <textarea
+              value={config.gpgpuRigidStaticBoxes}
+              onChange={(event) => updateConfig('gpgpuRigidStaticBoxes', event.target.value.slice(0, 20_000))}
+              spellCheck={false}
+              rows={3}
+              className="w-full rounded border border-white/15 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40"
+              placeholder='[{"c":[0,5,0],"h":[30,5,30]}] のような JSON 配列（c=中心, h=半寸法, e=オイラー角・度、最大16件。空なら無し）'
+            />
+          </div>
           <Toggle label="Cluster Colors （クラスタ色分け）" value={config.gpgpuRigidClusterColorEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidClusterColorEnabled', v)} />
+          <Toggle label="Convex Collision （OBB形状衝突）" value={config.gpgpuRigidConvexEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidConvexEnabled', v)} />
           <Toggle label="Convex Inertia （OBB慣性）" value={config.gpgpuRigidConvexInertia} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidConvexInertia', v)} />
           <Toggle label="Field Force （フォース場連成）" value={config.gpgpuRigidForceEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidForceEnabled', v)} />
           {config.gpgpuRigidForceEnabled && (
             <Slider label="Force Scale （連成の強さ）" value={config.gpgpuRigidForceScale} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuRigidForceScale', v)} />
           )}
+          <Toggle label="Joint Anchor （アンカー拘束）" value={config.gpgpuRigidJointAnchorEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuRigidJointAnchorEnabled', v)} />
+          {config.gpgpuRigidJointAnchorEnabled && (
+            <Slider label="Joint Angle Limit （角度制限・度）" value={config.gpgpuRigidJointAngleLimitDeg} min={0} max={180} step={1} onChange={(v) => updateConfig('gpgpuRigidJointAngleLimitDeg', Math.round(v))} />
+          )}
           <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-            破砕ベイクのセル（最大64体）を永続剛体として CPU で解くソルバです（質量・球近似の慣性・逐次インパルス接触・接着と破断・スリープ／活性化）。モーフ点群が前提で、破砕の Cells / Seed がそのまま体の分割になります。有効中は年齢リスポーン／キル条件／スポーンゲート／モーフ引力／レプリカ独立 sim は体を守るため無効化され、Vellum より優先されます。衝突形状はセルのバウンディング球近似のみ（開始時の重なりは初期距離を下限として許容）、凸包・メッシュ衝突・拘束ジョイントは解きません。床とバウンス球には衝突します。地形床 ON のときは、侵食ベイクの高度場がある場面でのみ床がその地形になります（無い場面では平面の床のまま。地形との衝突は体の中心直下の高さで解くため、大きな体は急斜面の脇で地形にめり込むことがあります）。
+            破砕ベイクのセル（最大256体）を永続剛体として CPU で解くソルバです（質量・球近似の慣性・逐次インパルス接触・接着と破断・スリープ／活性化）。モーフ点群が前提で、破砕の Cells / Seed がそのまま体の分割になります。有効中は年齢リスポーン／キル条件／スポーンゲート／モーフ引力／レプリカ独立 sim は体を守るため無効化され、Vellum より優先されます。衝突形状は既定ではセルのバウンディング球近似（開始時の重なりは初期距離を下限として許容）で、Convex Collision ON ではセルの有向箱（OBB）同士で解きます。メッシュ衝突は解きません。床とバウンス球には衝突します。地形床 ON のときは、侵食ベイクの高度場がある場面でのみ床がその地形になります（無い場面では平面の床のまま。地形との衝突は体の中心直下の高さで解くため、大きな体は急斜面の脇で地形にめり込むことがあります）。
           </div>
         </>
       )}

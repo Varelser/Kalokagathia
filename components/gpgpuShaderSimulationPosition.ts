@@ -407,7 +407,7 @@ const POS_FRAG_MID = /* glsl */ `  // Rigid bodies (Phase AU): while the CPU rig
     // resolved off while the solver is bound).
     if (uRigidEnabled) {
       vec4 cell = texture2D(uRigidCellTex, vUv);
-      vec2 bodyUv = vec2((cell.w + 0.5) / 64.0, 0.0);
+      vec2 bodyUv = vec2((cell.w + 0.5) / 256.0, 0.0); // divisor = RIGID_BODY_MAX (body texture width)
       vec4 bodyPos = texture2D(uRigidBodyTex, vec2(bodyUv.x, 0.125));
       vec4 bodyQuat = texture2D(uRigidBodyTex, vec2(bodyUv.x, 0.375));
       gl_FragColor = vec4(bodyPos.xyz + kaloQuatRotate(bodyQuat, cell.xyz), age);

@@ -71,13 +71,18 @@
 import type { ParticleConfig } from '../types';
 import type { FractureCellData } from './voronoiFracture';
 import { xpbdAlphaTilde, xpbdBreakExceeded, xpbdDeltaLambda } from './xpbdConstraints';
-import { buildObbsForCells, obbBoxInertia, obbInertiaFactor, obbInertiaResponse, obbSatContact, obbSupportPoint, placeObb } from './rigidObb';
+import { buildObbsForCells, obbBoxInertia, obbInertiaFactor, obbInertiaResponse, obbQuatRotate, obbSatContact, obbSupportPoint, placeObb, sphereObbContact } from './rigidObb';
 import type { RigidObb } from './rigidObb';
 import { sampleCurlFieldFast } from './fieldGlyphSampling';
 import type { CurlFieldParams } from './fieldGlyphSampling';
 
-/** Hard body budget: the fracture clamp (Phase AG) caps cells at 64. */
-export const RIGID_BODY_MAX = 64;
+/** Hard body budget: the fracture clamp caps cells at this count.
+ * Raised 64 → 256 in UE5 #35 G-B stage 2 (the B1 broadphase made
+ * the pair pass sub-quadratic, so the budget no longer costs
+ * O(n²)). The GLSL body-texture divisors in
+ * gpgpuShaderSimulationPosition / gpgpuShaderSimulationVelocityMainForces
+ * hardcode this width — keep them in step. */
+export const RIGID_BODY_MAX = 256;
 /** Fixed solver substep (seconds). Divides 1/12, 1/24, 1/30, 1/60. */
 export const RIGID_SUBSTEP = 1 / 120;
 /** Max substeps consumed per frame; excess time is dropped, never spiralled. */
@@ -158,6 +163,14 @@ export interface RigidBond {
  * strain |C| / restLength). Joints exist only when built with
  * the Joint Enabled key on — the array is empty otherwise and
  * no code path reads it.
+ *
+ * Anchored form (UE5 #35 G-C): built only while the Joint
+ * Anchor key is also on, a joint instead carries the
+ * XpbdJointSpec anchor fields (the shared face midpoint in
+ * each body's local frame) and binds the anchor POINTS with
+ * rotational coupling, plus an optional swing angle limit
+ * against the build-time relative orientation. The break
+ * metric stays the centre strain above for both forms.
  */
 export interface RigidJoint {
   a: number;
@@ -170,6 +183,29 @@ export interface RigidJoint {
   /** Accumulated λ of the current substep (reset per substep). */
   lambda: number;
   alive: boolean;
+  /** Anchor point in body A's local frame (UE5 #35 G-C): the
+   *  XpbdJointSpec anchor fields, realised. Present only on
+   *  joints built with the Joint Anchor key on; the constraint
+   *  then binds the two anchor POINTS (a ball joint at the
+   *  shared face midpoint) with full rotational coupling
+   *  instead of the body centres. Absent keeps the centre-
+   *  distance path verbatim. */
+  anchorA?: [number, number, number];
+  /** Anchor point in body B's local frame (see anchorA). */
+  anchorB?: [number, number, number];
+  /** Distance between the anchor points at build time (0 for
+   *  the shared-midpoint anchors the builder emits). Read only
+   *  alongside anchorA/anchorB. */
+  anchorRest?: number;
+  /** Relative orientation qA⁻¹·qB at build time (UE5 #35 G-C):
+   *  the reference the angle limit measures against. Present
+   *  only alongside the anchors. */
+  restRelQuat?: [number, number, number, number];
+  /** Swing angle limit in radians (UE5 #35 G-C): the largest
+   *  angle the pair's relative orientation may deviate from
+   *  restRelQuat. 0 / absent = no limit. Read only alongside
+   *  restRelQuat. */
+  angleLimitRad?: number;
 }
 
 /**
@@ -274,6 +310,21 @@ function floorSurfaceYAt(options: RigidStepOptions, x: number, z: number): numbe
     : options.floorY;
 }
 
+/** Multi-sample ground height (UE5 #35 G-D stage D1): the
+ *  highest heightfield sample under a body's disc — the centre
+ *  plus four ring points at 0.7·radius on the axes. On a flat
+ *  field every sample is equal, so the result is the centre
+ *  sample bit-for-bit. */
+function floorMultiSampleY(field: RigidHeightfieldSource, x: number, z: number, radius: number): number {
+  const o = radius * 0.7;
+  let y = sampleRigidHeightfield(field, x, z);
+  const e = sampleRigidHeightfield(field, x + o, z); if (e > y) y = e;
+  const w = sampleRigidHeightfield(field, x - o, z); if (w > y) y = w;
+  const s = sampleRigidHeightfield(field, x, z + o); if (s > y) y = s;
+  const n = sampleRigidHeightfield(field, x, z - o); if (n > y) y = n;
+  return y;
+}
+
 export interface RigidStepOptions {
   /** Signed gravity acceleration on Y, world units / s² (already includes the gravity key). */
   gravityY: number;
@@ -284,6 +335,22 @@ export interface RigidStepOptions {
    *  floorY verbatim. The caller resolves it (key + field
    *  availability), the solver only consumes it. */
   heightfield?: RigidHeightfieldSource | null;
+  /** Multi-sample sphere floor (UE5 #35 G-D stage D1): while
+   *  true (AND a heightfield is supplied), the sphere floor
+   *  path rests each body on the highest of the centre + four
+   *  ring samples under its disc instead of the centre sample
+   *  alone. Absent/false keeps the centre rule verbatim; on a
+   *  flat field the two are bit-identical. */
+  floorMultiSample?: boolean;
+  /** Static boxes (UE5 #35 G-D stage D2): infinite-mass OBBs in
+   *  world space, resolved by the caller from the
+   *  gpgpuRigidStaticBoxes key. Absent / null / empty runs no
+   *  static pass at all — the identity guarantee. While present,
+   *  each awake body is tested against every box after the floor
+   *  pass: shaped bodies (convex on) through the SAT narrow
+   *  phase, the rest through the sphere-vs-OBB test, with the
+   *  full-depth correction and the environment contact impulse. */
+  staticBoxes?: readonly RigidObb[] | null;
   /** Containment sphere radius (the scene bounce radius). */
   bounceRadius: number;
   restitution: number;
@@ -308,6 +375,14 @@ export interface RigidStepOptions {
    *  every pair while this is absent/false, run the legacy
    *  sphere paths verbatim. */
   convexEnabled?: boolean;
+  /** Broad phase (UE5 #35 G-B stage B1): while true (the
+   *  default), the pair-collision pass visits only the pairs a
+   *  spatial hash admits — a superset of the pairs that can
+   *  interact, in the legacy (i, j) order, so trajectories stay
+   *  bit-identical. False runs the legacy all-pairs double loop
+   *  verbatim (kept as the reference path for the identity
+   *  tests). */
+  broadphase?: boolean;
   /** OBB box inertia (Round 84 gap 6, stage 1): while true
    *  (AND convexEnabled), bodies with a fitted shape answer
    *  angular responses with the box inertia tensor instead of
@@ -408,6 +483,17 @@ export function createRigidSolver(
     jointEnabled?: boolean;
     jointCompliance?: number;
     jointBreakThreshold?: number;
+    /** Anchored joints (UE5 #35 G-C): while true, each joint
+     *  binds the shared face-midpoint anchor points (the
+     *  XpbdJointSpec anchor fields) instead of the body
+     *  centres, with rotational coupling. Absent/false builds
+     *  centre joints verbatim. */
+    jointAnchors?: boolean;
+    /** Angle limit in radians for anchored joints (UE5 #35
+     *  G-C): the largest swing of the pair's relative
+     *  orientation from its build-time value. 0 / absent =
+     *  no limit. Read only while jointAnchors is true. */
+    jointAngleLimitRad?: number;
     /** OBB shapes (Phase 20 stage 1): while true, each body
      *  carries the OBB fitted to its cell points. Absent/false
      *  builds no shapes at all (legacy state shape). */
@@ -502,6 +588,21 @@ export function createRigidSolver(
             breakThreshold: Math.max(0, options.jointBreakThreshold ?? 0),
             lambda: 0,
             alive: true,
+            // Anchored form (UE5 #35 G-C): the anchor is the
+            // midpoint between the two centroids — the shared
+            // face's proxy for adjacent Voronoi cells — in each
+            // body's local frame. Build-time orientations are
+            // identity, so the local anchors are ±half the
+            // centroid offset, the anchor points coincide
+            // (anchorRest 0) and the rest relative orientation
+            // is the identity quaternion.
+            ...(options.jointAnchors ? {
+              anchorA: [dx / 2, dy / 2, dz / 2] as [number, number, number],
+              anchorB: [-dx / 2, -dy / 2, -dz / 2] as [number, number, number],
+              anchorRest: 0,
+              restRelQuat: [0, 0, 0, 1] as [number, number, number, number],
+              angleLimitRad: Math.max(0, options.jointAngleLimitRad ?? 0),
+            } : {}),
           });
         }
       }
@@ -606,6 +707,127 @@ export function stepRigidBodies(
   return steps;
 }
 
+/** Every (i, j) pair key in legacy visit order. */
+function allPairKeys(n: number): number[] {
+  const keys: number[] = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) keys.push(i * RIGID_BODY_MAX + j);
+  }
+  return keys;
+}
+
+/**
+ * Broad phase (UE5 #35 G-B stage B1): the candidate pair keys
+ * for one pair-collision pass, in the legacy (i, j) visit order.
+ *
+ * A pair can change state only when its centre distance is
+ * under rA + rB: the sphere path needs d < restDist and
+ * restDist ≤ rA + rB by construction; the OBB path needs
+ * d < restDist or d < rA + rB. Pairs beyond that bound are
+ * skipped by the legacy loop without any state change, so a
+ * candidate set that contains every pair under the bound —
+ * plus a safety margin — reproduces the legacy pass exactly.
+ * The margin is the scene's largest radius: within one pass a
+ * body moves only through pair corrections, each smaller than
+ * that pair's overlap (< rA + rB), and the margin keeps the
+ * set a superset of the pairs the legacy loop could touch
+ * after earlier corrections in the same pass. The identity is
+ * pinned by scripts/phase46-rigid-broadphase.test.mjs.
+ *
+ * The grid is a spatial hash with cell size 3·maxR (≥ the
+ * largest possible cutoff, 2·maxR + margin), so the 27
+ * neighbouring cells cover every candidate; hash collisions
+ * only cost a distance test, never correctness. (Each body
+ * sits in exactly one bucket, but two scanned neighbour cells
+ * can hash to that same bucket — the per-i seen set keeps a
+ * pair from being emitted twice; a duplicate visit would
+ * re-run the narrow phase on already-corrected positions and
+ * break the identity, as the phase46 test caught.)
+ */
+function broadphasePairKeys(bodies: RigidBody[]): number[] {
+  const n = bodies.length;
+  if (n < 2) return [];
+  let maxR = 0;
+  for (const b of bodies) if (b.radius > maxR) maxR = b.radius;
+  if (!(maxR > 0)) return allPairKeys(n);
+  const cell = 3 * maxR;
+  const cellOf = (v: number) => Math.floor(v / cell);
+  const hash = (cx: number, cy: number, cz: number) => ((cx * 73856093) ^ (cy * 19349663) ^ (cz * 83492791)) | 0;
+  const buckets = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const p = bodies[i].pos;
+    const key = hash(cellOf(p[0]), cellOf(p[1]), cellOf(p[2]));
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(i);
+    else buckets.set(key, [i]);
+  }
+  const keys: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = bodies[i];
+    const cx = cellOf(a.pos[0]);
+    const cy = cellOf(a.pos[1]);
+    const cz = cellOf(a.pos[2]);
+    const js: number[] = [];
+    const seen = new Set<number>();
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let oz = -1; oz <= 1; oz++) {
+          const bucket = buckets.get(hash(cx + ox, cy + oy, cz + oz));
+          if (!bucket) continue;
+          for (const j of bucket) {
+            if (j <= i || seen.has(j)) continue;
+            seen.add(j);
+            const b = bodies[j];
+            const cutoff = a.radius + b.radius + maxR;
+            const dx = b.pos[0] - a.pos[0];
+            const dy = b.pos[1] - a.pos[1];
+            const dz = b.pos[2] - a.pos[2];
+            if (dx * dx + dy * dy + dz * dz < cutoff * cutoff) js.push(j);
+          }
+        }
+      }
+    }
+    js.sort((x, y) => x - y);
+    for (const j of js) keys.push(i * RIGID_BODY_MAX + j);
+  }
+  return keys;
+}
+
+/**
+ * Post-pass verification for the broad phase: true when some
+ * dropped pair could have interacted in the legacy loop. A
+ * legacy interaction needs the pair's centre distance, at its
+ * turn in the pass, under rA + rB (the interaction bound; see
+ * broadphasePairKeys). During the pass a pair's distance can
+ * shrink by at most the two bodies' correction path lengths,
+ * so when startDistance − (pathA + pathB) ≥ rA + rB for every
+ * dropped pair, no dropped pair interacted in the legacy loop
+ * either, and the candidate pass — same order, same code — is
+ * bit-identical to it. Any doubt returns true and the caller
+ * redoes the pass with the legacy loop from the snapshot.
+ */
+function broadphasePassSuspect(
+  bodies: RigidBody[],
+  startPos: Float64Array,
+  path: Float64Array,
+  candidateSet: Set<number>,
+): boolean {
+  const n = bodies.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (candidateSet.has(i * RIGID_BODY_MAX + j)) continue;
+      const travel = path[i] + path[j];
+      if (travel === 0) continue;
+      const dx = startPos[j * 3] - startPos[i * 3];
+      const dy = startPos[j * 3 + 1] - startPos[i * 3 + 1];
+      const dz = startPos[j * 3 + 2] - startPos[i * 3 + 2];
+      const bound = bodies[i].radius + bodies[j].radius;
+      if (Math.sqrt(dx * dx + dy * dy + dz * dz) - travel < bound) return true;
+    }
+  }
+  return false;
+}
+
 function substep(state: RigidSolverState, h: number, options: RigidStepOptions): void {
   const bodies = state.bodies;
   const n = bodies.length;
@@ -678,13 +900,24 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
           touching.add(i * CONTACT_STRIDE + RIGID_BODY_MAX);
         }
       } else {
-        const floorDist = body.pos[1] - body.radius - groundY;
+        // Sphere floor: the ground under the centre — or, with
+        // the multi-sample step option (UE5 #35 G-D stage D1),
+        // the highest sample under the body's disc, so a large
+        // body rests on the terrain beside its centre instead
+        // of sinking its rim into a slope. The normal and the
+        // correction rule stay the legacy centre ones; only
+        // the height changes, and on a flat field the option
+        // is bit-identical (every sample equal).
+        const sphereGroundY = options.floorMultiSample && hf
+          ? floorMultiSampleY(hf, body.pos[0], body.pos[2], body.radius)
+          : groundY;
+        const floorDist = body.pos[1] - body.radius - sphereGroundY;
         if (floorDist < 0) {
           body.pos[1] -= floorDist;
           const normal: [number, number, number] = hf
             ? rigidHeightfieldNormal(hf, body.pos[0], body.pos[2])
             : [0, 1, 0];
-          applyContactImpulse(state, i, -1, normal, [body.pos[0], groundY, body.pos[2]], options);
+          applyContactImpulse(state, i, -1, normal, [body.pos[0], sphereGroundY, body.pos[2]], options);
           touching.add(i * CONTACT_STRIDE + RIGID_BODY_MAX);
         }
       }
@@ -705,9 +938,71 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
     }
   }
 
+  // 2b. Static boxes (UE5 #35 G-D stage D2): infinite-mass OBBs
+  // from the step options. The correction is the full depth
+  // (nothing splits with an infinite mass) and the impulse rides
+  // the environment contact path (other = -1), so restitution,
+  // friction, impact bookkeeping and contact events behave
+  // exactly as for the floor. Sleeping bodies are skipped, as in
+  // the floor pass — statics never move, so nothing can knock a
+  // sleeper off its support.
+  const statics = options.staticBoxes ?? null;
+  const runStaticPass = (): void => {
+    if (!statics || statics.length === 0) return;
+    for (let i = 0; i < n; i++) {
+      const body = bodies[i];
+      if (body.sleeping) continue;
+      for (const box of statics) {
+        if (options.convexEnabled && body.shape) {
+          const placed = placeObb(body.shape, body.pos, body.quat);
+          const contact = obbSatContact(placed, box);
+          if (!contact.hit) continue;
+          // The SAT normal runs body -> box; the push-out is its
+          // negation (the direction the body must move).
+          body.pos[0] -= contact.normal[0] * contact.depth;
+          body.pos[1] -= contact.normal[1] * contact.depth;
+          body.pos[2] -= contact.normal[2] * contact.depth;
+          // The impulse acts at the body's own support point
+          // along the SAT normal — the floor pass's treatment —
+          // NOT at the SAT midpoint: against a large static the
+          // midpoint sits halfway toward the static's far
+          // support corner, and the lever arm of that point
+          // spins a resting body up instead of settling it
+          // (measured in the phase49 diagnosis).
+          applyContactImpulse(state, i, -1,
+            [-contact.normal[0], -contact.normal[1], -contact.normal[2]] as [number, number, number],
+            obbSupportPoint(placed, contact.normal), options);
+          touching.add(i * CONTACT_STRIDE + RIGID_BODY_MAX);
+        } else {
+          const contact = sphereObbContact(body.pos, body.radius, box);
+          if (!contact.hit) continue;
+          body.pos[0] += contact.normal[0] * contact.depth;
+          body.pos[1] += contact.normal[1] * contact.depth;
+          body.pos[2] += contact.normal[2] * contact.depth;
+          applyContactImpulse(state, i, -1, contact.normal, contact.point, options);
+          touching.add(i * CONTACT_STRIDE + RIGID_BODY_MAX);
+        }
+      }
+    }
+  };
+  runStaticPass();
+
   // 3. Pair collisions (sequential impulses, rest-distance aware).
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
+  // The visit order is the legacy (i, j) order in both modes. With
+  // the broad phase on (the default), the pass visits only the
+  // candidate pairs while tracking each body's correction path
+  // length; afterwards a conservative check compares every
+  // dropped pair's start-of-pass distance against the distance
+  // its two bodies actually travelled during the pass. If a
+  // dropped pair could have come into interaction range
+  // mid-pass, the pass is redone from the pre-pass snapshot with
+  // the legacy all-pairs loop — so the broad phase is
+  // bit-identical to the legacy loop by construction, not by
+  // margin luck (identity pinned by the phase46 test).
+  const runPairPass = (keys: number[], path: Float64Array | null): void => {
+    for (const pairKey of keys) {
+      const i = Math.floor(pairKey / RIGID_BODY_MAX);
+      const j = pairKey - i * RIGID_BODY_MAX;
       const a = bodies[i];
       const b = bodies[j];
       if (a.sleeping && b.sleeping) continue;
@@ -754,6 +1049,7 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
         const corrB = b.sleeping ? 0 : (b.invMass / invSum) * contact.depth;
         a.pos[0] -= contact.normal[0] * corrA; a.pos[1] -= contact.normal[1] * corrA; a.pos[2] -= contact.normal[2] * corrA;
         b.pos[0] += contact.normal[0] * corrB; b.pos[1] += contact.normal[1] * corrB; b.pos[2] += contact.normal[2] * corrB;
+        if (path) { path[i] += corrA; path[j] += corrB; }
         applyPairImpulse(state, i, j, contact.normal, contact.point, options);
         touching.add(i * CONTACT_STRIDE + j);
         continue;
@@ -769,11 +1065,50 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
       const corrB = b.sleeping ? 0 : (b.invMass / invSum) * overlap;
       a.pos[0] -= nx * corrA; a.pos[1] -= ny * corrA; a.pos[2] -= nz * corrA;
       b.pos[0] += nx * corrB; b.pos[1] += ny * corrB; b.pos[2] += nz * corrB;
+      if (path) { path[i] += corrA; path[j] += corrB; }
       const px = (a.pos[0] + b.pos[0]) / 2;
       const py = (a.pos[1] + b.pos[1]) / 2;
       const pz = (a.pos[2] + b.pos[2]) / 2;
       applyPairImpulse(state, i, j, [nx, ny, nz], [px, py, pz], options);
       touching.add(i * CONTACT_STRIDE + j);
+    }
+  };
+  if (options.broadphase === false) {
+    runPairPass(allPairKeys(n), null);
+  } else {
+    const candidateKeys = broadphasePairKeys(bodies);
+    const startPos = new Float64Array(n * 3);
+    const snapshot = bodies.map((body, bi) => {
+      startPos[bi * 3] = body.pos[0];
+      startPos[bi * 3 + 1] = body.pos[1];
+      startPos[bi * 3 + 2] = body.pos[2];
+      return {
+        pos: [...body.pos] as [number, number, number],
+        quat: [...body.quat] as [number, number, number, number],
+        vel: [...body.vel] as [number, number, number],
+        angVel: [...body.angVel] as [number, number, number],
+        sleeping: body.sleeping,
+        sleepTimer: body.sleepTimer,
+        impactDeltaV: body.impactDeltaV,
+      };
+    });
+    const touchingBefore = new Set(touching);
+    const path = new Float64Array(n);
+    runPairPass(candidateKeys, path);
+    if (broadphasePassSuspect(bodies, startPos, path, new Set(candidateKeys))) {
+      bodies.forEach((body, bi) => {
+        const s = snapshot[bi];
+        body.pos[0] = s.pos[0]; body.pos[1] = s.pos[1]; body.pos[2] = s.pos[2];
+        body.quat[0] = s.quat[0]; body.quat[1] = s.quat[1]; body.quat[2] = s.quat[2]; body.quat[3] = s.quat[3];
+        body.vel[0] = s.vel[0]; body.vel[1] = s.vel[1]; body.vel[2] = s.vel[2];
+        body.angVel[0] = s.angVel[0]; body.angVel[1] = s.angVel[1]; body.angVel[2] = s.angVel[2];
+        body.sleeping = s.sleeping;
+        body.sleepTimer = s.sleepTimer;
+        body.impactDeltaV = s.impactDeltaV;
+      });
+      touching.clear();
+      for (const key of touchingBefore) touching.add(key);
+      runPairPass(allPairKeys(n), null);
     }
   }
 
@@ -856,10 +1191,25 @@ function substep(state: RigidSolverState, h: number, options: RigidStepOptions):
     for (let iter = 0; iter < 2; iter++) {
       for (const joint of state.joints) {
         if (!joint.alive) continue;
-        solveJoint(state, joint, h);
+        solveJoint(state, joint, h, options);
+        // Angle limit (UE5 #35 G-C): anchored joints only —
+        // the field is absent on centre joints, so this call
+        // returns at once there.
+        solveJointAngleLimit(state, joint, options);
       }
     }
   }
+
+  // 4b. Static boxes again (UE5 #35 G-D stage D2): the pair and
+  // joint passes run after the environment pass and can push a
+  // body into a static within the same substep; this repeat —
+  // the same pass — restores the no-penetration invariant before
+  // the state is observed at frame end and before sleep reads
+  // it. Its impulses are no-ops for contacts the first pass
+  // already resolved (vn >= 0 returns early in
+  // applyContactImpulse, and its friction clamps to μ·jn = 0),
+  // so it only corrects what the later passes disturbed.
+  runStaticPass();
 
   // 4c. Contact events (Phase 21 stage 3): keys touched now that
   // were not touching at the previous substep are NEW contacts.
@@ -1086,7 +1436,13 @@ function solveBond(state: RigidSolverState, bond: RigidBond): void {
  * with α̃ from the joint's compliance. Position-level only,
  * like the glue weld — velocities are not reconstructed.
  */
-function solveJoint(state: RigidSolverState, joint: RigidJoint, h: number): void {
+function solveJoint(state: RigidSolverState, joint: RigidJoint, h: number, options: RigidStepOptions): void {
+  // Anchored joints (UE5 #35 G-C) take the anchor-point path;
+  // centre joints run the legacy body below verbatim.
+  if (joint.anchorA && joint.anchorB) {
+    solveJointAnchored(state, joint, h, options);
+    return;
+  }
   const a = state.bodies[joint.a];
   const b = state.bodies[joint.b];
   const invA = a.sleeping ? 0 : a.invMass;
@@ -1106,6 +1462,162 @@ function solveJoint(state: RigidSolverState, joint: RigidJoint, h: number): void
   // Δx_a = Δλ · w_a · ∇C_a with ∇C_a = −n̂; Δx_b likewise +n̂.
   a.pos[0] -= dl * invA * nx; a.pos[1] -= dl * invA * ny; a.pos[2] -= dl * invA * nz;
   b.pos[0] += dl * invB * nx; b.pos[1] += dl * invB * ny; b.pos[2] += dl * invB * nz;
+}
+
+/** I⁻¹ · v for the body's active inertia (box tensor while
+ *  Convex Inertia is on for this body, the sphere scalar
+ *  otherwise) — the rotational twin of applyImpulse's angular
+ *  part, for position-level corrections. */
+function angularResponse(
+  body: RigidBody,
+  options: RigidStepOptions,
+  v: [number, number, number],
+): [number, number, number] {
+  if (tensorActive(body, options)) {
+    return obbInertiaResponse(body.shape as RigidObb, body.quat, body.invInertiaAxis as [number, number, number], v);
+  }
+  return [v[0] * body.invInertia, v[1] * body.invInertia, v[2] * body.invInertia];
+}
+
+/** vᵀ · I⁻¹ · v for the body's active inertia (0 while the
+ *  body sleeps — a sleeping body counts as infinite mass, the
+ *  solveBond rule). */
+function rotationalWeight(
+  body: RigidBody,
+  options: RigidStepOptions,
+  v: [number, number, number],
+): number {
+  if (body.sleeping) return 0;
+  if (tensorActive(body, options)) {
+    return obbInertiaFactor(body.shape as RigidObb, body.quat, body.invInertiaAxis as [number, number, number], v);
+  }
+  return (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) * body.invInertia;
+}
+
+/** Rotate a body's orientation by the world-frame rotation
+ *  vector Δθ (position level, the integrator's quaternion
+ *  update with the step length folded into Δθ). */
+function applyRotationDelta(body: RigidBody, dTheta: [number, number, number]): void {
+  if (dTheta[0] === 0 && dTheta[1] === 0 && dTheta[2] === 0) return;
+  const dq = quatMultiply([dTheta[0], dTheta[1], dTheta[2], 0], body.quat);
+  body.quat = quatNormalize([
+    body.quat[0] + 0.5 * dq[0],
+    body.quat[1] + 0.5 * dq[1],
+    body.quat[2] + 0.5 * dq[2],
+    body.quat[3] + 0.5 * dq[3],
+  ]);
+}
+
+/**
+ * One XPBD iteration for an ANCHORED joint (UE5 #35 G-C — the
+ * implementation side of the XpbdJointSpec socket): the
+ * constraint binds the two anchor points,
+ *   C = |pB − pA| − anchorRest,  p = pos + R · anchorLocal,
+ * with the full rigid-body gradients: the linear weight is the
+ * inverse mass, the rotational weight is (r × n̂)ᵀ I⁻¹ (r × n̂)
+ * per body (r = the anchor's offset from the centre), and the
+ * correction moves both the position and the orientation of
+ * each body (Δθ = ∓Δλ · I⁻¹(r × n̂)). Δλ comes from the same
+ * shared xpbdDeltaLambda as the centre path, with α̃ from the
+ * joint's compliance. Position-level only, like the centre
+ * path — velocities are not reconstructed.
+ */
+function solveJointAnchored(state: RigidSolverState, joint: RigidJoint, h: number, options: RigidStepOptions): void {
+  const a = state.bodies[joint.a];
+  const b = state.bodies[joint.b];
+  const invA = a.sleeping ? 0 : a.invMass;
+  const invB = b.sleeping ? 0 : b.invMass;
+  if (invA + invB <= 0) return;
+  const rA = quatRotate(a.quat, joint.anchorA as [number, number, number]);
+  const rB = quatRotate(b.quat, joint.anchorB as [number, number, number]);
+  const pAx = a.pos[0] + rA[0]; const pAy = a.pos[1] + rA[1]; const pAz = a.pos[2] + rA[2];
+  const pBx = b.pos[0] + rB[0]; const pBy = b.pos[1] + rB[1]; const pBz = b.pos[2] + rB[2];
+  const dx = pBx - pAx; const dy = pBy - pAy; const dz = pBz - pAz;
+  const d = Math.hypot(dx, dy, dz);
+  const rest = joint.anchorRest ?? 0;
+  if (d < 1e-9) {
+    // Coincident anchors: at rest when rest is 0; with a
+    // positive rest the axis is undefined — leave the pair to
+    // the contact / centre paths for this substep.
+    return;
+  }
+  const n: [number, number, number] = [dx / d, dy / d, dz / d];
+  const c = d - rest;
+  if (c === 0) return;
+  const rnA: [number, number, number] = [
+    rA[1] * n[2] - rA[2] * n[1],
+    rA[2] * n[0] - rA[0] * n[2],
+    rA[0] * n[1] - rA[1] * n[0],
+  ];
+  const rnB: [number, number, number] = [
+    rB[1] * n[2] - rB[2] * n[1],
+    rB[2] * n[0] - rB[0] * n[2],
+    rB[0] * n[1] - rB[1] * n[0],
+  ];
+  const wA = invA + rotationalWeight(a, options, rnA);
+  const wB = invB + rotationalWeight(b, options, rnB);
+  const wSum = wA + wB;
+  if (wSum <= 0) return;
+  const alphaTilde = xpbdAlphaTilde(joint.compliance, h);
+  const dl = xpbdDeltaLambda(c, joint.lambda, alphaTilde, wSum);
+  joint.lambda += dl;
+  if (dl === 0) return;
+  // Linear parts: Δx_a = −Δλ · w_a^lin · n̂, Δx_b = +Δλ · w_b^lin · n̂.
+  a.pos[0] -= dl * invA * n[0]; a.pos[1] -= dl * invA * n[1]; a.pos[2] -= dl * invA * n[2];
+  b.pos[0] += dl * invB * n[0]; b.pos[1] += dl * invB * n[1]; b.pos[2] += dl * invB * n[2];
+  // Rotational parts: Δθ_a = −Δλ · I⁻¹(rA × n̂), Δθ_b = +Δλ · I⁻¹(rB × n̂).
+  if (!a.sleeping) {
+    const dw = angularResponse(a, options, rnA);
+    applyRotationDelta(a, [-dl * dw[0], -dl * dw[1], -dl * dw[2]]);
+  }
+  if (!b.sleeping) {
+    const dw = angularResponse(b, options, rnB);
+    applyRotationDelta(b, [dl * dw[0], dl * dw[1], dl * dw[2]]);
+  }
+}
+
+/**
+ * The angle limit of an anchored joint (UE5 #35 G-C): the
+ * pair's relative orientation qA⁻¹·qB may deviate from its
+ * build-time value (restRelQuat) by at most angleLimitRad.
+ * The excess rotation is removed positionally, split between
+ * the two bodies by their rotational weights about the error
+ * axis (the solveBond split rule, with the active inertia) —
+ * A turns forward along the axis, B turns back, so the
+ * relative angle closes by exactly the excess. No limit
+ * (absent / 0) or no anchors: returns at once, so centre
+ * joints never enter here in effect.
+ */
+function solveJointAngleLimit(state: RigidSolverState, joint: RigidJoint, options: RigidStepOptions): void {
+  const limit = joint.angleLimitRad ?? 0;
+  if (!(limit > 0) || !joint.restRelQuat) return;
+  const a = state.bodies[joint.a];
+  const b = state.bodies[joint.b];
+  if (a.sleeping && b.sleeping) return;
+  const qRel = quatMultiply(quatConjugate(a.quat), b.quat);
+  let qErr = quatMultiply(qRel, quatConjugate(joint.restRelQuat));
+  // Shortest arc: keep w ≥ 0 so the angle lands in [0, π].
+  if (qErr[3] < 0) qErr = [-qErr[0], -qErr[1], -qErr[2], -qErr[3]];
+  const w = Math.max(-1, Math.min(1, qErr[3]));
+  const angle = 2 * Math.acos(w);
+  if (angle <= limit) return;
+  const sinHalf = Math.sqrt(Math.max(0, 1 - w * w));
+  if (sinHalf < 1e-9) return;
+  // Error axis in A's local frame → world frame.
+  const axisWorld = quatRotate(a.quat, [qErr[0] / sinHalf, qErr[1] / sinHalf, qErr[2] / sinHalf]);
+  const excess = angle - limit;
+  const wA = rotationalWeight(a, options, axisWorld);
+  const wB = rotationalWeight(b, options, axisWorld);
+  const wSum = wA + wB;
+  if (wSum <= 0) return;
+  if (!a.sleeping) {
+    const t = excess * (wA / wSum);
+    applyRotationDelta(a, [axisWorld[0] * t, axisWorld[1] * t, axisWorld[2] * t]);
+  }
+  if (!b.sleeping) {
+    const t = excess * (wB / wSum);
+    applyRotationDelta(b, [-axisWorld[0] * t, -axisWorld[1] * t, -axisWorld[2] * t]);
+  }
 }
 
 function updateSleep(state: RigidSolverState, h: number, options: RigidStepOptions): void {
@@ -1145,6 +1657,18 @@ function updateSleep(state: RigidSolverState, h: number, options: RigidStepOptio
       const i = stack.pop() as number;
       const bi = bodies[i];
       if (options.floorEnabled && bi.pos[1] - bi.radius <= floorSurfaceYAt(options, bi.pos[0], bi.pos[2]) + 0.25) supported = true;
+      if (!supported && options.staticBoxes) {
+        // Static boxes (UE5 #35 G-D stage D2) also support sleep:
+        // the body's bounding sphere within 0.25 of a box surface
+        // whose push-out normal points up counts as resting on
+        // it (the sphere test serves both shape paths here — a
+        // documented approximation; side contacts are excluded
+        // by the normal's Y component).
+        for (const box of options.staticBoxes) {
+          const c = sphereObbContact(bi.pos, bi.radius + 0.25, box);
+          if (c.hit && c.normal[1] > 0.5) { supported = true; break; }
+        }
+      }
       for (let j = 0; j < n; j++) {
         if (j === i || !bodies[j].sleeping || comp[j] !== -1) continue;
         const dx = bodies[j].pos[0] - bi.pos[0];
@@ -1167,7 +1691,7 @@ function updateSleep(state: RigidSolverState, h: number, options: RigidStepOptio
 // ── GPU supply ──
 
 /**
- * Pack the body state into the 64×4 RGBA float backing array of
+ * Pack the body state into the RIGID_BODY_MAX×4 RGBA float backing array of
  * the supply DataTexture. Row 0: position xyz + bounding radius.
  * Row 1: quaternion xyzw. Row 2: linear velocity xyz + sleeping
  * flag. Row 3: angular velocity xyz + 0. Bodies past the count
@@ -1191,6 +1715,70 @@ export function writeRigidBodyTexture(state: RigidSolverState, out: Float32Array
 
 // ── Config resolution ──
 
+/** Euler angles in degrees (XYZ order, the three.js convention:
+ *  R = Rx·Ry·Rz) to a quaternion [x, y, z, w]. */
+function quatFromEulerDeg(e: [number, number, number]): [number, number, number, number] {
+  const hx = (e[0] * Math.PI / 180) / 2;
+  const hy = (e[1] * Math.PI / 180) / 2;
+  const hz = (e[2] * Math.PI / 180) / 2;
+  const qx: [number, number, number, number] = [Math.sin(hx), 0, 0, Math.cos(hx)];
+  const qy: [number, number, number, number] = [0, Math.sin(hy), 0, Math.cos(hy)];
+  const qz: [number, number, number, number] = [0, 0, Math.sin(hz), Math.cos(hz)];
+  return quatMultiply(qx, quatMultiply(qy, qz));
+}
+
+/** Max static boxes a scene may carry (UE5 #35 G-D stage D2). */
+export const RIGID_STATIC_BOX_MAX = 16;
+
+/**
+ * Parse the gpgpuRigidStaticBoxes key (UE5 #35 G-D stage D2): a
+ * JSON array of `{ c: [x,y,z], h: [hx,hy,hz], e: [rx,ry,rz] }`
+ * (centre, half extents, Euler degrees; `e` may be omitted for
+ * an axis-aligned box) into world-space OBBs. Sanitising, in the
+ * established JSON-key style: a non-string / empty / unparsable /
+ * non-array value yields [], each entry is validated on its own
+ * (a bad entry is dropped, never the whole list), centres must
+ * be finite within ±2000, half extents are clamped to
+ * 0.05..1000, and at most RIGID_STATIC_BOX_MAX boxes are kept.
+ */
+export function parseRigidStaticBoxes(json: unknown): RigidObb[] {
+  if (typeof json !== 'string' || json === '') return [];
+  let raw: unknown;
+  try { raw = JSON.parse(json); } catch { return []; }
+  if (!Array.isArray(raw)) return [];
+  const vec = (v: unknown): [number, number, number] | null =>
+    Array.isArray(v) && v.length === 3
+    && v.every((x) => typeof x === 'number' && Number.isFinite(x))
+      ? [v[0] as number, v[1] as number, v[2] as number]
+      : null;
+  const out: RigidObb[] = [];
+  for (const entry of raw) {
+    if (out.length >= RIGID_STATIC_BOX_MAX) break;
+    if (!entry || typeof entry !== 'object') continue;
+    const rec = entry as Record<string, unknown>;
+    const c = vec(rec.c);
+    const h = vec(rec.h);
+    const e = rec.e === undefined ? [0, 0, 0] as [number, number, number] : vec(rec.e);
+    if (!c || !h || !e) continue;
+    if (Math.abs(c[0]) > 2000 || Math.abs(c[1]) > 2000 || Math.abs(c[2]) > 2000) continue;
+    const q = quatFromEulerDeg(e);
+    out.push({
+      center: c,
+      axes: [
+        obbQuatRotate(q, [1, 0, 0]),
+        obbQuatRotate(q, [0, 1, 0]),
+        obbQuatRotate(q, [0, 0, 1]),
+      ],
+      halfExtents: [
+        Math.max(0.05, Math.min(1000, h[0])),
+        Math.max(0.05, Math.min(1000, h[1])),
+        Math.max(0.05, Math.min(1000, h[2])),
+      ],
+    });
+  }
+  return out;
+}
+
 export interface RigidResolved {
   /** Master switch: the Enabled key. Everything else is inert while false. */
   active: boolean;
@@ -1204,12 +1792,29 @@ export interface RigidResolved {
    *  the floor stands on the terrain; false — or no field —
    *  keeps the flat plane. */
   floorTerrain: boolean;
+  /** Multi-sample sphere floor (UE5 #35 G-D stage D1): while
+   *  true, the step's sphere floor path samples the terrain
+   *  under each body's whole disc. Read only while a
+   *  heightfield is supplied (the Floor Terrain key). */
+  floorMultiSample: boolean;
+  /** Static boxes (UE5 #35 G-D stage D2): the parsed
+   *  gpgpuRigidStaticBoxes key as world-space OBBs. Empty keeps
+   *  every step verbatim (the step option is only supplied
+   *  while the list is non-empty). */
+  staticBoxes: RigidObb[];
   /** XPBD joints (Phase 20 stage 1): built only while true. */
   jointEnabled: boolean;
   /** Joint compliance α (0 = rigid). */
   jointCompliance: number;
   /** Joint break threshold (strain; 0 = unbreakable). */
   jointBreakThreshold: number;
+  /** Anchored joints (UE5 #35 G-C): built only while true
+   *  (AND jointEnabled) — the joints bind anchor points with
+   *  rotational coupling instead of the body centres. */
+  jointAnchors: boolean;
+  /** Angle limit for anchored joints, radians (UE5 #35 G-C):
+   *  0 = no limit. */
+  jointAngleLimitRad: number;
   /** Stress break (Phase 20 stage 1): while true the step runs
    *  the stress / propagation breaking instead of the legacy
    *  strain / impact conditions. */
@@ -1253,9 +1858,15 @@ export function resolveRigid(config: ParticleConfig): RigidResolved {
     glueStrength: Math.max(0, Math.min(1000, config.gpgpuRigidGlueStrength ?? 45)),
     startSleeping: !!config.gpgpuRigidStartSleeping,
     floorTerrain: !!config.gpgpuRigidFloorTerrain,
+    floorMultiSample: !!config.gpgpuRigidFloorMultiSample,
+    staticBoxes: parseRigidStaticBoxes(config.gpgpuRigidStaticBoxes),
     jointEnabled: !!config.gpgpuRigidJointEnabled,
     jointCompliance: Math.max(0, config.gpgpuRigidJointCompliance ?? 0),
     jointBreakThreshold: Math.max(0, config.gpgpuRigidJointBreakThreshold ?? 0),
+    jointAnchors: !!config.gpgpuRigidJointAnchorEnabled,
+    jointAngleLimitRad: (Number.isFinite(config.gpgpuRigidJointAngleLimitDeg)
+      ? Math.max(0, Math.min(180, config.gpgpuRigidJointAngleLimitDeg as number))
+      : 0) * (Math.PI / 180),
     stressBreakEnabled: !!config.gpgpuRigidStressBreakEnabled,
     stressPropagation: Math.max(0, Math.min(1, config.gpgpuRigidStressPropagation ?? 0.5)),
     convexEnabled: !!config.gpgpuRigidConvexEnabled,

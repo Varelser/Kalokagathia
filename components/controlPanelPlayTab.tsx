@@ -84,7 +84,7 @@ export const PlayTabContent: React.FC<ControlPanelContentProps> = (props) => (
     />
     <OscSection updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
     <EventRulesSection isPublicLibrary={props.isPublicLibrary} />
-    <ModulationSection isPublicLibrary={props.isPublicLibrary} />
+    <ModulationSection isPublicLibrary={props.isPublicLibrary} config={props.config} updateConfig={props.updateConfig} />
     <PerformanceSection config={props.config} onApplyConfig={props.onApplyConfig} />
     <ExportSection captureRef={props.pointCloudCaptureRef} config={props.config} updateConfig={props.updateConfig} />
     <CsgSection config={props.config} updateConfig={props.updateConfig} />

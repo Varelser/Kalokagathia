@@ -14,7 +14,7 @@
 //     gap 0 stays an identity, malformed assignments are
 //     refused without touching the data
 // (c) cluster colours: deterministic per id, distinct across
-//     ids, in range, and the LUT packs 64 RGBA rows by default
+//     ids, in range, and the LUT packs 256 RGBA rows by default
 import { build } from 'esbuild';
 import { unlinkSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -185,7 +185,7 @@ check('setup: collection serialised', typeof savedJson === 'string');
     && eqArray(clusterColorForIndex(-1), [0.5, 0.5, 0.5, 1]));
 
   const lut = buildClusterColorLut();
-  check('lut: default is 64 RGBA rows', lut.length === RIGID_CLUSTER_COLOR_COUNT * 4 && lut.length === 256,
+  check('lut: default is 256 RGBA rows', lut.length === RIGID_CLUSTER_COLOR_COUNT * 4 && lut.length === 1024,
     `len=${lut.length}`);
   let rowsMatch = true;
   for (let i = 0; i < RIGID_CLUSTER_COLOR_COUNT; i++) {
@@ -193,7 +193,7 @@ check('setup: collection serialised', typeof savedJson === 'string');
   }
   check('lut: every row equals clusterColorForIndex', rowsMatch);
   check('lut: explicit count honoured and clamped',
-    buildClusterColorLut(4).length === 16 && buildClusterColorLut(1000).length === 256
+    buildClusterColorLut(4).length === 16 && buildClusterColorLut(1000).length === 1024
     && buildClusterColorLut(0).length === 0);
 }
 

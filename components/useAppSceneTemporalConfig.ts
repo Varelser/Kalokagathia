@@ -2,7 +2,7 @@ import React from 'react';
 import type { ParticleConfig } from '../types';
 import { applyTemporalProfiles } from '../lib/temporalProfiles';
 import { getLayerRuntimeTemporalSnapshot } from '../lib/sceneRenderRouting';
-import { applyModulation, useModulationSetup } from '../lib/modulation';
+import { applyModulation, resolveModulationSetup, useModulationSetup } from '../lib/modulation';
 import { applySequenceTracks, useSequenceClockTime, useSequenceTracks } from '../lib/sequenceTracks';
 import type { AudioLevels } from '../lib/audioControllerTypes';
 
@@ -32,7 +32,14 @@ export function useAppSceneTemporalConfig(
     config.layer3TemporalStrength,
   ]);
 
-  const modulationActive = modulation.enabled && modulation.routes.length > 0;
+  // TD §7 face 4: a setup carried in the config (modulationGraph)
+  // wins over the local performance setup; '' leaves the local one
+  // in charge, exactly as before the key existed.
+  const effectiveModulation = React.useMemo(
+    () => resolveModulationSetup(config.modulationGraph, modulation),
+    [config.modulationGraph, modulation],
+  );
+  const modulationActive = effectiveModulation.enabled && effectiveModulation.routes.length > 0;
   const ticking = hasTemporalAnimation || modulationActive;
 
   React.useEffect(() => {
@@ -66,11 +73,11 @@ export function useAppSceneTemporalConfig(
   return React.useMemo(() => {
     let effective = hasTemporalAnimation ? applyTemporalProfiles(config, temporalTime, isPlaying) : config;
     if (modulationActive && isPlaying) {
-      effective = applyModulation(effective, modulation, temporalTime, audioRef?.current);
+      effective = applyModulation(effective, effectiveModulation, temporalTime, audioRef?.current);
     }
     if (sequenceTracksActive) {
       effective = applySequenceTracks(effective, sequenceTracks, sequenceClockTime);
     }
     return effective;
-  }, [config, hasTemporalAnimation, isPlaying, temporalTime, modulationActive, modulation, audioRef, sequenceTracksActive, sequenceTracks, sequenceClockTime]);
+  }, [config, hasTemporalAnimation, isPlaying, temporalTime, modulationActive, effectiveModulation, audioRef, sequenceTracksActive, sequenceTracks, sequenceClockTime]);
 }

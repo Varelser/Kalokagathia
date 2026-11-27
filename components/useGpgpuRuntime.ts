@@ -2150,6 +2150,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         jointEnabled: resolved.jointEnabled,
         jointCompliance: resolved.jointCompliance,
         jointBreakThreshold: resolved.jointBreakThreshold,
+        // Anchored joints (UE5 #35 G-C): build-time state from
+        // the same resolveRigid call. Off builds centre joints
+        // verbatim.
+        jointAnchors: resolved.jointAnchors,
+        jointAngleLimitRad: resolved.jointAngleLimitRad,
         convexEnabled: resolved.convexEnabled,
       });
       const bodyData = new Float32Array(RIGID_BODY_TEX_WIDTH * RIGID_BODY_TEX_HEIGHT * 4);

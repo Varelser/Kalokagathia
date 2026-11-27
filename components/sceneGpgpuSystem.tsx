@@ -1403,6 +1403,12 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           // key is on; null (key off, or no baked field) keeps
           // the flat plane at floorY verbatim.
           heightfield: rigid.floorTerrain ? getTerrainHeightfield(config) : null,
+          floorMultiSample: rigid.floorMultiSample,
+          // Static boxes (UE5 #35 G-D stage D2): supplied only
+          // while the parsed list is non-empty, so an empty key
+          // keeps the step options (and the trajectories)
+          // verbatim.
+          staticBoxes: rigid.staticBoxes.length > 0 ? rigid.staticBoxes : undefined,
           bounceRadius: config.gpgpuBounceRadius,
           restitution: rigid.restitution,
           friction: rigid.friction,

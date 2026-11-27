@@ -221,11 +221,11 @@ check('DRAW_VERT_PHASE19 pin',
 check('DRAW_FRAG_PHASE19 pin',
   sha256(DRAW_FRAG_PHASE19) === '652c327402f5ed5289bdcb5dda2a25b252470163213a672ac067b502655dcaed', sha256(DRAW_FRAG_PHASE19));
 check('DRAW_VERT_PHASE20 pin',
-  sha256(DRAW_VERT_PHASE20) === '1d72339eda42c9ba5d4e72530031b202948375e33355bf3072f739c1b82b1893', sha256(DRAW_VERT_PHASE20));
+  sha256(DRAW_VERT_PHASE20) === 'd234281adafbc9638f8c92f152c2731909dc374262119b7f3cafc5c031f9e9ba', sha256(DRAW_VERT_PHASE20));
 check('DRAW_FRAG_PHASE20 pin',
   sha256(DRAW_FRAG_PHASE20) === 'db3335c11691b2aa347ed4b6447bb61decb1fb6eac836e0d23591c543a10c32d', sha256(DRAW_FRAG_PHASE20));
 check('combined (phase19+phase20) vert pin',
-  sha256(buildDrawVert({ vellumCrack: true, clusterColor: true })) === '98c12f4147cfa9e4bf448bcb882f1e48dd7d476c2d07a06f904614e1e125a6e7');
+  sha256(buildDrawVert({ vellumCrack: true, clusterColor: true })) === 'f7aed0480cab3bffd9b4c01b827e5c0270c4bd1ca561847ebd32f38685e1b09f');
 check('combined (phase19+phase20) frag pin',
   sha256(buildDrawFrag({ vellumCrack: true, clusterColor: true })) === '7eb2ea7a5b185121f13d59ded3b0a827f1f0db6c38dd2f643e4bf1727bb217f3');
 check('builders with no options return the default strings',

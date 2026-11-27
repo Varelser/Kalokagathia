@@ -30,7 +30,7 @@ export const VEL_FRAG_MAIN_FORCES_HEAD = /* glsl */ `  void main() {
     // verbatim; every force below is superseded whole.
     if (uRigidEnabled) {
       vec4 cell = texture2D(uRigidCellTex, vUv);
-      float bx = (cell.w + 0.5) / 64.0;
+      float bx = (cell.w + 0.5) / 256.0; // divisor = RIGID_BODY_MAX (body texture width)
       vec4 bodyQuat = texture2D(uRigidBodyTex, vec2(bx, 0.375));
       vec4 bodyVel = texture2D(uRigidBodyTex, vec2(bx, 0.625));
       vec4 bodyAng = texture2D(uRigidBodyTex, vec2(bx, 0.875));

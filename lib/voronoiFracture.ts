@@ -20,7 +20,7 @@
 import { mulberry32 } from './lSystem';
 
 export interface VoronoiFractureOptions {
-  /** Requested cell count (clamped to 2..64 and to the point count). */
+  /** Requested cell count (clamped to 2..256 and to the point count). */
   cells: number;
   /** Site-pick seed. Same seed + same cloud → same division. */
   seed: number;
@@ -50,7 +50,10 @@ export function fractureOptionFromConfig(config: {
 
 export function clampFractureCells(v: number): number {
   if (!Number.isFinite(v)) return 12;
-  return Math.max(2, Math.min(64, Math.floor(v)));
+  // The cap literal must match RIGID_BODY_MAX in lib/rigidBodies.ts
+  // (kept literal here to avoid a module cycle: rigidBodies imports
+  // this module's types).
+  return Math.max(2, Math.min(256, Math.floor(v)));
 }
 
 export function clampFractureGap(v: number): number {

@@ -16,10 +16,10 @@
  *   CLUSTER_COLOR_PALETTE) so a coloured cloud stays in the
  *   app's restrained register instead of turning into confetti.
  * - TABLE-READY: buildClusterColorLut packs the colours as a
- *   flat RGBA float array, sized for the 64×1 LUT texture the
- *   draw path will sample by cluster id (64 = the rigid body
- *   budget, RIGID_BODY_MAX in lib/rigidBodies.ts; a cluster id
- *   can never exceed the body count).
+ *   flat RGBA float array, sized for the RIGID_CLUSTER_COLOR_COUNT×1
+ *   LUT texture the draw path will sample by cluster id (the count
+ *   = the rigid body budget, RIGID_BODY_MAX in lib/rigidBodies.ts;
+ *   a cluster id can never exceed the body count).
  *
  * The wiring (Phase 20 stage 1 integration): the runtime
  * builds a per-body LUT with buildBodyClusterColorLut at bake
@@ -30,10 +30,11 @@
  */
 
 import { deriveFragmentClusters, deriveGlueBonds } from './fragmentCollection';
+import { RIGID_BODY_MAX } from './rigidBodies';
 import type { FractureCellData } from './voronoiFracture';
 
 /** Cluster / body budget the LUT is sized for. */
-export const RIGID_CLUSTER_COLOR_COUNT = 64;
+export const RIGID_CLUSTER_COLOR_COUNT = RIGID_BODY_MAX;
 
 /**
  * The palette knobs, isolated for later replacement.
@@ -89,7 +90,7 @@ export function clusterColorForIndex(index: number): [number, number, number, nu
 /**
  * Pack `count` cluster colours (ids 0..count-1) into a flat
  * RGBA float array of count × 4 entries — the backing store of
- * the 64×1 LUT texture. `count` defaults to the full budget
+ * the RIGID_CLUSTER_COLOR_COUNT×1 LUT texture. `count` defaults to the full budget
  * and is clamped into 0..RIGID_CLUSTER_COLOR_COUNT.
  */
 export function buildClusterColorLut(count: number = RIGID_CLUSTER_COLOR_COUNT): Float32Array {

@@ -1646,6 +1646,13 @@ export interface ParticleConfigGpgpu {
   // (erosion off / tunnel mode) falls back to the plane, and the
   // default (off) keeps the plane path verbatim.
   gpgpuRigidFloorTerrain: boolean;
+  gpgpuRigidFloorMultiSample: boolean;
+  // Static boxes (UE5 #35 G-D stage D2): a JSON array of static
+  // OBB colliders, { c: centre, h: half extents, e: Euler
+  // degrees } per box (see parseRigidStaticBoxes in
+  // lib/rigidBodies.ts). '' (the default) places none and keeps
+  // every step verbatim.
+  gpgpuRigidStaticBoxes: string;
   // XPBD joints + stress breaking (Phase 20 stage 1): joints
   // are XPBD centre-distance constraints built with the glue
   // adjacency rule, and stress breaking replaces the legacy
@@ -1656,6 +1663,10 @@ export interface ParticleConfigGpgpu {
   gpgpuRigidJointEnabled: boolean;
   gpgpuRigidJointCompliance: number;
   gpgpuRigidJointBreakThreshold: number;
+  // Anchored joints (UE5 #35 G-C): off / 0 keep the centre-
+  // distance joints verbatim.
+  gpgpuRigidJointAnchorEnabled: boolean;
+  gpgpuRigidJointAngleLimitDeg: number;
   gpgpuRigidStressBreakEnabled: boolean;
   gpgpuRigidStressPropagation: number;
   // OBB shape collision (Phase 20 stage 1): while on, the

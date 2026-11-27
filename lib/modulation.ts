@@ -744,6 +744,37 @@ export function saveModulationSetup(storage: Pick<Storage, 'setItem'>, setup: Mo
   }
 }
 
+/* -------- config-carried setup (TD §7 face 4) --------
+ * The setup above is performance state: it lives in localStorage
+ * and presets cannot carry it. The `modulationGraph` config key
+ * closes that gap the same way the earlier §7 faces did — the
+ * wiring becomes data inside the config, so presets, project
+ * files and shared links can carry one setup with them.
+ * '' (or anything unparseable) means "nothing carried": the
+ * local performance setup rules, bit-identical to before. */
+
+export function parseModulationSetupJson(json: string): ModulationSetup | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return sanitizeSetup(parsed);
+  } catch {
+    return null;
+  }
+}
+
+export function serializeModulationSetup(setup: ModulationSetup): string {
+  const clean = sanitizeSetup(setup);
+  if (JSON.stringify(clean) === JSON.stringify(createDefaultModulationSetup())) return '';
+  return JSON.stringify(clean);
+}
+
+/** The setup that applies for a config: a carried one wins. */
+export function resolveModulationSetup(carriedJson: string, local: ModulationSetup): ModulationSetup {
+  return parseModulationSetupJson(carriedJson) ?? local;
+}
+
 /* ---------------- shared store (editor <-> scene) ---------------- */
 
 let currentSetup: ModulationSetup | null = null;

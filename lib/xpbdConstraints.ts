@@ -103,11 +103,13 @@ export function xpbdBreakExceeded(metric: number, threshold: number): boolean {
 }
 
 /**
- * Phase 20 receiving socket — TYPE ONLY, no implementation in
- * this phase. A rigid joint will enter the same Δλ solve as a
- * 'joint-distance' constraint whose effective masses come from
- * the bodies' inverse mass + inertia tensors instead of the
- * per-texel w ∈ {0, 1} used here.
+ * Phase 20 receiving socket — the type the rigid solver's
+ * joints are modelled on. The centre-distance form landed in
+ * Phase 20 stage 1 (lib/rigidBodies.ts RigidJoint); the
+ * anchored form — anchor points with rotational coupling via
+ * the bodies' inverse mass + inertia, plus a swing angle
+ * limit — landed as UE5 #35 G-C (build option jointAnchors).
+ * The Δλ solve is the shared xpbdDeltaLambda in both forms.
  */
 export interface XpbdJointSpec {
   bodyA: number;

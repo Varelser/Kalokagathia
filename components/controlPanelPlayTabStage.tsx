@@ -3,7 +3,7 @@ import { Activity, ArrowLeftRight, Monitor } from 'lucide-react';
 import type { ParticleConfig, PresetRecord } from '../types';
 import { PARAMETER_CATALOG } from '../lib/parameterCatalog';
 import { getNoiseLinkStatus, type NoiseLinkStatus } from '../lib/noiseLink';
-import { AUDIO_BAND_OPTIONS, ENVELOPE_TRIGGER_OPTIONS, LFO_WAVEFORM_OPTIONS, NOISE_SOURCE_OPTIONS, createStarterModulationRoutes, describeModulationSource, evaluateLfo, fireModulationEnvelope, setModulationSetup, useModulationSetup, type EnvelopeTrigger, type LfoWaveform, type ModulationChainOp, type ModulationRoute, type ModulationSetup, type ModulationSource, type NoiseSourceId } from '../lib/modulation';
+import { AUDIO_BAND_OPTIONS, ENVELOPE_TRIGGER_OPTIONS, LFO_WAVEFORM_OPTIONS, NOISE_SOURCE_OPTIONS, createStarterModulationRoutes, describeModulationSource, evaluateLfo, fireModulationEnvelope, parseModulationSetupJson, serializeModulationSetup, setModulationSetup, useModulationSetup, type EnvelopeTrigger, type LfoWaveform, type ModulationChainOp, type ModulationRoute, type ModulationSetup, type ModulationSource, type NoiseSourceId } from '../lib/modulation';
 import { compileExpression } from '../lib/expression';
 import { EXPRESSION_PARAM_REF_NAMES } from '../lib/expressionParamRefs';
 import { useDataTable } from '../lib/dataTable';
@@ -599,8 +599,16 @@ const ChainEditor: React.FC<{
 
 export const ModulationSection: React.FC<{
   isPublicLibrary: boolean;
-}> = ({ isPublicLibrary }) => {
+  config: ParticleConfig;
+  updateConfig: ControlPanelContentProps['updateConfig'];
+}> = ({ isPublicLibrary, config, updateConfig }) => {
   const setup = useModulationSetup();
+  // TD §7 face 4: a wiring carried in the config (modulationGraph)
+  // wins over the local setup while applied. The editor below still
+  // edits the local setup; the carry row moves setups between the
+  // two homes.
+  const carriedSetup = parseModulationSetupJson(config.modulationGraph);
+  const localCarryJson = serializeModulationSetup(setup);
   const [nowSec, setNowSec] = React.useState(0);
 
   React.useEffect(() => {
@@ -722,6 +730,42 @@ export const ModulationSection: React.FC<{
           : 'Noise Link: 未接続（Noise側で連携を有効にし、再生すると受信します）'}
       </p>
       <div className={isPublicLibrary ? 'pointer-events-none opacity-60' : ''}>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3 mb-4 space-y-2">
+          {carriedSetup ? (
+            <>
+              <p className="text-[11px] leading-relaxed text-white/60">
+                このプリセットには配線が同梱されています（ルート{carriedSetup.routes.length}件）。同梱がある間は同梱側が優先して鳴ります。下の編集はこのブラウザの設定に対するもので、同梱には触れません。
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setModulationSetup(carriedSetup)}
+                  className="px-3 py-1.5 rounded-full bg-white/10 text-white/70 text-[10px] font-bold uppercase tracking-widest hover:bg-white/20 transition-colors"
+                >
+                  同梱をこのブラウザに読み込む
+                </button>
+                <button
+                  onClick={() => updateConfig('modulationGraph', '')}
+                  className="px-3 py-1.5 rounded-full text-white/35 text-[10px] uppercase tracking-widest hover:text-white/80"
+                >
+                  同梱をやめる
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[11px] leading-relaxed text-white/60">
+                配線は通常このブラウザだけの保存です。「同梱」すると現在の配線がプリセットや共有リンクに載り、他の環境でも同じ揺れを再現できます。
+              </p>
+              <button
+                onClick={() => updateConfig('modulationGraph', localCarryJson)}
+                disabled={localCarryJson === ''}
+                className="px-3 py-1.5 rounded-full bg-white/10 text-white/70 text-[10px] font-bold uppercase tracking-widest hover:bg-white/20 transition-colors disabled:opacity-40 disabled:hover:bg-white/10"
+              >
+                現在の配線を同梱する
+              </button>
+            </>
+          )}
+        </div>
         <div className="flex items-center gap-2 mb-4">
           <button
             onClick={() => update({ ...setup, enabled: !setup.enabled })}

@@ -549,7 +549,7 @@ const DRAW_VERT_CLUSTER_COMPUTE = /* glsl */ `    // Cluster colour (Phase 20 st
     vClusterOn = 0.0;
     if (uClusterColorEnabled) {
       float bodyIndex = texture2D(uClusterCellTex, particleUv).w;
-      vec4 lutEntry = texture2D(uClusterColorLutTex, vec2((bodyIndex + 0.5) / 64.0, 0.5));
+      vec4 lutEntry = texture2D(uClusterColorLutTex, vec2((bodyIndex + 0.5) / 256.0, 0.5)); // divisor = RIGID_CLUSTER_COLOR_COUNT (LUT width)
       vClusterColor = lutEntry.rgb;
       vClusterOn = 1.0;
     }

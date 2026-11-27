@@ -404,6 +404,12 @@ export interface ParticleConfigCore {
   textureNoiseSeed: number;
   executionDiagnosticsEnabled: boolean;
   executionDiagnosticsVerbose: boolean;
+  // Modulation wiring carried in the config (TD §7 face 4,
+  // lib/modulation.ts): a JSON ModulationSetup. '' = nothing
+  // carried — the performance setup in localStorage rules, exactly
+  // as before this key existed. A carried setup wins over the
+  // local one wherever the config is applied.
+  modulationGraph: string;
   hybridSdfEnabled: boolean;
   hybridPatchEnabled: boolean;
   hybridFiberEnabled: boolean;

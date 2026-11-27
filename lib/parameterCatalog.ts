@@ -258,7 +258,7 @@ export const PARAMETER_CATALOG: ParameterCatalogEntry[] = [
   { key: 'gpgpuMorphTextOnPathGlyphFade', label: "Glyph Fade Var", tab: 'global', min: 0, max: 1, step: 0.05 },
   { key: 'gpgpuMorphContourThreshold', label: "Contour Threshold", tab: 'global', min: 0.02, max: 0.98, step: 0.01 },
   { key: 'gpgpuMorphPolygonSides', label: "Polygon Sides", tab: 'global', min: 3, max: 12, step: 1 },
-  { key: 'gpgpuMorphFractureCells', label: "Fracture Cells", tab: 'global', min: 2, max: 64, step: 1 },
+  { key: 'gpgpuMorphFractureCells', label: "Fracture Cells", tab: 'global', min: 2, max: 256, step: 1 },
   { key: 'gpgpuMorphFractureSeed', label: "Fracture Seed", tab: 'global', min: 0, max: 9999, step: 1 },
   { key: 'gpgpuMorphFractureGap', label: "Fracture Gap", tab: 'global', min: 0, max: 1, step: 0.01 },
   { key: 'gpgpuMorphFiberCount', label: "Morph Fiber Count", tab: 'global', min: 50, max: 4000, step: 10 },

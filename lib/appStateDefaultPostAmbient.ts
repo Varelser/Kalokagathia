@@ -158,6 +158,7 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   textureNoiseSeed: 0,
   executionDiagnosticsEnabled: false,
   executionDiagnosticsVerbose: false,
+  modulationGraph: '',
   hybridSdfEnabled: false,
   hybridPatchEnabled: false,
   hybridFiberEnabled: false,
