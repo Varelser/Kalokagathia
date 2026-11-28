@@ -190,7 +190,7 @@ export const TerrainMesh: React.FC<{ config: ParticleConfig; isPlaying?: boolean
     geo.computeVertexNormals();
     return geo;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, amp, freq, octaves, terrainSeed, terrainKind, terrainTerraceSteps, erosionSettled, seed, morphScale, bounceRadius, meshScale, tunnel, shadowActive, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
+  }, [enabled, amp, freq, octaves, terrainSeed, terrainKind, terrainTerraceSteps, erosionSettled, seed, morphScale, bounceRadius, meshScale, tunnel, shadowActive, config.gpgpuShadowStrength, config.gpgpuShadowSoftness, config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ, config.gpgpuLight2Enabled, config.gpgpuLight2PosX, config.gpgpuLight2PosY, config.gpgpuLight2PosZ, config.gpgpuLight3Enabled, config.gpgpuLight3PosX, config.gpgpuLight3PosY, config.gpgpuLight3PosZ, config.gpgpuLight4Enabled, config.gpgpuLight4PosX, config.gpgpuLight4PosY, config.gpgpuLight4PosZ, config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat, config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ, config.gpgpuMorphObjSource]);
 
   React.useEffect(() => {
     return () => {

@@ -1,3 +1,4 @@
+import { dmHash11 } from './gpgpuRandom';
 /**
  * GPGPU lifecycle grammar (Phase AB: Spawn / Kill / global Drag &
  * Max Speed / SPH surface tension).
@@ -167,16 +168,6 @@ export function clampSpawnPulseProbability(v: number): number {
   return Math.max(0, Math.min(1, v));
 }
 
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
-}
-
 /** Deterministic per-cycle hash in [0, 1): the DM vector
  *  hash11 of the historical seed (k + 1) * 127.1 + 3.13 * 311.7. */
 export function spawnPulseCycleHash(cycle: number): number {
@@ -291,6 +282,51 @@ export function buildSpawnDistanceValues(
   return out;
 }
 
+/**
+ * The normaliser buildSpawnDistanceValues divides by: the
+ * pool's maximum initial distance from the origin (0 for an
+ * all-zero pool). Exposed for the live-rules shader variant
+ * (Grammar 2.0 stage 1 texture-unit fix): on a GPU whose
+ * fragment texture-unit floor is already fully used by the
+ * resident velocity preamble, the live variant cannot afford
+ * the order texture's sampler, so its spawnGateValue derives
+ * the gate value from the initial-position texture (which
+ * both sim passes already sample or can sample within
+ * budget) divided by this scalar, supplied as the
+ * uSpawnOrderMaxDist uniform. See
+ * kalokagathia-pro/STAGE1_TEXUNIT_FIX_RECORD.md.
+ */
+export function spawnDistanceMaxValue(posData: ArrayLike<number>): number {
+  const n = Math.floor(posData.length / 4);
+  let max = 0;
+  for (let i = 0; i < n; i++) {
+    const d = Math.hypot(posData[i * 4], posData[i * 4 + 1], posData[i * 4 + 2]);
+    if (d > max) max = d;
+  }
+  return max;
+}
+
+/**
+ * CPU twin of the live variant's derived spawnGateValue:
+ * the max-normalised initial distance recomputed from one
+ * particle's initial position, clamped to [0, 1] exactly as
+ * the GLSL derivation clamps. Matches the corresponding
+ * entry of buildSpawnDistanceValues up to float rounding
+ * (the bake divides in double precision and stores float32;
+ * the shader divides in float32 — the two agree to ~1 ulp,
+ * and both sim passes run the identical GLSL, so the passes
+ * always agree with each other).
+ */
+export function spawnGateDistanceValue(
+  x: number,
+  y: number,
+  z: number,
+  maxDist: number,
+): number {
+  const v = Math.hypot(x, y, z) / Math.max(maxDist, 1.0e-6);
+  return Math.min(1, Math.max(0, v));
+}
+
 /** A particle's gate value under the full Phase AX grammar. */
 export function spawnGateValueForIndex(
   index: number,
@@ -389,14 +425,19 @@ function eventHashOffset(u: number, v: number, ou: number, ov: number): number {
 }
 
 /**
- * The initial velocity the event hands one particle, as a pure
- * function of its position and texel UV (the GLSL twin in the
- * velocity pass uses the identical hash draws): direction =
- * normalize(mix(radial, hashSphere, spread)), magnitude =
- * speed · mix(1, 0.25 + 0.75 · hash, spread).
+ * The general directed initial velocity (Grammar 2.0 stage 2,
+ * E2): the spawn event's velocity law with the base direction
+ * authored instead of read from the position. `base` is used
+ * AS GIVEN (callers pass a unit vector — the event passes the
+ * radial direction, the emitter passes its normalised axis),
+ * direction = normalize(mix(base, hashSphere, spread)),
+ * magnitude = speed · mix(1, 0.25 + 0.75 · hash, spread), with
+ * the event's exact hash draws and arithmetic, so the GLSL
+ * twin (kaloEmitterVelocity in the velocity helpers) and the
+ * event's own twin agree term for term.
  */
-export function spawnEventVelocity(
-  pos: Vec3Like,
+export function directedInitialVelocity(
+  base: Vec3Like,
   u: number,
   v: number,
   speed: number,
@@ -410,17 +451,35 @@ export function spawnEventVelocity(
   const rx = Math.sin(phi) * Math.cos(th);
   const ry = Math.sin(phi) * Math.sin(th);
   const rz = Math.cos(phi);
-  const plen = Math.hypot(pos.x, pos.y, pos.z);
-  const ax = plen > 0.0001 ? pos.x / plen : 0;
-  const ay = plen > 0.0001 ? pos.y / plen : 1;
-  const az = plen > 0.0001 ? pos.z / plen : 0;
-  let dx = ax + (rx - ax) * sr;
-  let dy = ay + (ry - ay) * sr;
-  let dz = az + (rz - az) * sr;
+  let dx = base.x + (rx - base.x) * sr;
+  let dy = base.y + (ry - base.y) * sr;
+  let dz = base.z + (rz - base.z) * sr;
   const dl = Math.hypot(dx, dy, dz) || 1;
   dx /= dl; dy /= dl; dz /= dl;
   const mag = sp * (1 + (0.25 + 0.75 * magHash - 1) * sr);
   return { x: dx * mag, y: dy * mag, z: dz * mag };
+}
+
+/**
+ * The initial velocity the event hands one particle, as a pure
+ * function of its position and texel UV (the GLSL twin in the
+ * velocity pass uses the identical hash draws): the general
+ * directed velocity with the radial direction as its base
+ * (the +Y fallback for a particle at the origin is the
+ * historical one).
+ */
+export function spawnEventVelocity(
+  pos: Vec3Like,
+  u: number,
+  v: number,
+  speed: number,
+  spread: number,
+): Vec3Like {
+  const plen = Math.hypot(pos.x, pos.y, pos.z);
+  const base: Vec3Like = plen > 0.0001
+    ? { x: pos.x / plen, y: pos.y / plen, z: pos.z / plen }
+    : { x: 0, y: 1, z: 0 };
+  return directedInitialVelocity(base, u, v, speed, spread);
 }
 
 /**

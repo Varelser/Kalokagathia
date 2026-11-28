@@ -1,4 +1,5 @@
 import type { ParticleConfig } from '../types';
+import { trailHistoryActive } from './trailAux';
 import type { ProceduralSystemId } from './proceduralModeRegistry';
 import type { GpgpuExecutionRoute, GpgpuRenderOutputPlan, LayerExecutionRoute, LayerSceneRenderPlan } from './sceneRenderRoutingTypes';
 import { doesLayerRenderAuxParticles, doesLayerRenderGlyphOutline, doesLayerRenderSparkParticles, doesLayerRouteRenderHybridSystem, doesLayerRouteRenderParticleCore, doesLayerRouteRenderProceduralSystem, getGpgpuRoute, getLayerRoute, getLayerRuntimeConnectionEnabled, getLayerRuntimeConnectionStyle, getLayerRuntimeGeomMode3D, getLayerRuntimeGhostTrailEnabled } from './sceneRenderRoutingRuntime';
@@ -71,15 +72,20 @@ export function doesGpgpuRouteRenderInstancedSolids(route: GpgpuExecutionRoute |
 }
 
 export function doesGpgpuRouteRenderTrailPoints(route: GpgpuExecutionRoute | undefined, config: ParticleConfig): boolean {
-  return Boolean(route?.enabled && config.gpgpuTrailEnabled);
+  // Trail mechanism (stage 4, S6): the history draws render
+  // only in 'history' mode. In 'aux' mode the trail is the
+  // Aux pool's own point draw (gpgpuRenderOutputs), and the
+  // history ring is never built. At the default ('history')
+  // this is the legacy predicate unchanged.
+  return Boolean(route?.enabled && config.gpgpuTrailEnabled && trailHistoryActive(config));
 }
 
 export function doesGpgpuRouteRenderRibbons(route: GpgpuExecutionRoute | undefined, config: ParticleConfig): boolean {
-  return Boolean(route?.enabled && config.gpgpuRibbonEnabled);
+  return Boolean(route?.enabled && config.gpgpuRibbonEnabled && trailHistoryActive(config));
 }
 
 export function doesGpgpuRouteRenderTubes(route: GpgpuExecutionRoute | undefined, config: ParticleConfig): boolean {
-  return Boolean(route?.enabled && config.gpgpuTubeEnabled);
+  return Boolean(route?.enabled && config.gpgpuTubeEnabled && trailHistoryActive(config));
 }
 
 export function doesGpgpuRouteRenderStreakLines(route: GpgpuExecutionRoute | undefined, config: ParticleConfig): boolean {

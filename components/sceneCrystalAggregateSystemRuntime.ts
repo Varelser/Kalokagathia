@@ -4,6 +4,7 @@ import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { applyCrystalMaterialStyle, getCrystalProfile, getCrystalSettings, type ClusterLayout } from './sceneCrystalAggregateSystemShared';
 import { applyCrystalProfilePbr } from '../lib/materialGrammar';
 import { audioSceneOutputSum } from '../lib/audioSceneGraph';
+import { dmHash11 } from '../lib/gpgpuRandom';
 
 const tempPos = new THREE.Vector3();
 const nextPos = new THREE.Vector3();
@@ -21,8 +22,6 @@ const matrix = new THREE.Matrix4();
 const scaleVec = new THREE.Vector3();
 const color = new THREE.Color();
 
-function fract(value: number) { return value - Math.floor(value); }
-function dmHash11(n: number) { let x = fract(n * 0.1031); let y = fract(n * 0.1030); let z = fract(n * 0.0973); const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33); x += d; y += d; z += d; return fract((x + y) * z); }
 function hash(value: number) { return dmHash11(value * 127.13 + 19.37); }
 function signedHash(value: number) { return hash(value) * 2 - 1; }
 

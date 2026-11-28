@@ -13,6 +13,7 @@ import {
   type GrowthLayout,
 } from './sceneGrowthFieldSystemShared';
 import { audioSceneOutputSum } from '../lib/audioSceneGraph';
+import { dmHash11 } from '../lib/gpgpuRandom';
 
 const tempPos = new THREE.Vector3();
 const nextPos = new THREE.Vector3();
@@ -30,16 +31,6 @@ const stableX = new THREE.Vector3(1, 0, 0);
 const stableY = new THREE.Vector3(0, 1, 0);
 const orbitVec = new THREE.Vector3();
 const swirlVec = new THREE.Vector3();
-
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
-}
 
 function hash(value: number) {
   return dmHash11(value * 91.173 + 17.137);

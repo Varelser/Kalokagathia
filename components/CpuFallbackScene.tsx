@@ -16,6 +16,7 @@ import { extractTextLumaMap } from './controlPanelPartsSourceMediaUtils';
 import { getNoiseFieldLuma } from '../lib/mapSourceSupply';
 import { textLayoutOptionsFromTextMap } from '../lib/textColumnLayout';
 import { buildContourGeometryOption, buildTextOnPathOption } from './useGpgpuRuntime';
+import { resolveMorphTextFont } from '../lib/gpgpuEmissionSource';
 import { sampleSvgPointCloud } from '../lib/svgMorph';
 import { parseSvgPathGeometry } from '../lib/pathGeometry';
 import { sampleObjPointCloudWithNormals } from '../lib/objMorph';
@@ -81,7 +82,7 @@ function computeMorphBakeExtras(config: ParticleConfig): CpuMorphBakeExtras {
       config.layer2TextMapText,
       128,
       128,
-      config.layer2TextMapFontFamily,
+      resolveMorphTextFont(config),
       config.layer2TextMapWeight,
       config.layer2TextMapSize,
       config.layer2TextMapPadding,
@@ -123,7 +124,7 @@ function computeMorphBakeExtras(config: ParticleConfig): CpuMorphBakeExtras {
     enabled: config.gpgpuMorphTextOnPathEnabled,
     pathMode: config.gpgpuMorphPathMode,
     text: config.layer2TextMapText,
-    fontFamily: config.layer2TextMapFontFamily,
+    fontFamily: resolveMorphTextFont(config),
     weight: config.layer2TextMapWeight,
     size: config.layer2TextMapSize,
     padding: config.layer2TextMapPadding,

@@ -3,6 +3,13 @@ import * as THREE from "three";
 import type { ParticleConfig } from "../types";
 import { createGradientLutTextureResolved } from "../lib/kinetixGradients";
 import { STREAK_FRAG, STREAK_VERT, buildDrawFrag, buildDrawVert } from "./gpgpuShaders";
+import { liveRulesHaveAction } from "../lib/gpgpuParticleRulesLive";
+import { mergedSupplyActive } from "../lib/gpgpuMergedSupply";
+import { extraLightUnitsActive } from "../lib/gpgpuLightUnits";
+import { spinChannelActive } from "../lib/gpgpuSpeedDragSpin";
+import { orientChannelActive } from "../lib/gpgpuOrient";
+import { spriteFrameChannelActive } from "../lib/spriteSheet";
+import { ageFreeVariantOn } from "../lib/gpgpuAgeFreeCurves";
 
 // Phase 19 gate fix: the points draw's string variant follows
 // the config side of the Vellum crack condition (the same terms
@@ -48,7 +55,71 @@ export function shadowTunnelVariantOn(config: ParticleConfig): boolean {
     && config.gpgpuShadowEnabled === true
     && (config.gpgpuShadowStrength ?? 0) > 0;
 }
+
+// Live display action (Grammar 2.0 stage 1, slice 1C): the
+// points draw samples the REP output's .a channel while the
+// live rule list carries a display action — the config side
+// of the condition. The per-frame half (a REP texture
+// actually exists and the rule classifies live) is resolved
+// in gpgpuVisualUpdates via uRuleLiveDisplayEnabled, exactly
+// like the crack variant's state texture. Off, the draw
+// strings are the stock ones byte-identically.
+export function liveRuleDisplayVariantOn(config: ParticleConfig): boolean {
+  return liveRulesHaveAction(config.gpgpuParticleRulesLive ?? '', 'display');
+}
+
+// Light units 2-4 (Grammar 2.0 stage 2, E4): the points draw
+// carries the extra units' uniform families while any of them
+// is enabled — the resolution lives in lib/gpgpuLightUnits.ts.
+// Off, the draw strings are the stock ones byte-identically.
+export function lightUnitsVariantOn(config: ParticleConfig): boolean {
+  return extraLightUnitsActive(config);
+}
+
+// Spin channel (Grammar 2.0 stage 2, B3): the points draw
+// and the geometry draw carry the spin state texture while
+// the channel is enabled — the resolution lives in
+// lib/gpgpuSpeedDragSpin.ts. Off, the draw strings are the
+// stock ones byte-identically.
+export function spinChannelVariantOn(config: ParticleConfig): boolean {
+  return spinChannelActive(config);
+}
+
+// Orientation channel (Limit plan stage 4, S2): the geometry
+// draw carries the posture state texture while the channel
+// is enabled — the resolution lives in lib/gpgpuOrient.ts.
+// The points draw does NOT consume posture in this slice.
+// Off, the geometry string is the stock one byte-identically.
+export function orientChannelVariantOn(config: ParticleConfig): boolean {
+  return orientChannelActive(config);
+}
+
+// Sprite frame channel (Limit plan stage 4, S3): the points
+// draw carries the channel-decided sprite frame while the
+// frame mode is 'channel' — the resolution lives in
+// lib/spriteSheet.ts. Off (every legacy frame mode), the
+// draw strings are the stock ones byte-identically.
+export function spriteFrameChannelVariantOn(config: ParticleConfig): boolean {
+  return spriteFrameChannelActive(config);
+}
+
+// Age free curves (Grammar 2.0 stage 2, B4): the points draw
+// (size / opacity) and the geometry draw (rotation) carry the
+// target's free-curve variant while the target's Enabled and
+// FreeEnabled are both on — the resolution lives in
+// lib/gpgpuAgeFreeCurves.ts. Off, the draw strings are the
+// stock ones byte-identically.
+export function ageFreeSizeVariantOn(config: ParticleConfig): boolean {
+  return ageFreeVariantOn(config, 'size');
+}
+export function ageFreeOpacityVariantOn(config: ParticleConfig): boolean {
+  return ageFreeVariantOn(config, 'opacity');
+}
+export function ageFreeRotationVariantOn(config: ParticleConfig): boolean {
+  return ageFreeVariantOn(config, 'rotation');
+}
 import { AUX_TEX_SIZE, buildAuxDrawFrag, buildAuxDrawVert } from "./gpgpuShaderAux";
+import { auxInheritColorActive } from "../lib/auxInherit";
 import { WW_DRAW_FRAG, WW_DRAW_VERT, WW_TEX_SIZE } from "./gpgpuShaderWhitewater";
 
 export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
@@ -87,6 +158,13 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uAgeCurveSize:           { value: [1, 1, 1, 1, 1] },
       uAgeCurveOpacityEnabled: { value: false },
       uAgeCurveOpacity:        { value: [1, 1, 1, 1, 1] },
+      // Age free curves (Grammar 2.0 stage 2, B4): declared
+      // in the shaders only in the age-free variant strings;
+      // the entries hold the padded identity asset otherwise.
+      uAgeCurveSizeFreeT:      { value: [0, 1, 1, 1, 1, 1, 1, 1] },
+      uAgeCurveSizeFreeV:      { value: [1, 1, 1, 1, 1, 1, 1, 1] },
+      uAgeCurveOpacityFreeT:   { value: [0, 1, 1, 1, 1, 1, 1, 1] },
+      uAgeCurveOpacityFreeV:   { value: [1, 1, 1, 1, 1, 1, 1, 1] },
       uMapSizeAmount:          { value: 0 },
       uMapOpacityAmount:       { value: 0 },
       // Phase X: per-property map textures / displacement / mask.
@@ -143,6 +221,23 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uLightConeEnabled:  { value: false },
       uLightConeAngleDeg: { value: 30 },
       uLightConeDir:      { value: new THREE.Vector3(0, -1, 0) },
+      // Light units 2-4 (stage 2, E4): inert entries mirroring
+      // unit 1's defaults; the light-units variant's shader
+      // declares them, the stock shader declares none — writes
+      // are guarded in gpgpuVisualUpdates like the Phase Z
+      // tunnel block.
+      uLight2Enabled:   { value: false },
+      uLight2Pos:       { value: new THREE.Vector3(0, 0, 0) },
+      uLight2Intensity: { value: 1 },
+      uLight2Radius:    { value: 3 },
+      uLight3Enabled:   { value: false },
+      uLight3Pos:       { value: new THREE.Vector3(0, 0, 0) },
+      uLight3Intensity: { value: 1 },
+      uLight3Radius:    { value: 3 },
+      uLight4Enabled:   { value: false },
+      uLight4Pos:       { value: new THREE.Vector3(0, 0, 0) },
+      uLight4Intensity: { value: 1 },
+      uLight4Radius:    { value: 3 },
       // Occlusion-map shadow (Phase Z): no bake, strength 0 — the
       // vertex sample yields exactly 1.0, bit-identical legacy.
       uShadowEnabled:     { value: false },
@@ -222,9 +317,30 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uDensityTarget:      { value: 0.5 },
       uDensityCount:       { value: texSize * texSize },
       uViewportSizePx:     { value: new THREE.Vector2(1, 1) },
+      // Live display action (Grammar 2.0 1C): supply off /
+      // no texture is the identity configuration — the
+      // vertex never applies the REP .a size override.
+      uRuleLiveTex:            { value: null },
+      uRuleLiveDisplayEnabled: { value: false },
+      // Merged supply (stage 2 texture-unit follow-up): the
+      // display read's y scale, declared only in the merged
+      // display variant; inert otherwise.
+      uLiveTexYScale:          { value: 1 },
+      // Spin channel (Grammar 2.0 stage 2, B3): declared in
+      // the shader only in the spin variant string; the entry
+      // is inert otherwise. syncVisualUniforms binds the spin
+      // pass's latest texture per frame.
+      uSpinTex:                { value: null },
+      // Sprite frame channel (Limit plan stage 4, S3):
+      // declared in the shader only in the channel variant
+      // string; the entries are inert otherwise (defaults =
+      // ageRatio / no slot / range 1).
+      uSpriteFrameChannel:     { value: 0 },
+      uSpriteFrameSlot:        { value: -1 },
+      uSpriteFrameRange:       { value: 1 },
     },
-    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config), shadowTunnel: shadowTunnelVariantOn(config) }),
-    fragmentShader: buildDrawFrag({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config) }),
+    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config), shadowTunnel: shadowTunnelVariantOn(config), ruleDisplay: liveRuleDisplayVariantOn(config), ruleDisplayMerged: mergedSupplyActive(config, texSize), lightUnits: lightUnitsVariantOn(config), spinChannel: spinChannelVariantOn(config), spriteFrameChannel: spriteFrameChannelVariantOn(config), ageFreeSize: ageFreeSizeVariantOn(config) }),
+    fragmentShader: buildDrawFrag({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config), spinChannel: spinChannelVariantOn(config), spriteFrameChannel: spriteFrameChannelVariantOn(config), ageFreeOpacity: ageFreeOpacityVariantOn(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -241,18 +357,32 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
     cluster: rigidClusterColorVariantOn(config),
     shadowMap: shadowMapVariantOn(config),
     shadowTunnel: shadowTunnelVariantOn(config),
+    ruleDisplay: liveRuleDisplayVariantOn(config),
+    ruleDisplayMerged: mergedSupplyActive(config, texSize),
+    lightUnits: lightUnitsVariantOn(config),
+    spinChannel: spinChannelVariantOn(config),
+    spriteFrameChannel: spriteFrameChannelVariantOn(config),
+    ageFreeSize: ageFreeSizeVariantOn(config),
+    ageFreeOpacity: ageFreeOpacityVariantOn(config),
   });
   useEffect(() => {
     const crack = vellumCrackVariantOn(config);
     const cluster = rigidClusterColorVariantOn(config);
     const shadowMap = shadowMapVariantOn(config);
     const shadowTunnel = shadowTunnelVariantOn(config);
-    if (drawVariantRef.current.crack === crack && drawVariantRef.current.cluster === cluster && drawVariantRef.current.shadowMap === shadowMap && drawVariantRef.current.shadowTunnel === shadowTunnel) return;
-    drawVariantRef.current = { crack, cluster, shadowMap, shadowTunnel };
-    drawMat.vertexShader = buildDrawVert({ vellumCrack: crack, clusterColor: cluster, shadowMap, shadowTunnel });
-    drawMat.fragmentShader = buildDrawFrag({ vellumCrack: crack, clusterColor: cluster, shadowMap });
+    const ruleDisplay = liveRuleDisplayVariantOn(config);
+    const ruleDisplayMerged = mergedSupplyActive(config, texSize);
+    const lightUnits = lightUnitsVariantOn(config);
+    const spinChannel = spinChannelVariantOn(config);
+    const spriteFrameChannel = spriteFrameChannelVariantOn(config);
+    const ageFreeSize = ageFreeSizeVariantOn(config);
+    const ageFreeOpacity = ageFreeOpacityVariantOn(config);
+    if (drawVariantRef.current.crack === crack && drawVariantRef.current.cluster === cluster && drawVariantRef.current.shadowMap === shadowMap && drawVariantRef.current.shadowTunnel === shadowTunnel && drawVariantRef.current.ruleDisplay === ruleDisplay && drawVariantRef.current.ruleDisplayMerged === ruleDisplayMerged && drawVariantRef.current.lightUnits === lightUnits && drawVariantRef.current.spinChannel === spinChannel && drawVariantRef.current.spriteFrameChannel === spriteFrameChannel && drawVariantRef.current.ageFreeSize === ageFreeSize && drawVariantRef.current.ageFreeOpacity === ageFreeOpacity) return;
+    drawVariantRef.current = { crack, cluster, shadowMap, shadowTunnel, ruleDisplay, ruleDisplayMerged, lightUnits, spinChannel, spriteFrameChannel, ageFreeSize, ageFreeOpacity };
+    drawMat.vertexShader = buildDrawVert({ vellumCrack: crack, clusterColor: cluster, shadowMap, shadowTunnel, ruleDisplay, ruleDisplayMerged, lightUnits, spinChannel, spriteFrameChannel, ageFreeSize });
+    drawMat.fragmentShader = buildDrawFrag({ vellumCrack: crack, clusterColor: cluster, shadowMap, spinChannel, spriteFrameChannel, ageFreeOpacity });
     drawMat.needsUpdate = true;
-  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuRigidClusterColorEnabled, config.gpgpuRigidEnabled, config.gpgpuShadowMapStrength, config.gpgpuTerrainMeshTunnel, config.gpgpuShadowEnabled, config.gpgpuShadowStrength, drawMat]);
+  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuRigidClusterColorEnabled, config.gpgpuRigidEnabled, config.gpgpuShadowMapStrength, config.gpgpuTerrainMeshTunnel, config.gpgpuShadowEnabled, config.gpgpuShadowStrength, config.gpgpuParticleRulesLive, config.gpgpuFieldInstances, config.gpgpuFieldLayers, config.gpgpuSteerSeekPaths, config.gpgpuSteerSeekPathSvg, config.gpgpuPredationEnabled, config.gpgpuPredationOutcome, config.gpgpuPredationStrike, config.gpgpuPredationStrikeFrames, config.gpgpuPredationGraceSeconds, config.gpgpuGroupsData, config.gpgpuLight2Enabled, config.gpgpuLight3Enabled, config.gpgpuLight4Enabled, config.gpgpuSpinEnabled, config.gpgpuSpriteFrameMode, config.gpgpuAgeCurveSizeEnabled, config.gpgpuAgeCurveSizeFreeEnabled, config.gpgpuAgeCurveOpacityEnabled, config.gpgpuAgeCurveOpacityFreeEnabled, drawMat]);
 
   const drawGeo = useMemo(() => {
     const count = texSize * texSize;
@@ -326,8 +456,14 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uShadowMapSoftness: { value: 1 },
       uShadowMapReady: { value: 0 },
       uShadowMapStrength: { value: 0 },
+      // Spawn inheritance (1D-1): declared in the shader
+      // only in the inherit variant; the scene loop points
+      // uAuxInheritTex at this level's inheritance target
+      // and syncs the mix per frame (guarded writes).
+      uAuxInheritTex: { value: null },
+      uAuxInheritColor: { value: 0 },
     },
-    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config) }),
+    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -356,8 +492,14 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uShadowMapSoftness: { value: 1 },
       uShadowMapReady: { value: 0 },
       uShadowMapStrength: { value: 0 },
+      // Spawn inheritance (1D-1): declared in the shader
+      // only in the inherit variant; the scene loop points
+      // uAuxInheritTex at this level's inheritance target
+      // and syncs the mix per frame (guarded writes).
+      uAuxInheritTex: { value: null },
+      uAuxInheritColor: { value: 0 },
     },
-    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config) }),
+    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -381,8 +523,14 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uShadowMapSoftness: { value: 1 },
       uShadowMapReady: { value: 0 },
       uShadowMapStrength: { value: 0 },
+      // Spawn inheritance (1D-1): declared in the shader
+      // only in the inherit variant; the scene loop points
+      // uAuxInheritTex at this level's inheritance target
+      // and syncs the mix per frame (guarded writes).
+      uAuxInheritTex: { value: null },
+      uAuxInheritColor: { value: 0 },
     },
-    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config) }),
+    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -391,17 +539,24 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
   // shadow-map variant condition flips (creation already used
   // the initial config's variant). All three aux levels share
   // the draw shaders, so all three materials swap together.
-  const auxVariantRef = useRef({ shadowMap: shadowMapVariantOn(config) });
+  // Slice 1D-1: the inheritance variant condition (inheritance
+  // on + colour mix above 0) swaps through the same effect.
+  const auxVariantRef = useRef({
+    shadowMap: shadowMapVariantOn(config),
+    inherit: auxInheritColorActive(config),
+  });
   useEffect(() => {
     const shadowMap = shadowMapVariantOn(config);
-    if (auxVariantRef.current.shadowMap === shadowMap) return;
-    auxVariantRef.current = { shadowMap };
+    const inherit = auxInheritColorActive(config);
+    if (auxVariantRef.current.shadowMap === shadowMap
+      && auxVariantRef.current.inherit === inherit) return;
+    auxVariantRef.current = { shadowMap, inherit };
     for (const m of [auxDrawMat, aux2DrawMat, aux3DrawMat]) {
-      m.vertexShader = buildAuxDrawVert({ shadowMap });
-      m.fragmentShader = buildAuxDrawFrag({ shadowMap });
+      m.vertexShader = buildAuxDrawVert({ shadowMap, inherit });
+      m.fragmentShader = buildAuxDrawFrag({ shadowMap, inherit });
       m.needsUpdate = true;
     }
-  }, [config.gpgpuShadowMapStrength, auxDrawMat, aux2DrawMat, aux3DrawMat]);
+  }, [config.gpgpuShadowMapStrength, config.gpgpuAuxInheritSlots, config.gpgpuAuxInheritColor, auxDrawMat, aux2DrawMat, aux3DrawMat]);
 
   const auxDrawGeo = useMemo(() => {
     const count = AUX_TEX_SIZE * AUX_TEX_SIZE;

@@ -1,3 +1,4 @@
+import { dmHash11 } from './gpgpuRandom';
 // Replica independent simulation (Phase W2, method (a): state
 // separation). Pure logic shared by the runtime (per-replica stack
 // allocation / seeding), the pass runner (per-stack uniforms) and
@@ -103,15 +104,6 @@ export function resolveReplicaIndependentActive(config: {
 // per-replica seed offsets on the CPU (they reach the shader as
 // uniforms, so this mirror only needs to be deterministic and
 // well-spread — not bit-equal to the GPU's float32 evaluation).
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
-}
 
 function hash3Mirror(x: number, y: number, z: number): [number, number, number] {
   const dot1 = x * 127.1 + y * 311.7 + z * 74.7;

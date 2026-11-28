@@ -133,6 +133,21 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
             <Slider label="Focus Distance" value={config.postDofFocusDistance} min={0} max={1} step={0.001} onChange={(v) => updateConfig('postDofFocusDistance', v)} />
             <Slider label="Focal Length" value={config.postDofFocalLength} min={0.001} max={0.3} step={0.001} onChange={(v) => updateConfig('postDofFocalLength', v)} />
             <Slider label="Bokeh Scale" value={config.postDofBokehScale} min={0.1} max={10} step={0.1} onChange={(v) => updateConfig('postDofBokehScale', v)} />
+            <Toggle label="Track Particles （ピントを粒子へ追従・第4段S5）" value={config.postDofTrackParticles} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('postDofTrackParticles', v)} />
+            {config.postDofTrackParticles && (
+              <Slider label="Track Zone （対象ゾーン）" value={config.postDofTrackZone} min={0} max={3} step={1} onChange={(v) => updateConfig('postDofTrackZone', Math.round(v))} />
+            )}
+          </>
+        )}
+        <Toggle label="Motion Blur" value={config.postMbEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('postMbEnabled', v)} />
+        {config.postMbEnabled && (
+          <>
+            <div className="mt-1 mb-2 text-[9px] text-white/40 leading-relaxed">
+              速度バッファ方式のモーションブラーです（第4段S5）。サンプル数が多いほど滑らかで重くなります。
+            </div>
+            <Slider label="MB Strength" value={config.postMbStrength} min={0} max={4} step={0.05} onChange={(v) => updateConfig('postMbStrength', v)} />
+            <Slider label="MB Samples" value={config.postMbSamples} min={1} max={16} step={1} onChange={(v) => updateConfig('postMbSamples', Math.round(v))} />
+            <Toggle label="MB Particle Only （粒子のある場所だけ）" value={config.postMbParticleOnly} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('postMbParticleOnly', v)} />
           </>
         )}
         <Toggle

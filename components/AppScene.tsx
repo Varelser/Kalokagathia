@@ -40,6 +40,10 @@ import { EMPTY_PYRO_GRID_FOG_FEED, type PyroGridFogFeed } from '../lib/pyroGrid'
 import { AppScenePostFx } from './AppScenePostFx';
 import { SceneDepthCapture } from './SceneDepthCapture';
 import { LightShadowCapture } from './LightShadowCapture';
+import { ParticleVelocityCapture } from './ParticleVelocityCapture';
+import { DofTrackCapture } from './DofTrackCapture';
+import { motionBlurOn } from '../lib/motionBlur';
+import { dofTrackOn } from '../lib/dofTracking';
 import { DynResController } from './DynResController';
 import { useAppSceneTemporalConfig } from './useAppSceneTemporalConfig';
 import type { AppSceneProps } from './AppSceneTypes';
@@ -158,6 +162,15 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
           the shadow map strength is positive; at the default 0
           nothing is captured and the render is unchanged. */}
       {effectiveConfig.gpgpuShadowMapStrength > 0 && <LightShadowCapture config={effectiveConfig} />}
+      {/* Motion-blur velocity source (stage 4, S5): mounted
+          only while the resolved MB settings are on; at the
+          defaults nothing is captured and the stage (which
+          is likewise absent) has no source. */}
+      {motionBlurOn(effectiveConfig) && <ParticleVelocityCapture config={effectiveConfig} />}
+      {/* DOF particle tracking supply (stage 4, S5): mounted
+          only while DOF + tracking are both on; at the
+          defaults the DOF stage keeps the config focus. */}
+      {dofTrackOn(effectiveConfig) && <DofTrackCapture config={effectiveConfig} />}
       <SceneBackgroundSync
         backgroundColor={effectiveConfig.backgroundColor}
         transparentBackground={transparentBackground}

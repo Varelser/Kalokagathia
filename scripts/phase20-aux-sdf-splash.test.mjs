@@ -162,13 +162,39 @@ const baseline = JSON.parse(readFileSync(join(ROOT, 'scripts', 'phase18-shader-h
 // --- Wiring: assets variant selection + passes uniform fill ---
 {
   const assets = readFileSync(join(ROOT, 'components', 'useGpgpuSimulationAssets.ts'), 'utf8');
+  // Slice 1D-1: the velocity builder call gained the
+  // inheritVelScale variant dimension (the gate still drives
+  // the build and the swap; the swap effect now tracks both
+  // variant conditions). Assertions updated minimally to the
+  // extended call forms — see STAGE1_1D1_IMPL_RECORD.md.
+  // Slice 1D-2: the calls gained the emit variant dimension
+  // and the swap effect tracks the two emit conditions (and
+  // the Aux2 mode dependency) as well. Assertions updated
+  // minimally again — see STAGE1_1D2_IMPL_RECORD.md.
+  // Slice 1D-3: the level-1 calls gained the ruleSpawn
+  // variant dimension (the swap effect tracks it as a
+  // level-1-only condition). Assertions updated minimally
+  // again — see STAGE1_1D3_IMPL_RECORD.md.
+  // Stage 4 slice S6: the level-1 calls gained the trail
+  // variant dimension (level-1-only, like ruleSpawn; the
+  // swap effect tracks the trail keys too). Assertions
+  // updated minimally again — see
+  // STAGE4_S6_TRAIL_AUX_IMPL_RECORD.md.
   check('assets build the initial Aux pair from the gate',
-    assets.includes('fragmentShader: buildAuxVelFrag({ sdfSplash: auxSdfSplashActive(config) })')
-    && assets.includes('fragmentShader: buildAuxPosFrag({ sdfSplash: auxSdfSplashActive(config) })'));
+    assets.includes('fragmentShader: buildAuxVelFrag({ sdfSplash: auxSdfSplashActive(config), inheritVelScale: auxInheritVelScaleActive(config), emit: auxEmitLevel1Active(config), ruleSpawn: auxRuleSpawnLevel1Active(config), trail: trailAuxActive(config) })')
+    && assets.includes('fragmentShader: buildAuxPosFrag({ sdfSplash: auxSdfSplashActive(config), emit: auxEmitLevel1Active(config), ruleSpawn: auxRuleSpawnLevel1Active(config), trail: trailAuxActive(config) })'));
+  // Stage-4 gate fix round 2 (B2): the swap now REPLACES the
+  // materials (rebuildAuxMaterial around the shared uniforms)
+  // instead of rewriting fragmentShader in place — the builder
+  // calls and option sets are unchanged. Assertions updated
+  // minimally — see STAGE4_FIX6_AUX_VARIANT_RECORD.md.
+  // Pin updated at stage-4 gate fix round 6 (STAGE4_FIX11_AUX_AB_RECORD):
+  // the swap now also carries the diag-only trail A/B stage
+  // (trailAb, 'A' = stock) and its state in the deps.
   check('assets swap the Aux pair when the gate flips',
-    assets.includes('auxVelMat.fragmentShader = buildAuxVelFrag({ sdfSplash: active });')
-    && assets.includes('auxPosMat.fragmentShader = buildAuxPosFrag({ sdfSplash: active });')
-    && assets.includes('[config.gpgpuSdfEnabled, config.gpgpuAuxMode, auxVelMat, auxPosMat]'));
+    assets.includes('setAuxVelMat(rebuildAuxMaterial(auxVelMat, buildAuxVelFrag({ sdfSplash, inheritVelScale, emit, ruleSpawn, trail, trailAb })));')
+    && assets.includes('setAuxPosMat(rebuildAuxMaterial(auxPosMat, buildAuxPosFrag({ sdfSplash, emit, ruleSpawn, trail, trailAb })));')
+    && assets.includes('[config.gpgpuSdfEnabled, config.gpgpuAuxMode, config.gpgpuAux2Mode, config.gpgpuAuxInheritSlots, config.gpgpuAuxInheritVelScale, config.gpgpuTrailEnabled, config.gpgpuTrailMode, auxTrailAbStage, auxVelMat, auxPosMat, auxChainVelMat, auxChainPosMat, auxInheritMat, auxChainInheritMat]'));
   const passes = readFileSync(join(ROOT, 'components', 'gpgpuSimulationPasses.ts'), 'utf8');
   check('passes fill the SDF uniforms (guarded) for both Aux passes',
     passes.includes('if (velU.uSdfEnabled) {')

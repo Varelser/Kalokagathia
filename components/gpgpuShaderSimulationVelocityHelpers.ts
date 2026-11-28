@@ -4,12 +4,8 @@
 // of the original SIM_VEL_FRAG template literal. The shell
 // module concatenates all five chunks in order; the assembled
 // string is pinned byte-for-byte by phaseav_test.mjs.
-export const VEL_FRAG_HELPERS = /* glsl */ `  float dmHash11(float n) {
-    vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
-    p3 += dot(p3, p3.yxz + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-  }
-  vec3 hash3(vec3 p) {
+import { DM_HASH11_GLSL_INDENTED } from '../lib/gpgpuRandom';
+export const VEL_FRAG_HELPERS = /* glsl */ `${DM_HASH11_GLSL_INDENTED}  vec3 hash3(vec3 p) {
     p = vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));
     return -1.0 + 2.0 * vec3(dmHash11(p.x), dmHash11(p.y), dmHash11(p.z));
   }
@@ -432,3 +428,175 @@ export const VEL_FRAG_HELPERS = /* glsl */ `  float dmHash11(float n) {
   }
 
 `;
+
+// Emitter initial velocity (Grammar 2.0 stage 2, slice E2):
+// the GLSL twin of directedInitialVelocity in
+// lib/gpgpuLifecycle.ts — the spawn event's velocity law
+// with the base direction authored (uEmitterVelDir, the
+// CPU-normalised axis) instead of radial. The hash draws
+// and the blend law are the event's own, term for term, so
+// with the axis equal to the radial direction this returns
+// exactly what spawnEventVelocity returns. Spliced in only
+// behind the emitterVelocity option (see buildVelocityHelpers
+// and buildVelocityFragment) — the stock helpers string
+// above is untouched.
+export const VEL_FRAG_EMITTER_VELOCITY_FN = /* glsl */ `
+  // Emitter directed initial velocity (stage 2, E2): TS
+  // twin directedInitialVelocity in lib/gpgpuLifecycle.ts.
+  vec3 kaloEmitterVelocity(vec2 uv) {
+    float th = dmHash11(dot(uv + vec2(2.71, 6.13), vec2(127.1, 311.7))) * 6.28318530718;
+    float phi = acos(2.0 * dmHash11(dot(uv + vec2(9.43, 4.29), vec2(127.1, 311.7))) - 1.0);
+    float magHash = dmHash11(dot(uv + vec2(7.77, 1.93), vec2(127.1, 311.7)));
+    vec3 randDir = vec3(sin(phi) * cos(th), sin(phi) * sin(th), cos(phi));
+    vec3 dir = normalize(mix(uEmitterVelDir, randDir, uEmitterVelSpread));
+    float mag = uEmitterVelSpeed * mix(1.0, 0.25 + 0.75 * magHash, uEmitterVelSpread);
+    return dir * mag;
+  }
+`;
+
+/**
+ * Texture-unit fix (Grammar 2.0 stage 1): in the live-rules
+ * variant, spawnGateValue derives the baked distance from
+ * the initial-position texture instead of sampling the
+ * spawn-order texture, so the live preamble can drop that
+ * sampler and stay inside the 16-unit floor (see
+ * gpgpuShaderSimulationVelocityPreamble.ts at
+ * VEL_FRAG_SPAWN_ORDER_DECL_STOCK and
+ * kalokagathia-pro/STAGE1_TEXUNIT_FIX_RECORD.md). The value
+ * is the same max-normalised initial distance the bake
+ * stores (buildSpawnDistanceValues in lib/gpgpuLifecycle.ts;
+ * CPU twin spawnGateDistanceValue there): the order texture
+ * is baked from the same initial positions, with the same
+ * normaliser, supplied here as uSpawnOrderMaxDist. The
+ * position pass's live variant derives identically, so the
+ * two passes keep picking the same particles. The stock
+ * line occurs exactly once in the helpers.
+ */
+export const VEL_FRAG_SPAWN_GATE_READ_STOCK = '    float v = texture2D(uSpawnOrderTex, uv).r;';
+export const VEL_FRAG_SPAWN_GATE_READ_LIVE = '    float v = clamp(length(texture2D(uInitPosTex, uv).xyz) / max(uSpawnOrderMaxDist, 1.0e-6), 0.0, 1.0);';
+
+// Column-data fetch (Grammar 2.0 stage 2, B1; shared with
+// B2 since): texel-unit addressing over the shared column
+// texture; the section bases are the CPU allocator's offsets
+// (lib/gpgpuFieldInstances.ts / lib/gpgpuPathAssets.ts).
+// Spliced in behind either consuming option (fieldInstances
+// / pathAssets) — the stock helpers string is untouched.
+export const VEL_FRAG_COLUMN_FN = /* glsl */ `
+  vec4 kaloColFetch(float idx) {
+    float cx = mod(idx, uColWidth);
+    float cy = floor(idx / uColWidth);
+    return texture2D(uColTex, vec2((cx + 0.5) / uColWidth, (cy + 0.5) / uColHeight));
+  }
+`;
+
+// Merged-supply form of the column fetch (stage 2
+// texture-unit follow-up): the column data rides in the
+// strip above the live square of the merged texture, packed
+// linearly in the column layout's texel order (the REP
+// pass's blitColumn writes it there), so the linear index
+// remaps into strip coordinates of the merged width. The
+// section bases and every consumer are unchanged — only the
+// fetch's address math moves.
+export const VEL_FRAG_COLUMN_FN_MERGED = /* glsl */ `
+  vec4 kaloColFetch(float idx) {
+    float sx = mod(idx, uTexSizeF);
+    float sy = floor(idx / uTexSizeF);
+    return texture2D(uMergedTex, vec2((sx + 0.5) / uTexSizeF, (uTexSizeF + sy + 0.5) / uMergedTexHeight));
+  }
+`;
+
+// Field instances (Grammar 2.0 stage 2, slice B1): the GLSL
+// twin of fieldInstanceForce in lib/gpgpuFieldInstances.ts —
+// the legacy vortex / well / wind laws localised by the wind
+// volume's (1-(d/R)^2)^2 falloff, evaluated per instance over
+// the column-data texture and summed (additive composition
+// over the legacy singletons, which keep their own chunks).
+// The layer weight comes from the instance's layer record;
+// while uFieldLayerAttrEnabled holds, a layer naming a slot
+// further multiplies it by the particle's attribute channel
+// (design decision 1: continuous modulation rides attribute
+// slots). The per-kind force gates arrive as parameters —
+// the stock chunk passes 1.0 for vortex / well, the live
+// chunk variant passes the REP gate locals, exactly like the
+// other gated chunks are derived. Spliced in only behind
+// the fieldInstances option (see buildVelocityHelpers and
+// buildVelocityFragment) — the stock helpers string above
+// is untouched.
+export const VEL_FRAG_FIELD_FN = /* glsl */ `
+  // Field instances (stage 2, B1): TS twin fieldInstanceForce
+  // in lib/gpgpuFieldInstances.ts (the gates multiply there
+  // at the call site, here per kind inside the sum).
+  vec3 kaloFieldForce(vec3 pos, vec4 attrData, vec3 replicaSeed, float replicaTime, float grpWind, float grpVortex, float grpWell) {
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < 16; i++) {
+      if (i >= uFieldInstanceCount) break;
+      float fBase = uColFieldsBase + float(i) * 3.0;
+      vec4 fA = kaloColFetch(fBase);
+      vec4 fB = kaloColFetch(fBase + 1.0);
+      vec4 fC = kaloColFetch(fBase + 2.0);
+      vec3 rel = pos - fA.xyz;
+      float dist = length(rel);
+      if (fA.w <= 0.0 || dist >= fA.w) continue;
+      float fq = dist / fA.w;
+      float fFall = 1.0 - fq * fq;
+      fFall *= fFall;
+      float layerW = 1.0;
+      if (fC.w > 0.5) {
+        vec4 fL = kaloColFetch(uColLayersBase + (fC.w - 1.0));
+        layerW = fL.r;
+        if (uFieldLayerAttrEnabled && fL.g > 0.5) {
+          layerW *= kaloAttrChannel(attrData, int(fL.g + 0.5) - 1);
+        }
+      }
+      float wgt = fFall * layerW;
+      int kind = int(fC.x + 0.5);
+      if (kind == 0) {
+        // Vortex instance: the legacy swirl around the
+        // instance's own axis, inside its radius.
+        vec3 tangent = cross(fB.xyz, rel);
+        float tl = length(tangent);
+        if (tl > 0.001) acc += (tangent / tl) * (fB.w * wgt * grpVortex) * uDelta * 80.0;
+      } else if (kind == 1) {
+        // Well instance: the legacy pull + orbit inside its
+        // radius (the denominator is floored — a new law, so
+        // the zero-softening / zero-distance corner stays
+        // finite instead of inheriting the singleton's NaN).
+        vec3 toC = -rel;
+        float d = max(dist + fC.y, 0.001);
+        acc += (toC / (d * d)) * (fB.w * wgt * grpWell) * uDelta * 2000.0;
+        vec3 oTan = cross(normalize(toC + vec3(0.001, 0.0, 0.0)), vec3(0.0, 1.0, 0.0));
+        acc += oTan * (fC.z * wgt * grpWell) * uDelta * 50.0;
+      } else {
+        // Wind instance: the wind law with the instance's own
+        // direction (the gust stays the global wind's).
+        vec3 gust = vec3(
+          vnoise(pos * 0.01 + replicaSeed + vec3(replicaTime * 0.3, 0.0, 0.0)),
+          vnoise(pos * 0.01 + replicaSeed + vec3(1.7, replicaTime * 0.25, 0.0)),
+          vnoise(pos * 0.01 + replicaSeed + vec3(0.0, 3.1, replicaTime * 0.2))
+        ) * uWindGust;
+        acc += (fB.xyz * fB.w + gust) * (wgt * grpWind) * uDelta * 30.0;
+      }
+    }
+    return acc;
+  }
+`;
+
+/** The helpers chunk for a variant build: the stock string,
+ *  plus the emitter-velocity function while directed mode is
+ *  on. With no option set this IS VEL_FRAG_HELPERS. */
+export function buildVelocityHelpers(options?: { emitterVelocity?: boolean; particleRulesLive?: boolean; fieldInstances?: boolean; pathAssets?: boolean; crowdPathAssets?: boolean; mergedSupply?: boolean }): string {
+  // B1: the field variant derives the gate value exactly
+  // like the live variant (its preamble dropped the order
+  // sampler for the column texture — see the preamble note).
+  // B2: the path-assets variant rides the same column
+  // texture and the same give-back, so it derives the same
+  // way; the column fetch is shared by both consumers and
+  // spliced once.
+  const base = options?.particleRulesLive || options?.fieldInstances || options?.pathAssets || options?.crowdPathAssets
+    ? VEL_FRAG_HELPERS.replace(VEL_FRAG_SPAWN_GATE_READ_STOCK, VEL_FRAG_SPAWN_GATE_READ_LIVE)
+    : VEL_FRAG_HELPERS;
+  return base
+    + (options?.emitterVelocity ? VEL_FRAG_EMITTER_VELOCITY_FN : '')
+    + (options?.fieldInstances || options?.pathAssets || options?.crowdPathAssets ? (options?.mergedSupply ? VEL_FRAG_COLUMN_FN_MERGED : VEL_FRAG_COLUMN_FN) : '')
+    + (options?.fieldInstances ? VEL_FRAG_FIELD_FN : '');
+}

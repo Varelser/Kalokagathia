@@ -124,6 +124,37 @@ export const GlobalDisplayGpgpuAdvancedRenderSection: React.FC<GlobalDisplayEffe
         </>
       )}
     </div>
+
+    {/* Orientation Channel (Stage 4 S2) */}
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <Toggle label="Orientation Channel （姿勢チャンネル・第4段S2）" value={config.gpgpuOrientEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuOrientEnabled', v)} />
+      {config.gpgpuOrientEnabled && (
+        <>
+          <div className="mt-1 mb-2 text-[9px] text-white/40 leading-relaxed">
+            クォータニオン姿勢を専用ピンポン RT に蓄積し、ジオメトリ描画が最も内側に合成します。Spin（Geom Spin）とは別系統で、Off の間はパス自体が立ちません。
+          </div>
+          <Toggle label="Orient Mode （回転軸モード）" value={config.gpgpuOrientMode} options={[{ label: 'Axis (固定軸Y)', val: 'axis' as const }, { label: 'Velocity (速度方向)', val: 'velocity' as const }]} onChange={(v) => updateConfig('gpgpuOrientMode', v)} />
+          <Slider label="Orient Speed （角速度・ラジアン/秒）" value={config.gpgpuOrientSpeed} min={-12.57} max={12.57} step={0.05} onChange={(v) => updateConfig('gpgpuOrientSpeed', v)} />
+          <Slider label="Orient Random （粒子別ばらつき）" value={config.gpgpuOrientRandom} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuOrientRandom', v)} />
+          <Slider label="Orient Damping （減衰率）" value={config.gpgpuOrientDamping} min={0} max={10} step={0.05} onChange={(v) => updateConfig('gpgpuOrientDamping', v)} />
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Orient Attr Slot （属性スロット変調）</div>
+          <select
+            value={String(config.gpgpuOrientSlot)}
+            onChange={(e) => updateConfig('gpgpuOrientSlot', Number(e.target.value))}
+            className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+          >
+            <option value="-1">OFF （なし）</option>
+            <option value="0">Slot 1</option>
+            <option value="1">Slot 2</option>
+            <option value="2">Slot 3</option>
+            <option value="3">Slot 4</option>
+          </select>
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            スロット値は角度の増分だけを乗算し、蓄積状態には入りません。角速度の単位はラジアン/秒で、Spin の度/秒とは異なります。
+          </div>
+        </>
+      )}
+    </div>
   </>
 );
 

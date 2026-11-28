@@ -43,7 +43,7 @@ check('P4 kill uses the age placement law', posWgsl.includes('u.bounceRadius * (
 check('P5 kill runs outside the age switch', posWgsl.indexOf('u.particleRuleKillEnabled > 0.5') > posWgsl.indexOf('if (u.ageEnabled > 0.5)'));
 
 // ── JS plumbing ──
-check('J1 vel uniform bytes 752', src.includes('const VEL_UNIFORM_BYTES = 752;'));
+check('J1 vel uniform bytes 768', src.includes('const VEL_UNIFORM_BYTES = 768;'));
 check('J2 vel write at index 184', src.includes('velU[184] = f && f.particleRulesEnabled ? 1 : 0;'));
 check('J3 pos uniform bytes stay 128', src.includes('const POS_UNIFORM_BYTES = 128;'));
 check('J4 pos write at index 30', src.includes('posU[30] = f && f.particleRuleKillEnabled ? 1 : 0;'));
@@ -54,7 +54,10 @@ check('J7 force params carry the flags', src.includes('particleRulesEnabled?: bo
 // ── Pass layer + capability (behavioral, via esbuild bundle) ──
 const passesSrc = readFileSync(join(ROOT, 'components/gpgpuSimulationPasses.ts'), 'utf8');
 check('S1 passes feed both flags', passesSrc.includes('particleRulesEnabled: !!args.attrTex && hasEffectiveParticleRules(') && passesSrc.includes('particleRuleKillEnabled: !!args.attrTex && hasEffectiveParticleRules('));
-check('S2 passes keep the replica-stack suppression', passesSrc.includes("particleRulesHaveAction(config.gpgpuParticleRules ?? '', 'kill') && !args.suppressGroupKill,\n        audioBlast: blast,"));
+// Adjacency updated by the stage-1 WGSL slice: the live-rule
+// fields now sit between the baked kill flag and audioBlast.
+// The suppression semantics pinned here are unchanged.
+check('S2 passes keep the replica-stack suppression', passesSrc.includes("particleRulesHaveAction(config.gpgpuParticleRules ?? '', 'kill') && !args.suppressGroupKill,"));
 
 try {
   await build({

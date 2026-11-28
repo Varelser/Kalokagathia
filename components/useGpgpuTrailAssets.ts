@@ -3,9 +3,25 @@ import * as THREE from "three";
 import type { ParticleConfig } from "../types";
 import { MAX_TRAIL, RIBBON_FRAG, RIBBON_VERT, TRAIL_FRAG, TRAIL_VERT, TUBE_FRAG, TUBE_SIDES, TUBE_VERT } from "./gpgpuShaders";
 import { makeRT } from "./gpgpuAssetShared";
+import { trailAuxActive } from "../lib/trailAux";
 
 export function useGpgpuTrailAssets(config: ParticleConfig, texSize: number) {
-  const trailRTs = useMemo(() => Array.from({ length: MAX_TRAIL }, () => makeRT(texSize)), [texSize]);
+  // Trail mechanism (stage 4, S6): in 'aux' trail mode the
+  // history ring is never built — the trail lives in the Aux
+  // pool instead (design §0: the ring is MAX_TRAIL ×
+  // texSize^2 RGBA-float targets, ≈16 MB at texSize 256,
+  // freed while the Aux mode is selected). The materials and
+  // geometries below stay allocated (plain JS objects, no
+  // GPU targets) and simply never render: the routing plans
+  // close the history draws in 'aux' mode, pushTrailFrame
+  // records nothing, and syncVisualUniforms skips the ring
+  // while it is empty. In 'history' mode (the default) the
+  // ring is built exactly as before.
+  const auxTrail = trailAuxActive(config);
+  const trailRTs = useMemo(
+    () => (auxTrail ? [] : Array.from({ length: MAX_TRAIL }, () => makeRT(texSize))),
+    [texSize, auxTrail],
+  );
 
   const trailMats = useMemo(() => Array.from({ length: MAX_TRAIL }, () => new THREE.ShaderMaterial({
     uniforms: {

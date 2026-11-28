@@ -26,6 +26,15 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postDofFocusDistance: 0.02,
   postDofFocalLength: 0.05,
   postDofBokehScale: 2.0,
+  // Motion blur (stage 4, S5): stage absent while disabled.
+  postMbEnabled: false,
+  postMbStrength: 1,
+  postMbSamples: 8,
+  postMbParticleOnly: false,
+  // DOF particle tracking (stage 4, S5): supply off while
+  // disabled; zone 0 is the whole pool.
+  postDofTrackParticles: false,
+  postDofTrackZone: 0,
   postNoiseEnabled: false,
   postNoiseOpacity: 0.12,
   postVignetteEnabled: false,

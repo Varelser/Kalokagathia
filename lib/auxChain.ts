@@ -12,6 +12,7 @@
 // consume it so the gating rules live in exactly one place.
 
 import type { ParticleConfig } from '../types';
+import type { AuxEmitShape } from './auxEmit';
 
 export const AUX_CHAIN_MAX_DEPTH = 3;
 
@@ -27,6 +28,12 @@ export type AuxLevelParams = {
   gravityScale: number;
   drag: number;
   curl: number;
+  /** Child emitter (slice 1D-2): read only while the level's
+   *  mode is 'emit' — the emission rate (per second), the
+   *  velocity shape and its spread. */
+  emitRate: number;
+  emitShape: AuxEmitShape;
+  emitSpread: number;
   /** '' = inherit (level 1: main colour; level >= 2: the resolved colour one level up). */
   color: string;
   /** Deterministic hash offset so sibling levels do not roll the same gates. */
@@ -74,6 +81,9 @@ export function resolveAuxChainLevels(
     | 'gpgpuAuxGravityScale'
     | 'gpgpuAuxDrag'
     | 'gpgpuAuxCurl'
+    | 'gpgpuAuxEmitRate'
+    | 'gpgpuAuxEmitShape'
+    | 'gpgpuAuxEmitSpread'
     | 'gpgpuAuxColor'
     | 'gpgpuAuxDepth'
     | 'gpgpuAux2Mode'
@@ -84,6 +94,9 @@ export function resolveAuxChainLevels(
     | 'gpgpuAux2GravityScale'
     | 'gpgpuAux2Drag'
     | 'gpgpuAux2Curl'
+    | 'gpgpuAux2EmitRate'
+    | 'gpgpuAux2EmitShape'
+    | 'gpgpuAux2EmitSpread'
     | 'gpgpuAux2Color'
   >,
 ): AuxLevelParams[] {
@@ -99,6 +112,9 @@ export function resolveAuxChainLevels(
       gravityScale: config.gpgpuAuxGravityScale,
       drag: config.gpgpuAuxDrag,
       curl: config.gpgpuAuxCurl,
+      emitRate: config.gpgpuAuxEmitRate,
+      emitShape: config.gpgpuAuxEmitShape,
+      emitSpread: config.gpgpuAuxEmitSpread,
       color: config.gpgpuAuxColor,
       salt: auxChainSalt(1),
     },
@@ -114,6 +130,9 @@ export function resolveAuxChainLevels(
     gravityScale: config.gpgpuAux2GravityScale,
     drag: config.gpgpuAux2Drag,
     curl: config.gpgpuAux2Curl,
+    emitRate: config.gpgpuAux2EmitRate,
+    emitShape: config.gpgpuAux2EmitShape,
+    emitSpread: config.gpgpuAux2EmitSpread,
     color: config.gpgpuAux2Color,
   };
   levels.push({ ...shared, level: 2, salt: auxChainSalt(2) });

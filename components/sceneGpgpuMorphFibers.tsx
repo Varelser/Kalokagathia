@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { buildMorphFiberStrands } from '../lib/morphFiber';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
+import { distributionActive, resolveDistributionOps } from '../lib/gpgpuDistribution';
 import { buildMorphBakeData } from './useGpgpuRuntime';
 
 type Props = {
@@ -42,6 +43,11 @@ export const GpgpuMorphFibers: React.FC<Props> = React.memo(({ config }) => {
         Math.max(0.01, config.gpgpuBounceRadius),
         config.gpgpuEmitShape,
         config.gpgpuSeed,
+        8,
+        null,
+        // Distribution layer (stage 2, B5): the root cloud is
+        // the shape-law bake, so the layer applies here too.
+        { distribution: distributionActive(config) ? resolveDistributionOps(config) : null },
       );
       // Flat shapes (disc / ring lie in the XZ plane) get +Y
       // normals; every other shape leaves zeros, which the

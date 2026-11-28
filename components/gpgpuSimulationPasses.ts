@@ -6,17 +6,50 @@ import {
   readbackWebGPUPositions,
 } from '../lib/webgpuCompute';
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
+import { EMIT_SHAPE_IDS } from '../lib/gpgpuEmitShapes';
+import { clampEmitterVelSpeed, clampEmitterVelSpread, emitterRotScaleElements, resolveEmitterBaseDirection, resolveEmitterTransform } from '../lib/gpgpuEmitter';
+import { resolveSpawnRateEff } from '../lib/gpgpuSpawnAllocator';
 import { resolveVellum } from '../lib/gpgpuVellum';
 import { XPBD_JACOBI_RELAXATION } from '../lib/xpbdConstraints';
 import { effectiveGrainsFriction, grainsCellGrid, grainsDemConfigEpochValue, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsDemGrid, resolveGrainsDemPlan, resolveGrainsPilePlan, resolveGrainsProjection, GRAINS_VELOCITY_DENSE_DAMP, GRAINS_VELOCITY_DENSE_HI, GRAINS_VELOCITY_DENSE_LO, type GrainsCellGrid } from '../lib/gpgpuGrains';
 import { resolveGrainsCellSortActive, resolveGrainsNeighborhoodMode } from '../lib/flip3dAtlasDowngrade';
 import { getMaxTextureImageUnits } from '../lib/gpuDiagnostics';
 import { resolveRigid } from '../lib/rigidBodies';
-import { crowdAvoidStrength, resolveCrowd, resolveSteeringSeek } from '../lib/steering';
-import { normalizeAttrSlot, resolveAttrConsumers } from '../lib/gpgpuAttributes';
+import { crowdAvoidStrength, packSteeringPath, resolveCrowd, resolveSteeringSeek } from '../lib/steering';
+import { packEmissionPathCum, resolveEmissionPath } from '../lib/gpgpuEmissionSource';
+import { packDistributionOps, resolveDistributionOps } from '../lib/gpgpuDistribution';
+import { resolveShaderSeedPhase } from '../lib/gpgpuRandom';
+import { resolveEmitLightPos } from '../lib/gpgpuLightUnits';
+import { meanderStandaloneActive } from '../lib/gpgpuMeander';
+import { COLUMN_TEX_WIDTH, FIELD_COLUMN_LAYOUT, fieldLayerSlotAttrActive } from '../lib/gpgpuFieldInstances';
+import { b3SlotAttrActive, resolveRelDrag, resolveTargetSpeed } from '../lib/gpgpuSpeedDragSpin';
+import { getColumnSupply, resolvePathAsset } from '../lib/gpgpuPathAssets';
+import { resolveMergedSupplyPlan } from '../lib/gpgpuMergedSupply';
+import { normalizeAttrSlot, resolveAttrConsumers, resolveAttrDynInterval } from '../lib/gpgpuAttributes';
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { hasEffectiveParticleRules, particleRulesHaveAction } from '../lib/gpgpuParticleRules';
-import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
+import {
+  buildRuleEvalWgsl,
+  liveRulesHaveAction,
+  liveRulesHaveConsumedAction,
+  resolveLiveParticleRules,
+} from '../lib/gpgpuParticleRulesLive';
+import { predationActive, predationBirthActive, predationTrueKillActive } from '../lib/gpgpuPredation';
+import { resolveTrailAuxLifeSeconds, resolveTrailEmitInterval, resolveTrailEmitRate, trailAuxActive, TRAIL_AUX_MODE_ID } from '../lib/trailAux';
+import {
+  auxPassLandingArmed,
+  getAuxPassDiagState,
+  noteAuxPassLandingSample,
+  noteAuxPassRender,
+  AUX_PASS_LANDING_TEXELS,
+} from '../lib/auxPassDiag';
+import {
+  auxTickProbeArmedSide,
+  noteAuxTickProbeSample,
+  AUX_TICK_PROBE_TEXELS,
+} from '../lib/auxTickProbeDiag';
+import { normalizeAgeCurvePoints } from '../lib/ageCurve';
+import { ageCurveTargetSuppressed, resolveAgeFreeCurve } from '../lib/gpgpuAgeFreeCurves';
 import { isFreeCurveIdentity, normalizeFreeCurvePoints, FREE_CURVE_MAX_POINTS } from '../lib/freeCurve';
 import {
   getTerrainSlopeGradientTexture,
@@ -43,6 +76,7 @@ import {
   flip3dCurrentVelTexture,
   type Flip3dTargets,
 } from './gpgpuFlip3dPasses';
+import { contactReplayEnabled, type GpgpuContactPass } from './gpgpuContactPass';
 
 /**
  * Fill the multi-body mesh SDF uniforms of one sim material from
@@ -103,8 +137,9 @@ function resolveParticleLifeMatrix(config: ParticleConfig): Float32Array {
   return plMatrixCacheValue;
 }
 import type { WebGPUComputeState } from '../lib/webgpuCompute';
-import { AUX_TEX_SIZE } from './gpgpuShaderAux';
+import { AUX_TEX_SIZE, buildAuxTickProbeFrag } from './gpgpuShaderAux';
 import type { AuxLevelParams } from '../lib/auxChain';
+import { AUX_EMIT_SHAPE_IDS } from '../lib/auxEmit';
 import { resolvePingPongTargets } from './gpgpuExecutionRouting';
 import { replicaAgeBase, replicaSeedOffset, replicaTimeOffset } from '../lib/replicaIndependent';
 
@@ -494,7 +529,28 @@ export function runSimulationPasses(args: {
   // attribute uniform off and the velocity pass on its exact
   // legacy path.
   attrTex?: THREE.Texture | null;
+  // Live particle rules (Grammar 2.0 stage 1, slice 1A): the
+  // rule evaluation pass's latest output texture, or null
+  // while no REP exists (no live rules) — null keeps both
+  // live uniforms off and the consumers on their baked-only
+  // path.
+  ruleLiveTex?: THREE.Texture | null;
+  // Contact pass (Grammar 2.0 stage 1, the slice-1B
+  // follow-up): the scene supplies the pass only while a
+  // live rule condition reads hit / hits. The runner drives
+  // it between the velocity and position renders (run under
+  // the plain-Euler resolution, suppress otherwise — see
+  // components/gpgpuContactPass.ts). The replica-stack
+  // runner passes none, so stacks never drive it (the scene
+  // suppresses it there instead).
+  contactPass?: GpgpuContactPass | null;
   morphTex: THREE.Texture | null;
+  // Emission cloud (stage 2, E3): the runtime's published
+  // emission-source cloud texture (the morph cloud reused as
+  // a source, or the bitmap cloud); read only by the cloud
+  // variant of the position fragment. The replica-stack
+  // runner passes none — stacks never emit from a cloud.
+  emitCloudTex?: THREE.Texture | null;
   morphNormalTex: THREE.Texture | null;
   morphKickStart: number;
   prevPosTex: THREE.Texture | null;
@@ -504,6 +560,14 @@ export function runSimulationPasses(args: {
   // resolved Phase X mask texture for the mask kill (null unless
   // the kill is on and the mask image is ready).
   spawnTime?: number;
+  // Spawn allocator (stage 2, E2): the envelope clock the
+  // allocator variant's thresholds run on, accumulated by the
+  // scene (advanceSpawnEnvelopeClock); the previous frame's
+  // value rides alongside for the activation tests. Both fall
+  // back to the spawn time (and spawn time − dt) when the
+  // caller does not track them.
+  spawnClockTime?: number;
+  spawnClockPrev?: number;
   killMaskTex?: THREE.Texture | null;
   // Group kill (Phase DG): the replica-stack runner sets this —
   // in a stack pass vUv is stack-local while the attribute bake
@@ -517,6 +581,14 @@ export function runSimulationPasses(args: {
   // shaders read the legacy hash, so a missing texture can never
   // change the order silently.
   spawnOrderTex?: THREE.Texture | null;
+  // Texture-unit fix (Grammar 2.0 stage 1): the spawn-order
+  // bake's normaliser (spawnDistanceMaxValue over the same
+  // initial positions). The live shader variants derive the
+  // gate value from the initial-position texture divided by
+  // this scalar instead of sampling the order texture, so
+  // the velocity live variant stays inside the 16-unit
+  // floor. Set alongside spawnOrderTex by the runtime.
+  spawnOrderMaxDist?: number;
   // Multi-touch interference (Phase AO): world positions of all
   // tracked pointers (index 0 = primary) and how many entries are
   // live. Only consulted while gpgpuMouseMultiTouch is on; absent
@@ -627,6 +699,30 @@ export function runSimulationPasses(args: {
   } = args;
 
   if (useWebGPU && webgpuState) {
+    // Live particle rules (Grammar 2.0 stage 1, WGSL slice):
+    // the WGSL REP program, built with the same inputs the
+    // WebGL wiring builds its REP fragment from (the resolved
+    // rule list, the attribute names, the group definitions,
+    // the density supply present on this route too — the
+    // density pass runs here as well). buildRuleEvalWgsl
+    // returns null for anything the WGSL REP cannot evaluate
+    // faithfully, and the capability registry has already
+    // routed those configs to WebGL, so a null here means
+    // simply "no live rules stand". The signature mirrors the
+    // WebGL REP's (rules / groups / names / interval) plus
+    // the texture size, since the WGSL REP is a compiled
+    // program rather than a texture-sized pass.
+    const liveRulesResolved = resolveLiveParticleRules(config.gpgpuParticleRulesLive ?? '');
+    const liveGroupDefs = parseGpgpuGroups(config.gpgpuGroupsData ?? '');
+    const liveWgsl = buildRuleEvalWgsl(liveRulesResolved, {
+      names: config.gpgpuAttrNames,
+      names2: config.gpgpuAttrNames2,
+      groupDefs: liveGroupDefs,
+      densityAvailable: true,
+    });
+    const liveRepSignature = liveWgsl
+      ? `repw|${config.gpgpuParticleRulesLive ?? ''}|${config.gpgpuGroupsData ?? ''}|${config.gpgpuAttrNames.join(',')}|${config.gpgpuAttrNames2.join(',')}|${resolveAttrDynInterval(config.gpgpuRuleEvalInterval)}|${webgpuState.texSize}`
+      : '';
     stepWebGPUCompute(
       webgpuState,
       webgpuPingIsARef.current,
@@ -666,6 +762,24 @@ export function runSimulationPasses(args: {
         particleRulesEnabled: !!args.attrTex && hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''),
         particleRuleKillEnabled: !!args.attrTex && hasEffectiveParticleRules(config.gpgpuParticleRules ?? '')
           && particleRulesHaveAction(config.gpgpuParticleRules ?? '', 'kill') && !args.suppressGroupKill,
+        // Live particle rules (Grammar 2.0 stage 1, WGSL
+        // slice): the WGSL REP stands while liveWgsl is
+        // non-null. The kill consumption mirrors the baked
+        // kill's suppression rule (the group-kill suppression
+        // applies to both, exactly as the WebGL wiring's
+        // liveKill uniform is gated by the same flag).
+        liveRulesEnabled: liveWgsl !== null,
+        liveRuleKillEnabled: liveWgsl !== null
+          && liveRulesHaveAction(config.gpgpuParticleRulesLive ?? '', 'kill') && !args.suppressGroupKill,
+        liveRuleTrueKillEnabled: liveWgsl !== null
+          && liveRulesHaveAction(config.gpgpuParticleRulesLive ?? '', 'true-kill'),
+        liveRuleEval: liveWgsl
+          ? {
+            wgsl: liveWgsl,
+            signature: liveRepSignature,
+            interval: resolveAttrDynInterval(config.gpgpuRuleEvalInterval),
+          }
+          : null,
         audioBlast: blast,
         nBodyEnabled: config.gpgpuNBodyEnabled,
         nBodyStrength: config.gpgpuNBodyStrength,
@@ -712,6 +826,14 @@ export function runSimulationPasses(args: {
         particleLifeFriction: config.gpgpuParticleLifeFriction,
         particleLifeSpecies: Math.max(2, Math.min(6, Math.round(config.gpgpuParticleLifeSpecies))),
         particleLifeMatrix: resolveParticleLifeMatrix(config),
+        // Meander (Grammar 2.0 stage 2, B7 follow-up): the
+        // WGSL velocity pass now carries the wander term; the
+        // amount / scale ride verbatim from the same keys the
+        // WebGL uniforms read, and the standalone flag comes
+        // from the single resolution point in lib/gpgpuMeander.
+        particleLifeMeanderAmount: config.gpgpuParticleLifeMeanderAmount,
+        particleLifeMeanderScale: config.gpgpuParticleLifeMeanderScale,
+        meanderStandaloneEnabled: meanderStandaloneActive(config),
         vortexEnabled: config.gpgpuVortexEnabled,
         vortexStrength: config.gpgpuVortexStrength,
         vortexTilt: config.gpgpuVortexTilt,
@@ -776,7 +898,7 @@ export function runSimulationPasses(args: {
           : 0,
         replicaAgeBase: 0,
         emitLightEnabled: config.gpgpuEmitShape === 'light',
-        emitLightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ },
+        emitLightPos: resolveEmitLightPos(config),
         // Crowd steering (Phase 20 stage 2): the WGSL twin's
         // params, from the same single resolution point as the
         // WebGL uniforms below.
@@ -880,7 +1002,7 @@ export function runSimulationPasses(args: {
             : 0,
           replicaAgeBase: 0,
           emitLightEnabled: config.gpgpuEmitShape === 'light',
-          emitLightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ },
+          emitLightPos: resolveEmitLightPos(config),
           configEpoch: grainsDemConfigEpochValue(),
         };
       })(),
@@ -1066,6 +1188,18 @@ export function runSimulationPasses(args: {
   // the solver is bound (this later assignment wins).
   if (rigidActive && velSimMat.uniforms.uSpawnBurst) velSimMat.uniforms.uSpawnBurst.value = 1;
   if (velSimMat.uniforms.uSpawnTime) velSimMat.uniforms.uSpawnTime.value = args.spawnTime ?? time;
+  // Spawn allocator (stage 2, E2): the effective rate + the
+  // envelope clock, read only by the allocator variant; the
+  // emitter-velocity uniforms likewise (directed mode only).
+  if (velSimMat.uniforms.uSpawnRateEff) velSimMat.uniforms.uSpawnRateEff.value = resolveSpawnRateEff(config, texSize);
+  if (velSimMat.uniforms.uSpawnClockTime) velSimMat.uniforms.uSpawnClockTime.value = args.spawnClockTime ?? args.spawnTime ?? time;
+  if (velSimMat.uniforms.uSpawnClockPrev) velSimMat.uniforms.uSpawnClockPrev.value = args.spawnClockPrev ?? (args.spawnTime ?? time);
+  if (velSimMat.uniforms.uEmitterVelDir) {
+    const base = resolveEmitterBaseDirection(config);
+    (velSimMat.uniforms.uEmitterVelDir.value as THREE.Vector3).set(base.x, base.y, base.z);
+  }
+  if (velSimMat.uniforms.uEmitterVelSpeed) velSimMat.uniforms.uEmitterVelSpeed.value = clampEmitterVelSpeed(config.gpgpuEmitterVelSpeed ?? 2);
+  if (velSimMat.uniforms.uEmitterVelSpread) velSimMat.uniforms.uEmitterVelSpread.value = clampEmitterVelSpread(config.gpgpuEmitterVelSpread ?? 0.5);
   if (velSimMat.uniforms.uSpawnPulseInterval) velSimMat.uniforms.uSpawnPulseInterval.value = Math.max(0, Math.min(30, config.gpgpuSpawnPulseInterval ?? 0));
   if (velSimMat.uniforms.uSpawnPulseDuty) velSimMat.uniforms.uSpawnPulseDuty.value = Math.max(0.05, Math.min(1, config.gpgpuSpawnPulseDuty ?? 0.3));
   // Phase AX spawn grammar: pulse cycles / probability, distance
@@ -1075,6 +1209,7 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uSpawnPulseCycles) velSimMat.uniforms.uSpawnPulseCycles.value = Math.max(0, Math.min(64, Math.floor(config.gpgpuSpawnPulseCycles ?? 0)));
   if (velSimMat.uniforms.uSpawnPulseProbability) velSimMat.uniforms.uSpawnPulseProbability.value = Math.max(0, Math.min(1, config.gpgpuSpawnPulseProbability ?? 1));
   if (velSimMat.uniforms.uSpawnOrderTex) velSimMat.uniforms.uSpawnOrderTex.value = args.spawnOrderTex ?? null;
+  if (velSimMat.uniforms.uSpawnOrderMaxDist) velSimMat.uniforms.uSpawnOrderMaxDist.value = args.spawnOrderMaxDist ?? 0;
   if (velSimMat.uniforms.uSpawnOrderMode) velSimMat.uniforms.uSpawnOrderMode.value = config.gpgpuSpawnOrderMode !== 'hash' && args.spawnOrderTex && !vellum.active && !rigidActive ? (config.gpgpuSpawnOrderMode === 'distanceFar' ? 2 : 1) : 0;
   if (velSimMat.uniforms.uSpawnEventEnabled) velSimMat.uniforms.uSpawnEventEnabled.value = !!config.gpgpuSpawnEventEnabled && !vellum.active && !rigidActive;
   if (velSimMat.uniforms.uSpawnEventTime) velSimMat.uniforms.uSpawnEventTime.value = Math.max(0, Math.min(600, config.gpgpuSpawnEventTime ?? 0));
@@ -1091,10 +1226,20 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uAgeMax) velSimMat.uniforms.uAgeMax.value = config.gpgpuAgeMax;
   const acVelocityPoints = normalizeAgeCurvePoints(config.gpgpuAgeCurveVelocityPoints);
   const acForcePoints = normalizeAgeCurvePoints(config.gpgpuAgeCurveForcePoints);
-  if (velSimMat.uniforms.uAgeCurveVelocityEnabled) velSimMat.uniforms.uAgeCurveVelocityEnabled.value = config.gpgpuAgeCurveVelocityEnabled && !isAgeCurveIdentity(acVelocityPoints);
+  // Age free curves (Grammar 2.0 stage 2, B4): the suppression
+  // follows the free curve's identity while a target's free
+  // mode is on (lib/gpgpuAgeFreeCurves.ts), and the padded
+  // knot arrays ride along for the variant strings.
+  const acVelocityFree = resolveAgeFreeCurve(config, 'velocity');
+  const acForceFree = resolveAgeFreeCurve(config, 'force');
+  if (velSimMat.uniforms.uAgeCurveVelocityEnabled) velSimMat.uniforms.uAgeCurveVelocityEnabled.value = !ageCurveTargetSuppressed(config, 'velocity');
   if (velSimMat.uniforms.uAgeCurveVelocity) velSimMat.uniforms.uAgeCurveVelocity.value = [...acVelocityPoints];
-  if (velSimMat.uniforms.uAgeCurveForceEnabled) velSimMat.uniforms.uAgeCurveForceEnabled.value = config.gpgpuAgeCurveForceEnabled && !isAgeCurveIdentity(acForcePoints);
+  if (velSimMat.uniforms.uAgeCurveVelocityFreeT) velSimMat.uniforms.uAgeCurveVelocityFreeT.value = acVelocityFree.flatT;
+  if (velSimMat.uniforms.uAgeCurveVelocityFreeV) velSimMat.uniforms.uAgeCurveVelocityFreeV.value = acVelocityFree.flatV;
+  if (velSimMat.uniforms.uAgeCurveForceEnabled) velSimMat.uniforms.uAgeCurveForceEnabled.value = !ageCurveTargetSuppressed(config, 'force');
   if (velSimMat.uniforms.uAgeCurveForce) velSimMat.uniforms.uAgeCurveForce.value = [...acForcePoints];
+  if (velSimMat.uniforms.uAgeCurveForceFreeT) velSimMat.uniforms.uAgeCurveForceFreeT.value = acForceFree.flatT;
+  if (velSimMat.uniforms.uAgeCurveForceFreeV) velSimMat.uniforms.uAgeCurveForceFreeV.value = acForceFree.flatV;
   velSimMat.uniforms.uAttractorStrength.value = config.gpgpuAttractorStrength;
   velSimMat.uniforms.uAttractorScale.value = config.gpgpuAttractorScale;
   if (velSimMat.uniforms.uAttractorSpaceMode) velSimMat.uniforms.uAttractorSpaceMode.value = { legacy: 0, spread: 1, frame: 2, ring: 3 }[config.gpgpuAttractorSpaceMode] ?? 0;
@@ -1125,6 +1270,60 @@ export function runSimulationPasses(args: {
   }
   if (velSimMat.uniforms.uWindVolumeRadius) velSimMat.uniforms.uWindVolumeRadius.value = Math.max(0, config.gpgpuWindVolumeRadius ?? 60);
   if (velSimMat.uniforms.uWindVolumeStrength) velSimMat.uniforms.uWindVolumeStrength.value = config.gpgpuWindVolumeStrength ?? 1;
+  // Field instances (Grammar 2.0 stage 2, B1): resolved
+  // CPU-side like the terrain bakes — the cached getter
+  // returns null unless at least one instance (or, since B2,
+  // one path asset) resolves, so a null supply leaves every
+  // field uniform at its inert entry and the stock shader
+  // path verbatim. Resolving here (not via scene args) means
+  // replica stacks share the fields, like the terrain forces
+  // above. The layer slot modulation engages only while the
+  // attribute texture is present — the same condition that
+  // raises uAttrEnabled for this consumer below.
+  {
+    // B2: the supply is the COMBINED column supply (fields +
+    // path assets in one texture — lib/gpgpuPathAssets.ts
+    // getColumnSupply, which reproduces B1's supply byte for
+    // byte while no path resolves).
+    const fieldSupply = getColumnSupply(config);
+    const fu = velSimMat.uniforms;
+    // Merged supply (stage 2 texture-unit follow-up): while
+    // the merged plan stands, the velocity variant reads
+    // both supplies through the REP's taller texture (the
+    // scene hands it over as args.ruleLiveTex); the column
+    // uniforms below keep their values for the section
+    // bases, and uColWidth feeds the merged fetch's remap.
+    const mergedPlan = resolveMergedSupplyPlan(config, texSize);
+    if (fu.uMergedTex) fu.uMergedTex.value = mergedPlan ? (args.ruleLiveTex ?? null) : null;
+    if (fu.uMergedTexHeight) fu.uMergedTexHeight.value = mergedPlan ? mergedPlan.totalHeight : texSize;
+    if (fu.uColTex) fu.uColTex.value = fieldSupply ? fieldSupply.texture : null;
+    if (fu.uColWidth) fu.uColWidth.value = fieldSupply ? fieldSupply.width : COLUMN_TEX_WIDTH;
+    if (fu.uColHeight) fu.uColHeight.value = fieldSupply ? fieldSupply.height : FIELD_COLUMN_LAYOUT.height;
+    if (fu.uColFieldsBase) fu.uColFieldsBase.value = fieldSupply ? fieldSupply.fieldsBase : 0;
+    if (fu.uColLayersBase) fu.uColLayersBase.value = fieldSupply ? fieldSupply.layersBase : 0;
+    if (fu.uFieldInstanceCount) fu.uFieldInstanceCount.value = fieldSupply ? fieldSupply.instanceCount : 0;
+    if (fu.uFieldLayerAttrEnabled) fu.uFieldLayerAttrEnabled.value = !!args.attrTex && fieldLayerSlotAttrActive(config);
+    // Path assets (stage 2, B2): the path sections of the
+    // same supply, read only by the asset variant of the
+    // steer-seek chunk. The slot is the shared resolution
+    // (-1 = every particle follows path 0).
+    if (fu.uColPathsBase) fu.uColPathsBase.value = fieldSupply ? fieldSupply.pointsBase : 0;
+    if (fu.uColPathHeadersBase) fu.uColPathHeadersBase.value = fieldSupply ? fieldSupply.headersBase : 0;
+    if (fu.uPathAssetCount) fu.uPathAssetCount.value = fieldSupply ? fieldSupply.pathCount : 0;
+    if (fu.uPathAssetSlot) fu.uPathAssetSlot.value = resolvePathAsset(config).slot;
+    // Speed / relative drag (Grammar 2.0 stage 2, B3): the
+    // resolved values from lib/gpgpuSpeedDragSpin. The
+    // uniforms exist only in their variant strings; the
+    // entries are inert otherwise.
+    const relDrag = resolveRelDrag(config);
+    if (fu.uRelDragWindVel) (fu.uRelDragWindVel.value as THREE.Vector3).set(relDrag.windVel.x, relDrag.windVel.y, relDrag.windVel.z);
+    if (fu.uRelDragRate) fu.uRelDragRate.value = relDrag.rate;
+    if (fu.uRelDragSlot) fu.uRelDragSlot.value = relDrag.slot;
+    const targetSpeed = resolveTargetSpeed(config);
+    if (fu.uTargetSpeed) fu.uTargetSpeed.value = targetSpeed.speed;
+    if (fu.uTargetSpeedBlend) fu.uTargetSpeedBlend.value = targetSpeed.blend;
+    if (fu.uTargetSpeedSlot) fu.uTargetSpeedSlot.value = targetSpeed.slot;
+  }
   // Terrain slope flow (Phase AE): resolved CPU-side like the
   // kill mask — the texture getter returns null unless the key
   // is on AND the terrain mesh is live in plane mode, so the
@@ -1202,7 +1401,12 @@ export function runSimulationPasses(args: {
     // engine owns slot 3 then (design 3.5), so the channel
     // must not also be read as group membership.
     const particleRulesActive = hasEffectiveParticleRules(config.gpgpuParticleRules ?? '');
-    if (velSimMat.uniforms.uAttrEnabled) velSimMat.uniforms.uAttrEnabled.value = !!attrTex && (attrConsumers.forceActive || attrConsumers.groupActive || attrConsumers.steerStateActive || particleRulesActive);
+    // Live particle rules (Grammar 2.0 1A): the REP texture +
+    // its enable, resolved like the baked mask — the live
+    // segment ANDs into the same grp* gates (design section 7).
+    if (velSimMat.uniforms.uRuleLiveTex) velSimMat.uniforms.uRuleLiveTex.value = args.ruleLiveTex ?? null;
+    if (velSimMat.uniforms.uRuleLiveEnabled) velSimMat.uniforms.uRuleLiveEnabled.value = !!args.ruleLiveTex && (liveRulesHaveConsumedAction(config.gpgpuParticleRulesLive ?? '') || predationActive(config));
+    if (velSimMat.uniforms.uAttrEnabled) velSimMat.uniforms.uAttrEnabled.value = !!attrTex && (attrConsumers.forceActive || attrConsumers.groupActive || attrConsumers.steerStateActive || particleRulesActive || fieldLayerSlotAttrActive(config) || b3SlotAttrActive(config));
     if (velSimMat.uniforms.uAttrForceEnabled) velSimMat.uniforms.uAttrForceEnabled.value = !!attrTex && attrConsumers.forceActive;
     if (velSimMat.uniforms.uAttrForceSlot) velSimMat.uniforms.uAttrForceSlot.value = normalizeAttrSlot(config.gpgpuAttrForceSlot);
     if (velSimMat.uniforms.uAttrForceAmount) velSimMat.uniforms.uAttrForceAmount.value = Math.max(0, Math.min(1, config.gpgpuAttrForceAmount ?? 1));
@@ -1525,8 +1729,76 @@ export function runSimulationPasses(args: {
   // the legacy origin-sphere respawn.
   if (posSimMat.uniforms.uEmitLight) {
     posSimMat.uniforms.uEmitLight.value = config.gpgpuEmitShape === 'light';
-    (posSimMat.uniforms.uEmitLightPos.value as THREE.Vector3).set(config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ);
+    const emitLightPos = resolveEmitLightPos(config);
+    (posSimMat.uniforms.uEmitLightPos.value as THREE.Vector3).set(emitLightPos.x, emitLightPos.y, emitLightPos.z);
   }
+  // Emitter respawn shape / transform (stage 2, E1/E0): the
+  // uniforms exist on the shared material but are read only by
+  // the emitter variants of the fragment. The shape id follows
+  // EMIT_SHAPE_IDS; 'auto' never reaches here as a variant, and
+  // its id slot simply stays at the sphere id unused. The
+  // transform matrix is the lib/gpgpuEmitter.ts array, uploaded
+  // into the Matrix3's column-major elements verbatim.
+  if (posSimMat.uniforms.uRespawnShape) {
+    const rs = config.gpgpuRespawnShape ?? 'auto';
+    posSimMat.uniforms.uRespawnShape.value = rs === 'auto' ? 0 : EMIT_SHAPE_IDS[rs];
+  }
+  if (posSimMat.uniforms.uEmitterPos) {
+    const et = resolveEmitterTransform(config);
+    (posSimMat.uniforms.uEmitterPos.value as THREE.Vector3).set(et.posX, et.posY, et.posZ);
+    const m = posSimMat.uniforms.uEmitterRotScale.value as THREE.Matrix3;
+    const els = emitterRotScaleElements(et);
+    for (let i = 0; i < 9; i++) m.elements[i] = els[i];
+  }
+  // Distribution layer + shader seed (stage 2, B5): read only
+  // by the B5 variants of the position fragment. The packed
+  // operator list follows lib/gpgpuDistribution.ts; the seed
+  // phase follows lib/gpgpuRandom.ts (0 while the opt-in is
+  // off, when the uniforms are never read).
+  if (posSimMat.uniforms.uDistOps) {
+    const distOps = resolveDistributionOps(config);
+    const packed = packDistributionOps(distOps);
+    const arr = posSimMat.uniforms.uDistOps.value as THREE.Vector4[];
+    for (let i = 0; i < arr.length; i++) arr[i].set(packed[i * 4], packed[i * 4 + 1], packed[i * 4 + 2], packed[i * 4 + 3]);
+    if (posSimMat.uniforms.uDistOpCount) posSimMat.uniforms.uDistOpCount.value = distOps.length;
+  }
+  if (posSimMat.uniforms.uShaderSeedPhase) {
+    posSimMat.uniforms.uShaderSeedPhase.value = resolveShaderSeedPhase(config);
+  }
+  // Emission sources (stage 2, E3): read only by the emission
+  // variants of the position fragment. The cloud texture is
+  // the runtime's published emission cloud. The path arrays
+  // follow the steering supply discipline: the authored
+  // points packed verbatim (packSteeringPath) plus the
+  // arc-length table of lib/gpgpuEmissionSource.ts. The mask
+  // gate follows the kill mask's resolution discipline (key
+  // on AND a ready mask texture — the scene resolves the
+  // texture for the emission gate too), suppressed under
+  // vellum / rigid like the other kills.
+  if (posSimMat.uniforms.uEmitCloudTex) posSimMat.uniforms.uEmitCloudTex.value = args.emitCloudTex ?? null;
+  {
+    const emitPath = resolveEmissionPath(config);
+    if (posSimMat.uniforms.uEmitPathCount) posSimMat.uniforms.uEmitPathCount.value = emitPath ? emitPath.points.length : 0;
+    if (emitPath && posSimMat.uniforms.uEmitPath) {
+      const packed = packSteeringPath(emitPath.points);
+      const arr = posSimMat.uniforms.uEmitPath.value as THREE.Vector3[];
+      for (let i = 0; i < arr.length; i++) arr[i].set(packed[i * 3], packed[i * 3 + 1], packed[i * 3 + 2]);
+    }
+    if (emitPath && posSimMat.uniforms.uEmitPathCum) posSimMat.uniforms.uEmitPathCum.value = packEmissionPathCum(emitPath);
+    // Path-asset emission (stage 2, B2): while the asset is
+    // extended, the respawn walk reads asset path 0 from the
+    // shared column texture (the same supply the velocity
+    // pass fills above) instead of the uniform arrays. The
+    // base is the absolute texel index of path 0's first
+    // point; the count is its full point count.
+    const colSupply = getColumnSupply(config);
+    if (posSimMat.uniforms.uEmitColTex) posSimMat.uniforms.uEmitColTex.value = colSupply ? colSupply.texture : null;
+    if (posSimMat.uniforms.uEmitColWidth) posSimMat.uniforms.uEmitColWidth.value = colSupply ? colSupply.width : COLUMN_TEX_WIDTH;
+    if (posSimMat.uniforms.uEmitColHeight) posSimMat.uniforms.uEmitColHeight.value = colSupply ? colSupply.height : FIELD_COLUMN_LAYOUT.height;
+    if (posSimMat.uniforms.uEmitPathBase) posSimMat.uniforms.uEmitPathBase.value = colSupply && colSupply.pathCount > 0 ? colSupply.pointsBase + (colSupply.pathPointOffsets[0] ?? 0) : 0;
+    if (posSimMat.uniforms.uEmitPathTexCount) posSimMat.uniforms.uEmitPathTexCount.value = emitPath ? emitPath.points.length : 0;
+  }
+  if (posSimMat.uniforms.uEmitMaskEnabled) posSimMat.uniforms.uEmitMaskEnabled.value = !!config.gpgpuEmitMaskEnabled && !!args.killMaskTex && !vellum.active && !rigidActive;
   // Lifecycle grammar (Phase AB): spawn gate + kill conditions.
   // The mask kill resolves here: key on AND a ready mask texture —
   // otherwise the shader keeps the legacy path (the UI states the
@@ -1535,12 +1807,24 @@ export function runSimulationPasses(args: {
   if (posSimMat.uniforms.uSpawnBurst) posSimMat.uniforms.uSpawnBurst.value = vellum.active ? 1 : Math.max(0, Math.min(1, config.gpgpuSpawnBurst ?? 1));
   if (rigidActive && posSimMat.uniforms.uSpawnBurst) posSimMat.uniforms.uSpawnBurst.value = 1;
   if (posSimMat.uniforms.uSpawnTime) posSimMat.uniforms.uSpawnTime.value = args.spawnTime ?? time;
+  // Spawn allocator (stage 2, E2): same resolution as the
+  // velocity pass — the effective rate and the envelope
+  // clock (current + previous frame), read only by the
+  // allocator variant of the position fragment.
+  if (posSimMat.uniforms.uSpawnRateEff) posSimMat.uniforms.uSpawnRateEff.value = resolveSpawnRateEff(config, texSize);
+  if (posSimMat.uniforms.uSpawnClockTime) posSimMat.uniforms.uSpawnClockTime.value = args.spawnClockTime ?? args.spawnTime ?? time;
+  if (posSimMat.uniforms.uSpawnClockPrev) posSimMat.uniforms.uSpawnClockPrev.value = args.spawnClockPrev ?? (args.spawnTime ?? time);
   if (posSimMat.uniforms.uSpawnPulseInterval) posSimMat.uniforms.uSpawnPulseInterval.value = Math.max(0, Math.min(30, config.gpgpuSpawnPulseInterval ?? 0));
   if (posSimMat.uniforms.uSpawnPulseDuty) posSimMat.uniforms.uSpawnPulseDuty.value = Math.max(0.05, Math.min(1, config.gpgpuSpawnPulseDuty ?? 0.3));
   // Phase AX spawn grammar (same resolution as the velocity pass).
   if (posSimMat.uniforms.uSpawnPulseCycles) posSimMat.uniforms.uSpawnPulseCycles.value = Math.max(0, Math.min(64, Math.floor(config.gpgpuSpawnPulseCycles ?? 0)));
   if (posSimMat.uniforms.uSpawnPulseProbability) posSimMat.uniforms.uSpawnPulseProbability.value = Math.max(0, Math.min(1, config.gpgpuSpawnPulseProbability ?? 1));
   if (posSimMat.uniforms.uSpawnOrderTex) posSimMat.uniforms.uSpawnOrderTex.value = args.spawnOrderTex ?? null;
+  // Texture-unit fix: the position live variant declares
+  // uInitPosTex + uSpawnOrderMaxDist in place of the order
+  // sampler (the same args the velocity pass consumes).
+  if (posSimMat.uniforms.uInitPosTex) posSimMat.uniforms.uInitPosTex.value = initPosTex ?? null;
+  if (posSimMat.uniforms.uSpawnOrderMaxDist) posSimMat.uniforms.uSpawnOrderMaxDist.value = args.spawnOrderMaxDist ?? 0;
   if (posSimMat.uniforms.uSpawnOrderMode) posSimMat.uniforms.uSpawnOrderMode.value = config.gpgpuSpawnOrderMode !== 'hash' && args.spawnOrderTex && !vellum.active && !rigidActive ? (config.gpgpuSpawnOrderMode === 'distanceFar' ? 2 : 1) : 0;
   if (posSimMat.uniforms.uSpawnEventEnabled) posSimMat.uniforms.uSpawnEventEnabled.value = !!config.gpgpuSpawnEventEnabled && !vellum.active && !rigidActive;
   if (posSimMat.uniforms.uSpawnEventTime) posSimMat.uniforms.uSpawnEventTime.value = Math.max(0, Math.min(600, config.gpgpuSpawnEventTime ?? 0));
@@ -1601,6 +1885,37 @@ export function runSimulationPasses(args: {
       && particleRulesHaveAction(config.gpgpuParticleRules ?? '', 'kill')
       && !vellum.active && !rigidActive && !args.suppressGroupKill;
     if (posSimMat.uniforms.uParticleRuleKillEnabled) posSimMat.uniforms.uParticleRuleKillEnabled.value = ruleKillOn;
+    // Live rule kill (Grammar 2.0 1A): OR with the baked kill,
+    // same suppression discipline. The REP texture is the
+    // authority — no attrTex requirement (the REP output is a
+    // texture of its own).
+    const liveRuleKillOn = !!args.ruleLiveTex
+      && liveRulesHaveAction(config.gpgpuParticleRulesLive ?? '', 'kill')
+      && !vellum.active && !rigidActive && !args.suppressGroupKill;
+    if (posSimMat.uniforms.uParticleRuleLiveKillEnabled) posSimMat.uniforms.uParticleRuleLiveKillEnabled.value = liveRuleKillOn;
+    // Live true-kill (Grammar 2.0 1C): the REP mask's bit 6
+    // is latched, so the position pass parks matched
+    // particles for good. Same suppression discipline as
+    // the live kill.
+    const liveRuleTrueKillOn = !!args.ruleLiveTex
+      && (liveRulesHaveAction(config.gpgpuParticleRulesLive ?? '', 'true-kill') || predationTrueKillActive(config))
+      && !vellum.active && !rigidActive && !args.suppressGroupKill;
+    if (posSimMat.uniforms.uParticleRuleLiveTrueKillEnabled) posSimMat.uniforms.uParticleRuleLiveTrueKillEnabled.value = liveRuleTrueKillOn;
+    // Rule spawn gate (Grammar 2.0 stage 2, E2): the REP
+    // mask's bit 13 (the live rules' spawn pulse) re-births
+    // matched particles through the shared respawn block.
+    // Same suppression discipline as the live kill, plus the
+    // gate's own key and a live spawn action.
+    const spawnRuleGateOn = !!args.ruleLiveTex
+      && !!config.gpgpuSpawnRuleGateEnabled
+      && (liveRulesHaveAction(config.gpgpuParticleRulesLive ?? '', 'spawn') || predationBirthActive(config))
+      && !vellum.active && !rigidActive && !args.suppressGroupKill;
+    if (posSimMat.uniforms.uSpawnRuleGateEnabled) posSimMat.uniforms.uSpawnRuleGateEnabled.value = spawnRuleGateOn;
+    if (posSimMat.uniforms.uRuleLiveTex) posSimMat.uniforms.uRuleLiveTex.value = args.ruleLiveTex ?? null;
+    // Merged supply (stage 2 texture-unit follow-up): the
+    // live reads' y scale while the bound REP texture is the
+    // taller merged target (1.0 = the plain square).
+    if (posSimMat.uniforms.uLiveTexYScale) posSimMat.uniforms.uLiveTexYScale.value = resolveMergedSupplyPlan(config, texSize)?.yScale ?? 1;
     if (posSimMat.uniforms.uAttrTex) posSimMat.uniforms.uAttrTex.value = args.attrTex ?? null;
     if (gatePredicate) {
       if (posSimMat.uniforms.uGroupSlot) posSimMat.uniforms.uGroupSlot.value = gatePredicate.slot;
@@ -1608,6 +1923,58 @@ export function runSimulationPasses(args: {
       if (posSimMat.uniforms.uGroupLow) posSimMat.uniforms.uGroupLow.value = gatePredicate.low;
       if (posSimMat.uniforms.uGroupHigh) posSimMat.uniforms.uGroupHigh.value = gatePredicate.high;
       if (posSimMat.uniforms.uGroupInvert) posSimMat.uniforms.uGroupInvert.value = gatePredicate.invert;
+    }
+  }
+  // Contact pass (Grammar 2.0 stage 1, the slice-1B
+  // follow-up): replay this step's contact judgments from
+  // the frame-start positions and the fresh velocity,
+  // between the velocity render and the position render it
+  // mirrors. The bindings are the position material's own
+  // resolved values above. Under a solver resolution the
+  // replay cannot mirror (Verlet / Grains projection /
+  // Vellum / Rigid — the same family the lifecycle
+  // resolutions protect) the pass is suppressed instead and
+  // hit / hits read 0.
+  if (args.contactPass) {
+    if (contactReplayEnabled({
+      verletEnabled: config.gpgpuVerletEnabled,
+      grainsProjection: grainsProjectionActive(config),
+      vellum: vellum.active,
+      rigid: rigidActive,
+    })) {
+      const meshHalfWorld = meshSdfPos ? (meshSdfPos.grid.sideNorm * meshSdfWorldPos) / 2 : 0;
+      args.contactPass.run(gl, {
+        posTex: posIn.texture,
+        velTex: velOut.texture,
+        delta: dt,
+        speed: config.gpgpuSpeed,
+        bounceRadius: config.gpgpuBounceRadius,
+        sdf: {
+          enabled: config.gpgpuSdfEnabled,
+          shape: SDF_SHAPE_IDS[config.gpgpuSdfShape] ?? 0,
+          x: config.gpgpuSdfX,
+          y: config.gpgpuSdfY,
+          z: config.gpgpuSdfZ,
+          size: config.gpgpuSdfSize,
+        },
+        meshSdf: meshSdfPos ? {
+          texture: meshSdfPos.texture,
+          origin: new THREE.Vector3(-meshHalfWorld, -meshHalfWorld, -meshHalfWorld),
+          domainWorld: meshSdfPos.grid.sideNorm * meshSdfWorldPos,
+          scale: meshSdfWorldPos,
+          voxelWorld: meshSdfPos.grid.voxelNorm * meshSdfWorldPos,
+        } : null,
+        floor: { enabled: config.gpgpuFloorEnabled, y: config.gpgpuFloorY },
+        terrain: terrainColliderTex ? {
+          texture: terrainColliderTex,
+          extent: Math.max(terrainSlopeWorldExtent(config), 0.001),
+          heightWorld: terrainColliderHeightWorld(config),
+          gradScale: terrainColliderGradientScale(config),
+          texSize: TERRAIN_DERIVED_SIZE,
+        } : null,
+      });
+    } else {
+      args.contactPass.suppress();
     }
   }
   simMesh.material = posSimMat;
@@ -1940,7 +2307,7 @@ export function runSimulationPasses(args: {
   }
 }
 
-const SDF_SHAPE_IDS: Record<ParticleConfig['gpgpuSdfShape'], number> = {
+export const SDF_SHAPE_IDS: Record<ParticleConfig['gpgpuSdfShape'], number> = {
   sphere: 0,
   box: 1,
   torus: 2,
@@ -1960,6 +2327,22 @@ const AUX_MODE_IDS: Record<Exclude<ParticleConfig['gpgpuAuxMode'], 'none'>, numb
   bounceSplash: 1,
   sparkTrail: 2,
   birthBurst: 3,
+  // Grammar connection (slice 1D-3): the rule-driven spawn.
+  // Level 1 only — the type is Exclude<gpgpuAuxMode, 'none'>,
+  // and 'ruleSpawn' is not a gpgpuAux2Mode value, so the
+  // chain runner (which reads this same table through
+  // AuxLevelParams.mode) can never resolve a chain level to
+  // mode 4; the chain event chunk carries no branch for it
+  // either (lib/auxRuleSpawn.ts).
+  ruleSpawn: 4,
+  // Child emitter (slice 1D-2): mode 5.
+  emit: 5,
+  // Trail mechanism (stage 4, S6): mode 6 is 'trail'
+  // (TRAIL_AUX_MODE_ID in lib/trailAux.ts). It is NOT a
+  // gpgpuAuxMode value — the level-1 runner substitutes it
+  // while the Aux-type trail drives the pool — so it does
+  // not belong in this table and the chain runner can never
+  // resolve a chain level to it.
 };
 
 // Aux event emission passes (B3): run after the main velocity/position
@@ -1967,6 +2350,60 @@ const AUX_MODE_IDS: Record<Exclude<ParticleConfig['gpgpuAuxMode'], 'none'>, numb
 // the death position and contact velocities of this frame) and the aux
 // pool's own ping-pong pair. The caller flips the aux ping-pong and
 // points the aux draw material at the outputs.
+// Tick probe machinery (stage-4 gate fix round 7, diag
+// only; lib/auxTickProbeDiag.ts): while the ?diag=1 hook has
+// a probe armed for one side, runAuxSimulationPasses renders
+// a probe material ONCE after that frame's Aux renders —
+// a material built from the armed side's own fragment
+// string with only the main() output replaced by the tick
+// declaration (buildAuxTickProbeFrag), sharing the side's
+// uniforms OBJECT by reference — into a dedicated float
+// target, and reads back the first texels as the sample.
+// The probe materials are cached per source material
+// instance (a variant rebuild replaces the instance, which
+// invalidates the cache entry); the target is cached per
+// size. Nothing here runs while unarmed, and the probe
+// never writes into the pool targets.
+const auxTickProbeMatCache: Partial<Record<'vel' | 'pos', { src: THREE.ShaderMaterial; mat: THREE.ShaderMaterial }>> = {};
+let auxTickProbeTarget: THREE.WebGLRenderTarget | null = null;
+
+function getAuxTickProbeMaterial(side: 'vel' | 'pos', src: THREE.ShaderMaterial): THREE.ShaderMaterial | null {
+  const hit = auxTickProbeMatCache[side];
+  if (hit && hit.src === src) return hit.mat;
+  const frag = buildAuxTickProbeFrag(src.fragmentShader);
+  if (!frag) return null;
+  if (hit) hit.mat.dispose();
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: src.vertexShader,
+    fragmentShader: frag,
+  });
+  // The uniforms OBJECT ITSELF is the sharing contract (the
+  // runner's per-frame writes land in it, and the probe
+  // program must read the very values the pass program was
+  // supplied) — assign it directly so the reference is the
+  // source material's object regardless of how the
+  // constructor handled the parameters.
+  mat.uniforms = src.uniforms;
+  auxTickProbeMatCache[side] = { src, mat };
+  return mat;
+}
+
+function getAuxTickProbeTarget(size: number): THREE.WebGLRenderTarget {
+  if (auxTickProbeTarget && auxTickProbeTarget.width === size && auxTickProbeTarget.height === size) {
+    return auxTickProbeTarget;
+  }
+  auxTickProbeTarget?.dispose();
+  auxTickProbeTarget = new THREE.WebGLRenderTarget(size, size, {
+    type: THREE.FloatType,
+    format: THREE.RGBAFormat,
+    minFilter: THREE.NearestFilter,
+    magFilter: THREE.NearestFilter,
+    depthBuffer: false,
+    stencilBuffer: false,
+  });
+  return auxTickProbeTarget;
+}
+
 export function runAuxSimulationPasses(args: {
   config: ParticleConfig;
   texSize: number;
@@ -1984,6 +2421,23 @@ export function runAuxSimulationPasses(args: {
   auxVelOut: THREE.WebGLRenderTarget;
   auxVelMat: THREE.ShaderMaterial;
   auxPosMat: THREE.ShaderMaterial;
+  // Grammar connection (Grammar 2.0 stage 1, slice 1D-3): the
+  // REP's latest output texture, sampled by the ruleSpawn
+  // variant's event test (bit 13 of .r). Null while no live
+  // rule has run — the variant's materials then sample an
+  // unbound texture (black: no pulse anywhere, no spawns).
+  // Only the level-1 materials declare the uniform.
+  mainRuleTex?: THREE.Texture | null;
+  // Spawn inheritance (Grammar 2.0 stage 1, slice 1D-1): the
+  // sparse-write pass into this level's inheritance target,
+  // driven right after the velocity pass (the spawn decision
+  // maker). Absent (key off / no target / no attribute texture)
+  // the pass never runs and the frame is the legacy one.
+  inherit?: {
+    target: THREE.WebGLRenderTarget;
+    mat: THREE.ShaderMaterial;
+    mainAttrTex: THREE.Texture | null;
+  } | null;
 }): void {
   const {
     config,
@@ -2002,10 +2456,20 @@ export function runAuxSimulationPasses(args: {
     auxVelOut,
     auxVelMat,
     auxPosMat,
+    inherit,
   } = args;
 
-  if (config.gpgpuAuxMode === 'none') return;
-  const modeId = AUX_MODE_IDS[config.gpgpuAuxMode] ?? 0;
+  // Trail mechanism (stage 4, S6): while the Aux-type trail
+  // drives the pool, level 1 runs even at gpgpuAuxMode
+  // 'none' — the trail IS the level-1 emitter then — and the
+  // event mode is the trail mode (id 6), taking precedence
+  // over the configured Aux mode for this level.
+  const trailDriven = trailAuxActive(config);
+  if (config.gpgpuAuxMode === 'none' && !trailDriven) return;
+  const modeId = trailDriven || config.gpgpuAuxMode === 'none'
+    ? TRAIL_AUX_MODE_ID
+    : (AUX_MODE_IDS[config.gpgpuAuxMode] ?? 0);
+  const mainRuleTex = args.mainRuleTex ?? null;
   const auxCount = Math.max(0, Math.min(16384, Math.round(config.gpgpuAuxCount)));
 
   const velU = auxVelMat.uniforms;
@@ -2013,15 +2477,37 @@ export function runAuxSimulationPasses(args: {
   velU.uAuxVelTex.value = auxVelIn.texture;
   velU.uMainPosTex.value = mainPosTex;
   velU.uMainVelTex.value = mainVelTex;
+  // Grammar connection (slice 1D-3): declared in the shader
+  // only in the ruleSpawn variant; filled whenever supplied.
+  if (velU.uMainRuleTex) velU.uMainRuleTex.value = mainRuleTex;
   velU.uMainTexSizeF.value = texSize;
   velU.uAuxCount.value = auxCount;
   velU.uAuxMode.value = modeId;
   velU.uAuxIntensity.value = config.gpgpuAuxIntensity;
   velU.uAuxSpeed.value = config.gpgpuAuxSpeed;
-  velU.uAuxLife.value = config.gpgpuAuxLife;
+  // Trail mechanism (stage 4, S6): while the trail drives
+  // the pool, the spawn life is the resolved trail life
+  // (explicit gpgpuTrailAuxLife, else derived from
+  // gpgpuTrailLength); every other configuration keeps the
+  // configured Aux life untouched.
+  velU.uAuxLife.value = trailDriven ? resolveTrailAuxLifeSeconds(config) : config.gpgpuAuxLife;
   velU.uAuxGravityScale.value = config.gpgpuAuxGravityScale;
   velU.uAuxDrag.value = config.gpgpuAuxDrag;
   velU.uAuxCurl.value = config.gpgpuAuxCurl;
+  // Child emitter (slice 1D-2): declared in the shader only in
+  // the emit variant; the passes fill them per frame.
+  if (velU.uAuxEmitRate) {
+    velU.uAuxEmitRate.value = config.gpgpuAuxEmitRate;
+    velU.uAuxEmitShape.value = AUX_EMIT_SHAPE_IDS[config.gpgpuAuxEmitShape] ?? 0;
+    velU.uAuxEmitSpread.value = config.gpgpuAuxEmitSpread;
+  }
+  // Trail mechanism (stage 4, S6): declared in the shader
+  // only in the trail variant; filled per frame.
+  if (velU.uTrailEmitInterval) {
+    velU.uTrailEmitInterval.value = resolveTrailEmitInterval(config.gpgpuTrailEmitInterval);
+    velU.uTrailEmitRate.value = resolveTrailEmitRate(config.gpgpuTrailEmitRate);
+  }
+  if (velU.uAuxInheritVelScale) velU.uAuxInheritVelScale.value = config.gpgpuAuxInheritVelScale;
   velU.uAgeEnabled.value = config.gpgpuAgeEnabled;
   velU.uAgeMax.value = config.gpgpuAgeMax;
   velU.uFloorEnabled.value = config.gpgpuFloorEnabled;
@@ -2047,6 +2533,76 @@ export function runAuxSimulationPasses(args: {
   simMesh.material = auxVelMat;
   gl.setRenderTarget(auxVelOut);
   gl.render(simScene, simCamera);
+  // Stage-4 gate fix round 5 (G4-5 triage): record the
+  // render for the ?diag=1 landing stats — a counter and
+  // the output target's uuid only (lib/auxPassDiag.ts).
+  noteAuxPassRender('vel', auxVelOut.texture.uuid);
+
+  // Spawn inheritance write (slice 1D-1): re-evaluates the
+  // velocity pass's spawn decision against the same frame-start
+  // inputs and writes the parent's slots / species into the
+  // inheritance target for the slots that spawned (all other
+  // texels discard, keeping their previous record). Runs
+  // between the velocity and position passes; the position
+  // pass never writes the inheritance target.
+  if (inherit && inherit.mainAttrTex) {
+    const inhU = inherit.mat.uniforms;
+    inhU.uAuxPosTex.value = auxPosIn.texture;
+    inhU.uAuxVelTex.value = auxVelIn.texture;
+    inhU.uMainPosTex.value = mainPosTex;
+    inhU.uMainVelTex.value = mainVelTex;
+    // Grammar connection (slice 1D-3): the inheritance write
+    // re-evaluates the same ruleSpawn decision, so it binds
+    // the same REP texture (variant materials only).
+    if (inhU.uMainRuleTex) inhU.uMainRuleTex.value = mainRuleTex;
+    inhU.uMainTexSizeF.value = texSize;
+    inhU.uAuxCount.value = auxCount;
+    inhU.uAuxMode.value = modeId;
+    inhU.uAuxIntensity.value = config.gpgpuAuxIntensity;
+    inhU.uAuxSpeed.value = config.gpgpuAuxSpeed;
+    if (inhU.uAuxEmitRate) {
+      inhU.uAuxEmitRate.value = config.gpgpuAuxEmitRate;
+      inhU.uAuxEmitShape.value = AUX_EMIT_SHAPE_IDS[config.gpgpuAuxEmitShape] ?? 0;
+      inhU.uAuxEmitSpread.value = config.gpgpuAuxEmitSpread;
+    }
+    // Trail mechanism (stage 4, S6): the inheritance write
+    // re-evaluates the same trail decision.
+    if (inhU.uTrailEmitInterval) {
+      inhU.uTrailEmitInterval.value = resolveTrailEmitInterval(config.gpgpuTrailEmitInterval);
+      inhU.uTrailEmitRate.value = resolveTrailEmitRate(config.gpgpuTrailEmitRate);
+    }
+    inhU.uAgeEnabled.value = config.gpgpuAgeEnabled;
+    inhU.uAgeMax.value = config.gpgpuAgeMax;
+    inhU.uFloorEnabled.value = config.gpgpuFloorEnabled;
+    inhU.uFloorY.value = config.gpgpuFloorY;
+    inhU.uBounceRadius.value = config.gpgpuBounceRadius;
+    inhU.uMainAttrTex.value = inherit.mainAttrTex;
+    inhU.uSpeciesCount.value = config.gpgpuParticleLifeSpecies;
+    inhU.uDelta.value = dt;
+    inhU.uTime.value = time;
+    if (inhU.uSdfEnabled) {
+      inhU.uSdfEnabled.value = config.gpgpuSdfEnabled;
+      inhU.uSdfShape.value = SDF_SHAPE_IDS[config.gpgpuSdfShape] ?? 0;
+      inhU.uSdfX.value = config.gpgpuSdfX;
+      inhU.uSdfY.value = config.gpgpuSdfY;
+      inhU.uSdfZ.value = config.gpgpuSdfZ;
+      inhU.uSdfSize.value = config.gpgpuSdfSize;
+    }
+    simMesh.material = inherit.mat;
+    gl.setRenderTarget(inherit.target);
+    // Sparse write: non-spawning texels discard so their
+    // records persist across frames — the renderer's autoClear
+    // must therefore be off for this render (the merge pass's
+    // discipline below). With the default autoClear every
+    // render first erases the whole target, leaving only the
+    // current frame's spawns: every record died with its spawn
+    // frame and the texture read as all-zero (gate C4-1,
+    // second gap — STAGE1_INHERIT_FIX2_RECORD.md).
+    const prevInheritAutoClear = gl.autoClear;
+    gl.autoClear = false;
+    gl.render(simScene, simCamera);
+    gl.autoClear = prevInheritAutoClear;
+  }
 
   const posU = auxPosMat.uniforms;
   posU.uAuxPosTex.value = auxPosIn.texture;
@@ -2054,11 +2610,23 @@ export function runAuxSimulationPasses(args: {
   posU.uAuxVelOutTex.value = auxVelOut.texture;
   posU.uMainPosTex.value = mainPosTex;
   posU.uMainVelTex.value = mainVelTex;
+  // Grammar connection (slice 1D-3): see the velocity pass.
+  if (posU.uMainRuleTex) posU.uMainRuleTex.value = mainRuleTex;
   posU.uMainTexSizeF.value = texSize;
   posU.uAuxCount.value = auxCount;
   posU.uAuxMode.value = modeId;
   posU.uAuxIntensity.value = config.gpgpuAuxIntensity;
   posU.uAuxSpeed.value = config.gpgpuAuxSpeed;
+  if (posU.uAuxEmitRate) {
+    posU.uAuxEmitRate.value = config.gpgpuAuxEmitRate;
+    posU.uAuxEmitShape.value = AUX_EMIT_SHAPE_IDS[config.gpgpuAuxEmitShape] ?? 0;
+    posU.uAuxEmitSpread.value = config.gpgpuAuxEmitSpread;
+  }
+  // Trail mechanism (stage 4, S6): see the velocity pass.
+  if (posU.uTrailEmitInterval) {
+    posU.uTrailEmitInterval.value = resolveTrailEmitInterval(config.gpgpuTrailEmitInterval);
+    posU.uTrailEmitRate.value = resolveTrailEmitRate(config.gpgpuTrailEmitRate);
+  }
   posU.uAgeEnabled.value = config.gpgpuAgeEnabled;
   posU.uAgeMax.value = config.gpgpuAgeMax;
   posU.uFloorEnabled.value = config.gpgpuFloorEnabled;
@@ -2079,6 +2647,59 @@ export function runAuxSimulationPasses(args: {
   simMesh.material = auxPosMat;
   gl.setRenderTarget(auxPosOut);
   gl.render(simScene, simCamera);
+  // Stage-4 gate fix round 5 (G4-5 triage): see the
+  // velocity pass above.
+  noteAuxPassRender('pos', auxPosOut.texture.uuid);
+  // Landing probe (armed only through the ?diag=1 hook):
+  // read back the first texels of both output targets
+  // immediately after this frame's renders, so the diag
+  // side can prove the renders landed in the very targets
+  // it reads back elsewhere. Unarmed frames pay nothing.
+  if (auxPassLandingArmed()) {
+    const n = Math.min(AUX_PASS_LANDING_TEXELS, auxVelOut.width, auxPosOut.width);
+    if (n > 0) {
+      const velBuf = new Float32Array(n * 4);
+      const posBuf = new Float32Array(n * 4);
+      gl.readRenderTargetPixels(auxVelOut, 0, 0, n, 1, velBuf);
+      gl.readRenderTargetPixels(auxPosOut, 0, 0, n, 1, posBuf);
+      const toTexels = (buf: Float32Array) => {
+        const out: number[][] = [];
+        for (let i = 0; i < n; i++) out.push([buf[i * 4], buf[i * 4 + 1], buf[i * 4 + 2], buf[i * 4 + 3]]);
+        return out;
+      };
+      noteAuxPassLandingSample(toTexels(velBuf), toTexels(posBuf));
+    }
+  }
+  // Tick probe (stage-4 gate fix round 7, armed only
+  // through the ?diag=1 hook, one side at a time): render
+  // the armed side's declaration material into the probe
+  // target and read back the first texels. Runs after both
+  // passes, so the shared uniforms object holds THIS
+  // frame's supplied values (uTime included) whichever side
+  // is armed. The mesh material and render target are
+  // restored afterwards; the pool targets are never the
+  // probe's destination.
+  const tickProbeSide = auxTickProbeArmedSide();
+  if (tickProbeSide) {
+    const srcMat = tickProbeSide === 'vel' ? auxVelMat : auxPosMat;
+    const probeMat = getAuxTickProbeMaterial(tickProbeSide, srcMat);
+    const size = auxVelOut.width;
+    const n = Math.min(AUX_TICK_PROBE_TEXELS, size);
+    if (probeMat && n > 0) {
+      const probeTarget = getAuxTickProbeTarget(size);
+      simMesh.material = probeMat;
+      gl.setRenderTarget(probeTarget);
+      gl.render(simScene, simCamera);
+      const buf = new Float32Array(n * 4);
+      gl.readRenderTargetPixels(probeTarget, 0, 0, n, 1, buf);
+      const texels: number[][] = [];
+      for (let i = 0; i < n; i++) texels.push([buf[i * 4], buf[i * 4 + 1], buf[i * 4 + 2], buf[i * 4 + 3]]);
+      const passState = getAuxPassDiagState();
+      noteAuxTickProbeSample(tickProbeSide, texels, time, passState.velRenders, passState.posRenders);
+      simMesh.material = auxPosMat;
+      gl.setRenderTarget(auxPosOut);
+    }
+  }
 }
 
 // Whitewater passes (Phase BC): run after the fluid pass, reading
@@ -2237,6 +2858,15 @@ export function runAuxChainSimulationPasses(args: {
   auxVelOut: THREE.WebGLRenderTarget;
   auxChainVelMat: THREE.ShaderMaterial;
   auxChainPosMat: THREE.ShaderMaterial;
+  // Spawn inheritance (slice 1D-1): the sparse-write pass into
+  // this level's inheritance target, copying the upper level's
+  // inheritance texel for the slots that spawned. Absent (key
+  // off / either target missing) the pass never runs.
+  inherit?: {
+    target: THREE.WebGLRenderTarget;
+    mat: THREE.ShaderMaterial;
+    srcInheritTex: THREE.Texture;
+  } | null;
 }): void {
   const {
     config,
@@ -2256,6 +2886,7 @@ export function runAuxChainSimulationPasses(args: {
     auxVelOut,
     auxChainVelMat,
     auxChainPosMat,
+    inherit,
   } = args;
 
   const modeId = AUX_MODE_IDS[level.mode] ?? 0;
@@ -2276,6 +2907,14 @@ export function runAuxChainSimulationPasses(args: {
   velU.uAuxGravityScale.value = level.gravityScale;
   velU.uAuxDrag.value = level.drag;
   velU.uAuxCurl.value = level.curl;
+  // Child emitter (slice 1D-2): the level's emit set, declared
+  // in the shader only in the chain emit variant.
+  if (velU.uAuxEmitRate) {
+    velU.uAuxEmitRate.value = level.emitRate;
+    velU.uAuxEmitShape.value = AUX_EMIT_SHAPE_IDS[level.emitShape] ?? 0;
+    velU.uAuxEmitSpread.value = level.emitSpread;
+  }
+  if (velU.uAuxInheritVelScale) velU.uAuxInheritVelScale.value = config.gpgpuAuxInheritVelScale;
   velU.uChainSalt.value = level.salt;
   velU.uFloorEnabled.value = config.gpgpuFloorEnabled;
   velU.uFloorY.value = config.gpgpuFloorY;
@@ -2289,6 +2928,45 @@ export function runAuxChainSimulationPasses(args: {
   gl.setRenderTarget(auxVelOut);
   gl.render(simScene, simCamera);
 
+  // Spawn inheritance write (slice 1D-1): same placement as
+  // level 1 — right after this level's velocity pass, copying
+  // the upper level's inheritance texel for spawned slots.
+  if (inherit) {
+    const inhU = inherit.mat.uniforms;
+    inhU.uAuxPosTex.value = auxPosIn.texture;
+    inhU.uAuxVelTex.value = auxVelIn.texture;
+    inhU.uMainPosTex.value = srcPosTex;
+    inhU.uMainVelTex.value = srcVelTex;
+    inhU.uMainTexSizeF.value = AUX_TEX_SIZE;
+    inhU.uSrcCount.value = srcCount;
+    inhU.uAuxCount.value = auxCount;
+    inhU.uAuxMode.value = modeId;
+    inhU.uAuxIntensity.value = level.intensity;
+    inhU.uAuxSpeed.value = level.speed;
+    if (inhU.uAuxEmitRate) {
+      inhU.uAuxEmitRate.value = level.emitRate;
+      inhU.uAuxEmitShape.value = AUX_EMIT_SHAPE_IDS[level.emitShape] ?? 0;
+      inhU.uAuxEmitSpread.value = level.emitSpread;
+    }
+    inhU.uChainSalt.value = level.salt;
+    inhU.uFloorEnabled.value = config.gpgpuFloorEnabled;
+    inhU.uFloorY.value = config.gpgpuFloorY;
+    inhU.uBounceRadius.value = config.gpgpuBounceRadius;
+    inhU.uSrcInheritTex.value = inherit.srcInheritTex;
+    inhU.uDelta.value = dt;
+    inhU.uTime.value = time;
+    simMesh.material = inherit.mat;
+    gl.setRenderTarget(inherit.target);
+    // Sparse write, same discipline as the level-1 write
+    // above: autoClear off for this render, or every render
+    // erases the records earlier frames wrote (gate C4-1,
+    // second gap — STAGE1_INHERIT_FIX2_RECORD.md).
+    const prevInheritAutoClear = gl.autoClear;
+    gl.autoClear = false;
+    gl.render(simScene, simCamera);
+    gl.autoClear = prevInheritAutoClear;
+  }
+
   const posU = auxChainPosMat.uniforms;
   posU.uAuxPosTex.value = auxPosIn.texture;
   posU.uAuxVelTex.value = auxVelIn.texture;
@@ -2301,6 +2979,11 @@ export function runAuxChainSimulationPasses(args: {
   posU.uAuxMode.value = modeId;
   posU.uAuxIntensity.value = level.intensity;
   posU.uAuxSpeed.value = level.speed;
+  if (posU.uAuxEmitRate) {
+    posU.uAuxEmitRate.value = level.emitRate;
+    posU.uAuxEmitShape.value = AUX_EMIT_SHAPE_IDS[level.emitShape] ?? 0;
+    posU.uAuxEmitSpread.value = level.emitSpread;
+  }
   posU.uChainSalt.value = level.salt;
   posU.uFloorEnabled.value = config.gpgpuFloorEnabled;
   posU.uFloorY.value = config.gpgpuFloorY;

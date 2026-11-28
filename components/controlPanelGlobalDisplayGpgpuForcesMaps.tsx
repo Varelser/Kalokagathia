@@ -4,11 +4,37 @@ import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDispla
 
 import { Slider, Toggle } from './controlPanelParts';
 import { AgeCurveBlock, MapSourceBlock, MaskSourceBlock } from './controlPanelGlobalDisplayGpgpuForcesMapBlocks';
+import { FreeCurveEditor } from './controlPanelGlobalDisplayGpgpuForcesCore';
+import { flattenFreeCurvePoints, normalizeFreeCurvePoints } from '../lib/freeCurve';
 import { CustomForceBlock, SimpleLfoBlock } from './controlPanelGlobalDisplayGpgpuForcesCustom';
 import { ParticleVertexGlslBlock } from './controlPanelGlobalDisplayParticleVertexCustom';
 import { ParticleFragmentGlslBlock } from './controlPanelGlobalDisplayParticleFragmentCustom';
 import { VolumeFogGlslBlock } from './controlPanelGlobalDisplayVolumeFogCustom';
 import { GeomCustomFragmentGlslBlock, GeomCustomVertexGlslBlock } from './controlPanelGlobalDisplayGpgpuGeomCustom';
+
+/** Age free curve (Grammar 2.0 stage 2, B4): one target's
+ *  free-mode switch + the shared FreeCurveEditor (Phase AJ).
+ *  While the free mode is on, the target's evaluation source
+ *  is this free control-point asset instead of its 5 points;
+ *  the editor is the same component the emission gate and
+ *  the tube profiles use. Rendered only while the target
+ *  itself is enabled. */
+const AgeFreeCurveBlock: React.FC<{
+  freeEnabled: boolean;
+  freePoints: number[];
+  onFreeToggle: (v: boolean) => void;
+  onFreePoints: (v: number[]) => void;
+}> = ({ freeEnabled, freePoints, onFreeToggle, onFreePoints }) => (
+  <div className="mb-3 ml-3 border-l border-white/10 pl-3">
+    <Toggle label="Free Curve（自由制御点で置き換え）" value={freeEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={onFreeToggle} />
+    {freeEnabled && (
+      <FreeCurveEditor
+        points={normalizeFreeCurvePoints(freePoints)}
+        onChange={(pts) => onFreePoints(flattenFreeCurvePoints(pts))}
+      />
+    )}
+  </div>
+);
 
 export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
@@ -27,6 +53,14 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
         onToggle={(v) => updateConfig('gpgpuAgeCurveSizeEnabled', v)}
         onPoints={(v) => updateConfig('gpgpuAgeCurveSizePoints', v)}
       />
+      {config.gpgpuAgeCurveSizeEnabled && (
+        <AgeFreeCurveBlock
+          freeEnabled={config.gpgpuAgeCurveSizeFreeEnabled}
+          freePoints={config.gpgpuAgeCurveSizeFreePoints}
+          onFreeToggle={(v) => updateConfig('gpgpuAgeCurveSizeFreeEnabled', v)}
+          onFreePoints={(v) => updateConfig('gpgpuAgeCurveSizeFreePoints', v)}
+        />
+      )}
       <AgeCurveBlock
         title="Opacity Curve（不透明度）"
         enabled={config.gpgpuAgeCurveOpacityEnabled}
@@ -34,6 +68,14 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
         onToggle={(v) => updateConfig('gpgpuAgeCurveOpacityEnabled', v)}
         onPoints={(v) => updateConfig('gpgpuAgeCurveOpacityPoints', v)}
       />
+      {config.gpgpuAgeCurveOpacityEnabled && (
+        <AgeFreeCurveBlock
+          freeEnabled={config.gpgpuAgeCurveOpacityFreeEnabled}
+          freePoints={config.gpgpuAgeCurveOpacityFreePoints}
+          onFreeToggle={(v) => updateConfig('gpgpuAgeCurveOpacityFreeEnabled', v)}
+          onFreePoints={(v) => updateConfig('gpgpuAgeCurveOpacityFreePoints', v)}
+        />
+      )}
       <AgeCurveBlock
         title="Velocity Curve（速度）"
         enabled={config.gpgpuAgeCurveVelocityEnabled}
@@ -41,6 +83,14 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
         onToggle={(v) => updateConfig('gpgpuAgeCurveVelocityEnabled', v)}
         onPoints={(v) => updateConfig('gpgpuAgeCurveVelocityPoints', v)}
       />
+      {config.gpgpuAgeCurveVelocityEnabled && (
+        <AgeFreeCurveBlock
+          freeEnabled={config.gpgpuAgeCurveVelocityFreeEnabled}
+          freePoints={config.gpgpuAgeCurveVelocityFreePoints}
+          onFreeToggle={(v) => updateConfig('gpgpuAgeCurveVelocityFreeEnabled', v)}
+          onFreePoints={(v) => updateConfig('gpgpuAgeCurveVelocityFreePoints', v)}
+        />
+      )}
       <AgeCurveBlock
         title="Force Curve（フォース）"
         enabled={config.gpgpuAgeCurveForceEnabled}
@@ -48,6 +98,14 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
         onToggle={(v) => updateConfig('gpgpuAgeCurveForceEnabled', v)}
         onPoints={(v) => updateConfig('gpgpuAgeCurveForcePoints', v)}
       />
+      {config.gpgpuAgeCurveForceEnabled && (
+        <AgeFreeCurveBlock
+          freeEnabled={config.gpgpuAgeCurveForceFreeEnabled}
+          freePoints={config.gpgpuAgeCurveForceFreePoints}
+          onFreeToggle={(v) => updateConfig('gpgpuAgeCurveForceFreeEnabled', v)}
+          onFreePoints={(v) => updateConfig('gpgpuAgeCurveForceFreePoints', v)}
+        />
+      )}
       <AgeCurveBlock
         title="Rotation Curve（回転・ジオメトリ自転）"
         enabled={config.gpgpuAgeCurveRotationEnabled}
@@ -55,8 +113,16 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
         onToggle={(v) => updateConfig('gpgpuAgeCurveRotationEnabled', v)}
         onPoints={(v) => updateConfig('gpgpuAgeCurveRotationPoints', v)}
       />
+      {config.gpgpuAgeCurveRotationEnabled && (
+        <AgeFreeCurveBlock
+          freeEnabled={config.gpgpuAgeCurveRotationFreeEnabled}
+          freePoints={config.gpgpuAgeCurveRotationFreePoints}
+          onFreeToggle={(v) => updateConfig('gpgpuAgeCurveRotationFreeEnabled', v)}
+          onFreePoints={(v) => updateConfig('gpgpuAgeCurveRotationFreePoints', v)}
+        />
+      )}
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-        年齢比 t = 0 / 0.25 / 0.5 / 0.75 / 1 の5点に倍率を持ち、間を線形補間します。カーブは従来の年齢系（Size over Lifetime、フェードイン／アウト）やシミュレーション（速度・内蔵フォース・ジオメトリ自転の速さ）に乗算されるため、全点 1.0 のままでは見た目は変わりません。フォースは重力〜モーフの内蔵フォースが対象で、衝突・マウス・流体・カスタムフォースには掛かりません。
+        年齢比 t = 0 / 0.25 / 0.5 / 0.75 / 1 の5点に倍率を持ち、間を線形補間します。カーブは従来の年齢系（Size over Lifetime、フェードイン／アウト）やシミュレーション（速度・内蔵フォース・ジオメトリ自転の速さ）に乗算されるため、全点 1.0 のままでは見た目は変わりません。フォースは重力〜モーフの内蔵フォースが対象で、衝突・マウス・流体・カスタムフォースには掛かりません。各カーブの Free Curve を On にすると、その対象の倍率は5点ではなく自由制御点カーブ（位置も自由、最大8点）で決まります。
       </div>
     </div>
 

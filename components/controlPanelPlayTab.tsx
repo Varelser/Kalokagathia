@@ -7,7 +7,9 @@ import { MidiSection, OscSection } from './controlPanelPlayTabIo';
 import { EventRulesSection } from './controlPanelEventRules';
 import { PerformanceSection, SimilaritySection, SourceEditorSection } from './controlPanelPlayTabRender';
 import { CleanOutputSection, GpuDiagnosticsSection, ModulationSection, StageSection } from './controlPanelPlayTabStage';
-import { DataSourceSection, HistorySection, ParameterSearchSection, PointCacheSection, TexturePackSection, XyPadSection } from './controlPanelPlayTabTools';
+import { DataSourceSection, HistorySection, ParameterSearchSection, PointCacheSection, StateCacheSection, TexturePackSection, XyPadSection } from './controlPanelPlayTabTools';
+import { DesignerSection } from './controlPanelDesignerSection';
+import { PipelineCanvasSection } from './controlPanelPipelineCanvasSection';
 export { PresetShelf } from './controlPanelPlayTabShelf';
 /**
  * Play tab (roadmap Phase 6A / 6C / 7A).
@@ -65,6 +67,9 @@ export const PlayTabContent: React.FC<ControlPanelContentProps> = (props) => (
     <SourceEditorSection config={props.config} updateConfig={props.updateConfig} />
     <DataSourceSection config={props.config} updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
     <PointCacheSection config={props.config} updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
+    <StateCacheSection config={props.config} updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
+    <DesignerSection config={props.config} updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
+    <PipelineCanvasSection config={props.config} updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
     <TexturePackSection config={props.config} updateConfig={props.updateConfig} isPublicLibrary={props.isPublicLibrary} />
     <MidiSection
       config={props.config}

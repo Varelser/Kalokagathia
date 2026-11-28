@@ -2,12 +2,9 @@
 // lib/gpgpuInitialData.ts in the 2026-11-14 perf stage-2 split: generic
 // consumers (lib/dataSource.ts) imported it from the GPGPU data module,
 // which made the whole scene-gpgpu chunk a static startup dependency.
-export function createSeededRng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+//
+// Stage 2 B5: the implementation itself now lives in the
+// shared random channel (lib/gpgpuRandom.ts) — bit-identical
+// to the copy that stood here. This module stays as the
+// stable import surface for existing consumers.
+export { mulberry32 as createSeededRng } from './gpgpuRandom';

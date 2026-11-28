@@ -4,11 +4,14 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import type { PointCloudCaptureState } from '../lib/pointCloudExport';
+import { registerStateCacheFrameProvider } from '../lib/gpgpuStateCacheCapture';
+import { trailAuxActive } from '../lib/trailAux';
 import { LodSystem } from '../lib/lodSystem';
 import { ATTRACTOR_RING_Z_SHIFT } from '../lib/attractorSpace';
 import { scaleFrameDelta } from '../lib/playbackTime';
 import { useGpgpuAssets } from './useGpgpuAssets';
 import { getTexSize, useGpgpuRuntime } from './useGpgpuRuntime';
+import { emissionMaskVariantActive } from '../lib/gpgpuEmissionSource';
 import { GpgpuRenderOutputs } from './gpgpuRenderOutputs';
 import { GpgpuFieldGlyphs } from './sceneGpgpuFieldGlyphs';
 import { GpgpuMorphFibers } from './sceneGpgpuMorphFibers';
@@ -26,6 +29,23 @@ import {
 import { refreshWebGPUDiagSnapshot } from '../lib/webgpuCompute';
 import { describeWebGPUDiagSnapshot } from '../lib/webgpuDiagSnapshot';
 import { HashGridSampler } from './gpgpuHashGridDiagnostic';
+import {
+  getMotionBlurPassDiagState,
+  getMotionCaptureDiagState,
+  getMotionVelocitySource,
+  motionVelocityStatsFromReadback,
+  setMotionSimFrameSource,
+} from '../lib/motionBlur';
+import { readbackWebGPUPositions } from '../lib/webgpuCompute';
+import { armAuxPassLandingProbe, getAuxPassDiagState } from '../lib/auxPassDiag';
+import { getAuxTrailAbDiagState, requestAuxTrailAbStage } from '../lib/auxTrailAbDiag';
+import {
+  armAuxTickProbe,
+  getAuxTickProbeState,
+  type AuxTickProbeSide,
+} from '../lib/auxTickProbeDiag';
+import { AUX_TRAIL_AB_STAGES } from './gpgpuShaderAux';
+import type { AuxTrailAbStage } from './gpgpuShaderAux';
 import {
   resolveGpgpuAudioBlast,
   resolveGpgpuFrameRouting,
@@ -47,6 +67,7 @@ import {
   runWhitewaterSimulationPasses,
   runSimulationPasses,
   updateMouseWorldPosition,
+  SDF_SHAPE_IDS,
 } from './gpgpuSimulationPasses';
 import { REPLICA_MERGE_FRAG } from './gpgpuShaderReplica';
 import { pyroGridCurrentScalarTexture, runPyroGridPasses } from './gpgpuPyroGridPasses';
@@ -55,6 +76,21 @@ import { EMPTY_PYRO_GRID_FOG_FEED, type PyroGridFogFeed } from '../lib/pyroGrid'
 import { labelVellumComponents } from '../lib/gpgpuVellum';
 import { GpgpuAttrDynPass } from './gpgpuAttrDynPass';
 import { GpgpuAttrDensityPass } from './gpgpuAttrDensityPass';
+import { GpgpuRuleEvalPass } from './gpgpuRuleEvalPass';
+import { GpgpuContactPass } from './gpgpuContactPass';
+import { GpgpuPredationHoldPass } from './gpgpuPredationHoldPass';
+import {
+  buildRuleEvalFragment,
+  classifyLiveRules,
+  resolveLiveParticleRules,
+} from '../lib/gpgpuParticleRulesLive';
+import {
+  resolveLiveRulesWithPredation,
+  resolvePredation,
+} from '../lib/gpgpuPredation';
+import { resolveMergedSupplyPlan } from '../lib/gpgpuMergedSupply';
+import { resolveRepTwoPhase } from '../lib/pipelineCross';
+import { getColumnSupply } from '../lib/gpgpuPathAssets';
 import {
   PARTICLE_DENSITY_SCALE,
   PARTICLE_DENSITY_SPLAT_GAIN,
@@ -62,6 +98,11 @@ import {
 } from '../lib/particleDensity';
 import { buildAttrDynFragment } from '../lib/expressionGlsl';
 import { GpgpuAttrFeedbackPass } from './gpgpuAttrFeedbackPass';
+import { GpgpuSpinPass } from './gpgpuSpinPass';
+import { resolveSpin, spinChannelActive } from '../lib/gpgpuSpeedDragSpin';
+import { GpgpuOrientPass, computeVelocityAlignStats, getActiveOrientPass } from './gpgpuOrientPass';
+import { getActiveAuxMaterials } from './useGpgpuSimulationAssets';
+import { orientChannelActive, resolveOrient } from '../lib/gpgpuOrient';
 import { buildAttrFeedbackFragment } from '../lib/expressionGlslFeedback';
 import { buildAttrChainFragment } from '../lib/expressionGlslChain';
 import {
@@ -73,6 +114,7 @@ import {
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { SIM_VERT } from './gpgpuShaders';
 import { resolveAuxChainLevels, resolveAuxLevelColor } from '../lib/auxChain';
+import { advanceSpawnEnvelopeClock, resolveSpawnEnvelope } from '../lib/gpgpuSpawnAllocator';
 import { drainRigidContactEvents, fillRigidCurlAccel, fillRigidCurlAngAccel, resolveRigid, rigidCurlParamsFromConfig, stepRigidBodies, writeRigidBodyTexture, RIGID_BODY_MAX } from '../lib/rigidBodies';
 import { fireEventRulesLive, getEventRuleActionPerformer } from '../lib/eventRules';
 import { getTerrainHeightfield } from '../lib/terrainHeightfield';
@@ -180,6 +222,11 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     if (new URLSearchParams(window.location.search).get('diag') !== '1') return;
     let aov: DiagnosticAovRenderer | null = null;
     let aovTexSize = 0;
+    // Gate measurement support (2026-11-27 re-gate): last fresh
+    // WebGPU position readback, kept so the readback helper's
+    // fallback (which returns the passed-in buffer) can be told
+    // apart from a fresh result by reference.
+    let webgpuLast: Float32Array | null = null;
     let hashGrid: HashGridSampler | null = null;
     // Grains spike (Phase 31 prep): previous captureGrainsMetrics
     // snapshot, kept inside the hook closure so a second call can
@@ -238,6 +285,1041 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         const stats: Record<string, unknown> = {};
         for (const [id, r] of Object.entries(state.passes)) stats[id] = r.stats;
         return { texSize: state.texSize, stateHash: state.stateHash, stats };
+      },
+      // Gate measurement support (2026-11-27): per-particle aggregates
+      // that captureState's pass stats cannot express — tangentiality
+      // and angular momentum about a caller-supplied axis (A4 re-gate),
+      // and the parked-particle fraction counted directly from the
+      // position buffer (D2 re-gate). Diag-only: registered solely
+      // under ?diag=1 like the rest of this hook, never called by the
+      // app itself, and read-only over the same readback buffers.
+      captureParticleAggregates: (axis?: [number, number, number]) => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        const count = ctx.texSize * ctx.texSize;
+        if (!diagPosBufRef.current || diagPosBufRef.current.length !== count * 4) {
+          diagPosBufRef.current = new Float32Array(count * 4);
+        }
+        if (!diagVelBufRef.current || diagVelBufRef.current.length !== count * 4) {
+          diagVelBufRef.current = new Float32Array(count * 4);
+        }
+        gl.readRenderTargetPixels(ctx.posOut, 0, 0, ctx.texSize, ctx.texSize, diagPosBufRef.current);
+        readbackParticleVelocities({
+          gl,
+          velOut: ctx.velOut,
+          texSize: ctx.texSize,
+          velReadbackRef: diagVelBufRef,
+        });
+        const pos = diagPosBufRef.current;
+        const vel = diagVelBufRef.current;
+        if (!pos || !vel) return { error: 'readback-failed' };
+        const radii = new Float32Array(count);
+        let sumR = 0;
+        let sumV = 0;
+        let maxR = 0;
+        let parked = 0;
+        for (let i = 0; i < count; i++) {
+          const px = pos[i * 4]; const py = pos[i * 4 + 1]; const pz = pos[i * 4 + 2];
+          const r = Math.hypot(px, py, pz);
+          radii[i] = r;
+          sumR += r;
+          if (r > maxR) maxR = r;
+          if (r > 1000) parked++;
+          sumV += Math.hypot(vel[i * 4], vel[i * 4 + 1], vel[i * 4 + 2]);
+        }
+        const sorted = Float32Array.from(radii).sort();
+        const pick = (q: number) => sorted[Math.min(count - 1, Math.floor(q * count))];
+        const out: Record<string, unknown> = {
+          count,
+          meanAbsPos: sumR / count,
+          posP50: pick(0.5),
+          posP99: pick(0.99),
+          posMax: maxR,
+          meanAbsVel: sumV / count,
+          parkedFraction: parked / count,
+        };
+        if (axis) {
+          let ax = axis[0]; let ay = axis[1]; let az = axis[2];
+          const al = Math.hypot(ax, ay, az) || 1;
+          ax /= al; ay /= al; az /= al;
+          let tanSum = 0;
+          let tanN = 0;
+          let angSum = 0;
+          let angPos = 0;
+          let angN = 0;
+          for (let i = 0; i < count; i++) {
+            const px = pos[i * 4]; const py = pos[i * 4 + 1]; const pz = pos[i * 4 + 2];
+            const vx = vel[i * 4]; const vy = vel[i * 4 + 1]; const vz = vel[i * 4 + 2];
+            const r = radii[i];
+            const v = Math.hypot(vx, vy, vz);
+            if (r > 1e-6 && v > 1e-6) {
+              tanSum += Math.abs((vx * px + vy * py + vz * pz) / (v * r));
+              tanN++;
+              const lx = py * vz - pz * vy;
+              const ly = pz * vx - px * vz;
+              const lz = px * vy - py * vx;
+              const la = lx * ax + ly * ay + lz * az;
+              angSum += la;
+              if (la > 0) angPos++;
+              angN++;
+            }
+          }
+          out.axis = [ax, ay, az];
+          out.tangentiality = tanN ? tanSum / tanN : null;
+          out.angMomMean = angN ? angSum / angN : null;
+          out.angMomSignRate = angN ? angPos / angN : null;
+          out.angMomCount = angN;
+        }
+        return out;
+      },
+      // Gate measurement support (2026-11-27 re-gate): raw
+      // per-particle position/velocity readback over the same
+      // buffers captureState uses. For measurements the pass
+      // stats cannot express (1-frame Δv, exact park fraction).
+      // Read-only, diag-only like the rest of this hook.
+      captureParticlesRaw: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        const count = ctx.texSize * ctx.texSize;
+        if (!diagPosBufRef.current || diagPosBufRef.current.length !== count * 4) {
+          diagPosBufRef.current = new Float32Array(count * 4);
+        }
+        if (!diagVelBufRef.current || diagVelBufRef.current.length !== count * 4) {
+          diagVelBufRef.current = new Float32Array(count * 4);
+        }
+        gl.readRenderTargetPixels(ctx.posOut, 0, 0, ctx.texSize, ctx.texSize, diagPosBufRef.current);
+        readbackParticleVelocities({
+          gl,
+          velOut: ctx.velOut,
+          texSize: ctx.texSize,
+          velReadbackRef: diagVelBufRef,
+        });
+        const pos = diagPosBufRef.current;
+        const vel = diagVelBufRef.current;
+        if (!pos || !vel) return { error: 'readback-failed' };
+        return { texSize: ctx.texSize, pos: Array.from(pos), vel: Array.from(vel) };
+      },
+      // Gate measurement support (stage-4 gate fix round 2):
+      // the motion-blur velocity field, read back from the
+      // target the capture published through the shared store,
+      // plus the capture's own diag counters — together they
+      // separate "capture never published" (published=false /
+      // skip reasons) from "published but empty" (coverage 0)
+      // from "field present" (the stage's binding is then the
+      // only remaining suspect). Read-only, diag-only.
+      captureMotionVelocityStats: () => {
+        const capture = getMotionCaptureDiagState();
+        const src = getMotionVelocitySource();
+        if (!src) return { published: false, capture };
+        if (!src.target) return { published: true, capture, error: 'no-target-published' };
+        const width = src.target.width;
+        const height = src.target.height;
+        // The velocity target is HalfFloatType; three returns
+        // the half bits verbatim, decoded by the stats helper.
+        const buf = new Uint16Array(width * height * 4);
+        gl.readRenderTargetPixels(src.target, 0, 0, width, height, buf);
+        const stats = motionVelocityStatsFromReadback(buf);
+        return { published: true, capture, width, height, ...stats };
+      },
+      // Gate measurement support (stage-4 gate fix round 3):
+      // the motion-blur PASS side of the same separation —
+      // what the most recent render actually bound (the ready
+      // flag it set and the bound texture's dimensions),
+      // recorded by the pass itself as it reads the shared
+      // store in render(). With captureMotionVelocityStats
+      // this closes the loop without pixel inference:
+      // published + pass renders with lastVelocityReady true
+      // means the stage really gathers. Read-only, diag-only.
+      captureMotionBlurPassStats: () => getMotionBlurPassDiagState(),
+      // Gate measurement support: the contact pass's latest
+      // record, aggregated (.r = hits accumulated, .g = hit of
+      // the latest step). For the hit lighting rate and the
+      // hits distribution, which REP condBits only expose
+      // per-rule.
+      captureContactStats: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!ctx.contactTarget) return { error: 'no-contact-pass', suppressed: ctx.contactSuppressed };
+        const size = ctx.contactTarget.width;
+        const count = size * size;
+        const buf = new Float32Array(count * 4);
+        gl.readRenderTargetPixels(ctx.contactTarget, 0, 0, size, size, buf);
+        let hit = 0;
+        let ge1 = 0;
+        let ge3 = 0;
+        let sum = 0;
+        for (let i = 0; i < count; i++) {
+          const hits = buf[i * 4];
+          if (buf[i * 4 + 1] > 0.5) hit++;
+          if (hits >= 0.5) ge1++;
+          if (hits >= 2.5) ge3++;
+          sum += hits;
+        }
+        return {
+          texSize: size,
+          count,
+          hitRate: hit / count,
+          hitsGe1Rate: ge1 / count,
+          hitsGe3Rate: ge3 / count,
+          hitsMean: sum / count,
+          suppressed: ctx.contactSuppressed,
+        };
+      },
+      // Gate measurement support (2026-11-27 re-gate 2): the
+      // Aux level-1 inheritance texture read back directly —
+      // the same RT the Aux draw material samples — aggregated
+      // over the active child texels (Aux position not in the
+      // park form (0, -9999, 0)). For the C4-1 reach premise:
+      // whether the inherited colour values actually arrive in
+      // the texture the draw consumes, separated from what the
+      // screenshot ratios can show. Read-only, diag-only.
+      captureInheritStats: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!ctx.auxInheritTarget) return { error: 'no-inherit-target' };
+        if (!ctx.auxPosLatest) return { error: 'no-aux' };
+        const size = ctx.auxInheritTarget.width;
+        if (ctx.auxPosLatest.width !== size) return { error: 'size-mismatch' };
+        const count = size * size;
+        const rgb = new Float32Array(count * 4);
+        const pos = new Float32Array(count * 4);
+        gl.readRenderTargetPixels(ctx.auxInheritTarget, 0, 0, size, size, rgb);
+        gl.readRenderTargetPixels(ctx.auxPosLatest, 0, 0, size, size, pos);
+        let active = 0;
+        let nzActive = 0;
+        let nearActive = 0;
+        let nzAll = 0;
+        let nearAll = 0;
+        let sr = 0;
+        let sg = 0;
+        let sb = 0;
+        for (let i = 0; i < count; i++) {
+          const r = rgb[i * 4];
+          const g = rgb[i * 4 + 1];
+          const b = rgb[i * 4 + 2];
+          const nz = r !== 0 || g !== 0 || b !== 0;
+          const near = r >= 0.8 && g <= 0.2 && b <= 0.2;
+          if (nz) nzAll++;
+          if (near) nearAll++;
+          if (pos[i * 4 + 1] > -9000) {
+            active++;
+            sr += r;
+            sg += g;
+            sb += b;
+            if (nz) nzActive++;
+            if (near) nearActive++;
+          }
+        }
+        return {
+          texSize: size,
+          count,
+          activeCount: active,
+          nonzeroActiveRate: active ? nzActive / active : 0,
+          nearParentActiveRate: active ? nearActive / active : 0,
+          nonzeroAllRate: nzAll / count,
+          nearParentAllRate: nearAll / count,
+          meanRgbActive: active ? [sr / active, sg / active, sb / active] : [0, 0, 0],
+        };
+      },
+      // Gate measurement support (2026-11-27 stage-2 confirm):
+      // the level-2 (chain) counterpart of captureInheritStats —
+      // the Aux2 inheritance texture read back directly (the
+      // same RT the Aux2 draw material samples), aggregated over
+      // the active grandchild texels (Aux2 position not in the
+      // park form). Same yardstick as level 1: nonzero rate and
+      // near-parent-slot rate over active texels. Read-only,
+      // diag-only.
+      captureInherit2Stats: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!ctx.aux2InheritTarget) return { error: 'no-inherit2-target' };
+        if (!ctx.aux2PosLatest) return { error: 'no-aux2' };
+        const size = ctx.aux2InheritTarget.width;
+        if (ctx.aux2PosLatest.width !== size) return { error: 'size-mismatch' };
+        const count = size * size;
+        const rgb = new Float32Array(count * 4);
+        const pos = new Float32Array(count * 4);
+        gl.readRenderTargetPixels(ctx.aux2InheritTarget, 0, 0, size, size, rgb);
+        gl.readRenderTargetPixels(ctx.aux2PosLatest, 0, 0, size, size, pos);
+        let active = 0;
+        let nzActive = 0;
+        let nearActive = 0;
+        let nzAll = 0;
+        let nearAll = 0;
+        let sr = 0;
+        let sg = 0;
+        let sb = 0;
+        for (let i = 0; i < count; i++) {
+          const r = rgb[i * 4];
+          const g = rgb[i * 4 + 1];
+          const b = rgb[i * 4 + 2];
+          const nz = r !== 0 || g !== 0 || b !== 0;
+          const near = r >= 0.8 && g <= 0.2 && b <= 0.2;
+          if (nz) nzAll++;
+          if (near) nearAll++;
+          if (pos[i * 4 + 1] > -9000) {
+            active++;
+            sr += r;
+            sg += g;
+            sb += b;
+            if (nz) nzActive++;
+            if (near) nearActive++;
+          }
+        }
+        return {
+          texSize: size,
+          count,
+          activeCount: active,
+          nonzeroActiveRate: active ? nzActive / active : 0,
+          nearParentActiveRate: active ? nearActive / active : 0,
+          nonzeroAllRate: nzAll / count,
+          nearParentAllRate: nearAll / count,
+          meanRgbActive: active ? [sr / active, sg / active, sb / active] : [0, 0, 0],
+        };
+      },
+      // Gate measurement support (2026-11-27 stage-2 B-group):
+      // the spin channel's state texture read back directly —
+      // circular mean angle and circular variance of .x over
+      // all texels, plus the mean angular velocity (.y). The
+      // B3 gate compares two captures to measure the mean
+      // angle advance. Read-only, diag-only.
+      captureSpinStats: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!ctx.spinTarget) return { error: 'no-spin-target' };
+        const size = ctx.spinTarget.width;
+        const count = size * size;
+        const buf = new Float32Array(count * 4);
+        gl.readRenderTargetPixels(ctx.spinTarget, 0, 0, size, size, buf);
+        let sc = 0;
+        let ss = 0;
+        let sumOmega = 0;
+        let sumAngleRaw = 0;
+        for (let i = 0; i < count; i++) {
+          const a = buf[i * 4];
+          sc += Math.cos(a);
+          ss += Math.sin(a);
+          sumOmega += buf[i * 4 + 1];
+          sumAngleRaw += a;
+        }
+        const meanCos = count ? sc / count : 0;
+        const meanSin = count ? ss / count : 0;
+        const resultant = Math.sqrt(meanCos * meanCos + meanSin * meanSin);
+        return {
+          texSize: size,
+          count,
+          meanAngle: Math.atan2(meanSin, meanCos),
+          // Stage-4 gate fix round 2: the arithmetic mean of
+          // the accumulated angle (.x) itself, alongside the
+          // circular mean above — differencing two captures of
+          // this field measures the mean angle advance without
+          // wrap ambiguity while the accumulation is coherent.
+          meanAngleRaw: count ? sumAngleRaw / count : 0,
+          circularVariance: 1 - resultant,
+          meanOmega: count ? sumOmega / count : 0,
+        };
+      },
+      // Gate measurement support (stage 4, G4-1 (a)): the
+      // orient channel's posture texture read back directly —
+      // the mean per-texel rotation angle (2·acos(|w|)) and
+      // the mean quaternion over all texels. The G4-1 gate
+      // compares the mean angle against the analytic value
+      // (angular velocity × elapsed time). Read-only,
+      // diag-only.
+      captureOrientStats: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!ctx.orientTarget) return { error: 'no-orient-target' };
+        const size = ctx.orientTarget.width;
+        const count = size * size;
+        const buf = new Float32Array(count * 4);
+        gl.readRenderTargetPixels(ctx.orientTarget, 0, 0, size, size, buf);
+        const summarize = (b: Float32Array) => {
+          let sumAngle = 0;
+          let sx = 0;
+          let sy = 0;
+          let sz = 0;
+          let sw = 0;
+          for (let i = 0; i < count; i++) {
+            const w = b[i * 4 + 3];
+            sumAngle += 2 * Math.acos(Math.min(1, Math.abs(w)));
+            sx += b[i * 4];
+            sy += b[i * 4 + 1];
+            sz += b[i * 4 + 2];
+            sw += w;
+          }
+          return {
+            meanAngle: count ? sumAngle / count : 0,
+            meanQuat: count ? [sx / count, sy / count, sz / count, sw / count] : [0, 0, 0, 0],
+          };
+        };
+        const cur = summarize(buf);
+        // Stage-4 gate fix round 2 (G4-1 (a) triage): the
+        // same summary for BOTH ping-pong sides plus the
+        // pass's hasState / elapsed echo, via the pass's
+        // diag-only introspection. One side at identity
+        // points at the feedback path; both sides at identity
+        // at reset / increment. sides is null when the frame's
+        // orient target does not belong to the active pass.
+        let sides: { readIndex: number; perSide: { meanAngle: number; meanQuat: number[] }[] } | null = null;
+        let hasState: boolean | null = null;
+        let elapsed: number | null = null;
+        const pass = getActiveOrientPass();
+        if (pass && pass.currentTarget === ctx.orientTarget) {
+          const perSide = pass.targets.map((rt) => {
+            if (rt === ctx.orientTarget) return cur;
+            const b = new Float32Array(count * 4);
+            gl.readRenderTargetPixels(rt, 0, 0, size, size, b);
+            return summarize(b);
+          });
+          sides = { readIndex: pass.readIndex, perSide };
+          hasState = pass.stateStarted;
+          elapsed = pass.elapsedSeconds;
+        }
+        return {
+          texSize: size,
+          count,
+          meanAngle: cur.meanAngle,
+          meanQuat: cur.meanQuat,
+          sides,
+          hasState,
+          elapsed,
+        };
+      },
+      // Gate measurement support (stage-4 gate fix round 2,
+      // G4-1 (b)): the drawn long axis rebuilt per texel from
+      // the velocity / spin / orient readbacks, composed
+      // exactly as the geometry vertex composes it
+      // (lookRot(vel̂) · rotY(spin) · quatMat(quat) · ẑ), and
+      // its angle against the velocity direction. Readbacks
+      // reuse the same gl.readRenderTargetPixels route as
+      // captureSpinStats / captureOrientStats; the pure
+      // per-texel math lives in computeVelocityAlignStats
+      // (components/gpgpuOrientPass.ts). Read-only, diag-only.
+      captureVelocityAlignStats: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        const size = ctx.texSize;
+        const count = size * size;
+        const vel = new Float32Array(count * 4);
+        gl.readRenderTargetPixels(ctx.velOut, 0, 0, size, size, vel);
+        let spin: Float32Array | null = null;
+        if (ctx.spinTarget && ctx.spinTarget.width === size) {
+          spin = new Float32Array(count * 4);
+          gl.readRenderTargetPixels(ctx.spinTarget, 0, 0, size, size, spin);
+        }
+        let orient: Float32Array | null = null;
+        if (ctx.orientTarget && ctx.orientTarget.width === size) {
+          orient = new Float32Array(count * 4);
+          gl.readRenderTargetPixels(ctx.orientTarget, 0, 0, size, size, orient);
+        }
+        return computeVelocityAlignStats(vel, spin, orient, size);
+      },
+      // Gate measurement support (2026-11-27 re-gate 2): stats
+      // over the WebGPU mirror position DataTexture — the
+      // texture the draw samples on the WebGPU route, fed by
+      // the app's own per-frame readback mirror (an independent
+      // call chain from this hook's readback). Used as the
+      // same-page live-distribution reference for the C5
+      // readback validity conditions. Read-only, diag-only.
+      captureWebGPUMirrorStats: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        const tex = ctx.webgpuPosTexture as unknown as { image?: { data?: ArrayLike<number> } } | null;
+        const data = tex && tex.image ? tex.image.data : null;
+        if (!data || !data.length) return { error: 'no-mirror-data' };
+        const count = Math.floor(data.length / 4);
+        let sumY = 0;
+        let sumR = 0;
+        let zeros = 0;
+        for (let i = 0; i < count; i++) {
+          const x = data[i * 4];
+          const y = data[i * 4 + 1];
+          const z = data[i * 4 + 2];
+          sumY += y;
+          sumR += Math.hypot(x, y, z);
+          if (x === 0 && y === 0 && z === 0) zeros++;
+        }
+        return {
+          count,
+          meanY: sumY / count,
+          meanAbsPos: sumR / count,
+          zeroFraction: zeros / count,
+        };
+      },
+      // Gate measurement support: Aux level-1 velocity readback
+      // over the active slots. A slot is active under the Aux
+      // draw vertex's own definition (gpgpuShaderAux.ts:
+      // life > 0.001 && age < life, with life = vel.w and
+      // age = pos.w) — the earlier park-form test
+      // (pos.y > -9000) counted the never-written initial
+      // texels (0,0,0, age 0 / life 0) as active, so a pool
+      // that had emitted nothing reported activeCount = count
+      // (stage-4 gate fix round 2). The mean velocity is over
+      // active texels only, and activeRate (active / count)
+      // is reported for the depletion judgement.
+      captureAuxStats: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!ctx.auxPosLatest || !ctx.auxVelLatest) return { error: 'no-aux' };
+        const size = ctx.auxPosLatest.width;
+        const count = size * size;
+        const pos = new Float32Array(count * 4);
+        const vel = new Float32Array(count * 4);
+        gl.readRenderTargetPixels(ctx.auxPosLatest, 0, 0, size, size, pos);
+        gl.readRenderTargetPixels(ctx.auxVelLatest, 0, 0, size, size, vel);
+        let active = 0;
+        let sumV = 0;
+        for (let i = 0; i < count; i++) {
+          const life = vel[i * 4 + 3];
+          const age = pos[i * 4 + 3];
+          if (life > 0.001 && age < life) {
+            active++;
+            sumV += Math.hypot(vel[i * 4], vel[i * 4 + 1], vel[i * 4 + 2]);
+          }
+        }
+        return {
+          texSize: size,
+          count,
+          activeCount: active,
+          activeRate: count ? active / count : 0,
+          meanAbsVelActive: active ? sumV / active : 0,
+        };
+      },
+      // Gate measurement support (stage-4 gate fix round 2,
+      // B2): which fragment strings the LIVE Aux materials
+      // actually carry — in particular whether the trail
+      // variant's mode-6 branch reached the materials the
+      // passes run. The G4-5 failure mode (zero spawns with
+      // correct strings, wiring and gate config) localised to
+      // the variant delivery, so this reads the delivery
+      // result directly. Read-only, diag-only; the materials
+      // are published by useGpgpuSimulationAssets and replaced
+      // on a variant flip, so this reads the current
+      // instances, never a first-render snapshot. The chain
+      // materials never carry the trail branch by design.
+      captureAuxVariantInfo: () => {
+        const mats = getActiveAuxMaterials();
+        if (!mats) return { error: 'no-aux-materials' };
+        // Stage-4 gate fix round 3: the LIVE uniform values on
+        // each material, on top of the fragment-string probe.
+        // Phase 2 of the fix round proved the trail branch
+        // reaches all three level-1 materials yet zero spawns
+        // occur, so the remaining fault sits past delivery —
+        // in the runtime inputs the branch actually reads, or
+        // in whether the passes run at all. The pass runners
+        // rewrite these uniforms on the shared uniforms object
+        // every frame they execute, so the values read here
+        // are the ones the last executed frame consumed (uTime
+        // in particular stays at its initial 0 on any material
+        // whose fill never ran — the inherit fill runs only
+        // while inheritance is supplied, the chain fills only
+        // while a chain level is active). Only uniforms the
+        // material actually carries are reported.
+        const readUniforms = (m: THREE.ShaderMaterial) => {
+          const names = [
+            'uAuxMode',
+            'uTrailEmitRate',
+            'uTrailEmitInterval',
+            'uAgeEnabled',
+            'uAgeMax',
+            'uAuxLife',
+            'uAuxCount',
+            'uTime',
+            'uDelta',
+          ];
+          const out: Record<string, number | boolean | null> = {};
+          for (const n of names) {
+            const u = m.uniforms[n];
+            if (!u) continue;
+            const v = u.value;
+            out[n] = typeof v === 'number' || typeof v === 'boolean' ? v : null;
+          }
+          return out;
+        };
+        const probe = (m: THREE.ShaderMaterial) => ({
+          trailBranch: m.fragmentShader.includes('uAuxMode == 6'),
+          trailUniformText: m.fragmentShader.includes('uTrailEmitInterval'),
+          fragmentLength: m.fragmentShader.length,
+          uniforms: readUniforms(m),
+        });
+        // Pool-side execution evidence, complementary to
+        // captureAuxStats (which reports the active window
+        // only): the velocity pass writes a slot's life
+        // (vel.w) at spawn and the value persists after the
+        // slot dies (the inactive branch rewrites vel.w with
+        // the same life), so lifeAssignedCount > 0 proves the
+        // spawn branch fired at least once even when every
+        // spawned slot has already aged out. freshSpawnCount
+        // counts slots the position pass placed on the latest
+        // frame (age written as exactly 0 with a life
+        // assigned); maxAgeWithLife is the largest age among
+        // life-assigned slots (0 when none), showing whether
+        // aging progressed after a spawn.
+        let pool: {
+          texSize: number;
+          count: number;
+          lifeAssignedCount: number;
+          freshSpawnCount: number;
+          maxAgeWithLife: number;
+        } | { error: string } = { error: 'no-frame-yet' };
+        const fctx = diagFrameRef.current;
+        if (fctx && fctx.auxPosLatest && fctx.auxVelLatest) {
+          const size = fctx.auxPosLatest.width;
+          const count = size * size;
+          const pos = new Float32Array(count * 4);
+          const vel = new Float32Array(count * 4);
+          gl.readRenderTargetPixels(fctx.auxPosLatest, 0, 0, size, size, pos);
+          gl.readRenderTargetPixels(fctx.auxVelLatest, 0, 0, size, size, vel);
+          let lifeAssigned = 0;
+          let freshSpawn = 0;
+          let maxAge = 0;
+          for (let i = 0; i < count; i++) {
+            const life = vel[i * 4 + 3];
+            if (life > 0.001) {
+              lifeAssigned++;
+              const age = pos[i * 4 + 3];
+              if (age === 0) freshSpawn++;
+              if (age > maxAge) maxAge = age;
+            }
+          }
+          pool = {
+            texSize: size,
+            count,
+            lifeAssignedCount: lifeAssigned,
+            freshSpawnCount: freshSpawn,
+            maxAgeWithLife: maxAge,
+          };
+        } else if (fctx) {
+          pool = { error: 'no-aux' };
+        }
+        return {
+          vel: probe(mats.vel),
+          pos: probe(mats.pos),
+          inherit: probe(mats.inherit),
+          chainVel: probe(mats.chainVel),
+          chainPos: probe(mats.chainPos),
+          chainInherit: probe(mats.chainInherit),
+          pool,
+        };
+      },
+      // Gate measurement support (stage-4 gate fix round 4,
+      // G4-5 triage): the raw Aux pool distribution, BOTH
+      // ping-pong sides, and the draw binding's texture
+      // identity, in one read. The fix-round probes showed a
+      // pool state (every slot life-assigned, no slot active,
+      // maxAge bit-frozen while uTime advances, and an age
+      // larger than the elapsed sim time at precheck) that the
+      // shader logic — verified line by line and by a verbatim
+      // CPU simulation — cannot produce whether it runs or
+      // stalls, so the fault sits below the source layer: in
+      // the compiled program's behaviour, or in the identity
+      // between the physical textures the passes write, the
+      // draw samples, and this hook reads back. This probe
+      // separates the two:
+      // - latest.pairs / latest.histograms: the pool's initial
+      //   fill is the sentinel age = 10 / life = 0 on every
+      //   texel, so an untouched pool reads as one spike;
+      //   written-once-then-frozen shows life assigned with
+      //   ages clustered at / above their life; a live pool
+      //   shows a spread with age < life present.
+      // - latest vs other stats: the two sides of a running
+      //   ping-pong differ by one frame of aging. Identical
+      //   stats on both sides, or one side still at the
+      //   sentinel, points at the pair resolution / readback
+      //   identity rather than at the passes.
+      // - identity: drawMatchesLatest* false means the draw
+      //   samples a different texture object than the one
+      //   published (and read back here) as latest; the uuids
+      //   let the harness compare the binding across calls.
+      // Read-only, diag-only; the stats reuse the same
+      // definitions as captureAuxStats / captureAuxVariantInfo
+      // (active = life > 0.001 && age < life, age = pos.w,
+      // life = vel.w). pairs entries are [age, life] for the
+      // first 256 texels of the latest side; histogram bins
+      // are [edges[i], edges[i+1]) with the last bin catching
+      // everything >= the last edge (the age sentinel 10
+      // included).
+      captureAuxPoolProbe: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!ctx.auxPosLatest || !ctx.auxVelLatest) return { error: 'no-aux' };
+        const PAIR_SAMPLES = 256;
+        const HIST_EDGES = [0, 0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 5, 10];
+        const summarize = (
+          posRt: THREE.WebGLRenderTarget,
+          velRt: THREE.WebGLRenderTarget,
+          withPairs: boolean,
+        ) => {
+          const size = posRt.width;
+          const count = size * size;
+          const pos = new Float32Array(count * 4);
+          const vel = new Float32Array(count * 4);
+          gl.readRenderTargetPixels(posRt, 0, 0, size, size, pos);
+          gl.readRenderTargetPixels(velRt, 0, 0, size, size, vel);
+          let active = 0;
+          let lifeAssigned = 0;
+          let freshSpawn = 0;
+          let maxAge = 0;
+          let sumV = 0;
+          const ageHist = new Array<number>(HIST_EDGES.length).fill(0);
+          const lifeHist = new Array<number>(HIST_EDGES.length).fill(0);
+          const binOf = (v: number) => {
+            let b = 0;
+            while (b < HIST_EDGES.length - 1 && v >= HIST_EDGES[b + 1]) b++;
+            return b;
+          };
+          const pairs: [number, number][] = [];
+          for (let i = 0; i < count; i++) {
+            const age = pos[i * 4 + 3];
+            const life = vel[i * 4 + 3];
+            ageHist[binOf(age)]++;
+            lifeHist[binOf(life)]++;
+            if (life > 0.001) {
+              lifeAssigned++;
+              if (age === 0) freshSpawn++;
+              if (age > maxAge) maxAge = age;
+              if (age < life) {
+                active++;
+                sumV += Math.hypot(vel[i * 4], vel[i * 4 + 1], vel[i * 4 + 2]);
+              }
+            }
+            if (withPairs && i < PAIR_SAMPLES) pairs.push([age, life]);
+          }
+          return {
+            texSize: size,
+            count,
+            activeCount: active,
+            activeRate: count ? active / count : 0,
+            lifeAssignedCount: lifeAssigned,
+            freshSpawnCount: freshSpawn,
+            maxAgeWithLife: maxAge,
+            meanAbsVelActive: active ? sumV / active : 0,
+            histograms: { edges: HIST_EDGES, ageCounts: ageHist, lifeCounts: lifeHist },
+            ...(withPairs ? { pairs } : {}),
+          };
+        };
+        const latest = summarize(ctx.auxPosLatest, ctx.auxVelLatest, true);
+        const other =
+          ctx.auxPosOther && ctx.auxVelOther ? summarize(ctx.auxPosOther, ctx.auxVelOther, false) : null;
+        return {
+          texSize: latest.texSize,
+          count: latest.count,
+          latest,
+          other,
+          identity: {
+            latestPosTextureUuid: ctx.auxPosLatest.texture.uuid,
+            latestVelTextureUuid: ctx.auxVelLatest.texture.uuid,
+            otherPosTextureUuid: ctx.auxPosOther ? ctx.auxPosOther.texture.uuid : null,
+            otherVelTextureUuid: ctx.auxVelOther ? ctx.auxVelOther.texture.uuid : null,
+            drawPosTextureUuid: ctx.auxDrawPosTextureUuid,
+            drawVelTextureUuid: ctx.auxDrawVelTextureUuid,
+            drawMatchesLatestPos: ctx.auxDrawPosMatchesLatest,
+            drawMatchesLatestVel: ctx.auxDrawVelMatchesLatest,
+            latestAndOtherAreSameTarget: ctx.auxPosOther ? ctx.auxPosLatest === ctx.auxPosOther : null,
+          },
+        };
+      },
+      // Gate measurement support (stage-4 gate fix round 5,
+      // G4-5 triage): the fresh-spawn evidence of the latest
+      // Aux side, split by the slot's emit phase. The trail
+      // event test fires a slot only when
+      // mod(tick - mod(auxIdx, interval), interval) ~ 0, so
+      // a pool whose spawns cluster in a few phases — or one
+      // with no fresh spawn in ANY phase while the tick
+      // walks every residue — separates "the tick source
+      // starves the phases" from "the compiled program does
+      // not run the event test as written". auxIdx is the
+      // readback buffer index (the shaders compute it as
+      // floor(vUv.y * size) * size + floor(vUv.x * size),
+      // the same order readRenderTargetPixels returns).
+      // A fresh spawn is a texel the position pass placed
+      // this frame: age == 0 with a life assigned — the same
+      // definition as the pool aggregates in
+      // captureAuxStats / captureAuxPoolProbe. simTime /
+      // simTick ride along (the published clock) so one call
+      // pins the phase evidence to the tick that produced
+      // it. Read-only, diag-only.
+      captureAuxSpawnPhaseStats: () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!ctx.auxPosLatest || !ctx.auxVelLatest) return { error: 'no-aux' };
+        const size = ctx.auxPosLatest.width;
+        const count = size * size;
+        const pos = new Float32Array(count * 4);
+        const vel = new Float32Array(count * 4);
+        gl.readRenderTargetPixels(ctx.auxPosLatest, 0, 0, size, size, pos);
+        gl.readRenderTargetPixels(ctx.auxVelLatest, 0, 0, size, size, vel);
+        const PHASES = 6;
+        const freshSpawnByPhase = new Array<number>(PHASES).fill(0);
+        const lifeAssignedByPhase = new Array<number>(PHASES).fill(0);
+        let freshSpawn = 0;
+        let lifeAssigned = 0;
+        for (let i = 0; i < count; i++) {
+          const life = vel[i * 4 + 3];
+          if (life > 0.001) {
+            lifeAssigned++;
+            const phase = i % PHASES;
+            lifeAssignedByPhase[phase]++;
+            if (pos[i * 4 + 3] === 0) {
+              freshSpawn++;
+              freshSpawnByPhase[phase]++;
+            }
+          }
+        }
+        return {
+          texSize: size,
+          count,
+          simTime: ctx.simTime,
+          simTick: ctx.simTick,
+          freshSpawnCount: freshSpawn,
+          lifeAssignedCount: lifeAssigned,
+          freshSpawnByPhase,
+          lifeAssignedByPhase,
+        };
+      },
+      // Gate measurement support (stage-4 gate fix round 5,
+      // G4-5 triage): the Aux PASS side of the separation —
+      // the level-1 passes' render counters, the output
+      // targets they most recently rendered into, and a
+      // landing sample: the first texels of both output
+      // targets, read back by the runner IMMEDIATELY after
+      // a frame's renders when the one-shot probe is armed
+      // (lib/auxPassDiag.ts). Calling this arms the probe
+      // whenever none is in flight; the returned
+      // landingSample is the most recent landed one (kept
+      // until a newer lands), and its velRenders /
+      // posRenders say which frame's renders it followed.
+      // Read-only, diag-only.
+      captureAuxPassLandingStats: () => {
+        const before = getAuxPassDiagState();
+        if (!before.landingArmed) armAuxPassLandingProbe();
+        const state = getAuxPassDiagState();
+        const ctx = diagFrameRef.current;
+        return {
+          ...state,
+          simTime: ctx ? ctx.simTime : null,
+          simTick: ctx ? ctx.simTick : null,
+        };
+      },
+      // Gate measurement support (stage-4 gate fix round 7,
+      // G4-5 triage, diagnosis M stage 1): the GPU-side
+      // uniform values of the LIVE level-1 Aux materials,
+      // read from the compiled programs themselves
+      // (gl.getUniform on the native program the renderer
+      // last bound for each material), paired with the JS
+      // map values captureAuxVariantInfo reports. The phase
+      // probes proved the JS side of the supply (the map
+      // values advance with simTime), but a JS map value is
+      // not evidence of what reached the program: three.js
+      // uploads uniforms per render from the map, and a
+      // stale / re-pointed uniforms object would leave the
+      // map reading correctly while the program runs on
+      // other values. `differs` names the uniforms whose GPU
+      // value is not exactly Math.fround(js) — the GPU
+      // stores float32, so a faithful upload reads back
+      // exactly the float32 rounding of the map value, and
+      // anything else is a real divergence, not rounding
+      // noise. A material whose program the renderer has not
+      // bound yet reports gpu: null with gpuNote
+      // 'no-program-yet'; a uniform the compiler optimised
+      // out of that variant reads null on the GPU side.
+      // Caveat: materials whose program cache keys coincide
+      // share one native program, whose uniforms hold the
+      // LAST upload among them — the level-1 vel/pos
+      // fragments differ, so their programs are distinct.
+      // Read-only, diag-only.
+      captureAuxProgramUniforms: () => {
+        const mats = getActiveAuxMaterials();
+        if (!mats) return { error: 'no-aux-materials' };
+        const NAMES = ['uTime', 'uDelta', 'uTrailEmitInterval', 'uTrailEmitRate', 'uAuxMode'] as const;
+        const glCtx = gl.getContext() as WebGLRenderingContext;
+        const readSide = (m: THREE.ShaderMaterial) => {
+          const js: Record<string, number | null> = {};
+          for (const n of NAMES) {
+            const u = m.uniforms[n];
+            const v = u ? u.value : null;
+            js[n] = typeof v === 'number' ? v : null;
+          }
+          let gpu: Record<string, number | null> | null = null;
+          let gpuNote: string | null = null;
+          const props = (
+            gl as unknown as {
+              properties?: {
+                get: (mm: unknown) => { currentProgram?: { program?: WebGLProgram } } | undefined;
+              };
+            }
+          ).properties;
+          const mp = props ? props.get(m) : undefined;
+          const native = mp && mp.currentProgram ? mp.currentProgram.program : undefined;
+          if (!native) {
+            gpuNote = 'no-program-yet';
+          } else {
+            gpu = {};
+            for (const n of NAMES) {
+              const loc = glCtx.getUniformLocation(native, n);
+              if (!loc) {
+                gpu[n] = null;
+                continue;
+              }
+              const v: unknown = glCtx.getUniform(native, loc);
+              gpu[n] = typeof v === 'number' ? v : null;
+            }
+          }
+          const differs: string[] = [];
+          if (gpu) {
+            for (const n of NAMES) {
+              const j = js[n];
+              const g = gpu[n];
+              if (j === null || g === null) continue;
+              if (g !== Math.fround(j)) differs.push(n);
+            }
+          }
+          return { js, gpu, gpuNote, differs };
+        };
+        const ctx = diagFrameRef.current;
+        return {
+          vel: readSide(mats.vel),
+          pos: readSide(mats.pos),
+          simTime: ctx ? ctx.simTime : null,
+          simTick: ctx ? ctx.simTick : null,
+        };
+      },
+      // Gate measurement support (stage-4 gate fix round 7,
+      // G4-5 triage, diagnosis M stage 2): the tick
+      // declaration probe (lib/auxTickProbeDiag.ts). Calling
+      // with a side ('vel' | 'pos') arms the one-shot probe
+      // for THAT side only — the phase-7 A/B replaced both
+      // materials at once, so a one-sided tick failure is
+      // still unseparated from a both-sides one; this probe
+      // separates them. On the next frame the Aux runner
+      // renders a material built from that side's own
+      // fragment string (only the main() output replaced by
+      // the declaration [tick, trailPhase, trailTick,
+      // uTrailEmitInterval]) sharing the side's uniforms
+      // OBJECT, into a dedicated target, and stores the
+      // first texels here. Calling without a side just reads
+      // the state. Arming is refused (armError) while
+      // another probe is in flight, when the side's material
+      // is absent, or when its fragment carries no trail
+      // interval uniform (the tick expressions are not
+      // declared in that variant, so the probe program could
+      // not compile). Read-only, diag-only; the probe never
+      // writes into the pool.
+      captureAuxTickProbeStats: (side?: string) => {
+        if (side !== undefined && side !== 'vel' && side !== 'pos') {
+          return { error: 'unknown-side', side, sides: ['vel', 'pos'] };
+        }
+        const before = getAuxTickProbeState();
+        let armError: string | null = null;
+        if ((side === 'vel' || side === 'pos') && !before.armedSide) {
+          const mats = getActiveAuxMaterials();
+          const m = side === 'vel' ? mats?.vel : mats?.pos;
+          if (!m) armError = 'no-aux-materials';
+          else if (!m.fragmentShader.includes('uTrailEmitInterval')) armError = 'no-trail-variant';
+          else armAuxTickProbe(side as AuxTickProbeSide);
+        }
+        const state = getAuxTickProbeState();
+        const ctx = diagFrameRef.current;
+        return {
+          ...state,
+          armError,
+          simTime: ctx ? ctx.simTime : null,
+          simTick: ctx ? ctx.simTick : null,
+        };
+      },
+      // Gate measurement support (stage-4 gate fix round 6,
+      // G4-5 triage): the trail A/B switch. setAuxTrailAbStage
+      // requests one of AUX_TRAIL_AB_STAGES ('A' = the stock
+      // trail branch; B1..B6 = hypothesis-isolating
+      // minimisations, see components/gpgpuShaderAux.ts);
+      // the request travels through lib/auxTrailAbDiag to
+      // useGpgpuSimulationAssets, which rebuilds the level-1
+      // Aux materials (vel / pos / inherit) around the same
+      // shared uniforms. The rebuild is a React state update,
+      // so it lands on a following render — poll
+      // captureAuxTrailAbInfo until its per-material applied
+      // stage matches the request before measuring.
+      // captureAuxTrailAbInfo reports the requested/applied
+      // bookkeeping AND the stage read back independently
+      // from each live material's fragment string (a B branch
+      // carries an `aux-trail-ab-stage: Bx` marker; a
+      // trail-carrying string without a marker is 'A'; a
+      // string without the trail branch is null). Diag-only:
+      // nothing outside this hook ever requests a stage.
+      setAuxTrailAbStage: (stage: string) => {
+        if (!(AUX_TRAIL_AB_STAGES as readonly string[]).includes(stage)) {
+          return { ok: false, error: 'unknown-stage', stage, stages: [...AUX_TRAIL_AB_STAGES] };
+        }
+        const registered = requestAuxTrailAbStage(stage as AuxTrailAbStage);
+        return { ok: registered, stage, applierRegistered: registered };
+      },
+      captureAuxTrailAbInfo: () => {
+        const state = getAuxTrailAbDiagState();
+        const mats = getActiveAuxMaterials();
+        const detect = (m: THREE.ShaderMaterial | undefined) => {
+          if (!m) return null;
+          const frag = m.fragmentShader;
+          if (!frag.includes('uAuxMode == 6')) return null;
+          const hit = /aux-trail-ab-stage: (B[1-6])/.exec(frag);
+          return hit ? hit[1] : 'A';
+        };
+        const ctx = diagFrameRef.current;
+        return {
+          ...state,
+          materials: mats
+            ? {
+                vel: detect(mats.vel),
+                pos: detect(mats.pos),
+                inherit: detect(mats.inherit),
+                chainVel: detect(mats.chainVel),
+                chainPos: detect(mats.chainPos),
+              }
+            : null,
+          simTime: ctx ? ctx.simTime : null,
+          simTick: ctx ? ctx.simTick : null,
+        };
+      },
+      // Gate measurement support: WebGPU-route position
+      // statistics from the compute readback (captureState is
+      // WebGL-side and only a reference value on this route).
+      // Retries until a fresh (non-fallback) buffer arrives.
+      captureWebGPUPositionStats: async () => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        if (!ctx.webgpuState) return { error: 'no-webgpu-state' };
+        const st = ctx.webgpuState;
+        let fresh: Float32Array | null = null;
+        for (let attempt = 0; attempt < 10 && !fresh; attempt++) {
+          const before = webgpuLast;
+          const data = await readbackWebGPUPositions(st, before ?? undefined);
+          if (data !== before && data.length) {
+            webgpuLast = data;
+            fresh = data;
+          } else {
+            await new Promise((r) => setTimeout(r, 60));
+          }
+        }
+        if (!fresh) return { error: 'readback-timeout' };
+        const count = st.texSize * st.texSize;
+        let sumY = 0;
+        let sumR = 0;
+        let zeros = 0;
+        for (let i = 0; i < count; i++) {
+          const x = fresh[i * 4];
+          const y = fresh[i * 4 + 1];
+          const z = fresh[i * 4 + 2];
+          sumY += y;
+          sumR += Math.hypot(x, y, z);
+          if (x === 0 && y === 0 && z === 0) zeros++;
+        }
+        return {
+          texSize: st.texSize,
+          count,
+          meanY: sumY / count,
+          meanAbsPos: sumR / count,
+          zeroFraction: zeros / count,
+        };
       },
       captureAov: (passId: string, width = 480, height = 300, speedMax = 0, pointSize = 2) => {
         const ctx = diagFrameRef.current;
@@ -643,6 +1725,44 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Stage 3 S0 wiring: the state-cache capture's frame provider.
+  // Read-only and read-on-demand — it snapshots the CURRENT
+  // frame through the exact readback pair the ?diag=1 hook's
+  // captureParticlesRaw uses (positions via
+  // readRenderTargetPixels on the published frame context,
+  // velocities via readbackParticleVelocities), copying both
+  // buffers because the diag buffers are reused by the next
+  // call. Registered unconditionally (unlike the diag hook):
+  // the only caller is the deterministic capture job, which
+  // is itself an explicit user action. Under the WebGPU
+  // backend this reads the WebGL-shaped targets, the same
+  // unconfirmed-equivalence caveat as the diag readback.
+  useEffect(
+    () =>
+      registerStateCacheFrameProvider(() => {
+        const ctx = diagFrameRef.current;
+        if (!ctx) return { error: 'no-frame-yet' };
+        const count = ctx.texSize * ctx.texSize;
+        if (!diagPosBufRef.current || diagPosBufRef.current.length !== count * 4) {
+          diagPosBufRef.current = new Float32Array(count * 4);
+        }
+        if (!diagVelBufRef.current || diagVelBufRef.current.length !== count * 4) {
+          diagVelBufRef.current = new Float32Array(count * 4);
+        }
+        gl.readRenderTargetPixels(ctx.posOut, 0, 0, ctx.texSize, ctx.texSize, diagPosBufRef.current);
+        readbackParticleVelocities({
+          gl,
+          velOut: ctx.velOut,
+          texSize: ctx.texSize,
+          velReadbackRef: diagVelBufRef,
+        });
+        const pos = diagPosBufRef.current;
+        const vel = diagVelBufRef.current;
+        if (!pos || !vel) return { error: 'readback-failed' };
+        return { texSize: ctx.texSize, positions: pos.slice(), velocities: vel.slice() };
+      }),
+    [gl],
+  );
   const mouseNDC = useRef(new THREE.Vector2(0, 0));
   // Multi-pointer tracking (Phase AO): insertion-ordered set of
   // live pointers. The FIRST entry drives mouseNDC / mouseWorld
@@ -676,6 +1796,10 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const spawnEpochStartRef = useRef(0);
   const spawnEpochKeyRef = useRef('');
   const spawnEpochInitRef = useRef(false);
+  // Spawn envelope clock (stage 2, E2): the accumulated
+  // envelope-weighted release clock (lib/gpgpuSpawnAllocator.ts);
+  // reset on the same key change that restarts the epoch.
+  const spawnEnvClockRef = useRef(0);
   const routingSnapshotRef = useRef<GpgpuFrameDiagnosticSnapshot | null>(null);
 
   useEffect(() => {
@@ -787,6 +1911,8 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     auxPosMat,
     auxChainVelMat,
     auxChainPosMat,
+    auxInheritMat,
+    auxChainInheritMat,
     wwVelMat,
     wwPosMat,
     wwDrawMat,
@@ -867,6 +1993,17 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const attrFeedbackSignatureRef = useRef('');
   const attrFeedbackTextureRef = useRef<THREE.Texture | null>(null);
   const attrFeedbackFrameRef = useRef(0);
+  // Spin channel (Grammar 2.0 stage 2, B3): the dedicated
+  // ping-pong state pass and its published texture.
+  const spinPassRef = useRef<GpgpuSpinPass | null>(null);
+  const spinSignatureRef = useRef('');
+  const spinTextureRef = useRef<THREE.Texture | null>(null);
+  // Orientation channel (Limit plan stage 4, S2): the
+  // dedicated quaternion ping-pong state pass and its
+  // published texture.
+  const orientPassRef = useRef<GpgpuOrientPass | null>(null);
+  const orientSignatureRef = useRef('');
+  const orientTextureRef = useRef<THREE.Texture | null>(null);
   // Vellum XPBD components (Phase 19 stage 3): throttled
   // readback bookkeeping for labelVellumComponents.
   const vellumComponentFrameRef = useRef(0);
@@ -918,7 +2055,128 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   // is the detection (the builders emit it under conditional
   // emission only). While no fragment reads den, the supply
   // pass never exists.
-  const attrUsesDen = [attrDynFragment, attrChainFragment, attrFeedbackFragment]
+  // Grammar 2.0 stage 1 (slice 1A): the live rule evaluation
+  // pass (REP). The generated fragment is null unless at least
+  // one live rule classifies live with a consumed action —
+  // with a null fragment the pass never exists, no consumer
+  // shader gains the live segment's effect, and behaviour is
+  // bit-identical to v2.22.0. A live condition reading `den`
+  // classifies live only while the density supply runs, which
+  // the REP itself can demand (it joins attrUsesDen below).
+  const ruleLiveGroupDefs = parseGpgpuGroups(config.gpgpuGroupsData ?? '');
+  // Stage 2 slice B6: while predation stands, the generated
+  // predation rules ride after the user's own live rules
+  // (lib/gpgpuPredation.ts mergePredationRules) — the REP
+  // fragment, and only it, is built from the merged list;
+  // with predation off the merged list is the user's list
+  // itself and the fragment is byte-identical to pre-B6.
+  const ruleLiveRules = resolveLiveRulesWithPredation(config);
+  const ruleLiveFragment = buildRuleEvalFragment(
+    ruleLiveRules,
+    {
+      names: config.gpgpuAttrNames,
+      names2: config.gpgpuAttrNames2,
+      groupDefs: ruleLiveGroupDefs,
+      densityAvailable: true,
+    },
+  );
+  const ruleLiveInterval = resolveAttrDynInterval(config.gpgpuRuleEvalInterval);
+  // Same-evaluation designation (stage 5 slice S5 follow-up,
+  // 分岐E): while a designated rule is live in the effective
+  // list, the WebGL REP runs TWICE per evaluation — the
+  // second run reads the first run's output through the
+  // ping-pong, so a set-group / set-state transition is
+  // visible to the other rules within the same evaluation,
+  // exactly the CPU twin's evaluatePipelineCrossStep. The
+  // designation lives in the stored graph's node params and
+  // surfaces through the compiler; the row-list form cannot
+  // carry it, so without a graph this is always false and
+  // the evaluation below is the single run it always was.
+  // The resolution is the pure lib/pipelineCross.ts
+  // resolveRepTwoPhase over the same classification the
+  // twin uses. The WebGPU route is not wired here (the REP
+  // block below is WebGL-only already); on that route the
+  // designation stays a note, never a disable.
+  const ruleLiveTwoPhase = ruleLiveFragment
+    ? resolveRepTwoPhase(config.gpgpuPipelineGraph, ruleLiveRules, {
+      names: config.gpgpuAttrNames,
+      names2: config.gpgpuAttrNames2,
+      groupDefs: ruleLiveGroupDefs,
+      densityAvailable: true,
+    }).twoPhase
+    : false;
+  // Merged supply (stage 2 texture-unit follow-up): while
+  // the plan stands, the REP's targets grow the column strip
+  // and every live consumer reads through the one merged
+  // texture (lib/gpgpuMergedSupply.ts). The strip height
+  // rides the REP signature so a plan change rebuilds the
+  // pass; the blit below re-runs whenever the pass or the
+  // column supply object changes.
+  const mergedPlan = ruleLiveFragment
+    ? resolveMergedSupplyPlan(config, texSize)
+    : null;
+  const ruleLiveSignature = ruleLiveFragment
+    ? `rep|${config.gpgpuParticleRulesLive ?? ''}|${config.gpgpuPredationEnabled ? 1 : 0}|${config.gpgpuPredationOutcome}|${config.gpgpuPredationBirth ? 1 : 0}|${config.gpgpuPredationStrike}|${config.gpgpuPredationStrikeFrames}|${config.gpgpuPredationGraceSeconds}|${config.gpgpuGroupsData ?? ''}|${normalizeAttrNames(config.gpgpuAttrNames).join(',')}|${normalizeAttrNames2(config.gpgpuAttrNames2).join(',')}|${ruleLiveInterval}|${texSize}|merged${mergedPlan?.stripRows ?? 0}${ruleLiveTwoPhase ? '|x2' : ''}`
+    : '';
+  const ruleEvalPassRef = useRef<GpgpuRuleEvalPass | null>(null);
+  const ruleEvalSignatureRef = useRef('');
+  const ruleEvalTextureRef = useRef<THREE.Texture | null>(null);
+  const ruleEvalFrameRef = useRef(0);
+  const mergedBlitRef = useRef<{ pass: GpgpuRuleEvalPass; supply: object } | null>(null);
+
+  // Contact supply (Grammar 2.0 stage 1, the slice-1B
+  // follow-up): the contact pass stands only while the REP
+  // fragment actually samples the contact record — the
+  // fragment contains the `simHit` local exactly when a live
+  // condition reads hit / hits (the same string detection
+  // the density supply uses for `simDen`). Its lifecycle is
+  // tied to the REP's below; runSimulationPasses drives it
+  // (run / suppress) between the velocity and position
+  // renders, and the REP binds its latest texture.
+  const ruleLiveUsesContact = !!ruleLiveFragment && ruleLiveFragment.includes('simHit');
+  // Live fracture consumption (Grammar 2.0 stage 1, fracture
+  // follow-up): while a live-classified fracture rule exists,
+  // each REP evaluation's aggregate mask is read back and fed
+  // to the runtime's fracture gate (lib/gpgpuLiveFracture.ts);
+  // an activation re-bakes the morph target with the
+  // triggered particles fractured. Without a fracture rule
+  // there is no readback and no cost.
+  const ruleLiveHasFracture = !!ruleLiveFragment && classifyLiveRules(
+    resolveLiveParticleRules(config.gpgpuParticleRulesLive ?? ''),
+    {
+      names: config.gpgpuAttrNames,
+      names2: config.gpgpuAttrNames2,
+      groupDefs: ruleLiveGroupDefs,
+      densityAvailable: true,
+    },
+  ).some((c) => c.route === 'live' && c.rule.action.type === 'fracture');
+  const ruleFractureReadbackRef = useRef<Float32Array | null>(null);
+  const contactSignature = ruleLiveUsesContact ? `contact|${texSize}` : '';
+  const contactPassRef = useRef<GpgpuContactPass | null>(null);
+  const contactSignatureRef = useRef('');
+  // Predation hold supply (stage 2 B6 follow-up): the
+  // fragment contains the `simPredHold` local exactly when a
+  // live condition reads predhold. The hold pass's lifecycle
+  // is tied to the REP's like the contact pass's, but the
+  // wiring drives it itself, on evaluation frames immediately
+  // before the REP, so the REP binds the record of the very
+  // step it evaluates (no frame of lag).
+  const ruleLiveUsesPredHold = !!ruleLiveFragment && ruleLiveFragment.includes('simPredHold');
+  const predHoldSignature = ruleLiveUsesPredHold ? `predhold|${texSize}` : '';
+  const predHoldPassRef = useRef<GpgpuPredationHoldPass | null>(null);
+  const predHoldSignatureRef = useRef('');
+  // Activation timestamp for the `predage` supply: the sim
+  // time at which the resolved predation rule set last
+  // changed (activation, or a predation parameter change —
+  // a change re-arms the grace window).
+  const predationResolved = resolvePredation(config);
+  const predationSignature = predationResolved.enabled
+    ? `pred|${predationResolved.outcome}|${predationResolved.birth ? 1 : 0}|${predationResolved.strike}|${predationResolved.strikeFrames}|${predationResolved.graceSeconds}|${predationResolved.speciesCount}|${predationResolved.range}`
+    : '';
+  const predationSignatureRef = useRef('');
+  const predationActivationRef = useRef(0);
+
+  const attrUsesDen = [attrDynFragment, attrChainFragment, attrFeedbackFragment, ruleLiveFragment]
     .some((f) => typeof f === 'string' && f.includes('simDen'));
   const attrDensityPassRef = useRef<GpgpuAttrDensityPass | null>(null);
   const attrDensityTextureRef = useRef<THREE.Texture | null>(null);
@@ -938,10 +2196,22 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     attrDynPassRef.current = null;
     attrFeedbackPassRef.current?.dispose();
     attrFeedbackPassRef.current = null;
+    spinPassRef.current?.dispose();
+    spinPassRef.current = null;
+    spinTextureRef.current = null;
+    orientPassRef.current?.dispose();
+    orientPassRef.current = null;
+    orientTextureRef.current = null;
     attrChainPassRef.current?.dispose();
     attrChainPassRef.current = null;
     attrDensityPassRef.current?.dispose();
     attrDensityPassRef.current = null;
+    ruleEvalPassRef.current?.dispose();
+    ruleEvalPassRef.current = null;
+    contactPassRef.current?.dispose();
+    contactPassRef.current = null;
+    predHoldPassRef.current?.dispose();
+    predHoldPassRef.current = null;
     setParticleDensitySource(null);
     shineDensityRtRef.current?.dispose();
     shineDensityRtRef.current = null;
@@ -956,8 +2226,10 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     prevPosRTRef,
     initPosTexRef,
     spawnOrderTexRef,
+    spawnOrderMaxRef,
     morphTexRef,
     morphNormalTexRef,
+    emitCloudTexRef,
     attrTexRef,
     attrTex2Ref,
     fluidRTARef,
@@ -979,6 +2251,9 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     aux2PingIsA,
     aux3RtRef,
     aux3PingIsA,
+    auxInheritRtRef,
+    aux2InheritRtRef,
+    aux3InheritRtRef,
     replicaStacksRef,
     vellumRestTexRef,
     vellumStateRtRef,
@@ -1159,18 +2434,38 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // Spawn epoch (Phase AB): restart the release clock whenever
     // the gate's inputs change (same placement discipline as the
     // morph kick above).
-    const spawnEpochKey = `${config.gpgpuSpawnBurst}|${config.gpgpuSpawnRate}|${config.gpgpuSpawnPulseInterval}|${config.gpgpuSpawnPulseDuty}|${config.gpgpuSpawnPulseCycles}|${config.gpgpuSpawnPulseProbability}|${config.gpgpuSpawnOrderMode}|${config.gpgpuSpawnEventEnabled}|${config.gpgpuSpawnEventTime}|${config.gpgpuCount}|${config.gpgpuSeed}`;
+    const spawnEpochKey = `${config.gpgpuSpawnBurst}|${config.gpgpuSpawnRate}|${config.gpgpuSpawnPulseInterval}|${config.gpgpuSpawnPulseDuty}|${config.gpgpuSpawnPulseCycles}|${config.gpgpuSpawnPulseProbability}|${config.gpgpuSpawnOrderMode}|${config.gpgpuSpawnEventEnabled}|${config.gpgpuSpawnEventTime}|${config.gpgpuCount}|${config.gpgpuSeed}|${config.gpgpuSpawnRateAbsolute}|${config.gpgpuSpawnEnvelopeEnabled}|${config.gpgpuSpawnEnvelopeStart}|${config.gpgpuSpawnEnvelopeStop}|${(config.gpgpuSpawnEnvelopeCurve ?? []).join(',')}`;
     if (spawnEpochKey !== spawnEpochKeyRef.current) {
       spawnEpochKeyRef.current = spawnEpochKey;
       if (spawnEpochInitRef.current) spawnEpochStartRef.current = timeRef.current;
       spawnEpochInitRef.current = true;
+      spawnEnvClockRef.current = 0;
     }
     const spawnTime = timeRef.current - spawnEpochStartRef.current;
+    // Spawn envelope clock (stage 2, E2): while the envelope
+    // is enabled, the release clock the allocator variant's
+    // thresholds run on advances at the envelope's value
+    // (advanceSpawnEnvelopeClock — the accumulated integral,
+    // like the pulse grammar's live time). Disabled, the
+    // clock values passed to the passes are the plain spawn
+    // time and its previous frame, exactly as before.
+    const spawnEnvelope = resolveSpawnEnvelope(config);
+    let spawnClockTime = spawnTime;
+    let spawnClockPrev = spawnTime - rawDt;
+    if (spawnEnvelope.enabled) {
+      const before = spawnEnvClockRef.current;
+      spawnEnvClockRef.current = advanceSpawnEnvelopeClock(before, spawnTime, rawDt, spawnEnvelope);
+      spawnClockTime = spawnEnvClockRef.current;
+      spawnClockPrev = before;
+    }
     // Mask kill (Phase AB): the Phase X mask image texture, the
     // same one the draw clip samples; null unless ready. Phase AE:
     // a terrain-derived sentinel source resolves to the live
     // derived bake through the same single resolution point.
-    const killMaskState = config.gpgpuKillMask && config.gpgpuMaskSource
+    // Emission mask (stage 2, E3): the same texture also feeds
+    // the emission gate, so it resolves while either consumer
+    // is on (the passes gate each consumer on its own key).
+    const killMaskState = (config.gpgpuKillMask || emissionMaskVariantActive(config)) && config.gpgpuMaskSource
       ? resolveMapSourceTexture(config.gpgpuMaskSource, config)
       : null;
     const killMaskTex = killMaskState && killMaskState.ready ? killMaskState.texture : null;
@@ -1337,7 +2632,269 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // texture.
     const simAttrTex = !routing.useWebGPU && attrFinalTexture ? attrFinalTexture : attrTexRef.current;
 
+    // Spin channel (Grammar 2.0 stage 2, B3): the accumulated
+    // angle / angular-velocity state advances once per frame
+    // while the channel is enabled, on the WebGL route only
+    // (the capability registry routes spin configs there).
+    // It reads the position texture's age (the respawn reset)
+    // and the final attribute texture (the slot modulation),
+    // and publishes its state texture for the draw consumers
+    // in syncVisualUniforms below. The lifecycle mirrors the
+    // attribute feedback pass above: built only while the
+    // channel stands, rebuilt on a signature change, disposed
+    // otherwise.
+    if (spinChannelActive(config) && !routing.useWebGPU) {
+      if (spinSignatureRef.current !== `${texSize}` || !spinPassRef.current) {
+        spinSignatureRef.current = `${texSize}`;
+        spinPassRef.current?.dispose();
+        spinPassRef.current = new GpgpuSpinPass(texSize);
+        spinTextureRef.current = null;
+      }
+      spinTextureRef.current = spinPassRef.current.run(glCtx, {
+        posTex: posIn.texture,
+        attrTex: simAttrTex,
+        ageEnabled: !!config.gpgpuAgeEnabled,
+        dt,
+        spin: resolveSpin(config),
+      });
+    } else if (spinPassRef.current) {
+      spinPassRef.current.dispose();
+      spinPassRef.current = null;
+      spinTextureRef.current = null;
+      spinSignatureRef.current = '';
+    }
+
+    // Orientation channel (Limit plan stage 4, S2): the
+    // accumulated quaternion posture advances once per frame
+    // while the channel is enabled, on the WebGL route only
+    // (the capability registry routes orient configs there).
+    // It reads the position texture's age (the respawn reset
+    // and the damping clock), the velocity texture (velocity
+    // mode's axis) and the final attribute texture (the slot
+    // modulation), and publishes its state texture for the
+    // geometry draw in syncVisualUniforms below. Lifecycle
+    // mirrors the spin pass above.
+    if (orientChannelActive(config) && !routing.useWebGPU) {
+      if (orientSignatureRef.current !== `${texSize}` || !orientPassRef.current) {
+        orientSignatureRef.current = `${texSize}`;
+        orientPassRef.current?.dispose();
+        orientPassRef.current = new GpgpuOrientPass(texSize);
+        orientTextureRef.current = null;
+      }
+      orientTextureRef.current = orientPassRef.current.run(glCtx, {
+        posTex: posIn.texture,
+        velTex: velOut.texture,
+        attrTex: simAttrTex,
+        ageEnabled: !!config.gpgpuAgeEnabled,
+        dt,
+        orient: resolveOrient(config),
+      });
+    } else if (orientPassRef.current) {
+      orientPassRef.current.dispose();
+      orientPassRef.current = null;
+      orientTextureRef.current = null;
+      orientSignatureRef.current = '';
+    }
+
+    // Grammar 2.0 stage 1 (slice 1A): the REP runs after the
+    // attribute stages (its slot variables read the final
+    // attribute texture) and before the sim passes (its output
+    // is what the velocity / position consumers read), on the
+    // gpgpuRuleEvalInterval cadence, WebGL route only (the
+    // capability registry routes live-rule configs there).
+    // Between evaluations the last output texture is held.
+    let ruleLiveTexture: THREE.Texture | null = null;
+    if (ruleLiveFragment && !routing.useWebGPU) {
+      // Contact supply lifecycle, tied to the REP's: the
+      // pass is built only while the fragment reads hit /
+      // hits, and reset whenever the REP itself is rebuilt
+      // (a fresh REP state pairs with a fresh contact
+      // record). The runner drives it later in this frame;
+      // the REP below binds its latest texture.
+      if (ruleLiveUsesContact) {
+        if (contactSignatureRef.current !== contactSignature || !contactPassRef.current) {
+          contactSignatureRef.current = contactSignature;
+          contactPassRef.current?.dispose();
+          contactPassRef.current = new GpgpuContactPass(texSize);
+          contactPassRef.current.reset(glCtx);
+        }
+      } else if (contactPassRef.current) {
+        contactPassRef.current.dispose();
+        contactPassRef.current = null;
+        contactSignatureRef.current = '';
+      }
+      // Hold supply lifecycle, tied to the REP's like the
+      // contact pass's: built only while the fragment reads
+      // predhold, reset whenever the REP itself is rebuilt.
+      if (ruleLiveUsesPredHold) {
+        if (predHoldSignatureRef.current !== predHoldSignature || !predHoldPassRef.current) {
+          predHoldSignatureRef.current = predHoldSignature;
+          predHoldPassRef.current?.dispose();
+          predHoldPassRef.current = new GpgpuPredationHoldPass(texSize);
+          predHoldPassRef.current.reset(glCtx);
+        }
+      } else if (predHoldPassRef.current) {
+        predHoldPassRef.current.dispose();
+        predHoldPassRef.current = null;
+        predHoldSignatureRef.current = '';
+      }
+      // Predation activation tracking for the `predage`
+      // supply: a changed resolved predation set (activation
+      // or a parameter change) re-arms the grace window at
+      // the current sim time.
+      if (predationSignatureRef.current !== predationSignature) {
+        predationSignatureRef.current = predationSignature;
+        if (predationSignature !== '') {
+          predationActivationRef.current = timeRef.current;
+        }
+      }
+      if (ruleEvalSignatureRef.current !== ruleLiveSignature || !ruleEvalPassRef.current) {
+        ruleEvalSignatureRef.current = ruleLiveSignature;
+        ruleEvalPassRef.current?.dispose();
+        ruleEvalPassRef.current = new GpgpuRuleEvalPass(texSize, ruleLiveFragment, mergedPlan?.stripRows ?? 0);
+        ruleEvalTextureRef.current = null;
+        ruleEvalFrameRef.current = 0;
+        mergedBlitRef.current = null;
+        contactPassRef.current?.reset(glCtx);
+        predHoldPassRef.current?.reset(glCtx);
+        // A rebuilt REP means a new live rule list: the
+        // fracture gate starts a new history with it.
+        runtime.resetLiveFracture();
+      }
+      // Merged supply: keep the column strip of both REP
+      // targets current — blit on pass rebuild and whenever
+      // the column supply object changes (its cache keys on
+      // the column config strings).
+      if (mergedPlan && ruleEvalPassRef.current) {
+        const supply = getColumnSupply(config);
+        if (supply && (mergedBlitRef.current?.pass !== ruleEvalPassRef.current || mergedBlitRef.current?.supply !== supply)) {
+          ruleEvalPassRef.current.blitColumn(glCtx, supply.texture, supply.width, supply.height);
+          mergedBlitRef.current = { pass: ruleEvalPassRef.current, supply };
+        }
+      }
+      const ruleEvalPass = ruleEvalPassRef.current;
+      if (ruleEvalPass && simAttrTex) {
+        if (ruleEvalFrameRef.current % ruleLiveInterval === 0) {
+          // Hold supply: accumulate this evaluation's step
+          // first, so the REP reads the hold count including
+          // the current evaluation's strike test. The supply
+          // follows the resolved predation parameters (their
+          // defaults while predation itself is off — a user
+          // rule may still read predhold).
+          if (predHoldPassRef.current) {
+            predHoldPassRef.current.run(glCtx, {
+              posTex: posIn.texture,
+              species: predationResolved.speciesCount,
+              range: predationResolved.range,
+              strike: predationResolved.strike,
+              graceUntil: predationActivationRef.current + predationResolved.graceSeconds,
+              time: timeRef.current,
+            });
+          }
+          const ruleEvalBindings = {
+            attrTex: simAttrTex,
+            extTex: attrTex2Ref.current,
+            posTex: posIn.texture,
+            velTex: velIn.texture,
+            ageDenom: Math.max(config.gpgpuAgeMax, 0.001),
+            radiusDenom: Math.max(config.gpgpuBounceRadius, 0.001),
+            denTex: attrDensityTextureRef.current,
+            // Contact supply: the contact pass's latest
+            // record (or its zero texture while suppressed),
+            // read only when a live condition uses hit/hits.
+            hitTex: contactPassRef.current?.texture ?? null,
+            // Hold supply: the hold pass's latest record
+            // (read only when a live condition uses predhold).
+            holdTex: predHoldPassRef.current?.texture ?? null,
+            // Slice 1B: the analytic SDF bundle the velocity
+            // pass owns, supplied to the REP as well (read
+            // only when a live condition uses `sdf`).
+            sdf: {
+              enabled: config.gpgpuSdfEnabled,
+              shape: SDF_SHAPE_IDS[config.gpgpuSdfShape] ?? 0,
+              x: config.gpgpuSdfX,
+              y: config.gpgpuSdfY,
+              z: config.gpgpuSdfZ,
+              size: config.gpgpuSdfSize,
+            },
+            // Slice B6: the neighbourhood supply's species
+            // count + encounter range (read only when the
+            // fragment declares them).
+            predation: {
+              species: resolvePredation(config).speciesCount,
+              range: resolvePredation(config).range,
+              activationTime: predationActivationRef.current,
+            },
+            time: timeRef.current,
+          };
+          ruleEvalTextureRef.current = ruleEvalPass.run(glCtx, ruleEvalBindings);
+          if (ruleLiveTwoPhase) {
+            // Phase 2 of the same evaluation (same-evaluation
+            // designation, 分岐E): the ping-pong has swapped,
+            // so this run reads phase 1's output as its
+            // previous state and writes the other target. Two
+            // runs return the ping-pong parity to where it
+            // stood before the evaluation, the held texture
+            // and currentTarget are phase 2's, and the
+            // fracture readback below therefore reads the
+            // final target. The bindings are the step's own,
+            // unchanged: only the carried state differs,
+            // exactly as in the CPU twin. The hold pass above
+            // is NOT run again — it accumulates once per
+            // evaluation regardless of phases.
+            ruleEvalTextureRef.current = ruleEvalPass.run(glCtx, ruleEvalBindings);
+          }
+          // Live fracture consumption: read the aggregate
+          // mask back from the target the REP just wrote and
+          // present it to the runtime's fracture gate. Runs
+          // only on evaluation frames and only while a live
+          // fracture rule exists; the gate enforces the
+          // cooldown / same-set limits, and an activation
+          // re-bakes the morph target (useGpgpuRuntime).
+          if (ruleLiveHasFracture) {
+            const repTarget = ruleEvalPass.currentTarget;
+            if (repTarget) {
+              if (!ruleFractureReadbackRef.current
+                || ruleFractureReadbackRef.current.length !== texSize * texSize * 4) {
+                ruleFractureReadbackRef.current = new Float32Array(texSize * texSize * 4);
+              }
+              glCtx.readRenderTargetPixels(
+                repTarget, 0, 0, texSize, texSize, ruleFractureReadbackRef.current,
+              );
+              runtime.noteLiveFractureMask(
+                ruleFractureReadbackRef.current, ruleEvalFrameRef.current,
+              );
+            }
+          }
+        }
+        ruleLiveTexture = ruleEvalTextureRef.current;
+      }
+      ruleEvalFrameRef.current += 1;
+    } else if (ruleEvalPassRef.current) {
+      ruleEvalPassRef.current.dispose();
+      ruleEvalPassRef.current = null;
+      ruleEvalTextureRef.current = null;
+      ruleEvalSignatureRef.current = '';
+      ruleEvalFrameRef.current = 0;
+      contactPassRef.current?.dispose();
+      contactPassRef.current = null;
+      contactSignatureRef.current = '';
+      predHoldPassRef.current?.dispose();
+      predHoldPassRef.current = null;
+      predHoldSignatureRef.current = '';
+      predationSignatureRef.current = '';
+      // The live rules are gone: the fracture history ends
+      // with them (re-bakes the morph target unfractured if
+      // an activation had fractured part of it).
+      runtime.resetLiveFracture();
+    }
+
     if (stacksActive) {
+      // Replica stacks never drive the contact pass (their
+      // runner passes none): suppress it so hit / hits read
+      // 0 while stacks own the pool, like the live kill's
+      // stack suppression.
+      contactPassRef.current?.suppress();
       runReplicaStackPasses({
         config,
         dt,
@@ -1511,13 +3068,19 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         posSimMat,
         initPosTex: initPosTexRef.current,
         attrTex: simAttrTex,
+        ruleLiveTex: ruleLiveTexture,
+        contactPass: contactPassRef.current,
         morphTex: morphTexRef.current,
+        emitCloudTex: emitCloudTexRef.current,
         morphNormalTex: morphNormalTexRef.current,
         morphKickStart: morphKickStartRef.current,
         prevPosTex: prevPosRTRef.current?.texture ?? null,
         spawnTime,
+        spawnClockTime,
+        spawnClockPrev,
         killMaskTex,
         spawnOrderTex: spawnOrderTexRef.current,
+        spawnOrderMaxDist: spawnOrderMaxRef.current,
         mouseWorldMulti,
         mouseMultiCount,
         vellumRestTex: vellumRestTexRef.current,
@@ -1742,7 +3305,11 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // backend has no aux pool, and its draw material simply never
     // activates). Reads the main pool's frame-start textures so death
     // and bounce events are located where they happened this frame.
-    if (!routing.useWebGPU && config.gpgpuAuxMode !== 'none' && auxRtRef.current && simMeshRef.current) {
+    // Trail mechanism (stage 4, S6): the block also runs
+    // while the Aux-type trail drives the pool at
+    // gpgpuAuxMode 'none' (trailAuxActive), and the draw
+    // material sync below follows the same condition.
+    if (!routing.useWebGPU && (config.gpgpuAuxMode !== 'none' || trailAuxActive(config)) && auxRtRef.current && simMeshRef.current) {
       const auxTargets = resolvePingPongTargets(auxRtRef.current, auxPingIsA.current);
       runAuxSimulationPasses({
         config,
@@ -1761,10 +3328,27 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         auxVelOut: auxTargets.velOut,
         auxVelMat,
         auxPosMat,
+        // Grammar connection (1D-3): the REP's latest output
+        // of this frame (held between interval evaluations),
+        // sampled by the ruleSpawn variant's event test. Null
+        // while no live rule has run — no pulse, no spawns.
+        mainRuleTex: ruleLiveTexture,
+        // Spawn inheritance (1D-1): the target exists only
+        // while the slots key is on; the attribute texture is
+        // the same current one the sim itself consumes.
+        inherit: auxInheritRtRef.current
+          ? { target: auxInheritRtRef.current, mat: auxInheritMat, mainAttrTex: simAttrTex }
+          : null,
       });
       auxPingIsA.current = !auxPingIsA.current;
       auxDrawMat.uniforms.uAuxPosTex.value = auxTargets.posOut.texture;
       auxDrawMat.uniforms.uAuxVelTex.value = auxTargets.velOut.texture;
+      if (auxDrawMat.uniforms.uAuxInheritTex && auxInheritRtRef.current) {
+        auxDrawMat.uniforms.uAuxInheritTex.value = auxInheritRtRef.current.texture;
+      }
+      if (auxDrawMat.uniforms.uAuxInheritColor) {
+        auxDrawMat.uniforms.uAuxInheritColor.value = config.gpgpuAuxInheritColor;
+      }
       // Child colour (Phase Q): an explicit child colour wins; the
       // empty default inherits the parent (main pool) colour exactly
       // as before.
@@ -1804,10 +3388,21 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
           auxVelOut: aux2Targets.velOut,
           auxChainVelMat,
           auxChainPosMat,
+          // Spawn inheritance (1D-1): copies level 1's
+          // inheritance texels into this level's target.
+          inherit: aux2InheritRtRef.current && auxInheritRtRef.current
+            ? { target: aux2InheritRtRef.current, mat: auxChainInheritMat, srcInheritTex: auxInheritRtRef.current.texture }
+            : null,
         });
         aux2PingIsA.current = !aux2PingIsA.current;
         aux2DrawMat.uniforms.uAuxPosTex.value = aux2Targets.posOut.texture;
         aux2DrawMat.uniforms.uAuxVelTex.value = aux2Targets.velOut.texture;
+        if (aux2DrawMat.uniforms.uAuxInheritTex && aux2InheritRtRef.current) {
+          aux2DrawMat.uniforms.uAuxInheritTex.value = aux2InheritRtRef.current.texture;
+        }
+        if (aux2DrawMat.uniforms.uAuxInheritColor) {
+          aux2DrawMat.uniforms.uAuxInheritColor.value = config.gpgpuAuxInheritColor;
+        }
         aux2DrawMat.uniforms.uColor.value.setStyle(resolveAuxLevelColor(config, 2));
         aux2DrawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
         aux2DrawMat.uniforms.uAuxSize.value = level2.size;
@@ -1835,10 +3430,21 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
             auxVelOut: aux3Targets.velOut,
             auxChainVelMat,
             auxChainPosMat,
+            // Spawn inheritance (1D-1): copies level 2's
+            // inheritance texels into this level's target.
+            inherit: aux3InheritRtRef.current && aux2InheritRtRef.current
+              ? { target: aux3InheritRtRef.current, mat: auxChainInheritMat, srcInheritTex: aux2InheritRtRef.current.texture }
+              : null,
           });
           aux3PingIsA.current = !aux3PingIsA.current;
           aux3DrawMat.uniforms.uAuxPosTex.value = aux3Targets.posOut.texture;
           aux3DrawMat.uniforms.uAuxVelTex.value = aux3Targets.velOut.texture;
+          if (aux3DrawMat.uniforms.uAuxInheritTex && aux3InheritRtRef.current) {
+            aux3DrawMat.uniforms.uAuxInheritTex.value = aux3InheritRtRef.current.texture;
+          }
+          if (aux3DrawMat.uniforms.uAuxInheritColor) {
+            aux3DrawMat.uniforms.uAuxInheritColor.value = config.gpgpuAuxInheritColor;
+          }
           aux3DrawMat.uniforms.uColor.value.setStyle(resolveAuxLevelColor(config, 3));
           aux3DrawMat.uniforms.uOpacity.value = config.gpgpuOpacity;
           aux3DrawMat.uniforms.uAuxSize.value = level3.size;
@@ -1919,9 +3525,31 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       capture.requested = false;
     }
 
+    // Stage-4 gate fix round 2: publish the same output targets
+    // for the motion-blur velocity capture (lib/motionBlur.ts's
+    // sim frame store). The capture reads the sim's own targets
+    // — the diagnostic AOV's proven route — instead of the draw
+    // material's uniforms. Plain assignments; inert while the
+    // capture is unmounted (MB off).
+    setMotionSimFrameSource({ posTexture: posOut.texture, velTexture: velOut.texture });
+
     // Phase DH (DA3 path B): publish this frame's targets for the
     // ?diag=1 diagnostic hook. Plain assignments; the hook reads
     // them only when explicitly invoked.
+    // Stage-4 gate fix round 4 (G4-5 triage): resolve the Aux
+    // ping-pong pair once for the fields below, and read the Aux
+    // draw material's currently bound textures, so the published
+    // frame also carries both pool sides plus the draw binding's
+    // identity against the latest targets (captureAuxPoolProbe).
+    // The draw binding is rewritten inside the Aux block above
+    // on every frame the pool runs; while the block does not
+    // run, this reads whatever was bound last — exactly what
+    // the draw would sample.
+    const auxDiagTargets = auxRtRef.current
+      ? resolvePingPongTargets(auxRtRef.current, auxPingIsA.current)
+      : null;
+    const auxDrawPosTex = (auxDrawMat.uniforms.uAuxPosTex.value ?? null) as THREE.Texture | null;
+    const auxDrawVelTex = (auxDrawMat.uniforms.uAuxVelTex.value ?? null) as THREE.Texture | null;
     diagFrameRef.current = {
       posOut,
       velOut,
@@ -1933,6 +3561,33 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       // on the WebGPU route.
       route: routing.useWebGPU ? 'webgpu' : 'webgl',
       webgpuState: routing.useWebGPU ? webgpuStateRef.current : null,
+      ruleLiveTarget: ruleEvalPassRef.current?.currentTarget ?? null,
+      contactTarget: contactPassRef.current?.currentTarget ?? null,
+      contactSuppressed: contactPassRef.current?.isSuppressed ?? false,
+      auxPosLatest: auxDiagTargets ? auxDiagTargets.posIn : null,
+      auxVelLatest: auxDiagTargets ? auxDiagTargets.velIn : null,
+      auxPosOther: auxDiagTargets ? auxDiagTargets.posOut : null,
+      auxVelOther: auxDiagTargets ? auxDiagTargets.velOut : null,
+      auxDrawPosTextureUuid: auxDrawPosTex ? auxDrawPosTex.uuid : null,
+      auxDrawVelTextureUuid: auxDrawVelTex ? auxDrawVelTex.uuid : null,
+      auxDrawPosMatchesLatest:
+        auxDrawPosTex && auxDiagTargets ? auxDrawPosTex === auxDiagTargets.posIn.texture : null,
+      auxDrawVelMatchesLatest:
+        auxDrawVelTex && auxDiagTargets ? auxDrawVelTex === auxDiagTargets.velIn.texture : null,
+      // Stage-4 gate fix round 5 (G4-5 triage): the sim
+      // clock and the Aux shaders' tick derived from it
+      // (floor(time * 60) — the passes filled uTime from
+      // this same timeRef value earlier in this frame).
+      simTime: timeRef.current,
+      simTick: Math.floor(timeRef.current * 60),
+      auxInheritTarget: auxInheritRtRef.current ?? null,
+      aux2PosLatest: aux2RtRef.current
+        ? resolvePingPongTargets(aux2RtRef.current, aux2PingIsA.current).posIn
+        : null,
+      aux2InheritTarget: aux2InheritRtRef.current ?? null,
+      spinTarget: spinPassRef.current?.currentTarget ?? null,
+      orientTarget: orientPassRef.current?.currentTarget ?? null,
+      webgpuPosTexture: webgpuPosTexRef.current ?? null,
       fluidFinal: fluidFinalTargetRef.current,
       fluidFinalName:
         fluidFinalTargetRef.current === fluidRTARef.current
@@ -1966,6 +3621,15 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         : null,
       rigidCellTexture: rigidCellTexRef.current,
       rigidClusterLutTexture: rigidClusterLutTexRef.current,
+      // Grammar 2.0 1C: the REP output feeds the points
+      // draw's live display override (null while no REP ran).
+      ruleLiveTexture: ruleLiveTexture,
+      // Spin channel (B3): the spin pass's latest state
+      // texture (null while the channel is off).
+      spinTexture: spinTextureRef.current,
+      // Orientation channel (S2): the orient pass's latest
+      // posture texture (null while the channel is off).
+      orientTexture: orientTextureRef.current,
       texSize,
       time: timeRef.current,
       viewportSizePx: { x: gl.domElement.width, y: gl.domElement.height },

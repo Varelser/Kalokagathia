@@ -1,6 +1,7 @@
 import type { ParticleConfig } from '../types';
 import { normalizeConfig } from './appStateConfigNormalization';
 import { KINETIX_COLOR_GRADIENTS } from './kinetixGradients';
+import { mulberry32 } from './gpgpuRandom';
 
 /**
  * Preset breeding (roadmap Phase 7B).
@@ -20,16 +21,11 @@ import { KINETIX_COLOR_GRADIENTS } from './kinetixGradients';
 
 export type Rng = () => number;
 
-/** Deterministic PRNG (mulberry32). */
+/** Deterministic PRNG (mulberry32): the shared random
+ * channel (lib/gpgpuRandom.ts, stage 2 B5) — bit-identical
+ * to the local copy this replaces. */
 export function createSeededRng(seed: number): Rng {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+  return mulberry32(seed);
 }
 
 /** Fields whose values are data payloads, not expression parameters. */

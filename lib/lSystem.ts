@@ -58,17 +58,11 @@ export const L_SYSTEM_MAX_SEGMENTS = 60000;
 const MAX_STRING_LENGTH = 2_000_000;
 const FIT = 0.92; // normalised extent inside the unit sheet
 
-/** mulberry32: small fast seeded PRNG, identical across runs/platforms. */
-export function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+/** mulberry32: the shared random channel (lib/gpgpuRandom.ts,
+ * stage 2 B5) — bit-identical to the local copy this replaces;
+ * re-exported here for existing importers. */
+import { mulberry32 } from './gpgpuRandom';
+export { mulberry32 };
 
 type Production = string | readonly string[];
 

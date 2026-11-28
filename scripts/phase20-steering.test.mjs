@@ -9,7 +9,8 @@
 //   shipped pins (scripts/phase18-shader-hash.baseline.json),
 //   the steering text appears nowhere in them, and the new
 //   Phase 20 strings match their new pins.
-// - Force order: 'steer-seek' is registered (last), the
+// - Force order: 'steer-seek' is registered (last at the
+//   time; B1 later appended 'field-instances' after it), the
 //   variant-off builder skips it wherever the order names it,
 //   and the variant-on builder places it by the order.
 // - Key defaults + the single resolution point
@@ -114,7 +115,7 @@ const {
 
 // --- force order registration + variant gating ---
 {
-  check("'steer-seek' registered last", GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 1] === 'steer-seek');
+  check("'steer-seek' registered (B1 appended 'field-instances', B3 'rel-drag', B7 'meander' after it)", GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 4] === 'steer-seek' && GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 3] === 'field-instances' && GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 2] === 'rel-drag' && GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 1] === 'meander');
   check('chunk registry carries steer-seek', VEL_FRAG_FORCE_CHUNKS['steer-seek'] === VEL_FRAG_FORCE_STEER_SEEK);
   check('normalize keeps steer-seek placement', normalizeGpgpuForceOrder('steer-seek,wind')[0] === 'steer-seek');
   check('variant-off builder skips steer-seek even when ordered first',
@@ -211,7 +212,7 @@ const {
   check('WGSL: steering block present', src.includes('if (u.steerEnabled > 0.5)'));
   check('WGSL: same application law', src.includes('vel += steerForce * u.steerStrength * u.delta * 60.0;'));
   check('WGSL: arrive ramp mirrors', src.includes('u.steerMaxSpeed * sDist / u.steerSlowingRadius'));
-  check('WGSL: uniform buffer is 752 bytes (736 through G10 stage 2; stage 3 appended the particle-rules field at index 184)', src.includes('const VEL_UNIFORM_BYTES = 752;'));
+  check('WGSL: uniform buffer is 768 bytes (736 through G10 stage 2; stage 3 appended the particle-rules field at index 184)', src.includes('const VEL_UNIFORM_BYTES = 768;'));
   check('WGSL: writes at indices 99..116', src.includes('velU[99] = st && st.active ? 1 : 0;') && src.includes('velU[116 + pi * 4]'));
   check('WGSL: state mode implemented (Phase 28, 9-5)', src.includes('slotValue >= u.steerStateThreshold') && src.includes('@binding(13) var attrTex'));
 }

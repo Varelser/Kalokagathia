@@ -17,6 +17,9 @@ import { FeedbackPass } from './feedbackPass';
 import { KaleidoscopePass } from './kaleidoscopePass';
 import { SlitScanPass } from './slitScanPass';
 import { RadialBlurPass } from './radialBlurPass';
+import { MotionBlurPass } from './motionBlurPass';
+import { resolveMotionBlurSettings } from '../lib/motionBlur';
+import { resolveEffectiveDofFocusDistance, useDofFocusSource } from '../lib/dofTracking';
 import { LightFxPass } from './lightFxPass';
 import { OutputGradePass } from './outputGradePass';
 import { ChromaKeyPass } from './chromaKeyPass';
@@ -75,6 +78,31 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   const radialBlurPass = React.useMemo(() => new RadialBlurPass(), []);
   React.useEffect(() => () => radialBlurPass.dispose(), [radialBlurPass]);
   radialBlurPass.strength = config.postRadialBlurStrength;
+  // Motion blur (stage 4, S5): velocity-buffer gathering. The
+  // velocity field arrives via the shared store
+  // (ParticleVelocityCapture publishes it while the stage is
+  // on) and the pass reads that store itself in render()
+  // (stage-4 gate fix round 3: the React-render assignment
+  // that used to live here was the hop that starved the
+  // stage on the real GPU — see STAGE4_FIX8_MB_BINDING_RECORD);
+  // no source means the pass is a bit-identical passthrough.
+  // The stage itself is inserted by the stack only while the
+  // resolved settings are on.
+  const motionBlurPass = React.useMemo(() => new MotionBlurPass(), []);
+  React.useEffect(() => () => motionBlurPass.dispose(), [motionBlurPass]);
+  const mbSettings = resolveMotionBlurSettings(config);
+  motionBlurPass.strength = mbSettings.strength;
+  motionBlurPass.samples = mbSettings.samples;
+  motionBlurPass.particleOnly = mbSettings.particleOnly;
+  // DOF particle tracking (stage 4, S5): while tracking is on
+  // and the capture has published a centroid depth, that
+  // depth is the stage's effective focusDistance; otherwise
+  // the config value is used verbatim (the pre-slice wiring).
+  const dofFocusSource = useDofFocusSource();
+  const effectiveDofFocusDistance = resolveEffectiveDofFocusDistance(
+    config,
+    dofFocusSource ? dofFocusSource.viewDepth : null,
+  );
   const lightFxPass = React.useMemo(() => new LightFxPass(), []);
   React.useEffect(() => () => lightFxPass.dispose(), [lightFxPass]);
   lightFxPass.lightPos.set(config.postLightX, config.postLightY);
@@ -320,11 +348,13 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
             return (
               <DepthOfField
                 key={stage}
-                focusDistance={config.postDofFocusDistance}
+                focusDistance={effectiveDofFocusDistance}
                 focalLength={config.postDofFocalLength}
                 bokehScale={config.postDofBokehScale}
               />
             );
+          case 'motion-blur':
+            return <primitive key={stage} object={motionBlurPass} />;
           case 'vignette':
             return (
               <Vignette

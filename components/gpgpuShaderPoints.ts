@@ -1,9 +1,16 @@
 import { PARTICLE_SHAPE_GLSL } from './particleShapeGlsl';
+import { DM_HASH11_GLSL_INDENTED } from '../lib/gpgpuRandom';
 import { LIGHT_SHADOW_GLSL } from '../lib/lightShadowMap';
+import { ageFreeEvalGlsl } from '../lib/gpgpuAgeFreeCurves';
+import { EXTRA_LIGHT_UNITS, lightUnitComputeGlsl, lightUnitUniformsGlsl } from '../lib/gpgpuLightUnits';
 
 // Sprite sheet (Phase AD): GLSL twins of lib/spriteSheet.ts
 // (spriteFrameIndex / spriteSheetUv — same formulas, so the
 // unit tests pin the shader too). Mode: 0 age, 1 fps, 2 random.
+// Mode 3 (channel, stage 4 S3) never reaches this function:
+// the spriteFrameChannel variant that stands whenever the
+// config mode is 'channel' replaces the call below with the
+// vertex-decided vSpriteFrame.
 const SPRITE_SHEET_GLSL = /* glsl */ `
   float kaloSpriteFrame(float cols, float rows, float mode, float fps, bool loop, float normAge, float timeSeconds, float seed) {
     float total = cols * rows;
@@ -71,12 +78,7 @@ const AGE_CURVE_GLSL = /* glsl */ `
 // expression above exactly (one term, amplitude sum 1, identity
 // reading, the perlin 0.5 + 0.5 * v mapping).
 const NOISE_MAP_GLSL = /* glsl */ `
-  float dmHash11(float n) {
-    vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
-    p3 += dot(p3, p3.yxz + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-  }
-  vec3 kaloNoiseHash3(vec3 p) {
+${DM_HASH11_GLSL_INDENTED}  vec3 kaloNoiseHash3(vec3 p) {
     p = vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));
     return -1.0 + 2.0 * vec3(dmHash11(p.x), dmHash11(p.y), dmHash11(p.z));
   }
@@ -568,6 +570,123 @@ const DRAW_VERT_SHADOWTUNNEL_COMPUTE = /* glsl */ `    // Tunnel occlusion (Roun
       if (tunnelMul >= 0.0) vShadowMul = tunnelMul;
     }
 `;
+const DRAW_VERT_RULE_DISPLAY_UNIFORMS = /* glsl */ `
+  // Live display action (Grammar 2.0 stage 1, slice 1C): the
+  // REP output texture; its .a channel carries the display
+  // override (0 = none, otherwise 1 + size).
+  uniform sampler2D uRuleLiveTex;
+  uniform bool      uRuleLiveDisplayEnabled;
+`;
+const DRAW_VERT_RULE_DISPLAY_COMPUTE = /* glsl */ `    // Live display action (Grammar 2.0 1C): a matched display
+    // rule scales the point size by its size value (the REP
+    // .a encoding minus the flag offset), layered on top of
+    // every other size drive above. While the supply is off
+    // the factor is never applied.
+    if (uRuleLiveDisplayEnabled) {
+      float liveDisplay = texture2D(uRuleLiveTex, particleUv).a;
+      if (liveDisplay > 0.5) sizeMul *= liveDisplay - 1.0;
+    }
+`;
+// Merged-supply forms (stage 2 texture-unit follow-up):
+// while the merged supply stands, the texture bound to
+// uRuleLiveTex is the REP's taller target and the display
+// read scales particleUv.y by uLiveTexYScale (texSize /
+// total height, supplied per frame). Derived from the stock
+// chunks by the one sampling change.
+const DRAW_VERT_RULE_DISPLAY_UNIFORMS_MERGED = DRAW_VERT_RULE_DISPLAY_UNIFORMS + /* glsl */ `
+  uniform float uLiveTexYScale;
+`;
+const DRAW_VERT_RULE_DISPLAY_COMPUTE_MERGED = DRAW_VERT_RULE_DISPLAY_COMPUTE.replace(
+  'texture2D(uRuleLiveTex, particleUv)',
+  'texture2D(uRuleLiveTex, vec2(particleUv.x, particleUv.y * uLiveTexYScale))',
+);
+const DRAW_VERT_SPIN_UNIFORMS = /* glsl */ `
+  // Spin channel (Grammar 2.0 stage 2, B3): the accumulated
+  // angle state texture (components/gpgpuSpinPass.ts); its
+  // .x is the particle's current angle. Read here in the
+  // vertex and passed to the fragment, whose analytic sprite
+  // rotation this variant replaces.
+  uniform sampler2D uSpinTex;
+`;
+const DRAW_VERT_SPIN_VARYING = /* glsl */ `  varying float vSpinAngle;
+`;
+const DRAW_VERT_SPIN_COMPUTE = /* glsl */ `    // Spin channel (B3): the accumulated angle for this
+    // particle (post-sort texel, like every other
+    // per-particle read above).
+    vSpinAngle = texture2D(uSpinTex, particleUv).x;
+`;
+// Sprite frame channel (Limit plan stage 4, S3): in 'channel'
+// frame mode the frame is decided HERE in the vertex — where
+// the velocity, the attribute texture and the REP texture
+// all live — and passed to the fragment as vSpriteFrame,
+// which then only remaps the UV (kaloSpriteSheetUv). The
+// fragment gains no sampler. The mapping is the GLSL twin of
+// spriteFrameChannelT + the 'channel' case of
+// spriteFrameIndex in lib/spriteSheet.ts: raw channel value
+// (channel: 0 ageRatio = vNormAge, 1 speed = length(vel),
+// 2 attr = kaloAttrChannel of the configured slot, 0 while
+// attributes are off or the slot is -1, 3 state = REP .g
+// state id, 4 rule = REP .b condition bits), divided by
+// uSpriteFrameRange, clamped to [0, 1], then floor(t * total)
+// with the sheet's loop wrap / clamp. The sheet uniforms are
+// the fragment's own (same names, supplied from the same
+// config keys). The REP sampler is declared by the companion
+// chunk below only while the rule-display variant does not
+// already declare it.
+const DRAW_VERT_SPRITE_FRAME_UNIFORMS = /* glsl */ `
+  // Sprite frame channel (Limit plan stage 4, S3): the
+  // channel drive for the vertex-decided sprite frame.
+  uniform float uSpriteFrameChannel;
+  uniform int   uSpriteFrameSlot;
+  uniform float uSpriteFrameRange;
+  uniform float uSpriteSheetCols;
+  uniform float uSpriteSheetRows;
+  uniform bool  uSpriteSheetLoop;
+`;
+const DRAW_VERT_SPRITE_FRAME_REP_UNIFORMS = /* glsl */ `
+  // Sprite frame channel (S3): the REP texture, read for
+  // the state / rule channels (.g state id, .b condition
+  // bits). Declared here only while the live display
+  // variant (which declares the same sampler) is off.
+  uniform sampler2D uRuleLiveTex;
+`;
+const DRAW_VERT_SPRITE_FRAME_VARYING = /* glsl */ `  varying float vSpriteFrame;
+`;
+const DRAW_VERT_SPRITE_FRAME_COMPUTE = /* glsl */ `    // Sprite frame channel (S3): the channel value for this
+    // particle (post-sort texel, like every other
+    // per-particle read above), normalised by the range and
+    // mapped to a frame exactly like the CPU twin.
+    {
+      float sfRaw = vNormAge;
+      if (uSpriteFrameChannel > 3.5) {
+        sfRaw = floor(clamp(texture2D(uRuleLiveTex, particleUv).b, 0.0, 255.0) + 0.5);
+      } else if (uSpriteFrameChannel > 2.5) {
+        sfRaw = floor(clamp(texture2D(uRuleLiveTex, particleUv).g, 0.0, 1.0) * 255.0 + 0.5);
+      } else if (uSpriteFrameChannel > 1.5) {
+        sfRaw = (uAttrEnabled && uSpriteFrameSlot >= 0)
+          ? kaloAttrChannel(texture2D(uAttrTex, particleUv), uSpriteFrameSlot)
+          : 0.0;
+      } else if (uSpriteFrameChannel > 0.5) {
+        sfRaw = length(vel);
+      }
+      float sfTotal = uSpriteSheetCols * uSpriteSheetRows;
+      if (sfTotal <= 1.0) {
+        vSpriteFrame = 0.0;
+      } else {
+        float sfFrame = floor(clamp(sfRaw / max(uSpriteFrameRange, 1e-6), 0.0, 1.0) * sfTotal);
+        vSpriteFrame = uSpriteSheetLoop ? mod(sfFrame, sfTotal) : min(sfFrame, sfTotal - 1.0);
+      }
+    }
+`;
+// Merged-supply form of the sprite frame compute: while the
+// merged supply stands, the texture bound to uRuleLiveTex is
+// the REP's taller target and the state / rule reads scale
+// particleUv.y by uLiveTexYScale (declared by the merged
+// display uniforms), exactly like the display read. Derived
+// from the stock chunk by the one sampling change.
+const DRAW_VERT_SPRITE_FRAME_COMPUTE_MERGED = DRAW_VERT_SPRITE_FRAME_COMPUTE
+  .split('texture2D(uRuleLiveTex, particleUv)')
+  .join('texture2D(uRuleLiveTex, vec2(particleUv.x, particleUv.y * uLiveTexYScale))');
 const DRAW_VERT_TAIL = /* glsl */ `    vec4 mvPos = modelViewMatrix * vec4(worldPos, 1.0);
     float dist = -mvPos.z;
     gl_PointSize = max(0.5, uSize * sizeMul * (dist > 0.5 ? min(4.0, 500.0 / dist) : 1.0));
@@ -611,29 +730,105 @@ export interface DrawShaderVariantOptions {
    *  Off (the default) assembles the stock strings
    *  byte-identically — no tunnel uniform appears. */
   shadowTunnel?: boolean;
+  /** Live display action (Grammar 2.0 stage 1, slice 1C):
+   *  splices the REP texture uniforms into the vertex and
+   *  the size-override computation after every other size
+   *  drive. Off (the default) assembles the stock strings
+   *  byte-identically — no REP uniform appears. */
+  ruleDisplay?: boolean;
+  /** Merged supply (stage 2 texture-unit follow-up): the
+   *  merged forms of the display uniforms + computation,
+   *  gated identically (only while the merged supply stands;
+   *  implies ruleDisplay). */
+  ruleDisplayMerged?: boolean;
+  /** Light units 2-4 (Grammar 2.0 stage 2, E4): splices the
+   *  extra units' uniform families (lib/gpgpuLightUnits.ts)
+   *  into the vertex and multiplies each enabled unit's
+   *  kaloLightMultiplier into vLightMul after the legacy
+   *  unit-1 assignment. Off (the default) assembles the stock
+   *  strings byte-identically — no uLight2/3/4 uniform appears. */
+  lightUnits?: boolean;
+  /** Spin channel (Grammar 2.0 stage 2, B3): splices the
+   *  spin state texture into the vertex, passes the
+   *  accumulated angle as vSpinAngle, and replaces the
+   *  fragment's analytic sprite-rotation block with it. Off
+   *  (the default) assembles the stock strings
+   *  byte-identically — no uSpinTex uniform appears. */
+  spinChannel?: boolean;
+  /** Sprite frame channel (Limit plan stage 4, S3): splices
+   *  the channel-drive uniforms into the vertex, decides the
+   *  sprite frame there from the configured channel
+   *  (lib/spriteSheet.ts spriteFrameChannelT twin) and passes
+   *  it as vSpriteFrame; the fragment's kaloSpriteFrame call
+   *  is replaced by that varying. Off (the default, every
+   *  legacy frame mode) assembles the stock strings
+   *  byte-identically — no vSpriteFrame appears. The vertex
+   *  declares the REP sampler itself only while the rule
+   *  display variant (which declares it too) is off; the
+   *  merged form of the compute applies while the merged
+   *  supply stands. */
+  spriteFrameChannel?: boolean;
+  /** Age free curve, size (Grammar 2.0 stage 2, B4): splices
+   *  the size target's free-curve uniform set + evaluation
+   *  function into the vertex and replaces the 5-point size
+   *  evaluation with it. Off (the default) assembles the
+   *  stock strings byte-identically — no FreeT/FreeV uniform
+   *  appears. */
+  ageFreeSize?: boolean;
+  /** Age free curve, opacity (Grammar 2.0 stage 2, B4): the
+   *  fragment-side counterpart for the opacity target. */
+  ageFreeOpacity?: boolean;
 }
+
+const DRAW_AGE_CURVE5_SIZE_CALL = /* glsl */ `kaloEvalCurve5(vNormAge, uAgeCurveSize[0], uAgeCurveSize[1], uAgeCurveSize[2], uAgeCurveSize[3], uAgeCurveSize[4])`;
+const DRAW_AGE_FREE_SIZE_CALL = /* glsl */ `kaloEvalAgeFreeSize(vNormAge)`;
+const DRAW_AGE_CURVE5_OPACITY_CALL = /* glsl */ `kaloEvalCurve5(vNormAge, uAgeCurveOpacity[0], uAgeCurveOpacity[1], uAgeCurveOpacity[2], uAgeCurveOpacity[3], uAgeCurveOpacity[4])`;
+const DRAW_AGE_FREE_OPACITY_CALL = /* glsl */ `kaloEvalAgeFreeOpacity(vNormAge)`;
 
 export function buildDrawVert(options?: DrawShaderVariantOptions): string {
   const crack = !!options?.vellumCrack;
   const cluster = !!options?.clusterColor;
   const shadowMap = !!options?.shadowMap;
   const shadowTunnel = !!options?.shadowTunnel;
-  return DRAW_VERT_HEAD
+  const ruleDisplay = !!options?.ruleDisplay;
+  const ruleDisplayMerged = ruleDisplay && !!options?.ruleDisplayMerged;
+  const lightUnits = !!options?.lightUnits;
+  const spinChannel = !!options?.spinChannel;
+  const spriteFrameChannel = !!options?.spriteFrameChannel;
+  const ageFreeSize = !!options?.ageFreeSize;
+  const vert = DRAW_VERT_HEAD
     + (crack ? DRAW_VERT_CRACK_UNIFORMS : '')
     + (cluster ? DRAW_VERT_CLUSTER_UNIFORMS : '')
     + (shadowTunnel ? DRAW_VERT_SHADOWTUNNEL_UNIFORMS : '')
+    + (ruleDisplay ? (ruleDisplayMerged ? DRAW_VERT_RULE_DISPLAY_UNIFORMS_MERGED : DRAW_VERT_RULE_DISPLAY_UNIFORMS) : '')
+    + (lightUnits ? EXTRA_LIGHT_UNITS.map((n) => lightUnitUniformsGlsl(n)).join('') : '')
+    + (spinChannel ? DRAW_VERT_SPIN_UNIFORMS : '')
+    + (spriteFrameChannel ? DRAW_VERT_SPRITE_FRAME_UNIFORMS : '')
+    + (spriteFrameChannel && !ruleDisplay ? DRAW_VERT_SPRITE_FRAME_REP_UNIFORMS : '')
+    + (ageFreeSize ? ageFreeEvalGlsl('size') : '')
     + DRAW_VERT_MID_A
     + (crack ? DRAW_VERT_CRACK_VARYING : '')
     + (cluster ? DRAW_VERT_CLUSTER_VARYING : '')
     + (shadowMap ? DRAW_VERT_SHADOWMAP_VARYING : '')
     + (shadowMap ? LIGHT_SHADOW_GLSL : '')
     + (shadowTunnel ? DRAW_VERT_SHADOWTUNNEL_FN : '')
+    + (spinChannel ? DRAW_VERT_SPIN_VARYING : '')
+    + (spriteFrameChannel ? DRAW_VERT_SPRITE_FRAME_VARYING : '')
     + DRAW_VERT_MID_B
     + (crack ? DRAW_VERT_CRACK_COMPUTE : '')
     + (cluster ? DRAW_VERT_CLUSTER_COMPUTE : '')
     + (shadowMap ? DRAW_VERT_SHADOWMAP_COMPUTE : '')
     + (shadowTunnel ? DRAW_VERT_SHADOWTUNNEL_COMPUTE : '')
+    + (ruleDisplay ? (ruleDisplayMerged ? DRAW_VERT_RULE_DISPLAY_COMPUTE_MERGED : DRAW_VERT_RULE_DISPLAY_COMPUTE) : '')
+    + (lightUnits ? EXTRA_LIGHT_UNITS.map((n) => lightUnitComputeGlsl(n)).join('') : '')
+    + (spinChannel ? DRAW_VERT_SPIN_COMPUTE : '')
+    + (spriteFrameChannel ? (ruleDisplayMerged ? DRAW_VERT_SPRITE_FRAME_COMPUTE_MERGED : DRAW_VERT_SPRITE_FRAME_COMPUTE) : '')
     + DRAW_VERT_TAIL;
+  // Age free curve (B4): the size target's evaluation swaps
+  // to the free curve while the variant stands. The replace
+  // target is the stock call, verbatim, occurring exactly
+  // once in the assembled vertex.
+  return ageFreeSize ? vert.replace(DRAW_AGE_CURVE5_SIZE_CALL, DRAW_AGE_FREE_SIZE_CALL) : vert;
 }
 
 export const DRAW_VERT = buildDrawVert();
@@ -641,6 +836,7 @@ export const DRAW_VERT_PHASE19 = buildDrawVert({ vellumCrack: true });
 export const DRAW_VERT_PHASE20 = buildDrawVert({ clusterColor: true });
 export const DRAW_VERT_PHASE23 = buildDrawVert({ shadowMap: true });
 export const DRAW_VERT_SHADOW_TUNNEL = buildDrawVert({ shadowTunnel: true });
+export const DRAW_VERT_LIGHT_UNITS = buildDrawVert({ lightUnits: true });
 
 // ── Draw fragment ──
 const DRAW_FRAG_HEAD = /* glsl */ `
@@ -734,6 +930,22 @@ const DRAW_FRAG_HEAD = /* glsl */ `
   varying float vShadowMul;
   varying float vDensityMul;
 `;
+const DRAW_FRAG_SPIN_VARYING = /* glsl */ `  // Spin channel (Grammar 2.0 stage 2, B3): the accumulated
+  // angle from the vertex (the spin state texture's .x).
+  varying float vSpinAngle;
+`;
+const DRAW_FRAG_SPRITE_FRAME_VARYING = /* glsl */ `  // Sprite frame channel (Limit plan stage 4, S3): the
+  // frame the vertex decided from the channel value; the
+  // fragment only remaps the UV with it.
+  varying float vSpriteFrame;
+`;
+// Sprite frame channel (S3): while the variant stands, the
+// fragment's kaloSpriteFrame call (stock string, verbatim,
+// occurring exactly once in the assembled fragment) is
+// replaced by the vertex-decided frame. The stock string is
+// untouched.
+const DRAW_FRAG_SPRITE_FRAME_CALL = /* glsl */ `float spriteFrame = kaloSpriteFrame(uSpriteSheetCols, uSpriteSheetRows, uSpriteSheetMode, uSpriteSheetFps, uSpriteSheetLoop, vNormAge, uGradTime, vSeed);`;
+const DRAW_FRAG_SPRITE_FRAME_CALL_CHANNEL = /* glsl */ `float spriteFrame = vSpriteFrame;`;
 const DRAW_FRAG_CRACK_VARYING = /* glsl */ `  varying float vCrack;
 `;
 const DRAW_FRAG_CLUSTER_VARYING = /* glsl */ `  varying vec3 vClusterColor;
@@ -974,20 +1186,60 @@ const DRAW_FRAG_TAIL = /* glsl */ `    // 3D light (Phase T): brightness from th
 // the default exports below are byte-identical to v2.00 and
 // the *_PHASE19 exports are byte-identical to the Phase 19
 // strings (both pinned by scripts/phase18-shader-hash.mjs).
+// Spin channel (B3): in the spin variant the fragment's
+// analytic sprite-rotation block (Phase AX closed form over
+// the particle age) is replaced by the accumulated channel
+// angle the vertex sampled. The replace target is the whole
+// block, verbatim; the stock string is untouched.
+const DRAW_FRAG_SPRITE_ROT_BLOCK = /* glsl */ `    float spriteRotAngle = 0.0;
+    if (uSpriteRotInitial != 0.0 || uSpriteRotSpeed != 0.0) {
+      float seedMul = 1.0 + (vSeed * 2.0 - 1.0) * uSpriteRotRandom;
+      float ageInt = uSpriteRotDamping > 0.0
+        ? (1.0 - exp(-uSpriteRotDamping * max(vAge, 0.0))) / uSpriteRotDamping
+        : max(vAge, 0.0);
+      spriteRotAngle = uSpriteRotInitial + uSpriteRotSpeed * seedMul * ageInt;
+    }`;
+const DRAW_FRAG_SPRITE_ROT_BLOCK_SPIN = /* glsl */ `    // Spin channel (Grammar 2.0 stage 2, B3): the angle is
+    // the accumulated state the spin pass integrated, not
+    // the Phase AX closed form — the analytic uniforms stay
+    // declared (the passes fill them) but drive nothing
+    // while the channel stands.
+    float spriteRotAngle = vSpinAngle;`;
+
 export function buildDrawFrag(options?: DrawShaderVariantOptions): string {
   const crack = !!options?.vellumCrack;
   const cluster = !!options?.clusterColor;
   const shadowMap = !!options?.shadowMap;
-  return DRAW_FRAG_HEAD
+  const spinChannel = !!options?.spinChannel;
+  const spriteFrameChannel = !!options?.spriteFrameChannel;
+  const ageFreeOpacity = !!options?.ageFreeOpacity;
+  const midA = spinChannel
+    ? DRAW_FRAG_MID_A.replace(DRAW_FRAG_SPRITE_ROT_BLOCK, DRAW_FRAG_SPRITE_ROT_BLOCK_SPIN)
+    : DRAW_FRAG_MID_A;
+  const frag = DRAW_FRAG_HEAD
     + (crack ? DRAW_FRAG_CRACK_VARYING : '')
     + (cluster ? DRAW_FRAG_CLUSTER_VARYING : '')
     + (shadowMap ? DRAW_FRAG_SHADOWMAP_VARYING : '')
-    + DRAW_FRAG_MID_A
+    + (spinChannel ? DRAW_FRAG_SPIN_VARYING : '')
+    + (spriteFrameChannel ? DRAW_FRAG_SPRITE_FRAME_VARYING : '')
+    + (ageFreeOpacity ? ageFreeEvalGlsl('opacity') : '')
+    + midA
     + (cluster ? DRAW_FRAG_CLUSTER_ASSIGN : '')
     + DRAW_FRAG_MID_B
     + (crack ? DRAW_FRAG_CRACK_DARKEN : '')
     + (shadowMap ? DRAW_FRAG_SHADOWMAP_APPLY : '')
     + DRAW_FRAG_TAIL;
+  // Age free curve (B4): the opacity target's evaluation
+  // swaps to the free curve while the variant stands. The
+  // replace target is the stock call, verbatim, occurring
+  // exactly once in the assembled fragment.
+  let out = ageFreeOpacity ? frag.replace(DRAW_AGE_CURVE5_OPACITY_CALL, DRAW_AGE_FREE_OPACITY_CALL) : frag;
+  // Sprite frame channel (S3): the frame call swaps to the
+  // vertex-decided varying while the variant stands. The
+  // replace target is the stock call, verbatim, occurring
+  // exactly once in the assembled fragment.
+  if (spriteFrameChannel) out = out.replace(DRAW_FRAG_SPRITE_FRAME_CALL, DRAW_FRAG_SPRITE_FRAME_CALL_CHANNEL);
+  return out;
 }
 
 export const DRAW_FRAG = buildDrawFrag();

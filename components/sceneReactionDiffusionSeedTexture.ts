@@ -1,19 +1,10 @@
 import * as THREE from 'three';
 import type { ReactionMode, ReactionProfile, ReactionSource } from './sceneReactionDiffusionProfiles';
+import { dmHash11 } from '../lib/gpgpuRandom';
 
 function smoothstep(edge0: number, edge1: number, x: number) {
   const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
-}
-
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
 }
 
 export function buildSeedTexture(size: number, mode: ReactionMode, source: ReactionSource, profile: ReactionProfile, model: 'gray-scott' | 'fhn' | 'lenia' | 'deposit-bleed' = 'gray-scott') {

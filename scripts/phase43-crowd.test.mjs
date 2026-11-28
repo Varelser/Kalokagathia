@@ -144,7 +144,7 @@ check('GLSL: default velocity fragment is the stock string', lib.buildVelocityFr
 
 // ── WGSL (M1) ─────────────────────────────────────────────────
 const wgsl = readFileSync(join(ROOT, 'lib/webgpuCompute.ts'), 'utf8');
-check('WGSL: uniform buffer is 752 bytes (736 through G10 stage 2; stage 3 appended the particle-rules field)', wgsl.includes('const VEL_UNIFORM_BYTES = 752;'));
+check('WGSL: uniform buffer is 768 bytes (736 through G10 stage 2; stage 3 appended the particle-rules field)', wgsl.includes('const VEL_UNIFORM_BYTES = 768;'));
 check('WGSL: struct tail carries the crowd + avoid fields',
   wgsl.includes('crowdLaneLookAheadScale : f32,') && wgsl.includes('steerAvoid : f32,') && wgsl.includes('lifeAvoid : f32,'));
 check('WGSL: SDF query twins exist (kaloSdfDistance / kaloSdfNormal)',

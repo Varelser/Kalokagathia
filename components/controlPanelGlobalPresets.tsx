@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bookmark, Pause, Save } from 'lucide-react';
 import { PRESET_CATEGORY_OPTIONS, getPresetCategories, getPresetPerformanceTier, getPresetSearchText } from '../lib/presetCatalog';
+import { PRESET_HIERARCHY, filterPresetsByHierarchy, getPresetHierarchyPlacement } from '../lib/presetHierarchy';
 import { Slider } from './controlPanelParts';
 import { ControlPanelPresetCard } from './controlPanelPresetCard';
 import { ControlPanelPresetLibraryIO } from './controlPanelPresetLibraryIO';
@@ -45,6 +46,23 @@ export const GlobalPresetsSection: React.FC<ControlPanelContentProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [categoryFilter, setCategoryFilter] = React.useState<(typeof PRESET_CATEGORY_OPTIONS)[number]>('All');
+  // Hierarchy (系統 > 家族) narrowing, stage-4 slice S8. Both
+  // stay null by default, in which case the list below is
+  // exactly the pre-hierarchy behaviour.
+  const [hierarchyLineageId, setHierarchyLineageId] = React.useState<string | null>(null);
+  const [hierarchyFamilyId, setHierarchyFamilyId] = React.useState<string | null>(null);
+
+  const hierarchyCounts = React.useMemo(() => {
+    const byLineage = new Map<string, number>();
+    const byFamily = new Map<string, number>();
+    presets.forEach((preset) => {
+      const placement = getPresetHierarchyPlacement(preset.id);
+      if (!placement) return;
+      byLineage.set(placement.lineageId, (byLineage.get(placement.lineageId) ?? 0) + 1);
+      byFamily.set(placement.familyId, (byFamily.get(placement.familyId) ?? 0) + 1);
+    });
+    return { byLineage, byFamily };
+  }, [presets]);
 
   const filteredPresets = React.useMemo(() => presets.filter((preset) => {
     const categories = getPresetCategories(preset);
@@ -52,6 +70,13 @@ export const GlobalPresetsSection: React.FC<ControlPanelContentProps> = ({
     const matchesCategory = categoryFilter === 'All' || categories.includes(categoryFilter);
     return matchesQuery && matchesCategory;
   }), [categoryFilter, presets, searchQuery]);
+
+  const visiblePresets = React.useMemo(
+    () => filterPresetsByHierarchy(filteredPresets, { lineageId: hierarchyLineageId, familyId: hierarchyFamilyId }),
+    [filteredPresets, hierarchyFamilyId, hierarchyLineageId],
+  );
+
+  const activeLineage = PRESET_HIERARCHY.lineages.find((lineage) => lineage.id === hierarchyLineageId) ?? null;
 
   return (
   <div>
@@ -167,18 +192,80 @@ export const GlobalPresetsSection: React.FC<ControlPanelContentProps> = ({
           </button>
         ))}
       </div>
+      <div className="mt-4 border-t border-white/10 pt-3">
+        <div className="mb-2 text-[9px] uppercase tracking-widest text-white/40">
+          Hierarchy （系統 &gt; 家族・階層で絞る）
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => { setHierarchyLineageId(null); setHierarchyFamilyId(null); }}
+            className={`px-2 py-1 text-[9px] uppercase tracking-widest rounded border transition-colors ${
+              hierarchyLineageId === null
+                ? 'border-transparent bg-white text-black'
+                : 'border-white/15 bg-transparent text-white/55 hover:border-white/35 hover:text-white/80'
+            }`}
+          >
+            All
+          </button>
+          {PRESET_HIERARCHY.lineages.map((lineage) => (
+            <button
+              key={lineage.id}
+              onClick={() => { setHierarchyLineageId(lineage.id); setHierarchyFamilyId(null); }}
+              className={`px-2 py-1 text-[9px] uppercase tracking-widest rounded border transition-colors ${
+                hierarchyLineageId === lineage.id
+                  ? 'border-transparent bg-white text-black'
+                  : 'border-white/15 bg-transparent text-white/55 hover:border-white/35 hover:text-white/80'
+              }`}
+            >
+              {lineage.label} ({hierarchyCounts.byLineage.get(lineage.id) ?? 0})
+            </button>
+          ))}
+        </div>
+        {activeLineage && (
+          <div className="mt-2 flex flex-wrap gap-2 pl-3">
+            <button
+              onClick={() => setHierarchyFamilyId(null)}
+              className={`px-2 py-1 text-[9px] uppercase tracking-widest rounded border transition-colors ${
+                hierarchyFamilyId === null
+                  ? 'border-transparent bg-white text-black'
+                  : 'border-white/15 bg-transparent text-white/55 hover:border-white/35 hover:text-white/80'
+              }`}
+            >
+              All Families
+            </button>
+            {activeLineage.families.map((family) => (
+              <button
+                key={family.id}
+                onClick={() => setHierarchyFamilyId(family.id)}
+                className={`px-2 py-1 text-[9px] uppercase tracking-widest rounded border transition-colors ${
+                  hierarchyFamilyId === family.id
+                    ? 'border-transparent bg-white text-black'
+                    : 'border-white/15 bg-transparent text-white/55 hover:border-white/35 hover:text-white/80'
+                }`}
+              >
+                {family.label} ({hierarchyCounts.byFamily.get(family.id) ?? 0})
+              </button>
+            ))}
+          </div>
+        )}
+        {hierarchyLineageId === 'designer-templates' && (
+          <div className="mt-2 text-[10px] leading-relaxed text-white/40">
+            雛形（template）は完成形プリセットではなく Designer ブロック構成の保存物です。一覧は Play タブの Designer セクションにあります。
+          </div>
+        )}
+      </div>
       <div className="mt-3 text-[10px] uppercase tracking-widest text-white/40">
-        Showing {filteredPresets.length} of {presets.length}
+        Showing {visiblePresets.length} of {presets.length}
       </div>
     </div>
     <div className="space-y-2 max-h-72 overflow-y-auto pr-1 mt-4">
-      {filteredPresets.length === 0 ? (
+      {visiblePresets.length === 0 ? (
         <div className="border border-dashed border-white/10 rounded p-3 text-[10px] uppercase tracking-widest text-white/35">
           {presets.length === 0
             ? (isPublicLibrary ? 'No bundled public presets yet.' : 'No saved presets yet.')
             : 'No presets match the current search/filter.'}
         </div>
-      ) : filteredPresets.map((preset) => (
+      ) : visiblePresets.map((preset) => (
         <ControlPanelPresetCard
           key={preset.id}
           activePresetId={activePresetId}

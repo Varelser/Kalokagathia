@@ -4,6 +4,10 @@
 // of the original SIM_VEL_FRAG template literal. The shell
 // module concatenates all five chunks in order; the assembled
 // string is pinned byte-for-byte by phaseav_test.mjs.
+// Slice B8: the stride-loop shape (open / sample UV / self
+// skip) is interpolated from lib/gpgpuNeighborLoop.ts; the
+// assembled strings are unchanged byte-for-byte.
+import { NEIGHBOR_SELF_SKIP_GLSL, NEIGHBOR_STRIDE_OPEN_GLSL, NEIGHBOR_SUV_GLSL } from '../lib/gpgpuNeighborLoop';
 const VEL_FRAG_SPH_GRAINS_HEAD_A = /* glsl */ `    // SPH Fluid Simulation
     if (uSphEnabled) {
       float density = 0.0;
@@ -27,13 +31,7 @@ const VEL_FRAG_SPH_AKINCI_DECL = /* glsl */ `      // Surface tension, Akinci fo
       float akinciColorLap = 0.0;
 `;
 const VEL_FRAG_SPH_GRAINS_HEAD_B = /* glsl */ `      float h2 = uSphRadius * uSphRadius;
-      float stride = uTexSizeF / float(uNBodySamples);
-      for (int i = 0; i < 64; i++) {
-        if (i >= uNBodySamples) break;
-        float si = float(i) * stride;
-        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
-        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
-        vec3 oPos = texture2D(uPosTex, sUv).xyz;
+${NEIGHBOR_STRIDE_OPEN_GLSL}${NEIGHBOR_SELF_SKIP_GLSL}        vec3 oPos = texture2D(uPosTex, sUv).xyz;
         vec3 oVel = texture2D(uVelTex, sUv).xyz;
         vec3 r = pos - oPos;
         float r2 = dot(r, r);
@@ -226,10 +224,11 @@ const VEL_FRAG_SPH_GRAINS_LOOP_LEGACY = /* glsl */ `      for (int i = 0; i < 64
         if (i >= uNBodySamples) break;
         float si = float(i) * strideG;
 `;
-const VEL_FRAG_SPH_GRAINS_TAIL_SUV = /* glsl */ `        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
-`;
-const VEL_FRAG_SPH_GRAINS_TAIL_CORE = /* glsl */ `        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
-        vec3 oPos = texture2D(uPosTex, sUv).xyz;
+// The Grains scan tail's sample-UV line is the shared
+// neighbour-loop shape (slice B8); the name is kept because
+// the builder below splices it by name.
+const VEL_FRAG_SPH_GRAINS_TAIL_SUV = NEIGHBOR_SUV_GLSL;
+const VEL_FRAG_SPH_GRAINS_TAIL_CORE = NEIGHBOR_SELF_SKIP_GLSL + /* glsl */ `        vec3 oPos = texture2D(uPosTex, sUv).xyz;
         vec3 oVel = texture2D(uVelTex, sUv).xyz;
         vec3 r = pos - oPos;
         float r2 = dot(r, r);
@@ -450,8 +449,7 @@ const VEL_FRAG_SPH_GRAINS_XSPH_HEAD = /* glsl */ `    // XSPH (Grains Stage C): 
 // The body carries its candidate loop's closing brace, like
 // the shared TAIL_CORE — the cell / scan / sampled loop opens
 // differ, the close is common.
-const VEL_FRAG_SPH_GRAINS_XSPH_BODY = /* glsl */ `        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
-        vec3 oPosX = texture2D(uPosTex, sUv).xyz;
+const VEL_FRAG_SPH_GRAINS_XSPH_BODY = NEIGHBOR_SELF_SKIP_GLSL + /* glsl */ `        vec3 oPosX = texture2D(uPosTex, sUv).xyz;
         vec3 rX = pos - oPosX;
         float r2X = dot(rX, rX);
         if (r2X < hX2 && r2X > 0.000000000001) {
@@ -475,8 +473,7 @@ const VEL_FRAG_SPH_GRAINS_XSPH_SAMPLED = /* glsl */ `      float strideX = uTexS
       for (int i = 0; i < 64; i++) {
         if (i >= uNBodySamples) break;
         float si = float(i) * strideX;
-        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
-` + VEL_FRAG_SPH_GRAINS_XSPH_BODY;
+${NEIGHBOR_SUV_GLSL}` + VEL_FRAG_SPH_GRAINS_XSPH_BODY;
 const VEL_FRAG_SPH_GRAINS_XSPH_APPLY = /* glsl */ `      if (xsphWSum > 0.0) {
         float meanSpeedX = xsphSpeedWSum / xsphWSum;
         float gateX = 1.0 - smoothstep(2.0, 4.5, meanSpeedX);

@@ -55,6 +55,33 @@ export const GPGPU_FORCE_CHUNK_NAMES = [
   // The name still lives in the order list so a user order can
   // place it; without the variant the builder skips the chunk.
   'steer-seek',
+  // Grammar 2.0 stage 2 (B1): field instances — placed vortex /
+  // well / wind volumes supplied through the column-data
+  // texture (lib/gpgpuFieldInstances.ts). Variant-gated
+  // identically: spliced in only while at least one instance
+  // resolves, so the default-order assembly without the
+  // variant stays byte-identical. Appended last (the column
+  // layout's append-only discipline, one level up).
+  'field-instances',
+  // Grammar 2.0 stage 2 (B3): relative-velocity drag — the
+  // velocity relaxes toward the wind velocity vector instead
+  // of receiving an additive acceleration. Variant-gated
+  // identically: spliced in only while the drag rate key is
+  // above zero, so the default-order assembly without the
+  // variant stays byte-identical. Appended last (the
+  // append-only discipline again).
+  'rel-drag',
+  // Grammar 2.0 stage 2 (B7): Meander — the Phase AA1 wander
+  // term promoted out of the Particle Life block into its
+  // own chunk (lib/gpgpuMeander.ts). Variant-gated
+  // identically: spliced in only while the standalone enable
+  // stands (enable key on + amount above zero), so the
+  // default-order assembly without the variant stays
+  // byte-identical; with Particle Life on and the standalone
+  // off, the term keeps its legacy home inside the
+  // 'particle-life' block and this name assembles nothing.
+  // Appended last (the append-only discipline again).
+  'meander',
 ] as const;
 
 export type GpgpuForceChunkName = (typeof GPGPU_FORCE_CHUNK_NAMES)[number];

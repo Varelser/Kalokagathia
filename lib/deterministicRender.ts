@@ -137,6 +137,16 @@ export interface DeterministicRenderJob {
    */
   applyAt?: (tSeconds: number) => void;
   /**
+   * Optional per-captured-frame hook, awaited after that frame has
+   * been stepped and captured (never for warmup steps). The stepped
+   * simulation state is still current when this runs — the next
+   * advance happens only after it resolves — so a hook may read the
+   * frame's sim state back through the state-cache frame provider
+   * (lib/gpgpuStateCacheCapture.ts). Jobs that do not set it run the
+   * exact legacy sequence.
+   */
+  onSimFrame?: (frame: { index: number; timeSeconds: number }) => void | Promise<void>;
+  /**
    * Optional streaming sink, awaited once per captured frame in order.
    * When present, the manager does not retain captured frames in memory
    * (its returned frames array is empty); consumers that need the frames

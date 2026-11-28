@@ -3,8 +3,9 @@ import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import type { ParticleConfig } from "../types";
 import { buildGeomFrag, buildGeomVert, buildVolumetricFrag, buildVolumetricVert } from "./gpgpuShaders";
-import { shadowMapVariantOn, vellumCrackVariantOn } from "./useGpgpuDrawAssets";
+import { ageFreeRotationVariantOn, orientChannelVariantOn, shadowMapVariantOn, spinChannelVariantOn, vellumCrackVariantOn } from "./useGpgpuDrawAssets";
 import { buildObjGeomBaseData } from "../lib/objMesh";
+import { SHADOW_CASTER_GEOM_USERDATA } from "../lib/lightShadowMap";
 import { compileCheckShader } from "../lib/glslInjection";
 import {
   GEOM_CUSTOM_CHECK_FRAGMENT,
@@ -66,6 +67,24 @@ export function resolveSpeciesGeomMode(config: ParticleConfig, zone: number): st
   return config.gpgpuGeomMode;
 }
 
+/** Resolved OBJ source of species zone k (0-based), the source
+ *  twin of resolveSpeciesGeomMode (limit plan stage 4, slice
+ *  S1): zone 0 always reads the single gpgpuMorphObjSource;
+ *  zones 1..3 read their per-zone gpgpuGeomSpecies{2,3,4}ObjSource
+ *  and fall back to gpgpuMorphObjSource while that key is empty
+ *  (a whitespace-only document carries no model — the same
+ *  emptiness buildObjGeomBaseData itself applies — so it falls
+ *  back too). At the defaults (all three keys '') every zone
+ *  resolves to exactly the legacy single source, so the built
+ *  base geometry is byte-identical to before this slice. Only
+ *  consulted when the zone's resolved mode is 'obj'. */
+export function resolveSpeciesObjSource(config: ParticleConfig, zone: number): string {
+  if (zone === 1) return config.gpgpuGeomSpecies2ObjSource.trim() !== '' ? config.gpgpuGeomSpecies2ObjSource : config.gpgpuMorphObjSource;
+  if (zone === 2) return config.gpgpuGeomSpecies3ObjSource.trim() !== '' ? config.gpgpuGeomSpecies3ObjSource : config.gpgpuMorphObjSource;
+  if (zone === 3) return config.gpgpuGeomSpecies4ObjSource.trim() !== '' ? config.gpgpuGeomSpecies4ObjSource : config.gpgpuMorphObjSource;
+  return config.gpgpuMorphObjSource;
+}
+
 export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
   // ── GEOM custom GLSL (Phase 16 stage 4): validate → harness
   // compile check against the live GL context → swap the built
@@ -80,7 +99,7 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
   // variants, the initial state already carries the initial
   // config's variants, and an empty snippet resolves to the
   // variant base string (default = v2.00 GEOM_VERT).
-  const [geomVertShader, setGeomVertShader] = useState(() => buildGeomVert('', { vellumCrack: vellumCrackVariantOn(config), shadowMap: shadowMapVariantOn(config) }));
+  const [geomVertShader, setGeomVertShader] = useState(() => buildGeomVert('', { vellumCrack: vellumCrackVariantOn(config), shadowMap: shadowMapVariantOn(config), spinChannel: spinChannelVariantOn(config), orientChannel: orientChannelVariantOn(config), ageFreeRotation: ageFreeRotationVariantOn(config) }));
   const [geomFragShader, setGeomFragShader] = useState(() => buildGeomFrag('', { vellumCrack: vellumCrackVariantOn(config), shadowMap: shadowMapVariantOn(config) }));
   const appliedGeomVertCodeRef = useRef<string | null>(null);
   const appliedGeomFragCodeRef = useRef<string | null>(null);
@@ -88,10 +107,13 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
     const code = config.gpgpuGeomCustomVertexEnabled ? config.gpgpuGeomCustomVertexCode : '';
     const crack = vellumCrackVariantOn(config);
     const smap = shadowMapVariantOn(config);
-    const appliedKey = `${code}\n${crack ? 1 : 0}\n${smap ? 1 : 0}`;
+    const spin = spinChannelVariantOn(config);
+    const orient = orientChannelVariantOn(config);
+    const ageFreeRotation = ageFreeRotationVariantOn(config);
+    const appliedKey = `${code}\n${crack ? 1 : 0}\n${smap ? 1 : 0}\n${spin ? 1 : 0}\n${orient ? 1 : 0}\n${ageFreeRotation ? 1 : 0}`;
     if (!code.trim()) {
       if (appliedGeomVertCodeRef.current !== appliedKey) {
-        setGeomVertShader(buildGeomVert('', { vellumCrack: crack, shadowMap: smap }));
+        setGeomVertShader(buildGeomVert('', { vellumCrack: crack, shadowMap: smap, spinChannel: spin, orientChannel: orient, ageFreeRotation }));
         appliedGeomVertCodeRef.current = appliedKey;
       }
       setGeomCustomVertexGlslStatus({ state: 'inactive' });
@@ -112,10 +134,10 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       setGeomCustomVertexGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
       return;
     }
-    setGeomVertShader(buildGeomVert(code, { vellumCrack: crack, shadowMap: smap }));
+    setGeomVertShader(buildGeomVert(code, { vellumCrack: crack, shadowMap: smap, spinChannel: spin, orientChannel: orient, ageFreeRotation }));
     appliedGeomVertCodeRef.current = appliedKey;
     setGeomCustomVertexGlslStatus({ state: 'active' });
-  }, [config.gpgpuGeomCustomVertexEnabled, config.gpgpuGeomCustomVertexCode, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuShadowMapStrength, gl]);
+  }, [config.gpgpuGeomCustomVertexEnabled, config.gpgpuGeomCustomVertexCode, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuShadowMapStrength, config.gpgpuSpinEnabled, config.gpgpuOrientEnabled, config.gpgpuAgeCurveRotationEnabled, config.gpgpuAgeCurveRotationFreeEnabled, gl]);
   useEffect(() => {
     const code = config.gpgpuGeomCustomFragmentEnabled ? config.gpgpuGeomCustomFragmentCode : '';
     const crack = vellumCrackVariantOn(config);
@@ -175,11 +197,26 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
       uTime:         { value: 0 },
       uSpinSpeed:    { value: 0 },
       uSpinRandom:   { value: 0 },
+      // Spin channel (Grammar 2.0 stage 2, B3): declared in
+      // the shader only in the spin variant string; the entry
+      // is inert otherwise. syncVisualUniforms binds the spin
+      // pass's latest texture per frame.
+      uSpinTex:      { value: null },
+      // Orientation channel (Limit plan stage 4, S2): same
+      // arrangement — declared in the shader only in the
+      // orient variant string; inert otherwise.
+      // syncVisualUniforms binds the orient pass's texture.
+      uOrientTex:    { value: null },
       // Rotation over Lifetime (Phase AC): legacy neutrals.
       uAgeEnabled:   { value: false },
       uAgeMax:       { value: 6 },
       uAgeCurveRotationEnabled: { value: false },
       uAgeCurveRotation: { value: [1, 1, 1, 1, 1] },
+      // Age free curve (Grammar 2.0 stage 2, B4): declared in
+      // the shader only in the age-free variant string; the
+      // entries hold the padded identity asset otherwise.
+      uAgeCurveRotationFreeT: { value: [0, 1, 1, 1, 1, 1, 1, 1] },
+      uAgeCurveRotationFreeV: { value: [1, 1, 1, 1, 1, 1, 1, 1] },
       uMeshStretch:  { value: 0 },
       uEnvReflect:   { value: 0 },
       // Image-based lighting (Phase AL): no map bound and zero
@@ -230,7 +267,14 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
 
   const geomMeshObj = useMemo(() => {
     if (!instGeo) return null;
-    return new THREE.Mesh(instGeo, geomMat);
+    const mesh = new THREE.Mesh(instGeo, geomMat);
+    // Particle self-shadow (limit plan stage 4, S4): mark the
+    // mesh as a shadow caster candidate. The mark is inert —
+    // LightShadowCapture reads it only while
+    // gpgpuShadowMapCastParticles is on; at the default the
+    // capture never looks at userData.
+    mesh.userData[SHADOW_CASTER_GEOM_USERDATA] = true;
+    return mesh;
   }, [instGeo, geomMat]);
 
   // ── Foliage split (Phase 16 stage 5): one InstancedBufferGeometry
@@ -276,19 +320,22 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
         coords[j * 2 + 1] = (Math.floor(i / texSize) + 0.5) / texSize;
       }
       const geo = new THREE.InstancedBufferGeometry();
-      const baseGeo = buildGeomBaseGeometry(mode as GeomBaseMode, config.gpgpuMorphObjSource);
+      const baseGeo = buildGeomBaseGeometry(mode as GeomBaseMode, resolveSpeciesObjSource(config, k));
       fillInstancedFromBase(geo, baseGeo, coords);
       baseGeo.dispose();
       geos.push(geo);
       keptTotals.push(list.length);
       const mesh = new THREE.Mesh(geo, geomMat);
       mesh.frustumCulled = false;
+      // Shadow caster candidate mark (stage 4, S4) — see the
+      // single-mesh path above; inert at the default.
+      mesh.userData[SHADOW_CASTER_GEOM_USERDATA] = true;
       meshes.push(mesh);
     }
     if (meshes.length === 0) return null;
     return { geos, meshes, totals: keptTotals };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bakedSpecies, texSize, config.gpgpuGeomMode, config.gpgpuMorphTarget, config.gpgpuMorphScatterEnabled, config.gpgpuGeomSpecies2Mode, config.gpgpuGeomSpecies3Mode, config.gpgpuGeomSpecies4Mode, config.gpgpuMorphObjSource, geomMat]);
+  }, [bakedSpecies, texSize, config.gpgpuGeomMode, config.gpgpuMorphTarget, config.gpgpuMorphScatterEnabled, config.gpgpuGeomSpecies2Mode, config.gpgpuGeomSpecies3Mode, config.gpgpuGeomSpecies4Mode, config.gpgpuGeomSpecies2ObjSource, config.gpgpuGeomSpecies3ObjSource, config.gpgpuGeomSpecies4ObjSource, config.gpgpuMorphObjSource, geomMat]);
 
   useEffect(() => () => {
     speciesSplit?.geos.forEach((g) => g.dispose());

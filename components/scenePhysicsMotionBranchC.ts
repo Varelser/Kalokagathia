@@ -1,13 +1,9 @@
+import { DM_HASH11_GLSL } from '../lib/gpgpuRandom';
 export const PHYSICS_MOTION_BRANCH_C = `
 // Split from applyMotion (ANGLE Metal expression-complexity fix,
 // 2026-11-13): conditions and bodies below are byte-for-byte the
 // original chain text; applyMotion dispatches here by range.
-float dmHash11(float n) {
-  vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
-  p3 += dot(p3, p3.yxz + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
-
+${DM_HASH11_GLSL}
 vec3 applyMotionBranchC(vec3 result, vec3 p, float motionType, float time, float amp, float freq, float phase, float rnd, vec3 wind, float fluidForce, float viscosity, vec3 noiseField, vec3 curlField, float attractorScale, vec3 fieldPos, float octaves, float lacunarity) {
     if (motionType < 81.5) {
       float pinwheelAngle = atan(p.z, p.x) + time * 1.1;

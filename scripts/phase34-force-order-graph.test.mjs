@@ -41,12 +41,12 @@ unlinkSync(BUNDLE);
 const DEFAULTS = [...GPGPU_FORCE_CHUNK_NAMES];
 
 // --- metadata coverage ------------------------------------------------
-check('meta covers exactly the 23 chunks, in default order',
-  GPGPU_FORCE_CHUNK_META.length === 23
+check('meta covers exactly the 26 chunks, in default order',
+  GPGPU_FORCE_CHUNK_META.length === 26
   && GPGPU_FORCE_CHUNK_META.map((m) => m.name).join(',') === DEFAULTS.join(','));
-check('variant-gated set is attractor-2/3/4 + steer-seek',
+check('variant-gated set is attractor-2/3/4 + steer-seek + field-instances + rel-drag + meander',
   GPGPU_FORCE_CHUNK_META.filter((m) => m.variantGated).map((m) => m.name).join(',')
-  === 'attractor-2,attractor-3,attractor-4,steer-seek');
+  === 'attractor-2,attractor-3,attractor-4,steer-seek,field-instances,rel-drag,meander');
 
 // --- serialize / normalize round-trip ---------------------------------
 check('default order serialises to empty string', serializeGpgpuForceOrder(DEFAULTS) === '');

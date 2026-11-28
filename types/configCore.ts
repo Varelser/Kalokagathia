@@ -170,6 +170,16 @@ export interface ParticleConfigCore {
   postDofFocusDistance: number;
   postDofFocalLength: number;
   postDofBokehScale: number;
+  // Motion blur + DOF particle tracking (limit plan stage 4,
+  // slice S5): velocity-buffer MB stage keys and the DOF
+  // focus supply. All default off / neutral — neither the
+  // 'motion-blur' stage nor the tracking supply exists then.
+  postMbEnabled: boolean;
+  postMbStrength: number;
+  postMbSamples: number;
+  postMbParticleOnly: boolean;
+  postDofTrackParticles: boolean;
+  postDofTrackZone: number;
   postNoiseEnabled: boolean;
   postNoiseOpacity: number;
   postVignetteEnabled: boolean;

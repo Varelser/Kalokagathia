@@ -1,4 +1,5 @@
 import { PHYSICS_LOGIC } from './scenePhysicsLogic';
+import { DM_HASH11_GLSL_INDENTED } from '../lib/gpgpuRandom';
 
 export const BRUSH_LINE_VERTEX_SHADER = `
   precision highp float;
@@ -78,12 +79,7 @@ export const BRUSH_LINE_VERTEX_SHADER = `
     }
     return burstEnvelope;
   }
-  float dmHash11(float n) {
-    vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
-    p3 += dot(p3, p3.yxz + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-  }
-  vec3 lineJitterOffset(float phase, float random) {
+${DM_HASH11_GLSL_INDENTED}  vec3 lineJitterOffset(float phase, float random) {
     if (uLineJitter <= 0.0) return vec3(0.0);
     float scale = uLineJitter * max(uGlobalRadius, 1.0) * 0.02;
     vec3 h = vec3(

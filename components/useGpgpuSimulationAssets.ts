@@ -1,16 +1,40 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { BLIT_FRAG, FLIP_CLEAR_FRAG, FLIP_COMPOSITE_FRAG, FLIP_JACOBI_FRAG, FLIP_SPLAT_FRAG, FLIP_SPLAT_VERT, FLIP_SUBTRACT_FRAG, FLIP_VORTICITY_CURL_FRAG, FLIP_VORTICITY_FORCE_FRAG, FLUID_ADVECT_FRAG, GRAINS_CELL_KEY_FRAG, GRAINS_PILE_DELTA_FRAG, GRAINS_PILE_LAMBDA_FRAG, GRAINS_VELOCITY_UPDATE_FRAG, SIM_VERT, SORT_BITONIC_FRAG, SORT_DEPTH_FRAG, buildPositionFragment, buildVelocityFragment } from "./gpgpuShaders";
 import type { VelocityFragmentVariantOptions } from "./gpgpuShaderSimulationVelocity";
 import { grainsNeighborhoodMode, grainsPileActive, grainsProjectionActive, resolveGrainsXsphStrength } from "../lib/gpgpuGrains";
 import { hasEffectiveParticleRules } from "../lib/gpgpuParticleRules";
+import { hasEffectiveLiveRules } from "../lib/gpgpuParticleRulesLive";
+import { emitterRespawnShapeActive, emitterTransformActive, emitterVelocityDirectedActive } from "../lib/gpgpuEmitter";
+import { emissionCloudActive, emissionMaskVariantActive, emissionPathActive, emissionPathAssetActive } from "../lib/gpgpuEmissionSource";
+import { steeringPathAssetActive, steeringCrowdPathAssetActive } from "../lib/gpgpuPathAssets";
+import { spawnAllocVariantActive, spawnRuleGateKeyOn } from "../lib/gpgpuSpawnAllocator";
+import { fieldInstancesActive } from "../lib/gpgpuFieldInstances";
+import { distributionActive } from "../lib/gpgpuDistribution";
+import { predationActive, predationBirthActive } from "../lib/gpgpuPredation";
+// Grammar 2.0 stage 2 (slice B6): the live-rule segments also stand while
+// predation generates its rules — the generated list counts exactly like
+// an effective user list for variant purposes.
+const liveRulesPresent = (c: ParticleConfig): boolean => hasEffectiveLiveRules(c.gpgpuParticleRulesLive ?? '') || predationActive(c);
+const liveSpawnPresent = (c: ParticleConfig): boolean => hasEffectiveLiveRules(c.gpgpuParticleRulesLive ?? '') || predationBirthActive(c);
+import { shaderSeedActive } from "../lib/gpgpuRandom";
+import { mergedSupplyActive } from "../lib/gpgpuMergedSupply";
+import { relDragActive, targetSpeedActive } from "../lib/gpgpuSpeedDragSpin";
+import { meanderStandaloneActive } from "../lib/gpgpuMeander";
+import { ageFreeVariantOn } from "../lib/gpgpuAgeFreeCurves";
 import { flip3dActive } from "../lib/flip3d";
 import { grainsFullScanDowngradeApplies, resolveGrainsCellSortActive, setFlip3dGrainsDowngrade } from "../lib/flip3dAtlasDowngrade";
 import { getMaxTextureImageUnits } from "../lib/gpuDiagnostics";
 import { resolveCrowd, resolveSteeringSeek } from "../lib/steering";
 import { SIM_VELLUM_PROJ_FRAG, SIM_VELLUM_STATE_FRAG, SIM_VELLUM_VEL_FRAG, SIM_VELLUM_VOLUME_APPLY_FRAG, SIM_VELLUM_VOLUME_PROJ_FRAG, SIM_VELLUM_VOLUME_REDUCE_FRAG, SIM_VELLUM_XPBD_CLEAR_FRAG, SIM_VELLUM_XPBD_LAMBDA_FRAG, SIM_VELLUM_XPBD_PROJ_FRAG, SIM_VELLUM_XPBD_VEL_FRAG } from "./gpgpuShaderSimulationVellum";
-import { AUX_CHAIN_POS_FRAG, AUX_CHAIN_VEL_FRAG, buildAuxPosFrag, buildAuxVelFrag } from "./gpgpuShaderAux";
+import { buildAuxChainPosFrag, buildAuxChainVelFrag, buildAuxInheritFrag, buildAuxPosFrag, buildAuxVelFrag } from "./gpgpuShaderAux";
+import type { AuxTrailAbStage } from "./gpgpuShaderAux";
+import { noteAuxTrailAbApplied, registerAuxTrailAbApplier } from "../lib/auxTrailAbDiag";
 import { auxSdfSplashActive } from "../lib/auxChain";
+import { auxInheritVelScaleActive } from "../lib/auxInherit";
+import { auxEmitChainActive, auxEmitLevel1Active } from "../lib/auxEmit";
+import { auxRuleSpawnLevel1Active } from "../lib/auxRuleSpawn";
+import { trailAuxActive } from "../lib/trailAux";
 import { WW_POS_FRAG, WW_VEL_FRAG } from "./gpgpuShaderWhitewater";
 import { WW3_POS_FRAG, WW3_VEL_FRAG } from "./gpgpuShaderWhitewater3d";
 import {
@@ -56,7 +80,7 @@ import type { ParticleConfig } from "../types";
 // scan) and FLIP 3D activity (the config side of the condition
 // applyFlip3dCoupleUniforms uses to raise uFlip3dCouple). With
 // both off the built string is byte-identical to v2.00.
-export function velocityVariantOptions(config: ParticleConfig): VelocityFragmentVariantOptions {
+export function velocityVariantOptions(config: ParticleConfig, texSize?: number): VelocityFragmentVariantOptions {
   return {
     // 案D downgrade, generalised by E3 (Grains Stage B): a
     // <=16-texture-unit GPU cannot carry the Grains complete
@@ -100,6 +124,61 @@ export function velocityVariantOptions(config: ParticleConfig): VelocityFragment
     // the built string only while the free-particles key is
     // on (same discipline).
     rigidFree: !!config.gpgpuRigidFreeEnabled,
+    // Grammar 2.0 stage 1 (slice 1A): the live-rule segment +
+    // uniform set exist in the built string only while an
+    // effective LIVE rule list exists (same discipline).
+    particleRulesLive: liveRulesPresent(config),
+    // Grammar 2.0 stage 2 (slice E2): the spawn allocator's
+    // gate line + uniform set exist in the built string only
+    // while the absolute rate key is set or the envelope is
+    // enabled (same discipline).
+    spawnAlloc: spawnAllocVariantActive(config),
+    // Grammar 2.0 stage 2 (slice E2): the emitter-velocity
+    // function + activation segment exist in the built string
+    // only while the emitter velocity mode is 'directed'.
+    emitterVelocity: emitterVelocityDirectedActive(config),
+    // Grammar 2.0 stage 2 (slice B1): the field-instances
+    // chunk + column-data uniform set exist in the built
+    // string only while at least one field instance
+    // resolves (same discipline).
+    fieldInstances: fieldInstancesActive(config),
+    // Grammar 2.0 stage 2 (slice B2): the path-asset variant
+    // of the steer-seek chunk + its uniform set over the
+    // shared column texture exist in the built string only
+    // while steering follows an extended path asset (same
+    // discipline).
+    pathAssets: steeringPathAssetActive(config),
+    // Grammar 2.0 stage 2 (B2 crowd follow-up): the
+    // crowd-asset variant of the steer-seek chunk, gated by
+    // its own disjoint predicate (crowd in charge + the
+    // asset extended).
+    crowdPathAssets: steeringCrowdPathAssetActive(config),
+    // Grammar 2.0 stage 2 (slice B3): the 'rel-drag' chunk +
+    // its uniform set exist in the built string only while
+    // the relative-drag rate key is above zero (same
+    // discipline).
+    relDrag: relDragActive(config),
+    // Grammar 2.0 stage 2 (slice B3): the tail's target-speed
+    // block + its uniform set exist in the built string only
+    // while the target speed key is above zero (same
+    // discipline).
+    targetSpeed: targetSpeedActive(config),
+    // Grammar 2.0 stage 2 (slice B4): the age free curves'
+    // uniform sets + free evaluations exist in the built
+    // string only while the target's Enabled and FreeEnabled
+    // are both on (same discipline).
+    ageFreeVelocity: ageFreeVariantOn(config, 'velocity'),
+    ageFreeForce: ageFreeVariantOn(config, 'force'),
+    // Grammar 2.0 stage 2 (slice B7): the standalone
+    // 'meander' chunk + the Particle Life chunk's
+    // no-meander form exist in the built string only while
+    // the standalone enable stands (same discipline).
+    meanderStandalone: meanderStandaloneActive(config),
+    // Grammar 2.0 stage 2 (texture-unit follow-up): the
+    // merged supply forms exist in the built string only
+    // while the merged supply stands (same discipline;
+    // resolved by lib/gpgpuMergedSupply.ts, needs texSize).
+    mergedSupply: texSize !== undefined && mergedSupplyActive(config, texSize),
   };
 }
 
@@ -218,6 +297,16 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSpawnRate:   { value: 1.0 },
       uSpawnBurst:  { value: 1.0 },
       uSpawnTime:   { value: 0 },
+      // Spawn allocator (stage 2, E2): read only by the
+      // allocator variant of the velocity fragment; the
+      // emitter-velocity uniforms likewise. The passes fill
+      // them from config per frame.
+      uSpawnRateEff:   { value: 1.0 },
+      uSpawnClockTime: { value: 0 },
+      uSpawnClockPrev: { value: 0 },
+      uEmitterVelDir:    { value: new THREE.Vector3(0, 1, 0) },
+      uEmitterVelSpeed:  { value: 2 },
+      uEmitterVelSpread: { value: 0.5 },
       uSpawnPulseInterval: { value: 0 },
       uSpawnPulseDuty:     { value: 0.3 },
       // Phase AX: cycles 0 / probability 1 = legacy pulse;
@@ -226,6 +315,14 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSpawnPulseProbability: { value: 1 },
       uSpawnOrderTex:  { value: null },
       uSpawnOrderMode: { value: 0 },
+      // Texture-unit fix (Grammar 2.0 stage 1): the live
+      // variant derives the spawn gate value from the
+      // initial-position texture divided by this normaliser
+      // instead of sampling uSpawnOrderTex (see
+      // gpgpuShaderSimulationVelocityPreamble.ts). Declared
+      // in the shader only in the live variant string; the
+      // entry is inert otherwise.
+      uSpawnOrderMaxDist: { value: 0 },
       uSpawnEventEnabled: { value: false },
       uSpawnEventTime:    { value: 0 },
       uSpawnEventCount:   { value: 0 },
@@ -247,6 +344,35 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uWindVolumePos:      { value: new THREE.Vector3(0, 0, 0) },
       uWindVolumeRadius:   { value: 60.0 },
       uWindVolumeStrength: { value: 1.0 },
+      // Field instances (Grammar 2.0 stage 2, B1): declared
+      // in the shader only in the field-instances variant
+      // string; the entries are inert otherwise. The passes
+      // fill them from getFieldColumnSupply per frame.
+      uColTex:               { value: null },
+      uColWidth:             { value: 256 },
+      uColHeight:            { value: 2 },
+      uColFieldsBase:        { value: 0 },
+      uColLayersBase:        { value: 0 },
+      uFieldInstanceCount:   { value: 0 },
+      uFieldLayerAttrEnabled: { value: false },
+      // Path assets (Grammar 2.0 stage 2, B2): declared in
+      // the shader only in the path-assets variant string;
+      // the entries are inert otherwise. The passes fill
+      // them from getColumnSupply per frame.
+      uColPathsBase:         { value: 0 },
+      uColPathHeadersBase:   { value: 0 },
+      uPathAssetCount:       { value: 0 },
+      uPathAssetSlot:        { value: -1 },
+      // Relative drag / target speed (Grammar 2.0 stage 2,
+      // B3): declared in the shader only in their variant
+      // strings; the entries are inert otherwise. The passes
+      // fill them from lib/gpgpuSpeedDragSpin per frame.
+      uRelDragWindVel:       { value: new THREE.Vector3(0, 0, 0) },
+      uRelDragRate:          { value: 0 },
+      uRelDragSlot:          { value: -1 },
+      uTargetSpeed:          { value: 0 },
+      uTargetSpeedBlend:     { value: 1 },
+      uTargetSpeedSlot:      { value: -1 },
       // Terrain slope flow (Phase AE): disabled + no texture is
       // the exact legacy path.
       uSlopeForceEnabled:  { value: false },
@@ -277,6 +403,17 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uGroupHigh:         { value: 0.75 },
       uGroupTarget:       { value: 0 },
       uGroupInvert:       { value: false },
+      // Live particle rules (Grammar 2.0 1A): the REP output
+      // texture + its resolved enable, set per frame in
+      // runSimulationPasses.
+      uRuleLiveTex:       { value: null },
+      uRuleLiveEnabled:   { value: false },
+      // Merged supply (stage 2 texture-unit follow-up):
+      // declared in the shader only in the merged variant
+      // string; inert otherwise. The passes fill them from
+      // the merged plan per frame.
+      uMergedTex:         { value: null },
+      uMergedTexHeight:   { value: 1 },
       uWellEnabled:      { value: false },
       uWellStrength:     { value: 1.0 },
       uWellSoftening:    { value: 10.0 },
@@ -365,6 +502,13 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uAgeCurveVelocity: { value: [1, 1, 1, 1, 1] },
       uAgeCurveForceEnabled: { value: false },
       uAgeCurveForce: { value: [1, 1, 1, 1, 1] },
+      // Age free curves (Grammar 2.0 stage 2, B4): declared
+      // in the shader only in the age-free variant strings;
+      // the entries hold the padded identity asset otherwise.
+      uAgeCurveVelocityFreeT: { value: [0, 1, 1, 1, 1, 1, 1, 1] },
+      uAgeCurveVelocityFreeV: { value: [1, 1, 1, 1, 1, 1, 1, 1] },
+      uAgeCurveForceFreeT: { value: [0, 1, 1, 1, 1, 1, 1, 1] },
+      uAgeCurveForceFreeV: { value: [1, 1, 1, 1, 1, 1, 1, 1] },
       uMorphStrength:   { value: 3.0 },
       uMorphOrbitSpeed: { value: 0.3 },
       uMorphReplicaPhaseGain: { value: 0.0 },
@@ -469,7 +613,7 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uFlip3dAtlasTiles: { value: new THREE.Vector2(1, 1) },
       uFlip3dManualTrilinear: { value: false },
     },
-    vertexShader: SIM_VERT, fragmentShader: buildVelocityFragment('', undefined, velocityVariantOptions(config)),
+    vertexShader: SIM_VERT, fragmentShader: buildVelocityFragment('', undefined, velocityVariantOptions(config, texSize)),
   });
 }
 
@@ -560,10 +704,45 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       // is 'light'; the position then mirrors the light keys.
       uEmitLight:     { value: false },
       uEmitLightPos:  { value: new THREE.Vector3(0, 0, 0) },
+      // Emitter respawn shape / transform (stage 2, E1/E0):
+      // read only by the emitter variants of the position
+      // fragment; resolved per frame in runSimulationPasses.
+      uRespawnShape:  { value: 0 },
+      uEmitterPos:    { value: new THREE.Vector3(0, 0, 0) },
+      uEmitterRotScale: { value: new THREE.Matrix3() },
+      // Emission sources (stage 2, E3): read only by the
+      // emission variants of the position fragment; resolved
+      // per frame in runSimulationPasses.
+      uEmitCloudTex:  { value: null },
+      uEmitPath:      { value: Array.from({ length: 8 }, () => new THREE.Vector3()) },
+      uEmitPathCum:   { value: [0, 0, 0, 0, 0, 0, 0, 0] },
+      uEmitPathCount: { value: 0 },
+      // Path-asset emission (stage 2, B2): read only by the
+      // asset variant of the position fragment; the passes
+      // fill them from getColumnSupply per frame.
+      uEmitColTex:      { value: null },
+      uEmitColWidth:    { value: 256 },
+      uEmitColHeight:   { value: 2 },
+      uEmitPathBase:    { value: 0 },
+      uEmitPathTexCount: { value: 0 },
+      uEmitMaskEnabled: { value: false },
+      // Distribution layer + shader seed (stage 2, B5): read
+      // only by the B5 variants of the position fragment;
+      // resolved per frame in runSimulationPasses.
+      uDistOps:       { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
+      uDistOpCount:   { value: 0 },
+      uShaderSeedPhase: { value: 0 },
       // Lifecycle grammar (Phase AB): spawn gate + kill conditions.
       uSpawnRate:   { value: 1.0 },
       uSpawnBurst:  { value: 1.0 },
       uSpawnTime:   { value: 0 },
+      // Spawn allocator (stage 2, E2): read only by the
+      // allocator / rule-gate variants of the position
+      // fragment; the passes fill them per frame.
+      uSpawnRateEff:   { value: 1.0 },
+      uSpawnClockTime: { value: 0 },
+      uSpawnClockPrev: { value: 0 },
+      uSpawnRuleGateEnabled: { value: false },
       uSpawnPulseInterval: { value: 0 },
       uSpawnPulseDuty:     { value: 0.3 },
       // Phase AX: cycles 0 / probability 1 = legacy pulse;
@@ -572,6 +751,14 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uSpawnPulseProbability: { value: 1 },
       uSpawnOrderTex:  { value: null },
       uSpawnOrderMode: { value: 0 },
+      // Texture-unit fix (Grammar 2.0 stage 1): the live
+      // variant declares uInitPosTex + this normaliser in
+      // place of uSpawnOrderTex and derives the spawn gate
+      // value identically to the velocity pass (see
+      // gpgpuShaderSimulationPosition.ts). Both entries are
+      // inert outside the live variant string.
+      uInitPosTex:        { value: null },
+      uSpawnOrderMaxDist: { value: 0 },
       uSpawnEventEnabled: { value: false },
       uSpawnEventTime:    { value: 0 },
       uSpawnEventCount:   { value: 0 },
@@ -594,6 +781,17 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       // Particle rule kill (G10 stage 1), resolved per frame
       // in runSimulationPasses alongside the group kill.
       uParticleRuleKillEnabled: { value: false },
+      // Live particle rule kill (Grammar 2.0 1A), resolved per
+      // frame in runSimulationPasses alongside the baked kill.
+      uParticleRuleLiveKillEnabled: { value: false },
+      // Live true-kill (Grammar 2.0 1C), resolved per frame
+      // in runSimulationPasses alongside the live kill.
+      uParticleRuleLiveTrueKillEnabled: { value: false },
+      uRuleLiveTex:  { value: null },
+      // Merged supply (stage 2 texture-unit follow-up): the
+      // live reads' y scale, declared only in the merged
+      // position variant; inert otherwise.
+      uLiveTexYScale: { value: 1 },
       uAttrTex:      { value: null },
       uGroupSlot:    { value: 0 },
       uGroupMode:    { value: 1 },
@@ -601,7 +799,7 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uGroupHigh:    { value: 0.75 },
       uGroupInvert:  { value: false },
     },
-    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()), particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''), rigidFree: !!config.gpgpuRigidFreeEnabled }),
+    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()), particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''), particleRulesLive: liveRulesPresent(config), particleRulesLiveMerged: mergedSupplyActive(config, texSize), emitterShape: emitterRespawnShapeActive(config), emitterTransform: emitterTransformActive(config), spawnAlloc: spawnAllocVariantActive(config), spawnRuleGate: spawnRuleGateKeyOn(config) && liveSpawnPresent(config), emitterCloud: emissionCloudActive(config), emitterPath: emissionPathActive(config) && !emissionPathAssetActive(config), emitterPathAsset: emissionPathAssetActive(config), emitterMask: emissionMaskVariantActive(config), fieldInstances: fieldInstancesActive(config), emitDistribution: distributionActive(config), shaderSeed: shaderSeedActive(config), rigidFree: !!config.gpgpuRigidFreeEnabled }),
   });
 }
 
@@ -740,6 +938,48 @@ export function createVellumXpbdVelMaterial(texSize: number): THREE.ShaderMateri
   });
 }
 
+// ── Aux variant delivery (stage-4 gate fix round 2, B2) ──
+// The six Aux materials live in state (not useMemo) because
+// the variant swap effect below REPLACES them when the
+// variant key flips: a fresh ShaderMaterial built around the
+// SAME uniforms object (shared by reference — the passes'
+// per-frame fills land unchanged) and the same vertex shader,
+// with the replaced material disposed. The pre-fix swap
+// rewrote fragmentShader on the shared instances; that was
+// the one delivery path never runtime-verified since stage-4
+// S6, and the G4-5 gate showed the trail variant never
+// reaching the running program (zero spawns over all slots
+// and emit ticks while the spawn logic itself is proven
+// correct). A fresh material cannot inherit a stale compiled
+// program, so replacement closes the whole class. The stock
+// shader strings are untouched: at the defaults the initial
+// materials build exactly the pre-fix strings (pinned by
+// stage4-trail-aux-s6).
+export interface ActiveAuxMaterials {
+  vel: THREE.ShaderMaterial;
+  pos: THREE.ShaderMaterial;
+  inherit: THREE.ShaderMaterial;
+  chainVel: THREE.ShaderMaterial;
+  chainPos: THREE.ShaderMaterial;
+  chainInherit: THREE.ShaderMaterial;
+}
+let activeAuxMaterials: ActiveAuxMaterials | null = null;
+// Read by the ?diag=1 hook's captureAuxVariantInfo (the
+// getActiveOrientPass pattern): which fragment strings the
+// live Aux materials actually carry.
+export function getActiveAuxMaterials(): ActiveAuxMaterials | null {
+  return activeAuxMaterials;
+}
+function rebuildAuxMaterial(old: THREE.ShaderMaterial, fragmentShader: string): THREE.ShaderMaterial {
+  const next = new THREE.ShaderMaterial({
+    uniforms: old.uniforms,
+    vertexShader: old.vertexShader,
+    fragmentShader,
+  });
+  old.dispose();
+  return next;
+}
+
 export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: UseGpgpuAssetsArgs) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const velSimMat = useMemo(() => createVelSimMaterial(texSize, config), []);
@@ -769,12 +1009,16 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // Aux event emission materials (B3): the shared event uniforms are
   // declared in gpgpuShaderAux's AUX_EVENT_GLSL chunk; the passes in
   // gpgpuSimulationPasses.runAuxSimulationPasses fill them per frame.
-  const auxVelMat = useMemo(() => new THREE.ShaderMaterial({
+  const [auxVelMat, setAuxVelMat] = useState(() => new THREE.ShaderMaterial({
     uniforms: {
       uAuxPosTex:    { value: null },
       uAuxVelTex:    { value: null },
       uMainPosTex:   { value: null },
       uMainVelTex:   { value: null },
+      // Grammar connection (1D-3): declared in the shader
+      // only in the ruleSpawn variant; the passes fill it
+      // per frame with the REP's latest output.
+      uMainRuleTex:  { value: null },
       uMainTexSizeF: { value: texSize },
       uAuxCount:     { value: 4096 },
       uAuxMode:      { value: 0 },
@@ -784,6 +1028,20 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uAuxGravityScale: { value: 1.0 },
       uAuxDrag:      { value: 0 },
       uAuxCurl:      { value: 0 },
+      // Spawn inheritance (1D-1): declared in the shader only
+      // in the inherit-scale variant; the passes fill it per
+      // frame from gpgpuAuxInheritVelScale.
+      uAuxInheritVelScale: { value: 1.0 },
+      // Child emitter (1D-2): declared in the shader only in
+      // the emit variant; the passes fill them per frame.
+      uAuxEmitRate:   { value: 30 },
+      uAuxEmitShape:  { value: 0 },
+      uAuxEmitSpread: { value: 0.5 },
+      // Trail mechanism (stage 4, S6): declared in the shader
+      // only in the trail variant; the passes fill them per
+      // frame from gpgpuTrailEmitInterval / gpgpuTrailEmitRate.
+      uTrailEmitInterval: { value: 2 },
+      uTrailEmitRate:     { value: 1.0 },
       uAgeEnabled:   { value: false },
       uAgeMax:       { value: 8.0 },
       uFloorEnabled: { value: false },
@@ -803,22 +1061,32 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uSdfZ:         { value: 0 },
       uSdfSize:      { value: 0 },
     },
-    vertexShader: SIM_VERT, fragmentShader: buildAuxVelFrag({ sdfSplash: auxSdfSplashActive(config) }),
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), []);
+    vertexShader: SIM_VERT, fragmentShader: buildAuxVelFrag({ sdfSplash: auxSdfSplashActive(config), inheritVelScale: auxInheritVelScaleActive(config), emit: auxEmitLevel1Active(config), ruleSpawn: auxRuleSpawnLevel1Active(config), trail: trailAuxActive(config) }),
+  }));
 
-  const auxPosMat = useMemo(() => new THREE.ShaderMaterial({
+  const [auxPosMat, setAuxPosMat] = useState(() => new THREE.ShaderMaterial({
     uniforms: {
       uAuxPosTex:    { value: null },
       uAuxVelTex:    { value: null },
       uAuxVelOutTex: { value: null },
       uMainPosTex:   { value: null },
       uMainVelTex:   { value: null },
+      // Grammar connection (1D-3): see auxVelMat above.
+      uMainRuleTex:  { value: null },
       uMainTexSizeF: { value: texSize },
       uAuxCount:     { value: 4096 },
       uAuxMode:      { value: 0 },
       uAuxIntensity: { value: 1.0 },
       uAuxSpeed:     { value: 26.0 },
+      // Child emitter (1D-2): see auxVelMat above.
+      uAuxEmitRate:   { value: 30 },
+      uAuxEmitShape:  { value: 0 },
+      uAuxEmitSpread: { value: 0.5 },
+      // Trail mechanism (stage 4, S6): declared in the shader
+      // only in the trail variant; the passes fill them per
+      // frame from gpgpuTrailEmitInterval / gpgpuTrailEmitRate.
+      uTrailEmitInterval: { value: 2 },
+      uTrailEmitRate:     { value: 1.0 },
       uAgeEnabled:   { value: false },
       uAgeMax:       { value: 8.0 },
       uFloorEnabled: { value: false },
@@ -834,15 +1102,14 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uSdfZ:         { value: 0 },
       uSdfSize:      { value: 0 },
     },
-    vertexShader: SIM_VERT, fragmentShader: buildAuxPosFrag({ sdfSplash: auxSdfSplashActive(config) }),
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), []);
+    vertexShader: SIM_VERT, fragmentShader: buildAuxPosFrag({ sdfSplash: auxSdfSplashActive(config), emit: auxEmitLevel1Active(config), ruleSpawn: auxRuleSpawnLevel1Active(config), trail: trailAuxActive(config) }),
+  }));
 
   // Aux chain materials (Phase W1): one shared pair for levels 2
   // and 3 — the passes run sequentially per level with that level's
   // uniforms and salt, so a single material pair serves both. The
   // event uniforms are declared in AUX_CHAIN_EVENT_GLSL.
-  const auxChainVelMat = useMemo(() => new THREE.ShaderMaterial({
+  const [auxChainVelMat, setAuxChainVelMat] = useState(() => new THREE.ShaderMaterial({
     uniforms: {
       uAuxPosTex:    { value: null },
       uAuxVelTex:    { value: null },
@@ -858,6 +1125,12 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uAuxGravityScale: { value: 1.0 },
       uAuxDrag:      { value: 0 },
       uAuxCurl:      { value: 0 },
+      // Spawn inheritance (1D-1): see auxVelMat above.
+      uAuxInheritVelScale: { value: 1.0 },
+      // Child emitter (1D-2): see auxVelMat above.
+      uAuxEmitRate:   { value: 30 },
+      uAuxEmitShape:  { value: 0 },
+      uAuxEmitSpread: { value: 0.5 },
       uChainSalt:    { value: 0 },
       uFloorEnabled: { value: false },
       uFloorY:       { value: -110.0 },
@@ -868,11 +1141,10 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uDelta:        { value: 0.016 },
       uTime:         { value: 0 },
     },
-    vertexShader: SIM_VERT, fragmentShader: AUX_CHAIN_VEL_FRAG,
-   
-  }), []);
+    vertexShader: SIM_VERT, fragmentShader: buildAuxChainVelFrag({ inheritVelScale: auxInheritVelScaleActive(config), emit: auxEmitChainActive(config) }),
+  }));
 
-  const auxChainPosMat = useMemo(() => new THREE.ShaderMaterial({
+  const [auxChainPosMat, setAuxChainPosMat] = useState(() => new THREE.ShaderMaterial({
     uniforms: {
       uAuxPosTex:    { value: null },
       uAuxVelTex:    { value: null },
@@ -885,6 +1157,10 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uAuxMode:      { value: 0 },
       uAuxIntensity: { value: 1.0 },
       uAuxSpeed:     { value: 26.0 },
+      // Child emitter (1D-2): see auxVelMat above.
+      uAuxEmitRate:   { value: 30 },
+      uAuxEmitShape:  { value: 0 },
+      uAuxEmitSpread: { value: 0.5 },
       uChainSalt:    { value: 0 },
       uFloorEnabled: { value: false },
       uFloorY:       { value: -110.0 },
@@ -892,9 +1168,108 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       uDelta:        { value: 0.016 },
       uTime:         { value: 0 },
     },
-    vertexShader: SIM_VERT, fragmentShader: AUX_CHAIN_POS_FRAG,
-   
-  }), []);
+    vertexShader: SIM_VERT, fragmentShader: buildAuxChainPosFrag({ emit: auxEmitChainActive(config) }),
+  }));
+
+  // Spawn inheritance write materials (Grammar 2.0 stage 1,
+  // slice 1D-1): the sparse-write pass that mirrors the velocity
+  // pass's spawn decision into the per-level inheritance
+  // texture. The level-1 material re-evaluates the level-1 event
+  // chunk (with the SDF-splash variant in step with the pair);
+  // the chain material re-evaluates the chain event chunk and
+  // copies the upper level's inheritance texel. The passes in
+  // gpgpuSimulationPasses fill the uniforms per frame; the
+  // materials render only while inheritance is on.
+  const [auxInheritMat, setAuxInheritMat] = useState(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uAuxPosTex:    { value: null },
+      uAuxVelTex:    { value: null },
+      uMainPosTex:   { value: null },
+      uMainVelTex:   { value: null },
+      // Grammar connection (1D-3): see auxVelMat above —
+      // the inheritance write re-evaluates the ruleSpawn
+      // decision, so it binds the REP texture too.
+      uMainRuleTex:  { value: null },
+      uMainTexSizeF: { value: texSize },
+      uAuxCount:     { value: 4096 },
+      uAuxMode:      { value: 0 },
+      uAuxIntensity: { value: 1.0 },
+      uAuxSpeed:     { value: 26.0 },
+      // Child emitter (1D-2): see auxVelMat above.
+      uAuxEmitRate:   { value: 30 },
+      uAuxEmitShape:  { value: 0 },
+      uAuxEmitSpread: { value: 0.5 },
+      // Trail mechanism (stage 4, S6): declared in the shader
+      // only in the trail variant; the passes fill them per
+      // frame from gpgpuTrailEmitInterval / gpgpuTrailEmitRate.
+      uTrailEmitInterval: { value: 2 },
+      uTrailEmitRate:     { value: 1.0 },
+      uAgeEnabled:   { value: false },
+      uAgeMax:       { value: 8.0 },
+      uFloorEnabled: { value: false },
+      uFloorY:       { value: -110.0 },
+      uBounceRadius: { value: 150.0 },
+      uMainAttrTex:  { value: null },
+      uSpeciesCount: { value: 4 },
+      uDelta:        { value: 0.016 },
+      uTime:         { value: 0 },
+      // Phase 20 stage 4: declared only in the SDF-splash
+      // variant of the event chunk.
+      uSdfEnabled:   { value: false },
+      uSdfShape:     { value: 0 },
+      uSdfX:         { value: 0 },
+      uSdfY:         { value: 0 },
+      uSdfZ:         { value: 0 },
+      uSdfSize:      { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: buildAuxInheritFrag({ sdfSplash: auxSdfSplashActive(config), emit: auxEmitLevel1Active(config), ruleSpawn: auxRuleSpawnLevel1Active(config), trail: trailAuxActive(config) }),
+  }));
+
+  const [auxChainInheritMat, setAuxChainInheritMat] = useState(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uAuxPosTex:    { value: null },
+      uAuxVelTex:    { value: null },
+      uMainPosTex:   { value: null },
+      uMainVelTex:   { value: null },
+      uMainTexSizeF: { value: 128 },
+      uSrcCount:     { value: 4096 },
+      uAuxCount:     { value: 4096 },
+      uAuxMode:      { value: 0 },
+      uAuxIntensity: { value: 1.0 },
+      uAuxSpeed:     { value: 26.0 },
+      // Child emitter (1D-2): see auxVelMat above.
+      uAuxEmitRate:   { value: 30 },
+      uAuxEmitShape:  { value: 0 },
+      uAuxEmitSpread: { value: 0.5 },
+      uChainSalt:    { value: 0 },
+      uFloorEnabled: { value: false },
+      uFloorY:       { value: -110.0 },
+      uBounceRadius: { value: 150.0 },
+      uSrcInheritTex: { value: null },
+      uDelta:        { value: 0.016 },
+      uTime:         { value: 0 },
+    },
+    vertexShader: SIM_VERT, fragmentShader: buildAuxInheritFrag({ chain: true, emit: auxEmitChainActive(config) }),
+  }));
+
+  // Stage-4 gate fix round 2 (B2): publish the current Aux
+  // materials for the ?diag=1 hook's variant readout. The
+  // variant swap below replaces the materials, so the
+  // registry follows the state values, not the first-render
+  // instances; the cleanup clears only its own registration.
+  useEffect(() => {
+    activeAuxMaterials = {
+      vel: auxVelMat,
+      pos: auxPosMat,
+      inherit: auxInheritMat,
+      chainVel: auxChainVelMat,
+      chainPos: auxChainPosMat,
+      chainInherit: auxChainInheritMat,
+    };
+    return () => {
+      if (activeAuxMaterials?.vel === auxVelMat) activeAuxMaterials = null;
+    };
+  }, [auxVelMat, auxPosMat, auxChainVelMat, auxChainPosMat, auxInheritMat, auxChainInheritMat]);
 
   const blitMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: { uTex: { value: null } },
@@ -1422,9 +1797,9 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // config's variant), so a variant-only change swaps the shader
   // through this same path and the mount behaviour is unchanged.
   const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
-    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}${opts.crowd ? 1 : 0}${opts.particleRules ? 1 : 0}${opts.rigidFree ? 1 : 0}`;
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}${opts.crowd ? 1 : 0}${opts.particleRules ? 1 : 0}${opts.particleRulesLive ? 1 : 0}${opts.spawnAlloc ? 1 : 0}${opts.emitterVelocity ? 1 : 0}${opts.fieldInstances ? 1 : 0}${opts.pathAssets ? 1 : 0}${opts.crowdPathAssets ? 1 : 0}${opts.relDrag ? 1 : 0}${opts.targetSpeed ? 1 : 0}${opts.ageFreeVelocity ? 1 : 0}${opts.ageFreeForce ? 1 : 0}${opts.meanderStandalone ? 1 : 0}${opts.mergedSupply ? 1 : 0}${opts.rigidFree ? 1 : 0}`;
   const appliedForceCodeRef = useRef<string | null>(
-    `\n\n${variantKeyOf(velocityVariantOptions(config))}`,
+    `\n\n${variantKeyOf(velocityVariantOptions(config, texSize))}`,
   );
   useEffect(() => {
     const enabled = config.gpgpuCustomForceEnabled;
@@ -1433,7 +1808,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     // path. The applied-key ref tracks code + order together.
     const order = config.gpgpuForceOrder ?? '';
     // Phase 19 gate fix: the string variant rides the same path.
-    const variantOpts = velocityVariantOptions(config);
+    const variantOpts = velocityVariantOptions(config, texSize);
     const appliedKey = `${code}\n${order}\n${variantKeyOf(variantOpts)}`;
     if (!code.trim()) {
       if (appliedForceCodeRef.current !== appliedKey) {
@@ -1466,7 +1841,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     velSimMat.needsUpdate = true;
     appliedForceCodeRef.current = appliedKey;
     setCustomForceStatus({ state: 'active' });
-  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuGrainsPileEnabled, config.gpgpuGrainsXsphStrength, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, config.gpgpuAttractor2Enabled, config.gpgpuAttractor3Enabled, config.gpgpuAttractor4Enabled, config.gpgpuParticleRules, gl, velSimMat]);
+  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuGrainsPileEnabled, config.gpgpuGrainsXsphStrength, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, config.gpgpuAttractor2Enabled, config.gpgpuAttractor3Enabled, config.gpgpuAttractor4Enabled, config.gpgpuParticleRules, config.gpgpuParticleRulesLive, config.gpgpuSpawnRateAbsolute, config.gpgpuSpawnEnvelopeEnabled, config.gpgpuEmitterVelMode, config.gpgpuFieldInstances, config.gpgpuFieldLayers, config.gpgpuSteerSeekEnabled, config.gpgpuSteerSeekMode, config.gpgpuCrowdEnabled, config.gpgpuSteerSeekPaths, config.gpgpuSteerSeekPathSvg, config.gpgpuTargetSpeed, config.gpgpuRelDragRate, config.gpgpuAgeCurveVelocityEnabled, config.gpgpuAgeCurveVelocityFreeEnabled, config.gpgpuAgeCurveForceEnabled, config.gpgpuAgeCurveForceFreeEnabled, config.gpgpuMeanderEnabled, config.gpgpuParticleLifeMeanderAmount, config.gpgpuPredationEnabled, config.gpgpuPredationOutcome, config.gpgpuPredationStrike, config.gpgpuPredationStrikeFrames, config.gpgpuPredationGraceSeconds, config.gpgpuGroupsData, gl, velSimMat]);
 
   // Phase 19 gate fix: the position material's string variant
   // follows the Grains projection activity (the same condition
@@ -1477,7 +1852,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // (Grains on + complete neighbourhood) — while it holds, the
   // projection segment searches the sorted cell index instead
   // of walking the whole texture.
-  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${resolveGrainsCellSortActive(c, getMaxTextureImageUnits())}:${hasEffectiveParticleRules(c.gpgpuParticleRules ?? '')}:${!!c.gpgpuRigidFreeEnabled}`;
+  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${resolveGrainsCellSortActive(c, getMaxTextureImageUnits())}:${hasEffectiveParticleRules(c.gpgpuParticleRules ?? '')}:${liveRulesPresent(c)}:${mergedSupplyActive(c, texSize)}:${emitterRespawnShapeActive(c)}:${emitterTransformActive(c)}:${spawnAllocVariantActive(c)}:${spawnRuleGateKeyOn(c) && liveSpawnPresent(c)}:${emissionCloudActive(c)}:${emissionPathActive(c)}:${emissionPathAssetActive(c)}:${emissionMaskVariantActive(c)}:${fieldInstancesActive(c)}:${distributionActive(c)}:${shaderSeedActive(c)}:${!!c.gpgpuRigidFreeEnabled}`;
   const posProjectionRef = useRef(posVariantKey(config));
   useEffect(() => {
     const key = posVariantKey(config);
@@ -1488,25 +1863,103 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()),
       particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''),
       rigidFree: !!config.gpgpuRigidFreeEnabled,
+      particleRulesLive: liveRulesPresent(config),
+      particleRulesLiveMerged: mergedSupplyActive(config, texSize),
+      emitterShape: emitterRespawnShapeActive(config),
+      emitterTransform: emitterTransformActive(config),
+      spawnAlloc: spawnAllocVariantActive(config),
+      spawnRuleGate: spawnRuleGateKeyOn(config) && liveSpawnPresent(config),
+      emitterCloud: emissionCloudActive(config),
+      emitterPath: emissionPathActive(config) && !emissionPathAssetActive(config),
+      emitterPathAsset: emissionPathAssetActive(config),
+      emitterMask: emissionMaskVariantActive(config),
+      fieldInstances: fieldInstancesActive(config),
+      emitDistribution: distributionActive(config),
+      shaderSeed: shaderSeedActive(config),
     });
     posSimMat.needsUpdate = true;
-  }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, config.gpgpuParticleRules, config.gpgpuRigidFreeEnabled, posSimMat]);
+  }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, config.gpgpuParticleRules, config.gpgpuRigidFreeEnabled, config.gpgpuParticleRulesLive, config.gpgpuRespawnShape, config.gpgpuEmitterPosX, config.gpgpuEmitterPosY, config.gpgpuEmitterPosZ, config.gpgpuEmitterRotX, config.gpgpuEmitterRotY, config.gpgpuEmitterRotZ, config.gpgpuEmitterScale, config.gpgpuSpawnRateAbsolute, config.gpgpuSpawnEnvelopeEnabled, config.gpgpuSpawnRuleGateEnabled, config.gpgpuPredationEnabled, config.gpgpuPredationBirth, config.gpgpuEmitSource, config.gpgpuEmitMaskEnabled, config.gpgpuMaskSource, config.gpgpuSteerSeekPath, config.gpgpuSteerSeekPaths, config.gpgpuSteerSeekPathSvg, config.gpgpuFieldInstances, config.gpgpuFieldLayers, config.gpgpuPredationOutcome, config.gpgpuPredationStrike, config.gpgpuGroupsData, config.gpgpuEmitDistribution, config.gpgpuShaderSeed, posSimMat]);
 
   // Phase 20 stage 4 (UE5 #22): the Aux pair's string variant
   // follows the SDF-splash activity (SDF collider on + bounceSplash
   // mode), the same condition the passes use to fill the SDF
   // uniforms. The factories built the initial variant from the
   // initial config; this effect swaps it when the condition flips.
-  const auxVariantRef = useRef(auxSdfSplashActive(config));
+  // Trail A/B minimisation (stage-4 gate fix round 6,
+  // STAGE4_FIX11_AUX_AB_RECORD): DIAG ONLY. The ?diag=1
+  // hook requests a stage through lib/auxTrailAbDiag; the
+  // registered applier lands it in this state, and the
+  // variant effect below rebuilds the level-1 trio with it
+  // (the chain pair never carries the trail branch, so it
+  // never rebuilds for a stage change). No product code
+  // path requests a stage: the state stays 'A', the guard
+  // below sees no change, and the materials keep the stock
+  // strings byte-for-byte.
+  const [auxTrailAbStage, setAuxTrailAbStage] = useState<AuxTrailAbStage>('A');
+  useEffect(() => registerAuxTrailAbApplier((stage) => setAuxTrailAbStage(stage)), []);
+  const auxVariantRef = useRef({
+    sdfSplash: auxSdfSplashActive(config),
+    inheritVelScale: auxInheritVelScaleActive(config),
+    emit: auxEmitLevel1Active(config),
+    chainEmit: auxEmitChainActive(config),
+    ruleSpawn: auxRuleSpawnLevel1Active(config),
+    // Trail mechanism (stage 4, S6): a LEVEL-1 dimension
+    // like ruleSpawn — the chain pair never rebuilds for it.
+    trail: trailAuxActive(config),
+    // Trail A/B stage (fix round 6): a LEVEL-1 dimension
+    // like trail; 'A' is the stock branch.
+    trailAb: 'A' as AuxTrailAbStage,
+  });
   useEffect(() => {
-    const active = auxSdfSplashActive(config);
-    if (auxVariantRef.current === active) return;
-    auxVariantRef.current = active;
-    auxVelMat.fragmentShader = buildAuxVelFrag({ sdfSplash: active });
-    auxVelMat.needsUpdate = true;
-    auxPosMat.fragmentShader = buildAuxPosFrag({ sdfSplash: active });
-    auxPosMat.needsUpdate = true;
-  }, [config.gpgpuSdfEnabled, config.gpgpuAuxMode, auxVelMat, auxPosMat]);
+    const sdfSplash = auxSdfSplashActive(config);
+    const inheritVelScale = auxInheritVelScaleActive(config);
+    // Child emitter (1D-2): the emit variant follows the
+    // level's mode — level 1 reads gpgpuAuxMode, the chain
+    // pair reads the shared gpgpuAux2Mode.
+    const emit = auxEmitLevel1Active(config);
+    const chainEmit = auxEmitChainActive(config);
+    // Grammar connection (1D-3): the ruleSpawn variant is a
+    // LEVEL-1 dimension only (the REP exists only for the
+    // main pool) — the chain pair never rebuilds for it.
+    const ruleSpawn = auxRuleSpawnLevel1Active(config);
+    // Trail mechanism (stage 4, S6): the trail variant is a
+    // LEVEL-1 dimension like ruleSpawn.
+    const trail = trailAuxActive(config);
+    // Trail A/B stage (fix round 6): a LEVEL-1 dimension
+    // like trail. Driven only by the ?diag=1 hook; in
+    // product use it stays 'A' and this effect's behaviour
+    // is unchanged.
+    const trailAb = auxTrailAbStage;
+    if (auxVariantRef.current.sdfSplash === sdfSplash
+      && auxVariantRef.current.inheritVelScale === inheritVelScale
+      && auxVariantRef.current.emit === emit
+      && auxVariantRef.current.chainEmit === chainEmit
+      && auxVariantRef.current.ruleSpawn === ruleSpawn
+      && auxVariantRef.current.trail === trail
+      && auxVariantRef.current.trailAb === trailAb) return;
+    const trailAbChanged = auxVariantRef.current.trailAb !== trailAb;
+    auxVariantRef.current = { sdfSplash, inheritVelScale, emit, chainEmit, ruleSpawn, trail, trailAb };
+    // Stage-4 gate fix round 2 (B2): the swap REPLACES the
+    // six materials (fresh ShaderMaterial around the shared
+    // uniforms object, replaced instance disposed) instead of
+    // rewriting fragmentShader on the shared instances — see
+    // the delivery note above rebuildAuxMaterial. The ref
+    // guard above still gates this on an actual variant-key
+    // change, so the setters below run only on a flip; the
+    // re-render they cause re-enters this effect with the key
+    // already applied and returns at the guard.
+    setAuxVelMat(rebuildAuxMaterial(auxVelMat, buildAuxVelFrag({ sdfSplash, inheritVelScale, emit, ruleSpawn, trail, trailAb })));
+    setAuxPosMat(rebuildAuxMaterial(auxPosMat, buildAuxPosFrag({ sdfSplash, emit, ruleSpawn, trail, trailAb })));
+    setAuxChainVelMat(rebuildAuxMaterial(auxChainVelMat, buildAuxChainVelFrag({ inheritVelScale, emit: chainEmit })));
+    setAuxChainPosMat(rebuildAuxMaterial(auxChainPosMat, buildAuxChainPosFrag({ emit: chainEmit })));
+    setAuxInheritMat(rebuildAuxMaterial(auxInheritMat, buildAuxInheritFrag({ sdfSplash, emit, ruleSpawn, trail, trailAb })));
+    setAuxChainInheritMat(rebuildAuxMaterial(auxChainInheritMat, buildAuxInheritFrag({ chain: true, emit: chainEmit })));
+    // Report the A/B stage this rebuild carried, so the
+    // diag hook can separate "requested" from "applied"
+    // (only on an actual stage change — config-driven
+    // rebuilds preserve the stage silently).
+    if (trailAbChanged) noteAuxTrailAbApplied(trailAb);
+  }, [config.gpgpuSdfEnabled, config.gpgpuAuxMode, config.gpgpuAux2Mode, config.gpgpuAuxInheritSlots, config.gpgpuAuxInheritVelScale, config.gpgpuTrailEnabled, config.gpgpuTrailMode, auxTrailAbStage, auxVelMat, auxPosMat, auxChainVelMat, auxChainPosMat, auxInheritMat, auxChainInheritMat]);
 
   return {
     simMeshRef,
@@ -1526,6 +1979,8 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     auxPosMat,
     auxChainVelMat,
     auxChainPosMat,
+    auxInheritMat,
+    auxChainInheritMat,
     wwVelMat,
     wwPosMat,
     blitMat,

@@ -1,5 +1,11 @@
 import React from 'react';
 import { isAttrColorColumnName, type AttrPointCloud } from './attrPointCloud';
+import {
+  cacheRetimerBracket,
+  cacheRetimerFrameFloat,
+  resolveCacheRetimerInterpolation,
+  type ResolvedCacheRetimer,
+} from './cacheRetimer';
 import type { DataTable } from './dataTable';
 
 /**
@@ -476,9 +482,25 @@ export function pointCacheFrameFloat(cache: PointCacheData, timeSeconds: number,
  * with the same rule as the positions, scalar columns are
  * range-normalised, and colour columns are held RAW.
  */
-export function buildPointCacheCloud(cache: PointCacheData, timeSeconds: number, loop: boolean): AttrPointCloud {
-  const { count, frameCount, interpolation } = cache.manifest;
-  const frameFloat = pointCacheFrameFloat(cache, timeSeconds, loop);
+export function buildPointCacheCloud(
+  cache: PointCacheData,
+  timeSeconds: number,
+  loop: boolean,
+  retimer?: ResolvedCacheRetimer | null,
+): AttrPointCloud {
+  const { count, frameCount, fps } = cache.manifest;
+  // Retimer (stage 3 S2, lib/cacheRetimer.ts): when a
+  // resolved retimer is passed, the frame choice and the
+  // interpolation run through it — the interpolation
+  // override is resolved against the manifest's declaration
+  // in exactly one place. With no retimer (the default) the
+  // legacy mapping below runs untouched, bit-identically.
+  const interpolation = retimer
+    ? resolveCacheRetimerInterpolation(retimer, cache.manifest.interpolation)
+    : cache.manifest.interpolation;
+  const frameFloat = retimer
+    ? cacheRetimerFrameFloat(retimer, frameCount, fps, timeSeconds, loop)
+    : pointCacheFrameFloat(cache, timeSeconds, loop);
   let i0 = Math.floor(frameFloat);
   let frac = frameFloat - i0;
   if (interpolation === 'nearest') {
@@ -487,7 +509,13 @@ export function buildPointCacheCloud(cache: PointCacheData, timeSeconds: number,
     if (loop) i0 = ((i0 % frameCount) + frameCount) % frameCount;
     else i0 = Math.min(Math.max(i0, 0), frameCount - 1);
   }
-  const i1 = loop ? (i0 + 1) % frameCount : Math.min(i0 + 1, frameCount - 1);
+  let i1 = loop ? (i0 + 1) % frameCount : Math.min(i0 + 1, frameCount - 1);
+  if (retimer) {
+    const bracket = cacheRetimerBracket(retimer, frameFloat, loop, interpolation);
+    i0 = bracket.i0;
+    i1 = bracket.i1;
+    frac = bracket.frac;
+  }
   const a = cache.frames[i0];
   const b = cache.frames[i1];
   const positions = new Float32Array(count * 3);

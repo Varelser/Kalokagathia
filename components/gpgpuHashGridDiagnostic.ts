@@ -12,8 +12,13 @@
 // carries ?diag=1; without that parameter nothing here is
 // constructed. Renderer state (target, clear color) is saved and
 // restored around the offscreen pass.
+//
+// Slice B8: the dmHash11 body is interpolated from the canonical
+// DM_HASH11_GLSL (lib/gpgpuRandom.ts) — the text is the verbatim
+// copy it always was, now with a single home.
 
 import * as THREE from 'three';
+import { DM_HASH11_GLSL } from '../lib/gpgpuRandom';
 
 const HASH_GRID_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -26,12 +31,7 @@ void main() {
 const HASH_GRID_FRAG = /* glsl */ `
 precision highp float;
 varying vec2 vUv;
-float dmHash11(float n) {
-  vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
-  p3 += dot(p3, p3.yxz + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
-float hash1(vec2 p) {
+${DM_HASH11_GLSL}float hash1(vec2 p) {
   return dmHash11(p.x * 127.1 + p.y * 311.7);
 }
 void main() {

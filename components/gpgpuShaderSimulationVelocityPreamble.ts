@@ -1,4 +1,5 @@
 import { PYRO_GRID_SAMPLING, PYRO_GRID_UNIFORMS, PYRO_GRID_WORLD } from './gpgpuShaderPyroGrid';
+import { ageFreeEvalGlsl } from '../lib/gpgpuAgeFreeCurves';
 
 // ── Velocity sim fragment, part 1 of 5: preamble: precision + all uniform declarations ──
 // Split from gpgpuShaderSimulationVelocity.ts in Phase AV
@@ -504,6 +505,129 @@ const VEL_FRAG_PREAMBLE_CROWD = /* glsl */ `  // Crowd state machine + lanes (Ro
   // primitive only, the Gate 43 behaviour.
   uniform bool  uCrowdMultiObstacleEnabled;
 `;
+const VEL_FRAG_PREAMBLE_RULE_LIVE = /* glsl */ `  // Live particle rules (Grammar 2.0 stage 1, slice 1A): the
+  // rule evaluation pass's output texture (lib/
+  // gpgpuParticleRulesLive.ts, components/gpgpuRuleEvalPass.ts).
+  // Spliced in only behind this option, in the Phase 19
+  // manner — the default preamble stays byte-identical. The
+  // enabled flag is resolved CPU-side (REP texture exists AND
+  // a consumed live action exists), so a false uniform keeps
+  // the exact legacy path even in this variant string.
+  uniform sampler2D uRuleLiveTex;
+  uniform bool  uRuleLiveEnabled;
+`;
+const VEL_FRAG_PREAMBLE_MERGED = /* glsl */ `  // Merged supply (Grammar 2.0 stage 2, texture-unit
+  // follow-up): ONE sampler serves both the live aggregate
+  // and the column data — the REP's taller target carries
+  // the live square in its bottom texSize rows and the
+  // column data in the strip above (lib/gpgpuMergedSupply.ts,
+  // components/gpgpuRuleEvalPass.ts blitColumn). Spliced in
+  // only while the merged supply stands (REP + column supply
+  // both present), INSTEAD of the live and column preamble
+  // chunks; the spawn-order give-back applies as in both
+  // parent variants, so the program measures 16 units where
+  // the unmerged pair measured 17. uColWidth stays: the
+  // merged fetch remaps the column layout's linear texel
+  // index into the strip.
+  uniform sampler2D uMergedTex;
+  uniform float uMergedTexHeight;
+  uniform float uColWidth;
+  uniform bool  uRuleLiveEnabled;
+`;
+const VEL_FRAG_PREAMBLE_SPAWN_ALLOC = /* glsl */ `  // Spawn allocator (Grammar 2.0 stage 2, slice E2): the
+  // gate's effective rate (the absolute rate's fraction
+  // equivalent, or the legacy fraction) and the envelope
+  // clock the threshold runs on — accumulated CPU-side by
+  // advanceSpawnEnvelopeClock in lib/gpgpuSpawnAllocator.ts;
+  // with the envelope disabled the clock IS uSpawnTime.
+  // Spliced in only behind this option — the default
+  // preamble stays byte-identical.
+  uniform float uSpawnRateEff;
+  uniform float uSpawnClockTime;
+  uniform float uSpawnClockPrev;
+`;
+const VEL_FRAG_PREAMBLE_EMITTER_VEL = /* glsl */ `  // Emitter initial velocity (Grammar 2.0 stage 2, slice
+  // E2): the directed port's authored base direction (the
+  // CPU-normalised axis from resolveEmitterBaseDirection in
+  // lib/gpgpuEmitter.ts), speed and spread. Consumed by
+  // kaloEmitterVelocity in the helpers and the activation
+  // segment in the main forces head. Spliced in only behind
+  // this option — the default preamble stays byte-identical.
+  uniform vec3  uEmitterVelDir;
+  uniform float uEmitterVelSpeed;
+  uniform float uEmitterVelSpread;
+`;
+const VEL_FRAG_PREAMBLE_COLUMN = /* glsl */ `  // Column-data texture (Grammar 2.0 stage 2, B1/B2): ONE
+  // RGBA float texture carries every column-shaped supply
+  // (field instances / layers from B1, path headers / points
+  // from B2; later slices append their own sections), laid
+  // out by the CPU-side allocator (lib/gpgpuFieldInstances.ts
+  // / lib/gpgpuPathAssets.ts) and addressed in texel units
+  // through the section base uniforms of the consuming
+  // variants below. Spliced in once, behind either consuming
+  // option, in the Phase 19 manner — the default preamble
+  // stays byte-identical. A variant carrying this sampler
+  // gives the spawn-order unit back (see the note at
+  // VEL_FRAG_SPAWN_ORDER_DECL_STOCK), so the program stays
+  // inside the 16-unit floor.
+  uniform sampler2D uColTex;
+  uniform float uColWidth;
+  uniform float uColHeight;
+`;
+const VEL_FRAG_PREAMBLE_FIELDS = /* glsl */ `  // Field instances (Grammar 2.0 stage 2, B1):
+  // uFieldLayerAttrEnabled is resolved CPU-side (attribute
+  // texture present AND a layer naming a slot has members),
+  // so a false uniform keeps the layer weight unmodulated
+  // inside this variant string.
+  uniform float uColFieldsBase;
+  uniform float uColLayersBase;
+  uniform int   uFieldInstanceCount;
+  uniform bool  uFieldLayerAttrEnabled;
+`;
+const VEL_FRAG_PREAMBLE_PATHS = /* glsl */ `  // Path assets (Grammar 2.0 stage 2, B2): the path headers
+  // and point lists of lib/gpgpuPathAssets.ts, addressed over
+  // the shared column texture above. uPathAssetSlot is the
+  // resolved selection slot (-1 = every particle follows
+  // path 0). Spliced in only behind this option, in the
+  // Phase 19 manner — the default preamble stays
+  // byte-identical.
+  uniform float uColPathsBase;
+  uniform float uColPathHeadersBase;
+  uniform int   uPathAssetCount;
+  uniform int   uPathAssetSlot;
+`;
+const VEL_FRAG_PREAMBLE_REL_DRAG = /* glsl */ `  // Relative-velocity drag (Grammar 2.0 stage 2, B3): the
+  // wind velocity vector (legacy wind direction keys at the
+  // new key's velocity-unit magnitude, resolved CPU-side in
+  // lib/gpgpuSpeedDragSpin.ts), the relaxation rate (1/s) and
+  // the attribute slot multiplying the rate per particle
+  // (-1 = no modulation). Floats only — no sampler is spent,
+  // so the variant stays inside the 16-unit floor without a
+  // give-back. Spliced in only behind this option — the
+  // default preamble stays byte-identical.
+  uniform vec3  uRelDragWindVel;
+  uniform float uRelDragRate;
+  uniform int   uRelDragSlot;
+`;
+const VEL_FRAG_PREAMBLE_TARGET_SPEED = /* glsl */ `  // Target speed (Grammar 2.0 stage 2, B3): the tail's
+  // final magnitude setting — the target (velocity units),
+  // the per-step approach blend (1 = hard set) and the
+  // attribute slot multiplying the target per particle
+  // (-1 = no modulation). Floats only, like the drag set
+  // above. Spliced in only behind this option — the default
+  // preamble stays byte-identical.
+  uniform float uTargetSpeed;
+  uniform float uTargetSpeedBlend;
+  uniform int   uTargetSpeedSlot;
+`;
+// Age free curves (Grammar 2.0 stage 2, B4): the velocity /
+// force targets' free-curve uniform sets + evaluation
+// functions, generated per target by lib/gpgpuAgeFreeCurves.ts
+// (the attractor-unit generator's discipline). Float arrays
+// only — no sampler is spent. Spliced in only behind their
+// options — the default preamble stays byte-identical.
+const VEL_FRAG_PREAMBLE_AGE_FREE_VELOCITY = ageFreeEvalGlsl('velocity');
+const VEL_FRAG_PREAMBLE_AGE_FREE_FORCE = ageFreeEvalGlsl('force');
 const VEL_FRAG_PREAMBLE_AKINCI = /* glsl */ `  // Surface tension, Akinci form (Phase 24): the strength of
   // the two-term model accumulated inside the SPH sample loop
   // (sphAkinci variant of the SPH/Grains chunk). Spliced in
@@ -598,10 +722,72 @@ export interface VelocityPreambleVariantOptions {
   // Coupling stage 2: the free-particle uniform set, gated
   // identically (only while the free-particles key is on).
   rigidFree?: boolean;
+  // Grammar 2.0 stage 1 (slice 1A): the live-rule texture
+  // uniform set, gated identically (only while an effective
+  // live rule list exists).
+  particleRulesLive?: boolean;
+  // Grammar 2.0 stage 2 (texture-unit follow-up): the merged
+  // supply chunk, gated identically (only while the merged
+  // supply stands — implies particleRulesLive AND a column
+  // consumer; resolved by lib/gpgpuMergedSupply.ts).
+  mergedSupply?: boolean;
+  // Grammar 2.0 stage 2 (slice E2): the spawn allocator's
+  // effective rate + envelope clock, gated identically (only
+  // while the absolute rate key is set or the envelope is on).
+  spawnAlloc?: boolean;
+  // Grammar 2.0 stage 2 (slice E2): the emitter's directed
+  // initial velocity uniforms, gated identically (only while
+  // the emitter velocity mode is 'directed').
+  emitterVelocity?: boolean;
+  // Grammar 2.0 stage 2 (slice B1): the field-instance
+  // column-data uniform set, gated identically (only while
+  // at least one field instance resolves).
+  fieldInstances?: boolean;
+  // Grammar 2.0 stage 2 (slice B2): the path-asset uniform
+  // set over the same column texture, gated identically
+  // (only while steering follows an extended path asset).
+  pathAssets?: boolean;
+  crowdPathAssets?: boolean;
+  // Grammar 2.0 stage 2 (slice B3): the relative-drag
+  // uniform set, gated identically (only while the drag
+  // rate key is above zero).
+  relDrag?: boolean;
+  // Grammar 2.0 stage 2 (slice B3): the target-speed
+  // uniform set, gated identically (only while the target
+  // speed key is above zero).
+  targetSpeed?: boolean;
+  // Grammar 2.0 stage 2 (slice B4): the age free curves'
+  // uniform sets + evaluation functions, gated identically
+  // (only while the target's Enabled and FreeEnabled are
+  // both on).
+  ageFreeVelocity?: boolean;
+  ageFreeForce?: boolean;
 }
 
+/**
+ * Texture-unit fix (Grammar 2.0 stage 1, real-GPU gate
+ * finding): the resident preamble already declares 16
+ * fragment samplers (15 sampler2D + the mesh SDF sampler3D)
+ * — the full TEXTURE_UNIT_FLOOR budget — so the live
+ * variant's extra uRuleLiveTex pushed the velocity program
+ * to 17 units and it failed validation on the target GPU
+ * (FRAGMENT shader texture image units count exceeds
+ * MAX_TEXTURE_IMAGE_UNITS(16); see
+ * kalokagathia-pro/STAGE1_TEXUNIT_FIX_RECORD.md). The live
+ * variant therefore gives the unit back: the spawn-order
+ * texture's only velocity read (spawnGateValue's baked
+ * max-normalised initial distance) is derivable from the
+ * initial-position texture the pass already samples, so in
+ * the live variant the sampler declaration is replaced by
+ * the normaliser uniform and the helpers derive the value
+ * (buildVelocityHelpers, same option). The stock preamble —
+ * and therefore every non-live string — is untouched.
+ */
+export const VEL_FRAG_SPAWN_ORDER_DECL_STOCK = '  uniform sampler2D uSpawnOrderTex;';
+export const VEL_FRAG_SPAWN_ORDER_DECL_LIVE = '  uniform float uSpawnOrderMaxDist;';
+
 export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions): string {
-  return VEL_FRAG_PREAMBLE_HEAD
+  const assembled = VEL_FRAG_PREAMBLE_HEAD
     + (options?.grainsFullScan ? VEL_FRAG_PREAMBLE_GRAINS_SCAN + VEL_FRAG_PREAMBLE_GRAINS_CELL : '')
     + VEL_FRAG_PREAMBLE_MID
     + (options?.flip3dCouple ? VEL_FRAG_PREAMBLE_FLIP3D : '')
@@ -613,7 +799,40 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
     + (options?.attractor4 ? VEL_FRAG_PREAMBLE_ATTRACTOR4 : '')
     + (options?.crowd ? VEL_FRAG_PREAMBLE_CROWD : '')
     + (options?.rigidFree ? VEL_FRAG_PREAMBLE_RIGID_FREE : '')
+    + (options?.mergedSupply ? VEL_FRAG_PREAMBLE_MERGED : '')
+    + (options?.particleRulesLive && !options?.mergedSupply ? VEL_FRAG_PREAMBLE_RULE_LIVE : '')
+    + (options?.spawnAlloc ? VEL_FRAG_PREAMBLE_SPAWN_ALLOC : '')
+    + (options?.emitterVelocity ? VEL_FRAG_PREAMBLE_EMITTER_VEL : '')
+    + ((options?.fieldInstances || options?.pathAssets || options?.crowdPathAssets) && !options?.mergedSupply ? VEL_FRAG_PREAMBLE_COLUMN : '')
+    + (options?.fieldInstances ? VEL_FRAG_PREAMBLE_FIELDS : '')
+    + (options?.pathAssets || options?.crowdPathAssets ? VEL_FRAG_PREAMBLE_PATHS : '')
+    + (options?.relDrag ? VEL_FRAG_PREAMBLE_REL_DRAG : '')
+    + (options?.targetSpeed ? VEL_FRAG_PREAMBLE_TARGET_SPEED : '')
+    + (options?.ageFreeVelocity ? VEL_FRAG_PREAMBLE_AGE_FREE_VELOCITY : '')
+    + (options?.ageFreeForce ? VEL_FRAG_PREAMBLE_AGE_FREE_FORCE : '')
     + VEL_FRAG_PREAMBLE_TAIL;
+  // Live variant only: give the texture unit back (see the
+  // note at VEL_FRAG_SPAWN_ORDER_DECL_STOCK). The replace
+  // target is the stock declaration line, which occurs
+  // exactly once in the assembled preamble.
+  // B1: the field-instances variant adds one sampler of its
+  // own (the column-data texture), so it gives the unit back
+  // the same way — the helpers derive the gate value from
+  // the initial-position texture (buildVelocityHelpers, same
+  // option), and the position pass's field variant derives
+  // identically, so the two passes keep picking the same
+  // particles.
+  // B2: the path-assets variant rides the SAME column
+  // texture, so it shares the one give-back — fields + paths
+  // together still fit the floor; combined with the live
+  // variant (which spends its own sampler) the count reaches
+  // 17, the same open combination B1 recorded. The merged
+  // supply (texture-unit follow-up) closes that combination:
+  // while it stands, the live and column chunks are replaced
+  // by the one merged sampler above and the count is 16.
+  return options?.particleRulesLive || options?.fieldInstances || options?.pathAssets || options?.crowdPathAssets
+    ? assembled.replace(VEL_FRAG_SPAWN_ORDER_DECL_STOCK, VEL_FRAG_SPAWN_ORDER_DECL_LIVE)
+    : assembled;
 }
 
 export const VEL_FRAG_PREAMBLE = buildVelocityPreamble();

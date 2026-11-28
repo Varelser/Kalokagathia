@@ -1,3 +1,4 @@
+import { dmHash11 } from './gpgpuRandom';
 // Path jitter (Phase AW): the Phase AH hand-drawn line jitter
 // (lib/lineJitter.ts) extended to path DRAWING. The line jitter
 // hashes each segment endpoint's index, which keeps shared
@@ -15,16 +16,6 @@
 // applyPathJitterToPositions returns the input reference
 // untouched in that case, so default configurations stay
 // bit-identical by construction.
-
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
-}
 
 const QUANTUM = 4096;
 

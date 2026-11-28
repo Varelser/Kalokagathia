@@ -16,6 +16,9 @@
  */
 import type { ParticleConfig } from '../types';
 import type { GpgpuForceChunkName } from './gpgpuForceOrder';
+import { fieldInstancesActive } from './gpgpuFieldInstances';
+import { relDragActive } from './gpgpuSpeedDragSpin';
+import { meanderStandaloneActive } from './gpgpuMeander';
 
 export type ForceChunkActivity = 'active' | 'inactive' | 'derived';
 
@@ -55,6 +58,9 @@ export const GPGPU_FORCE_CHUNK_META: readonly GpgpuForceChunkMeta[] = [
   { name: 'magnetic', label: 'Magnetic', variantGated: false, orderNote: READ_NOTE },
   { name: 'steer-avoid', label: 'Steer Avoid', variantGated: false },
   { name: 'steer-seek', label: 'Steer Seek', variantGated: true, orderNote: READ_NOTE },
+  { name: 'field-instances', label: 'Field Instances', variantGated: true },
+  { name: 'rel-drag', label: 'Relative Drag', variantGated: true },
+  { name: 'meander', label: 'Meander', variantGated: true },
 ];
 
 const META_BY_NAME = new Map(GPGPU_FORCE_CHUNK_META.map((m) => [m.name, m]));
@@ -95,6 +101,9 @@ export function resolveForceChunkActive(name: GpgpuForceChunkName, config: Parti
     case 'magnetic': return on(config.gpgpuMagneticEnabled);
     case 'steer-avoid': return on(config.gpgpuSteerAvoid > 0 && config.gpgpuSdfEnabled);
     case 'steer-seek': return on(config.gpgpuSteerSeekEnabled);
+    case 'field-instances': return on(fieldInstancesActive(config));
+    case 'rel-drag': return on(relDragActive(config));
+    case 'meander': return on(meanderStandaloneActive(config));
     default: return 'inactive';
   }
 }

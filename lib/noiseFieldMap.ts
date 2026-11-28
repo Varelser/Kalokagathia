@@ -1,3 +1,4 @@
+import { dmHash11 } from './gpgpuRandom';
 // Noise field as a map source (Phase AY): the engine's scalar
 // noise field — the same Perlin gradient noise (hash3 / vnoise)
 // the velocity pass builds its curl force from — exposed as a
@@ -44,15 +45,6 @@ export const NOISE_FIELD_EVOLVE_DIR: readonly [number, number, number] = [0.31, 
 
 /** Gradient hash at a lattice point — the velocity pass's
  *  hash3, component for component. Returns values in [-1, 1). */
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
-}
 
 export function noiseFieldHash3(x: number, y: number, z: number): [number, number, number] {
   const component = (dx: number, dy: number, dz: number): number =>

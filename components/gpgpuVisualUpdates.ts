@@ -11,12 +11,15 @@ import { getGradImageTexture } from '../lib/gradImageTexture';
 import { resolveMapSourceTexture } from '../lib/terrainDerivedMaps';
 import { resolveMapSource } from '../lib/layerMask';
 import { getSpriteImageTexture } from '../lib/spriteImageTexture';
-import { normalizeSpriteFrameFps, normalizeSpriteSheetDimension, spriteFrameModeIndex } from '../lib/spriteSheet';
-import { isAgeCurveIdentity, normalizeAgeCurvePoints } from '../lib/ageCurve';
+import { normalizeSpriteFrameChannel, normalizeSpriteFrameFps, normalizeSpriteFrameRange, normalizeSpriteFrameSlot, normalizeSpriteSheetDimension, spriteFrameChannelIndex, spriteFrameModeIndex } from '../lib/spriteSheet';
+import { normalizeAgeCurvePoints } from '../lib/ageCurve';
+import { ageCurveTargetSuppressed, resolveAgeFreeCurve } from '../lib/gpgpuAgeFreeCurves';
 import { normalizeLightDir } from '../lib/gpgpuLight';
 import { bakeShadowOcclusionMap, bakeTunnelShadowOcclusionMap, buildShadowScene } from '../lib/shadowOcclusion';
 import { getLightShadowSource } from '../lib/lightShadowMap';
 import { normalizeAttrNames, normalizeAttrSlot, resolveAttrColorSlots, resolveAttrConsumers } from '../lib/gpgpuAttributes';
+import { liveRulesHaveAction } from '../lib/gpgpuParticleRulesLive';
+import { resolveMergedSupplyPlan } from '../lib/gpgpuMergedSupply';
 import { parseGpgpuGroups, resolveGroupGate } from '../lib/gpgpuGroups';
 import { resolveIblEnvironment } from '../lib/iblEnvironment';
 import { allocateSpeciesCounts } from '../lib/speciesAllocation';
@@ -49,6 +52,12 @@ function getShadowOcclusionTexture(config: ParticleConfig): THREE.DataTexture | 
     config.gpgpuMorphTerrainOctaves, config.gpgpuMorphTerrainSeed, config.gpgpuSeed,
     config.gpgpuMorphScale, config.gpgpuBounceRadius, config.gpgpuTerrainMeshScale,
     config.gpgpuLightPosX, config.gpgpuLightPosY, config.gpgpuLightPosZ,
+    // Light units 2-4 (stage 2, E4): enabled extra units join
+    // the bake's light list, so their enable + position are
+    // bake inputs exactly like unit 1's position above.
+    config.gpgpuLight2Enabled, config.gpgpuLight2PosX, config.gpgpuLight2PosY, config.gpgpuLight2PosZ,
+    config.gpgpuLight3Enabled, config.gpgpuLight3PosX, config.gpgpuLight3PosY, config.gpgpuLight3PosZ,
+    config.gpgpuLight4Enabled, config.gpgpuLight4PosX, config.gpgpuLight4PosY, config.gpgpuLight4PosZ,
     config.gpgpuShadowSourceTerrain, config.gpgpuShadowSourceObj, config.gpgpuShadowSoftness,
     config.gpgpuObjMeshEnabled, config.gpgpuObjMeshScale, config.gpgpuObjMeshRepeat,
     config.gpgpuObjMeshPosX, config.gpgpuObjMeshPosY, config.gpgpuObjMeshPosZ,
@@ -180,6 +189,12 @@ export function pushTrailFrame(args: {
 }): void {
   const { config, gl, simScene, simCamera, simMesh, blitMat, trailRTs, trailHead, posTexture } = args;
   if (!config.gpgpuTrailEnabled && !config.gpgpuRibbonEnabled && !config.gpgpuTubeEnabled) return;
+  // Trail mechanism (stage 4, S6): an empty ring means the
+  // Aux-type trail is selected — no history is recorded (the
+  // ring targets were never built). In 'history' mode the
+  // ring always has MAX_TRAIL entries, so this guard never
+  // fires there.
+  if (trailRTs.length === 0) return;
 
   blitMat.uniforms.uTex.value = posTexture;
   simMesh.material = blitMat;
@@ -232,6 +247,18 @@ export function syncVisualUniforms(args: {
   // keeps the cluster supply off and the draw bit-identical.
   rigidCellTexture?: THREE.Texture | null;
   rigidClusterLutTexture?: THREE.Texture | null;
+  // Live display action (Grammar 2.0 stage 1, slice 1C): the
+  // REP output texture of this frame, or null — null keeps
+  // the display supply off and the draw bit-identical.
+  ruleLiveTexture?: THREE.Texture | null;
+  // Spin channel (Grammar 2.0 stage 2, B3): the spin pass's
+  // latest state texture, or null while the channel is off —
+  // null keeps both draw consumers on their analytic forms.
+  spinTexture?: THREE.Texture | null;
+  // Orientation channel (Limit plan stage 4, S2): the orient
+  // pass's latest posture texture, or null while the channel
+  // is off — null keeps the geometry draw on its stock string.
+  orientTexture?: THREE.Texture | null;
   texSize?: number;
   time?: number;
   // Density compensation (Phase DN): drawing-buffer size in
@@ -406,6 +433,21 @@ export function syncVisualUniforms(args: {
     drawMat.uniforms.uAgeCurveOpacityEnabled.value = config.gpgpuAgeCurveOpacityEnabled;
     drawMat.uniforms.uAgeCurveOpacity.value = normalizeAgeCurvePoints(config.gpgpuAgeCurveOpacityPoints);
   }
+  // Age free curves (Grammar 2.0 stage 2, B4): the padded knot
+  // arrays for the variant strings. The draw side never
+  // suppressed a flat curve (×1 is exact), so the Enabled
+  // uniforms above keep their plain meaning; the variant
+  // decides which evaluation the block runs.
+  if (drawMat.uniforms.uAgeCurveSizeFreeT) {
+    const sizeFree = resolveAgeFreeCurve(config, 'size');
+    drawMat.uniforms.uAgeCurveSizeFreeT.value = sizeFree.flatT;
+    drawMat.uniforms.uAgeCurveSizeFreeV.value = sizeFree.flatV;
+  }
+  if (drawMat.uniforms.uAgeCurveOpacityFreeT) {
+    const opacityFree = resolveAgeFreeCurve(config, 'opacity');
+    drawMat.uniforms.uAgeCurveOpacityFreeT.value = opacityFree.flatT;
+    drawMat.uniforms.uAgeCurveOpacityFreeV.value = opacityFree.flatV;
+  }
   if (drawMat.uniforms.uMapSizeAmount) drawMat.uniforms.uMapSizeAmount.value = config.gpgpuMapSizeAmount;
   if (drawMat.uniforms.uMapOpacityAmount) drawMat.uniforms.uMapOpacityAmount.value = config.gpgpuMapOpacityAmount;
   // Per-property maps / displacement / raster mask (Phase X): a
@@ -468,6 +510,13 @@ export function syncVisualUniforms(args: {
     if (drawMat.uniforms.uSpriteSheetMode) drawMat.uniforms.uSpriteSheetMode.value = spriteFrameModeIndex(config.gpgpuSpriteFrameMode);
     if (drawMat.uniforms.uSpriteSheetFps) drawMat.uniforms.uSpriteSheetFps.value = normalizeSpriteFrameFps(config.gpgpuSpriteFrameFps);
     if (drawMat.uniforms.uSpriteSheetLoop) drawMat.uniforms.uSpriteSheetLoop.value = config.gpgpuSpriteLoop;
+    // Sprite frame channel (Limit plan stage 4, S3): the
+    // channel drive uniforms exist in the shader only in the
+    // channel variant string; the guarded writes keep the
+    // stock materials untouched.
+    if (drawMat.uniforms.uSpriteFrameChannel) drawMat.uniforms.uSpriteFrameChannel.value = spriteFrameChannelIndex(normalizeSpriteFrameChannel(config.gpgpuSpriteFrameChannel));
+    if (drawMat.uniforms.uSpriteFrameSlot) drawMat.uniforms.uSpriteFrameSlot.value = normalizeSpriteFrameSlot(config.gpgpuSpriteFrameSlot);
+    if (drawMat.uniforms.uSpriteFrameRange) drawMat.uniforms.uSpriteFrameRange.value = normalizeSpriteFrameRange(config.gpgpuSpriteFrameRange);
     // Sprite rotation (Phase AX): degrees → radians at this site;
     // the angle law itself is lib/spriteRotation.ts.
     if (drawMat.uniforms.uSpriteRotInitial) drawMat.uniforms.uSpriteRotInitial.value = (config.gpgpuSpriteRotInitial ?? 0) * Math.PI / 180;
@@ -487,6 +536,19 @@ export function syncVisualUniforms(args: {
     drawMat.uniforms.uLightConeAngleDeg.value = config.gpgpuLightConeAngleDeg;
     const dir = normalizeLightDir(config.gpgpuLightDirX, config.gpgpuLightDirY, config.gpgpuLightDirZ);
     (drawMat.uniforms.uLightConeDir.value as THREE.Vector3).set(dir[0], dir[1], dir[2]);
+  }
+  // Light units 2-4 (stage 2, E4): the entries exist on the
+  // material from creation; the light-units variant declares
+  // them, the stock shader declares none — hence the guarded
+  // writes, like the Phase Z tunnel block below.
+  for (const n of [2, 3, 4] as const) {
+    const p = `gpgpuLight${n}` as 'gpgpuLight2' | 'gpgpuLight3' | 'gpgpuLight4';
+    const rec = config as unknown as Record<string, unknown>;
+    if (drawMat.uniforms[`uLight${n}Enabled`]) drawMat.uniforms[`uLight${n}Enabled`].value = rec[`${p}Enabled`] === true;
+    if (drawMat.uniforms[`uLight${n}Pos`]) (drawMat.uniforms[`uLight${n}Pos`].value as THREE.Vector3).set(
+      (rec[`${p}PosX`] as number) ?? 0, (rec[`${p}PosY`] as number) ?? 0, (rec[`${p}PosZ`] as number) ?? 0);
+    if (drawMat.uniforms[`uLight${n}Intensity`]) drawMat.uniforms[`uLight${n}Intensity`].value = (rec[`${p}Intensity`] as number) ?? 1;
+    if (drawMat.uniforms[`uLight${n}Radius`]) drawMat.uniforms[`uLight${n}Radius`].value = (rec[`${p}Radius`] as number) ?? 3;
   }
   // Occlusion-map shadow (Phase Z): the baked grid for the point
   // receiver. Inactive (no texture) yields exactly 1.0 in the
@@ -554,6 +616,32 @@ export function syncVisualUniforms(args: {
     if (drawMat.uniforms.uClusterCellTex) drawMat.uniforms.uClusterCellTex.value = args.rigidCellTexture ?? null;
     if (drawMat.uniforms.uClusterColorLutTex) drawMat.uniforms.uClusterColorLutTex.value = args.rigidClusterLutTexture ?? null;
   }
+  // Live display action (Grammar 2.0 1C): points draw only.
+  // Engages only while the REP texture exists for this frame
+  // AND the live rule list carries a display action (the
+  // variant predicate's per-frame half).
+  if (drawMat.uniforms.uRuleLiveDisplayEnabled) {
+    const displayOn = !!args.ruleLiveTexture
+      && liveRulesHaveAction(config.gpgpuParticleRulesLive ?? '', 'display');
+    drawMat.uniforms.uRuleLiveDisplayEnabled.value = displayOn;
+    if (drawMat.uniforms.uRuleLiveTex) drawMat.uniforms.uRuleLiveTex.value = args.ruleLiveTexture ?? null;
+    // Merged supply (stage 2 texture-unit follow-up): the
+    // display read's y scale while the bound REP texture is
+    // the taller merged target (1.0 = the plain square).
+    if (drawMat.uniforms.uLiveTexYScale) drawMat.uniforms.uLiveTexYScale.value = texSize ? (resolveMergedSupplyPlan(config, texSize)?.yScale ?? 1) : 1;
+  }
+  // Spin channel (Grammar 2.0 stage 2, B3): both rotation
+  // consumers (points sprite rotation, geometry
+  // self-rotation) read the same state texture. The uniforms
+  // exist only in the spin variant strings; the guarded
+  // writes keep the stock materials untouched.
+  if (drawMat.uniforms.uSpinTex) drawMat.uniforms.uSpinTex.value = args.spinTexture ?? null;
+  if (geomMat.uniforms.uSpinTex) geomMat.uniforms.uSpinTex.value = args.spinTexture ?? null;
+  // Orientation channel (stage 4, S2): the geometry draw is
+  // the only consumer. The uniform exists only in the orient
+  // variant string; the guarded write keeps the stock
+  // material untouched.
+  if (geomMat.uniforms.uOrientTex) geomMat.uniforms.uOrientTex.value = args.orientTexture ?? null;
   if (geomMat.uniforms.uVellumCrackEnabled) {
     const crackOn = !!args.vellumStateTexture && config.gpgpuVellumEnabled
       && (config.gpgpuVellumTearGap ?? 0) > 0 && (config.gpgpuVellumTear ?? 0) > 0;
@@ -622,7 +710,11 @@ export function syncVisualUniforms(args: {
     streakMat.uniforms.uAgeFadeOut.value = config.gpgpuAgeFadeOut;
   }
 
-  if (config.gpgpuTrailEnabled) {
+  // Trail mechanism (stage 4, S6): the three history sections
+  // below read the ring; an empty ring (Aux trail mode) skips
+  // them all — the materials keep their last uniforms and the
+  // routing plans mount none of the history draws.
+  if (config.gpgpuTrailEnabled && trailRTs.length > 0) {
     const trailLength = Math.min(MAX_TRAIL, Math.max(2, config.gpgpuTrailLength));
     for (let i = 0; i < MAX_TRAIL; i++) {
       const rtIdx = ((trailHead.current - 1 - i) + MAX_TRAIL * 2) % MAX_TRAIL;
@@ -638,7 +730,7 @@ export function syncVisualUniforms(args: {
     }
   }
 
-  if (config.gpgpuRibbonEnabled) {
+  if (config.gpgpuRibbonEnabled && trailRTs.length > 0) {
     // Phase DP: cap the ribbon index range at the thinned active
     // prefix (6 indices per particle, laid out sequentially). The
     // geometry is built for texSize^2 particles and was drawn in
@@ -662,7 +754,7 @@ export function syncVisualUniforms(args: {
     }
   }
 
-  if (config.gpgpuTubeEnabled) {
+  if (config.gpgpuTubeEnabled && trailRTs.length > 0) {
     // Phase DP: cap the tube index range at the thinned active
     // prefix (TUBE_SIDES * 6 = 48 indices per particle, laid out
     // sequentially in useGpgpuTrailAssets). At texSize 256 the
@@ -734,12 +826,18 @@ export function syncVisualUniforms(args: {
     // suppressed here too, so a flat curve keeps the legacy spin.
     if (geomMat.uniforms.uAgeEnabled) geomMat.uniforms.uAgeEnabled.value = config.gpgpuAgeEnabled;
     if (geomMat.uniforms.uAgeMax) geomMat.uniforms.uAgeMax.value = config.gpgpuAgeMax;
+    // Age free curve (Grammar 2.0 stage 2, B4): the suppression
+    // follows the free curve's identity while free mode is on.
     if (geomMat.uniforms.uAgeCurveRotationEnabled) {
-      geomMat.uniforms.uAgeCurveRotationEnabled.value =
-        config.gpgpuAgeCurveRotationEnabled && !isAgeCurveIdentity(normalizeAgeCurvePoints(config.gpgpuAgeCurveRotationPoints));
+      geomMat.uniforms.uAgeCurveRotationEnabled.value = !ageCurveTargetSuppressed(config, 'rotation');
     }
     if (geomMat.uniforms.uAgeCurveRotation) {
       geomMat.uniforms.uAgeCurveRotation.value = [...normalizeAgeCurvePoints(config.gpgpuAgeCurveRotationPoints)];
+    }
+    if (geomMat.uniforms.uAgeCurveRotationFreeT) {
+      const rotationFree = resolveAgeFreeCurve(config, 'rotation');
+      geomMat.uniforms.uAgeCurveRotationFreeT.value = rotationFree.flatT;
+      geomMat.uniforms.uAgeCurveRotationFreeV.value = rotationFree.flatV;
     }
     if (geomMat.uniforms.uMeshStretch) geomMat.uniforms.uMeshStretch.value = config.gpgpuGeomStretch;
     if (geomMat.uniforms.uEnvReflect) geomMat.uniforms.uEnvReflect.value = config.gpgpuGeomEnvReflect;

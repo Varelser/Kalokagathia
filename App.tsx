@@ -328,6 +328,14 @@ const AppBody: React.FC = () => {
     enabled: config.pointCacheEnabled,
     loop: config.pointCacheLoop,
     bundledSample: config.pointCacheBundledSample,
+    retimer: {
+      pointCacheRetimerEnabled: config.pointCacheRetimerEnabled,
+      pointCacheRetimerRate: config.pointCacheRetimerRate,
+      pointCacheRetimerStartFrame: config.pointCacheRetimerStartFrame,
+      pointCacheRetimerEndFrame: config.pointCacheRetimerEndFrame,
+      pointCacheRetimerReverse: config.pointCacheRetimerReverse,
+      pointCacheRetimerInterpolation: config.pointCacheRetimerInterpolation,
+    },
   });
 
   // Kiosk attract loop (ultimate Wave 5): a no-op unless ?kiosk=1.

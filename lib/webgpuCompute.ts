@@ -38,6 +38,7 @@ import {
   grainsDemQualityStep,
 } from './gpgpuGrains';
 import type { WebGPUDiagSnapshot } from './webgpuDiagSnapshot';
+import { LIVE_RULE_MASK_FULL_PERMIT } from './gpgpuParticleRulesLive';
 
 const VEL_WGSL = /* wgsl */ `
 struct Uniforms {
@@ -231,9 +232,28 @@ struct Uniforms {
   // at the tail like every earlier addition (185-187 are the
   // alignment pads, left 0). The total grows to 752 bytes.
   particleRulesEnabled : f32,
-  particleRulesPad0 : f32,
+  // Live particle rules (Grammar 2.0 stage 1, WGSL slice):
+  // index 185 — the first G10 pad slot, put to work; the
+  // buffer stays 752 bytes. While set, the velocity pass
+  // ANDs the REP aggregate (binding 14) into the baked
+  // permits and reads the extension gates (bits 8-11).
+  liveRulesEnabled : f32,
   particleRulesPad1 : f32,
   particleRulesPad2 : f32,
+  // Meander (Grammar 2.0 stage 2, B7 follow-up): buffer
+  // indices 188-191, appended at the tail like every earlier
+  // addition so all previous offsets stay put. The amount /
+  // scale pair twins the GLSL uParticleLifeMeanderAmount /
+  // ...Scale uniforms; the standalone flag tells the WGSL
+  // pass which home the wander term applies from (inside
+  // the Particle Life block, or the standalone block after
+  // it — exactly once either way, mirroring the GLSL chunk
+  // selection). 4 fields = 16 bytes, the total grows to
+  // 768 bytes and stays 16-byte aligned.
+  meanderAmount : f32,
+  meanderScale : f32,
+  meanderStandaloneEnabled : f32,
+  meanderPad0 : f32,
 };
 
 @group(0) @binding(0) var<uniform> u : Uniforms;
@@ -303,6 +323,16 @@ struct Flip3dUniforms {
 // force-drive / group consumers still route to WebGL under
 // their own capability declarations).
 @group(0) @binding(13) var attrTex : texture_2d<f32>;
+
+// Live rule aggregate (Grammar 2.0 stage 1, WGSL slice): the
+// WGSL REP's latest output (.r mask / .g state / .b condition
+// bits / .a display), published by the step with
+// copyBufferToTexture before this pass runs. A texture, not a
+// storage buffer, for the same reason as the FLIP couple pair
+// above: this stage's 8 storage buffers are all bound. While
+// no REP exists a 1x1 placeholder is bound and
+// u.liveRulesEnabled is 0, so the texture is never loaded.
+@group(0) @binding(14) var liveTex : texture_2d<f32>;
 
 fn flipTexelXY(cellRaw: vec3f, gridN: f32, tilesX: f32) -> vec2i {
   let c = clamp(cellRaw, vec3f(0.0), vec3f(gridN - 1.0));
@@ -550,6 +580,36 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     rulePermitCurl = select(0.0, 1.0, (ruleMask & 4u) != 0u);
     rulePermitWind = select(0.0, 1.0, (ruleMask & 8u) != 0u);
     rulePermitMorph = select(0.0, 1.0, (ruleMask & 16u) != 0u);
+  }
+
+  // Live particle rules (Grammar 2.0 stage 1, WGSL slice):
+  // the REP aggregate's .r, composed with the baked permits
+  // by AND — the twin of the WebGL velocity pass's live
+  // segment (grp* *= live bit), so a live rule can only
+  // restrict further. The extension gates (bits 8-11: drag /
+  // vortex / attractor / well) are locals of their own, like
+  // the GLSL segment's grpDrag / grpVortex / grpAttractor /
+  // grpWell: they start at 1 and only the live mask gates
+  // them (the baked grammar has no extension bits).
+  var livePermitDrag = 1.0;
+  var livePermitVortex = 1.0;
+  var livePermitAttractor = 1.0;
+  var livePermitWell = 1.0;
+  var livePermitMeander = 1.0;
+  if (u.liveRulesEnabled > 0.5) {
+    let liveMask = u32(textureLoad(liveTex, vec2i(i32(idx % texSizeU), i32(idx / texSizeU)), 0).r + 0.5);
+    rulePermitGravity = select(0.0, rulePermitGravity, (liveMask & 1u) != 0u);
+    rulePermitTurbulence = select(0.0, rulePermitTurbulence, (liveMask & 2u) != 0u);
+    rulePermitCurl = select(0.0, rulePermitCurl, (liveMask & 4u) != 0u);
+    rulePermitWind = select(0.0, rulePermitWind, (liveMask & 8u) != 0u);
+    rulePermitMorph = select(0.0, rulePermitMorph, (liveMask & 16u) != 0u);
+    livePermitDrag = select(0.0, 1.0, (liveMask & 256u) != 0u);
+    livePermitVortex = select(0.0, 1.0, (liveMask & 512u) != 0u);
+    livePermitAttractor = select(0.0, 1.0, (liveMask & 1024u) != 0u);
+    livePermitWell = select(0.0, 1.0, (liveMask & 2048u) != 0u);
+    // Meander gate (Grammar 2.0 stage 2, B7): mask bit 14,
+    // the twin of the GLSL segment's grpMeander.
+    livePermitMeander = select(0.0, 1.0, (liveMask & 16384u) != 0u);
   }
 
   vel.y -= u.gravity * u.delta * 9.8 * rulePermitGravity;
@@ -860,6 +920,30 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       }
     }
     vel += plForce * u.particleLifeStrength * u.delta * 45.0;
+    // Meander (Phase AA1): the WGSL twin of the GLSL Particle
+    // Life block's internal wander term, formula for formula
+    // (own-index phase via plHash, sines of the particle's own
+    // position, * delta * 30, gated by the REP meander permit
+    // bit 14). It applies from this home only while the
+    // standalone chunk does NOT stand — while the standalone
+    // stands, the standalone block right after this Particle
+    // Life block applies the term exactly once, mirroring the
+    // GLSL chunk selection. Placement note: the GLSL
+    // standalone applies at its force-order position (by
+    // default after the block's friction); the WGSL pass has
+    // no force order, so its standalone home is immediately
+    // after this block — still after the friction at the end
+    // of this block, like the WebGL default.
+    if (u.meanderStandaloneEnabled < 0.5 && u.meanderAmount > 0.0) {
+      let mPhase = plHash(f32(idx) + 17.17) * 6.2831853;
+      let mScale = 0.02 * max(u.meanderScale, 0.001);
+      let mTime = u.time * 0.7;
+      let mVec = vec3f(
+        sin(pos.y * mScale + mPhase + mTime),
+        sin(pos.z * mScale + mPhase * 1.7 + mTime),
+        sin(pos.x * mScale + mPhase * 2.3 + mTime));
+      vel += mVec * u.meanderAmount * u.delta * 30.0 * livePermitMeander;
+    }
     // Obstacle avoidance (Round 84 gap 2, M1): the WGSL twin
     // of the GLSL Phase AB block, formula for formula (range
     // = the vision range, or the interaction radius while it
@@ -873,6 +957,23 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       }
     }
     vel *= pow(clamp(u.particleLifeFriction, 0.0, 1.0), u.delta * 60.0);
+  }
+
+  // Meander standalone (Grammar 2.0 stage 2, B7): the WGSL
+  // twin of the GLSL standalone 'meander' chunk — the same
+  // wander law as the in-block term above, applied from here
+  // while the standalone stands (enable key on + amount
+  // above zero), so the wander runs with Particle Life off
+  // and still applies exactly once with it on.
+  if (u.meanderStandaloneEnabled > 0.5 && u.meanderAmount > 0.0) {
+    let mPhase = plHash(f32(idx) + 17.17) * 6.2831853;
+    let mScale = 0.02 * max(u.meanderScale, 0.001);
+    let mTime = u.time * 0.7;
+    let mVec = vec3f(
+      sin(pos.y * mScale + mPhase + mTime),
+      sin(pos.z * mScale + mPhase * 1.7 + mTime),
+      sin(pos.x * mScale + mPhase * 2.3 + mTime));
+    vel += mVec * u.meanderAmount * u.delta * 30.0 * livePermitMeander;
   }
 
   // Strange attractors (all 12 WebGL types, verbatim force laws).
@@ -917,7 +1018,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     } else { // Thomas (2)
       dv = vec3f(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
     }
-    vel += normalize(dv + vec3f(0.0001)) * u.attractorStrength * u.delta * 40.0;
+    vel += normalize(dv + vec3f(0.0001)) * u.attractorStrength * u.delta * 40.0 * livePermitAttractor;
   }
 
   // Strange attractor unit 2 (Phase 27, 9-6 stage 1):
@@ -963,7 +1064,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     } else { // Thomas (2)
       dv = vec3f(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
     }
-    vel += normalize(dv + vec3f(0.0001)) * u.attractor2Strength * u.delta * 40.0;
+    vel += normalize(dv + vec3f(0.0001)) * u.attractor2Strength * u.delta * 40.0 * livePermitAttractor;
   }
 
   // Strange attractor unit 3 (Phase 29, 9-6 stage 2):
@@ -1009,7 +1110,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     } else { // Thomas (2)
       dv = vec3f(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
     }
-    vel += normalize(dv + vec3f(0.0001)) * u.attractor3Strength * u.delta * 40.0;
+    vel += normalize(dv + vec3f(0.0001)) * u.attractor3Strength * u.delta * 40.0 * livePermitAttractor;
   }
 
   // Strange attractor unit 4 (Phase 29, 9-6 stage 2):
@@ -1055,7 +1156,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     } else { // Thomas (2)
       dv = vec3f(sin(ap.y)-0.208*ap.x, sin(ap.z)-0.208*ap.y, sin(ap.x)-0.208*ap.z);
     }
-    vel += normalize(dv + vec3f(0.0001)) * u.attractor4Strength * u.delta * 40.0;
+    vel += normalize(dv + vec3f(0.0001)) * u.attractor4Strength * u.delta * 40.0 * livePermitAttractor;
   }
 
   // Lévy flight: rare heavy-tailed impulses, tick-quantised gate.
@@ -1077,7 +1178,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let axis = normalize(vec3f(sin(u.vortexTilt), cos(u.vortexTilt), 0.0));
     let tangent = cross(axis, pos);
     let tLen = length(tangent);
-    if (tLen > 0.001) { vel += (tangent / tLen) * u.vortexStrength * u.delta * 80.0; }
+    if (tLen > 0.001) { vel += (tangent / tLen) * u.vortexStrength * u.delta * 80.0 * livePermitVortex; }
   }
 
   // Wind (directional + vnoise gust)
@@ -1096,9 +1197,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     if (u.wellCount <= 1) {
       let toCenter = -pos;
       let d = length(toCenter) + u.wellSoftening;
-      vel += (toCenter / (d * d)) * u.wellStrength * u.delta * 2000.0;
+      vel += (toCenter / (d * d)) * u.wellStrength * u.delta * 2000.0 * livePermitWell;
       let tangent2 = cross(normalize(toCenter + vec3f(0.001, 0.0, 0.0)), vec3f(0.0, 1.0, 0.0));
-      vel += tangent2 * u.wellOrbit * u.delta * 50.0;
+      vel += tangent2 * u.wellOrbit * u.delta * 50.0 * livePermitWell;
     } else {
       for (var wi = 0; wi < 4; wi++) {
         if (wi >= u.wellCount) { break; }
@@ -1106,9 +1207,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         let wellPos = vec3f(cos(wa), 0.35 * sin(wa * 1.3), sin(wa)) * u.wellSpread;
         let toWell = wellPos - pos;
         let wd = length(toWell) + u.wellSoftening;
-        vel += (toWell / (wd * wd)) * u.wellStrength * u.delta * 2000.0;
+        vel += (toWell / (wd * wd)) * u.wellStrength * u.delta * 2000.0 * livePermitWell;
         let wellTangent = cross(normalize(toWell + vec3f(0.001, 0.0, 0.0)), vec3f(0.0, 1.0, 0.0));
-        vel += wellTangent * u.wellOrbit * u.delta * 50.0;
+        vel += wellTangent * u.wellOrbit * u.delta * 50.0 * livePermitWell;
       }
     }
   }
@@ -1367,7 +1468,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
   let spd = length(vel);
   if (spd > 350.0) { vel *= 350.0 / spd; }
-  vel *= (1.0 - 1.1 * u.delta);
+  // The legacy drag, gated by the live drag permit (bit 8)
+  // exactly as the WebGL tail's gated drag block multiplies
+  // its rate by grpDrag. livePermitDrag is 1 unless live
+  // rules gate it, so the stock step is unchanged.
+  vel *= (1.0 - 1.1 * livePermitDrag * u.delta);
 
   let dist = length(pos);
   if (dist > u.bounceRadius) {
@@ -1417,7 +1522,12 @@ struct Uniforms {
   // at the tail (31 is the alignment pad, left 0) — the
   // total stays 128 bytes.
   particleRuleKillEnabled : f32,
-  particleRulePad0 : f32,
+  // Live particle rules (Grammar 2.0 stage 1, WGSL slice):
+  // index 31 — the G10 pad slot, put to work as a packed
+  // flag word so the buffer stays 128 bytes: bit 0 = the
+  // live kill (REP mask bit 5) is consumed, bit 1 = the live
+  // true-kill (REP mask bit 6, latched) is consumed.
+  particleRuleLiveFlags : f32,
 };
 @group(0) @binding(0) var<uniform>             u      : Uniforms;
 @group(0) @binding(1) var<storage, read>       posIn  : array<vec4f>;
@@ -1427,6 +1537,11 @@ struct Uniforms {
 // Particle rules (G10 stage 3): the baked attribute texture,
 // the same mirror the velocity pass binds at its binding 13.
 @group(0) @binding(5) var attrTex : texture_2d<f32>;
+// Live rule aggregate (Grammar 2.0 stage 1, WGSL slice): the
+// same published REP texture the velocity pass binds at its
+// binding 14. A 1x1 placeholder is bound while no REP exists
+// (the live flag word is then 0 and it is never loaded).
+@group(0) @binding(6) var liveTex : texture_2d<f32>;
 
 
 fn hash1(p: vec2f) -> f32 {
@@ -1479,6 +1594,25 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   var pos = posIn[idx].xyz;
   var age = posIn[idx].w;
   let vel = velIn[idx].xyz;
+
+  // Live particle rule true-kill (Grammar 2.0 stage 1, WGSL
+  // slice): bit 6 of the REP mask is latched by the REP, so
+  // this test is stable — park the particle off-screen with
+  // its age frozen (the spawn gate's parking form, the same
+  // vec4 the WebGL position pass writes) and return before
+  // any integration or respawn, so it never revives. The
+  // WebGL segment sits right after the spawn gate, where pos
+  // / age are the loaded values; this pass has no spawn gate,
+  // so the loaded-values point is here, ahead of the Verlet
+  // block. While the DEM engine replaces this pass the
+  // true-kill is not consumed (declared in the registry).
+  if ((u32(u.particleRuleLiveFlags + 0.5) & 2u) != 0u) {
+    let liveMaskTk = u32(textureLoad(liveTex, vec2i(i32(idx % texSizeU), i32(idx / texSizeU)), 0).r + 0.5);
+    if ((liveMaskTk & 64u) != 0u) {
+      posOut[idx] = vec4f(0.0, -99999.0, 0.0, age);
+      return;
+    }
+  }
 
   // Verlet integration (Phase X3): prevPosIn holds the frame-start
   // positions, copied in the step encoder before this pass —
@@ -1589,6 +1723,37 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (u.particleRuleKillEnabled > 0.5) {
     let ruleMask = u32(textureLoad(attrTex, vec2i(i32(idx % texSizeU), i32(idx / texSizeU)), 0).a + 0.5);
     if ((ruleMask & 32u) != 0u) {
+      let r = u.bounceRadius * (0.05 + hash1Age(vUv + vec2f(age)) * 0.9);
+      let th = hash1Age(vUv + vec2f(1.3)) * 6.2832;
+      let phi = acos(2.0 * hash1Age(vUv + vec2f(2.7)) - 1.0);
+      if (u.emitLightEnabled > 0.5) {
+        let jr = r * 0.05;
+        pos = vec3f(u.emitLightPosX, u.emitLightPosY, u.emitLightPosZ)
+          + vec3f(jr * sin(phi) * cos(th), jr * sin(phi) * sin(th), jr * cos(phi));
+      } else {
+        pos = vec3f(r * sin(phi) * cos(th), r * sin(phi) * sin(th), r * cos(phi));
+      }
+      var replicaIdx = 0.0;
+      if (u.ageReplicaCount > 1.5) {
+        replicaIdx = floor(f32(idx) * u.ageReplicaCount / max(texSizeF * texSizeF, 1.0));
+      }
+      age = replicaIdx * u.ageReplicaStep * u.ageMax + u.replicaAgeBase;
+    }
+  }
+
+  // Live particle rule kill (Grammar 2.0 stage 1, WGSL
+  // slice): bit 5 of the REP mask, composed with the baked
+  // kill by OR (design section 7 — both use the unified
+  // "kill = bit set" polarity), respawning through the same
+  // placement law as the baked block above, verbatim. Runs
+  // after the baked block, as the WebGL pass splices its
+  // live segment after the baked one; a particle either
+  // block respawns lands on the same law. While the DEM
+  // engine replaces this pass the live kill is not consumed
+  // (declared in the registry).
+  if ((u32(u.particleRuleLiveFlags + 0.5) & 1u) != 0u) {
+    let liveMask = u32(textureLoad(liveTex, vec2i(i32(idx % texSizeU), i32(idx / texSizeU)), 0).r + 0.5);
+    if ((liveMask & 32u) != 0u) {
       let r = u.bounceRadius * (0.05 + hash1Age(vUv + vec2f(age)) * 0.9);
       let th = hash1Age(vUv + vec2f(1.3)) * 6.2832;
       let phi = acos(2.0 * hash1Age(vUv + vec2f(2.7)) - 1.0);
@@ -2777,6 +2942,16 @@ export type WebGPUComputeState = {
   /** Named-attribute bake mirror (Phase 28, 9-5): rgba32float,
    * texSize x texSize; zeros until the first bake upload. */
   attrTexture: GPUTexture;
+  /** Live rule aggregate placeholder (Grammar 2.0 stage 1,
+   * WGSL slice): 1x1 rgba32float bound at the velocity /
+   * position live bindings while no REP exists (never
+   * loaded: the live flags are 0). */
+  liveDummyTex: GPUTexture;
+  /** WGSL REP state (Grammar 2.0 stage 1, WGSL slice):
+   * lazily created on the first live-rule step (see
+   * ensureLiveRepState); a live-rules-off state allocates
+   * nothing and dispatches nothing. */
+  liveRep: LiveRepState | null;
   /** Grains DEM engine (stage 2-1): lazily created on the
    * first DEM-active step (see ensureGrainsDemState); a
    * DEM-off state allocates nothing and dispatches nothing. */
@@ -2888,9 +3063,46 @@ type GrainsDemState = {
   statsCache: { cellOverflow: number; slotOverflow: number };
 };
 
+/** WGSL REP state (Grammar 2.0 stage 1, WGSL slice): the
+ * live rule evaluation pass as a compute pipeline. The
+ * pipeline is generated from the rule list (buildRuleEvalWgsl
+ * in lib/gpgpuParticleRulesLive.ts), so it is cached by
+ * signature and recreated when the signature changes — the
+ * recreation IS the reset (both ping-pong buffers and the
+ * published texture are re-uploaded with the fixed initial
+ * state, design section 8). The aggregate layout matches the
+ * WebGL REP target: .r mask / .g state (/255) / .b condition
+ * bits / .a display. */
+type LiveRepState = {
+  /** Rule-list signature the pipeline was built from. */
+  signature: string;
+  pipeline: GPUComputePipeline;
+  uBuf: GPUBuffer;
+  uData: Float32Array<ArrayBuffer>;
+  /** Ping-pong aggregate buffers (mask / state / bits /
+   * display per particle). */
+  stateA: GPUBuffer;
+  stateB: GPUBuffer;
+  /** True while stateA holds the latest evaluation. */
+  pingIsA: boolean;
+  /** The published copy of the latest evaluation, sampled
+   * by the velocity (binding 14) and position (binding 6)
+   * passes as a texture — a texture, not a storage buffer,
+   * because the velocity stage's storage budget is full. */
+  tex: GPUTexture;
+  /** Steps taken under the current signature (the interval
+   * cadence counts these, as the WebGL wiring counts frames
+   * since the REP was built). */
+  steps: number;
+};
+
+/** REP uniform block: 12 f32 slots (see the RepUniforms
+ * struct in the generated WGSL), padded to 48 bytes. */
+const LIVE_REP_UNIFORM_BYTES = 48;
+
 // Vel uniform buffer: 164 f32 slots (see the WGSL Uniforms struct
 // field order; int fields are written through an Int32Array view).
-const VEL_UNIFORM_BYTES = 752;
+const VEL_UNIFORM_BYTES = 768;
 // Pos uniform buffer: 21 f32 slots.
 const POS_UNIFORM_BYTES = 128;
 
@@ -3006,6 +3218,7 @@ export async function initWebGPUCompute(
       { binding: 11, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
       { binding: 12, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
       { binding: 13, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
+      { binding: 14, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
     ],
   });
   const posBGL = device.createBindGroupLayout({
@@ -3016,6 +3229,7 @@ export async function initWebGPUCompute(
       { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
       { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
       { binding: 5, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
+      { binding: 6, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float', viewDimension: '2d' } },
     ],
   });
 
@@ -3114,6 +3328,16 @@ export async function initWebGPUCompute(
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   });
 
+  // Live rule aggregate placeholder (Grammar 2.0 stage 1,
+  // WGSL slice): bound at the velocity binding 14 / position
+  // binding 6 while no WGSL REP exists; the live flags are 0
+  // then, so it is never loaded.
+  const liveDummyTex = device.createTexture({
+    size: [1, 1, 1],
+    format: 'rgba32float',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+
   const velUData = new Float32Array(new ArrayBuffer(VEL_UNIFORM_BYTES));
   const posUData = new Float32Array(new ArrayBuffer(POS_UNIFORM_BYTES));
 
@@ -3129,6 +3353,8 @@ export async function initWebGPUCompute(
     flip3dPipelines, flipUBuf, flipUData, flipVelUBuf, flipVelUData,
     flipDummyTex,
     attrTexture,
+    liveDummyTex,
+    liveRep: null,
     flipGrid: null,
     dem: null,
   };
@@ -3380,12 +3606,39 @@ export interface WebGPUMorphParams {
  * group is inert unless its `*Enabled` flag is set, matching the
  * WebGL branch's gating. Enum fields carry the same integer ids
  * the WebGL branch resolves from the config's string unions. */
+/** Per-frame live rule parameters for stepWebGPUCompute
+ * (Grammar 2.0 stage 1, WGSL slice): the generated WGSL REP
+ * program and its identity. The step (re)builds the REP
+ * pipeline when the signature changes — the rebuild is the
+ * reset — and evaluates it on the interval cadence, exactly
+ * as the WebGL wiring rebuilds / re-runs its REP. */
+export interface WebGPULiveRuleEvalParams {
+  /** The generated REP program (buildRuleEvalWgsl). */
+  wgsl: string;
+  /** Rule-list signature (rules / groups / names / texSize). */
+  signature: string;
+  /** Evaluation interval in steps (>= 1). */
+  interval: number;
+}
+
 export interface WebGPUForceParams {
   // Particle rules (G10 stage 3): optional — the pass layer
   // sets them while effective rules exist (velocity permits /
   // position kill consuming the baked mask).
   particleRulesEnabled?: boolean;
   particleRuleKillEnabled?: boolean;
+  // Live particle rules (Grammar 2.0 stage 1, WGSL slice):
+  // optional — the pass layer sets them while the WGSL REP
+  // stands (buildRuleEvalWgsl non-null). liveRulesEnabled
+  // turns on the velocity consumption (permits AND +
+  // extension gates), the two kill flags the position
+  // consumption (packed into the position uniform's flag
+  // word by the step), and liveRuleEval carries the REP
+  // program itself.
+  liveRulesEnabled?: boolean;
+  liveRuleKillEnabled?: boolean;
+  liveRuleTrueKillEnabled?: boolean;
+  liveRuleEval?: WebGPULiveRuleEvalParams | null;
   audioBlast: number;
   nBodyEnabled: boolean; nBodyStrength: number; nBodySoftening: number; nBodyRepulsion: number; nBodySamples: number;
   curlEnabled: boolean; curlStrength: number; curlScale: number; curlSymmetry: number; curlMode: number; curlOctaves: number;
@@ -3398,6 +3651,14 @@ export interface WebGPUForceParams {
   kuramotoEnabled: boolean; kuramotoCoupling: number; kuramotoSpread: number; kuramotoRadius: number;
   particleLifeEnabled: boolean; particleLifeStrength: number; particleLifeRadius: number; particleLifeFriction: number; particleLifeSpecies: number;
   particleLifeMatrix: Float32Array | null;
+  // Meander (Grammar 2.0 stage 2, B7 follow-up): optional —
+  // the pass layer sets them from the same config keys the
+  // WebGL uniforms read (amount / scale verbatim; the
+  // standalone flag from meanderStandaloneActive). Absent =
+  // amount 0, the wander term never applies.
+  particleLifeMeanderAmount?: number;
+  particleLifeMeanderScale?: number;
+  meanderStandaloneEnabled?: boolean;
   vortexEnabled: boolean; vortexStrength: number; vortexTilt: number;
   windEnabled: boolean; windStrength: number; windX: number; windY: number; windZ: number; windGust: number;
   wellEnabled: boolean; wellStrength: number; wellSoftening: number; wellOrbit: number; wellCount: number; wellSpread: number;
@@ -3588,6 +3849,66 @@ export interface WebGPUSteeringParams {
   pathPacked: Float32Array;
   pathLookAhead: number;
   pathRadius: number;
+}
+
+/** (Re)create the WGSL REP state when the signature changed
+ * (Grammar 2.0 stage 1, WGSL slice). Both ping-pong buffers
+ * and the published texture are seeded with the REP's
+ * initial state — full permit (all force bits set), state
+ * 0, condition bits 0, display 0 — the value the WebGL REP
+ * starts from (its state starts cleared and the REP has not
+ * run yet). Recreation on a signature change IS the reset:
+ * the WebGL wiring rebuilds its REP the same way when the
+ * rule list changes. */
+function ensureLiveRepState(
+  state: WebGPUComputeState,
+  evalParams: WebGPULiveRuleEvalParams,
+): LiveRepState {
+  const existing = state.liveRep;
+  if (existing && existing.signature === evalParams.signature) return existing;
+  if (existing) destroyLiveRepState(existing);
+  const { device } = state;
+  const module = device.createShaderModule({ code: evalParams.wgsl });
+  const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+  const count = state.texSize * state.texSize;
+  const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
+  const stateA = device.createBuffer({ size: count * 16, usage });
+  const stateB = device.createBuffer({ size: count * 16, usage });
+  const initial = new Float32Array(count * 4);
+  for (let i = 0; i < count; i++) initial[i * 4] = LIVE_RULE_MASK_FULL_PERMIT;
+  device.queue.writeBuffer(stateA, 0, initial);
+  device.queue.writeBuffer(stateB, 0, initial);
+  const tex = device.createTexture({
+    size: [state.texSize, state.texSize, 1],
+    format: 'rgba32float',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  device.queue.writeTexture(
+    { texture: tex },
+    initial,
+    { bytesPerRow: state.texSize * 16, rowsPerImage: state.texSize },
+    [state.texSize, state.texSize, 1],
+  );
+  const rep: LiveRepState = {
+    signature: evalParams.signature,
+    pipeline,
+    uBuf: device.createBuffer({ size: LIVE_REP_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+    uData: new Float32Array(LIVE_REP_UNIFORM_BYTES / 4),
+    stateA,
+    stateB,
+    pingIsA: true,
+    tex,
+    steps: 0,
+  };
+  state.liveRep = rep;
+  return rep;
+}
+
+function destroyLiveRepState(rep: LiveRepState): void {
+  rep.uBuf.destroy();
+  rep.stateA.destroy();
+  rep.stateB.destroy();
+  rep.tex.destroy();
 }
 
 export function stepWebGPUCompute(
@@ -3783,6 +4104,14 @@ export function stepWebGPUCompute(
   velU[180] = cw ? cw.laneLookAheadScale : 1;
   // Particle rules (G10 stage 3): index 184 (185-187 pads, left 0).
   velU[184] = f && f.particleRulesEnabled ? 1 : 0;
+  // Live rules (Grammar 2.0 stage 1, WGSL slice): index 185
+  // (the repurposed G10 pad slot; the buffer stays 752).
+  velU[185] = f && f.liveRulesEnabled ? 1 : 0;
+  // Meander (Grammar 2.0 stage 2, B7 follow-up): indices
+  // 188-190, appended at the struct tail (191 is the pad).
+  velU[188] = f ? (f.particleLifeMeanderAmount ?? 0) : 0;
+  velU[189] = f ? (f.particleLifeMeanderScale ?? 1) : 1;
+  velU[190] = f && f.meanderStandaloneEnabled ? 1 : 0;
   new Uint32Array(velU.buffer)[0] = texSize; // texSizeはu32なのでUint32Arrayビューで書く
   device.queue.writeBuffer(velUBuf, 0, velU);
 
@@ -3828,6 +4157,11 @@ export function stepWebGPUCompute(
   posU[29] = f ? f.emitLightPos.z : 0;
   // Particle rules (G10 stage 3): index 30 (31 is the pad, left 0).
   posU[30] = f && f.particleRuleKillEnabled ? 1 : 0;
+  // Live rules (Grammar 2.0 stage 1, WGSL slice): index 31 —
+  // the repurposed G10 pad slot, packed as a flag word
+  // (bit 0 = live kill, bit 1 = live true-kill) so the
+  // buffer stays 128 bytes.
+  posU[31] = ((f && f.liveRuleKillEnabled ? 1 : 0) | (f && f.liveRuleTrueKillEnabled ? 2 : 0));
   new Uint32Array(posU.buffer)[0] = texSize;
   device.queue.writeBuffer(posUBuf, 0, posU);
 
@@ -4043,6 +4377,71 @@ export function stepWebGPUCompute(
     f3PendingCouple = { projected, base: baseVelBuf };
   }
 
+  // Live rule evaluation (Grammar 2.0 stage 1, WGSL slice):
+  // the WGSL REP, ahead of the velocity pass so its freshly
+  // published aggregate is what the velocity / position
+  // passes consume this step — the WebGL wiring evaluates
+  // its REP before the sim passes too. It reads the
+  // frame-start sim buffers (the previous step's outputs,
+  // pingIsA selects them) and the mirrored attribute bake,
+  // exactly the state the WebGL REP reads. Evaluation runs
+  // on the interval cadence only (steps % interval === 0,
+  // counted from the REP's build, as the WebGL wiring counts
+  // frames since build); between evaluations the published
+  // texture keeps the previous aggregate. While no live
+  // rules stand, this block dispatches nothing and the live
+  // flags are 0.
+  const liveEval = f?.liveRuleEval ?? null;
+  if (liveEval) {
+    const rep = ensureLiveRepState(state, liveEval);
+    const interval = Math.max(1, Math.floor(liveEval.interval) || 1);
+    if (rep.steps % interval === 0) {
+      const ru = rep.uData;
+      new Uint32Array(ru.buffer)[0] = state.texSize;
+      ru[1] = time;
+      ru[2] = Math.max(f?.ageMax ?? 0, 0.001);
+      ru[3] = Math.max(bounceRadius, 0.001);
+      ru[4] = f?.sdfEnabled ? 1 : 0;
+      new Int32Array(ru.buffer)[5] = f?.sdfShape ?? 0;
+      ru[6] = f?.sdfX ?? 0;
+      ru[7] = f?.sdfY ?? 0;
+      ru[8] = f?.sdfZ ?? 0;
+      ru[9] = f?.sdfSize ?? 0;
+      ru[10] = 0;
+      ru[11] = 0;
+      device.queue.writeBuffer(rep.uBuf, 0, ru);
+      const prev = rep.pingIsA ? rep.stateA : rep.stateB;
+      const next = rep.pingIsA ? rep.stateB : rep.stateA;
+      const repBind = device.createBindGroup({
+        layout: rep.pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: rep.uBuf } },
+          { binding: 1, resource: { buffer: posIn } },
+          { binding: 2, resource: { buffer: velIn } },
+          { binding: 3, resource: state.attrTexture.createView() },
+          { binding: 4, resource: { buffer: prev } },
+          { binding: 5, resource: { buffer: next } },
+        ],
+      });
+      const repPass = enc.beginComputePass();
+      repPass.setPipeline(rep.pipeline);
+      repPass.setBindGroup(0, repBind);
+      repPass.dispatchWorkgroups(Math.ceil(N / 64));
+      repPass.end();
+      // Publish: the passes sample a texture, not the
+      // storage buffer (the velocity stage's storage budget
+      // is full) — the FLIP couple pair's copyBufferToTexture
+      // precedent.
+      enc.copyBufferToTexture(
+        { buffer: next, bytesPerRow: state.texSize * 16, rowsPerImage: state.texSize },
+        { texture: rep.tex },
+        [state.texSize, state.texSize, 1],
+      );
+      rep.pingIsA = !rep.pingIsA;
+    }
+    rep.steps++;
+  }
+
   // Velocity pass
   const velBG = device.createBindGroup({
     layout: velPipeline.getBindGroupLayout(0),
@@ -4061,6 +4460,7 @@ export function stepWebGPUCompute(
       { binding: 11, resource: (f3Grid ? f3Grid.coupleBaseTex : state.flipDummyTex).createView() },
       { binding: 12, resource: { buffer: state.flipVelUBuf } },
       { binding: 13, resource: state.attrTexture.createView() },
+      { binding: 14, resource: (state.liveRep?.tex ?? state.liveDummyTex).createView() },
     ],
   });
   const velPass = enc.beginComputePass();
@@ -4186,6 +4586,7 @@ export function stepWebGPUCompute(
         { binding: 3, resource: { buffer: posOut } },
         { binding: 4, resource: { buffer: prevPosBuf } },
         { binding: 5, resource: state.attrTexture.createView() },
+        { binding: 6, resource: (state.liveRep?.tex ?? state.liveDummyTex).createView() },
       ],
     });
     const posPass = enc.beginComputePass();
@@ -4443,6 +4844,8 @@ export function destroyWebGPUCompute(state: WebGPUComputeState): void {
   state.flipVelUBuf.destroy();
   state.flipDummyTex.destroy();
   state.attrTexture.destroy();
+  state.liveDummyTex.destroy();
+  if (state.liveRep) destroyLiveRepState(state.liveRep);
   if (state.flipGrid) destroyFlip3dGrid(state.flipGrid);
   if (state.dem) destroyGrainsDemState(state.dem);
 }

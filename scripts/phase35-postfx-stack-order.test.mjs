@@ -2,7 +2,7 @@
 // order. The stage adds a declaration layer over the
 // profile orders in lib/postFxStack.ts: the
 // postFxStackOrder key ('' = profile order). This test
-// pins: the metadata covers exactly the 27 stages, every
+// pins: the metadata covers exactly the 28 stages, every
 // profile order is a permutation of the same set, an unset
 // key resolves to the profile order and the ordered active
 // list matches the legacy profile filtering, a custom
@@ -43,14 +43,14 @@ const PROFILES = ['manual', 'touch-feedback', 'particular-glow', 'retro-feedback
 const MANUAL = getPostFxProfileOrder('manual');
 
 // --- set coverage -------------------------------------------------------
-check('profile orders are 27-stage permutations of one set',
+check('profile orders are 28-stage permutations of one set',
   PROFILES.every((p) => {
     const order = getPostFxProfileOrder(p);
-    return order.length === 27 && new Set(order).size === 27
+    return order.length === 28 && new Set(order).size === 28
       && [...order].sort().join(',') === [...MANUAL].sort().join(',');
   }));
-check('meta covers exactly the 27 stages',
-  POST_FX_STAGE_META.length === 27
+check('meta covers exactly the 28 stages',
+  POST_FX_STAGE_META.length === 28
   && POST_FX_STAGE_META.map((m) => m.id).sort().join(',') === [...MANUAL].sort().join(','));
 
 // --- identity with the key unset ----------------------------------------

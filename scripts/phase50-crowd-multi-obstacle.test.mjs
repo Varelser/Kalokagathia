@@ -18,7 +18,7 @@
 //   sampler count is unchanged (the mesh texture was already
 //   bound); the default (non-crowd) assembly is byte-identical.
 // - WGSL: untouched (no mesh SDF subsystem on that route);
-//   VEL_UNIFORM_BYTES stays 752.
+//   VEL_UNIFORM_BYTES stays 768.
 import { build } from 'esbuild';
 import { readFileSync, unlinkSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -150,7 +150,7 @@ check('state: NaN obstacle is invisible to the machine',
 // ── WGSL (untouched route) ────────────────────────────────────
 {
   const wgsl = readFileSync(join(ROOT, 'lib/webgpuCompute.ts'), 'utf8');
-  check('WGSL: uniform buffer stays 752 bytes (no expansion)', wgsl.includes('const VEL_UNIFORM_BYTES = 752;'));
+  check('WGSL: uniform buffer stays 768 bytes (no expansion)', wgsl.includes('const VEL_UNIFORM_BYTES = 768;'));
   check('WGSL: crowd params carry the flag for parity (documented unused)',
     wgsl.includes('multiObstacleEnabled: boolean;'));
 }

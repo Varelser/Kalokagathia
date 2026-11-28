@@ -261,6 +261,69 @@ const FragmentCollectionBlock: React.FC<{ config: ParticleConfig; updateConfig: 
   );
 };
 
+/**
+ * Per-species OBJ source (Stage 4 S1): a species whose geom mode
+ * is 'obj' may carry its own OBJ document instead of following the
+ * shared gpgpuMorphObjSource. Same storage manners as the shared
+ * source (the text lives in the config, capped at 200k chars);
+ * empty means "follow the shared source", which is the stock
+ * behaviour. Shown only while the species mode is 'obj', the only
+ * state in which the key is read.
+ */
+const SpeciesObjSourceBlock: React.FC<{
+  label: string;
+  sourceKey: 'gpgpuGeomSpecies2ObjSource' | 'gpgpuGeomSpecies3ObjSource' | 'gpgpuGeomSpecies4ObjSource';
+  config: ParticleConfig;
+  updateConfig: GlobalDisplayEffectsSharedProps['updateConfig'];
+}> = ({ label, sourceKey, config, updateConfig }) => {
+  const source = config[sourceKey];
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    const text = await file.text();
+    updateConfig(sourceKey, text.slice(0, 200_000));
+  };
+  return (
+    <div className="mb-3 rounded border border-white/10 bg-white/5 p-2">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">{label}</div>
+      <div className="mb-2 flex flex-wrap gap-2">
+        <label className="cursor-pointer rounded border border-white/25 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/80 transition-colors hover:bg-white/10">
+          OBJ ファイルを開く
+          <input
+            type="file"
+            accept=".obj,text/plain"
+            className="hidden"
+            onChange={(event) => {
+              void handleFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        {source && (
+          <button
+            onClick={() => updateConfig(sourceKey, '')}
+            className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
+          >
+            クリア
+          </button>
+        )}
+      </div>
+      <textarea
+        value={source}
+        onChange={(event) => updateConfig(sourceKey, event.target.value.slice(0, 200_000))}
+        spellCheck={false}
+        rows={3}
+        className="w-full rounded border border-white/15 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40"
+        placeholder={'v 0 0 0 / f 1 2 3 ... の OBJ テキストを貼り付け'}
+      />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        {source
+          ? 'この種別専用の OBJ ソースを使います。'
+          : '未設定の間は共通の OBJ ソース（Morph 節の gpgpuMorphObjSource）に追従します（従来同一）。'}
+      </div>
+    </div>
+  );
+};
+
 export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
   updateConfig,
@@ -300,6 +363,21 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
             <option value="contour">Contour (輪郭のベクタ線化 — Phase AM)</option>
             <option value="polygon">Polygon (正多角形プレート — Phase AW)</option>
           </select>
+          {config.gpgpuMorphTarget === 'text' && (
+            <>
+              <div className="mb-1 mt-1 text-[9px] uppercase tracking-widest opacity-60">Text Font Family （保存されるフォント名 — E3）</div>
+              <input
+                type="text"
+                value={config.gpgpuMorphTextFont}
+                placeholder="（空 = レイヤー2 TextMap のフォント）"
+                onChange={(e) => updateConfig('gpgpuMorphTextFont', e.target.value)}
+                className="mb-2 w-full rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+              />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                テキストモーフのベイクに使うフォント名です。設定に保存されるので、プリセットでテキスト雲（とテキスト放出）を再現できます。空欄のときは従来どおりレイヤー2 TextMap のフォントを使います。カスタムフォントのファイル自体はセッション限りで、名前だけが保存されます。
+              </div>
+            </>
+          )}
           {config.gpgpuMorphTarget === 'polygon' && (
             <>
               <Slider label="Polygon Sides （辺数）" value={config.gpgpuMorphPolygonSides} min={3} max={12} step={1} onChange={(v) => updateConfig('gpgpuMorphPolygonSides', v)} />
@@ -457,11 +535,24 @@ export const GlobalDisplayGpgpuForcesMorphSection: React.FC<GlobalDisplayEffects
                   {config.gpgpuMorphScatterSpecies >= 2 && (
                     <>
                       <Toggle label="Species 2 Geom （種別2の形状・Phase 16）" value={config.gpgpuGeomSpecies2Mode} options={[{ label: 'Follow', val: 'follow' as const }, { label: 'Point', val: 'point' as const }, { label: 'Cube', val: 'cube' as const }, { label: 'Tetra', val: 'tetra' as const }, { label: 'Octa', val: 'octa' as const }, { label: 'Icosa', val: 'icosa' as const }, { label: 'Torus', val: 'torus' as const }, { label: 'Cone', val: 'cone' as const }, { label: 'OBJ', val: 'obj' as const }]} onChange={(v) => updateConfig('gpgpuGeomSpecies2Mode', v)} />
+                      {config.gpgpuGeomSpecies2Mode === 'obj' && (
+                        <SpeciesObjSourceBlock label="Species 2 OBJ Source （種別2専用OBJ・第4段S1）" sourceKey="gpgpuGeomSpecies2ObjSource" config={config} updateConfig={updateConfig} />
+                      )}
                       {config.gpgpuMorphScatterSpecies >= 3 && (
-                        <Toggle label="Species 3 Geom （種別3の形状・Phase 16）" value={config.gpgpuGeomSpecies3Mode} options={[{ label: 'Follow', val: 'follow' as const }, { label: 'Point', val: 'point' as const }, { label: 'Cube', val: 'cube' as const }, { label: 'Tetra', val: 'tetra' as const }, { label: 'Octa', val: 'octa' as const }, { label: 'Icosa', val: 'icosa' as const }, { label: 'Torus', val: 'torus' as const }, { label: 'Cone', val: 'cone' as const }, { label: 'OBJ', val: 'obj' as const }]} onChange={(v) => updateConfig('gpgpuGeomSpecies3Mode', v)} />
+                        <>
+                          <Toggle label="Species 3 Geom （種別3の形状・Phase 16）" value={config.gpgpuGeomSpecies3Mode} options={[{ label: 'Follow', val: 'follow' as const }, { label: 'Point', val: 'point' as const }, { label: 'Cube', val: 'cube' as const }, { label: 'Tetra', val: 'tetra' as const }, { label: 'Octa', val: 'octa' as const }, { label: 'Icosa', val: 'icosa' as const }, { label: 'Torus', val: 'torus' as const }, { label: 'Cone', val: 'cone' as const }, { label: 'OBJ', val: 'obj' as const }]} onChange={(v) => updateConfig('gpgpuGeomSpecies3Mode', v)} />
+                          {config.gpgpuGeomSpecies3Mode === 'obj' && (
+                            <SpeciesObjSourceBlock label="Species 3 OBJ Source （種別3専用OBJ・第4段S1）" sourceKey="gpgpuGeomSpecies3ObjSource" config={config} updateConfig={updateConfig} />
+                          )}
+                        </>
                       )}
                       {config.gpgpuMorphScatterSpecies >= 4 && (
-                        <Toggle label="Species 4 Geom （種別4の形状・Phase 16）" value={config.gpgpuGeomSpecies4Mode} options={[{ label: 'Follow', val: 'follow' as const }, { label: 'Point', val: 'point' as const }, { label: 'Cube', val: 'cube' as const }, { label: 'Tetra', val: 'tetra' as const }, { label: 'Octa', val: 'octa' as const }, { label: 'Icosa', val: 'icosa' as const }, { label: 'Torus', val: 'torus' as const }, { label: 'Cone', val: 'cone' as const }, { label: 'OBJ', val: 'obj' as const }]} onChange={(v) => updateConfig('gpgpuGeomSpecies4Mode', v)} />
+                        <>
+                          <Toggle label="Species 4 Geom （種別4の形状・Phase 16）" value={config.gpgpuGeomSpecies4Mode} options={[{ label: 'Follow', val: 'follow' as const }, { label: 'Point', val: 'point' as const }, { label: 'Cube', val: 'cube' as const }, { label: 'Tetra', val: 'tetra' as const }, { label: 'Octa', val: 'octa' as const }, { label: 'Icosa', val: 'icosa' as const }, { label: 'Torus', val: 'torus' as const }, { label: 'Cone', val: 'cone' as const }, { label: 'OBJ', val: 'obj' as const }]} onChange={(v) => updateConfig('gpgpuGeomSpecies4Mode', v)} />
+                          {config.gpgpuGeomSpecies4Mode === 'obj' && (
+                            <SpeciesObjSourceBlock label="Species 4 OBJ Source （種別4専用OBJ・第4段S1）" sourceKey="gpgpuGeomSpecies4ObjSource" config={config} updateConfig={updateConfig} />
+                          )}
+                        </>
                       )}
                       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
                         種別ゾーンごとにジオメトリ形状を変えて描画を分割します（フォリッジ分割、Phase 16）。Follow は Geometry Mode に追従し、種別1は常に Geometry Mode です。Point を選んだ種別は立体を描きません（ポイント描画側で表示されます）。

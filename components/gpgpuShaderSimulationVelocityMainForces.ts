@@ -18,6 +18,7 @@
 // (pinned by scripts/phase18-shader-hash.mjs and
 // scripts/phase18-emitter-force-order.test.mjs).
 import { normalizeGpgpuForceOrder } from '../lib/gpgpuForceOrder';
+import { NEIGHBOR_SELF_SKIP_GLSL, NEIGHBOR_STRIDE_OPEN_GLSL, NEIGHBOR_SUV_GLSL } from '../lib/gpgpuNeighborLoop';
 export const VEL_FRAG_MAIN_FORCES_HEAD = /* glsl */ `  void main() {
     vec4 posData = texture2D(uPosTex, vUv);
     vec4 velData = texture2D(uVelTex, vUv);
@@ -172,12 +173,7 @@ export const VEL_FRAG_FORCE_NBODY = /* glsl */ `
     // N-Body gravity/repulsion
     if (uNBodyEnabled) {
       vec3 acc = vec3(0.0);
-      float stride = uTexSizeF / float(uNBodySamples);
-      for (int i = 0; i < 64; i++) {
-        if (i >= uNBodySamples) break;
-        float si = float(i) * stride;
-        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
-        vec3 oPos = texture2D(uPosTex, sUv).xyz;
+${NEIGHBOR_STRIDE_OPEN_GLSL}        vec3 oPos = texture2D(uPosTex, sUv).xyz;
         vec3 diff = oPos - pos;
         float r2 = dot(diff, diff) + uNBodySoftening * uNBodySoftening;
         float r  = sqrt(r2);
@@ -232,13 +228,7 @@ export const VEL_FRAG_FORCE_BOIDS = /* glsl */ `
       vec3 aliForce = vec3(0.0);
       vec3 cohPos   = vec3(0.0);
       int  cohCount = 0;
-      float stride = uTexSizeF / float(uNBodySamples);
-      for (int i = 0; i < 64; i++) {
-        if (i >= uNBodySamples) break;
-        float si = float(i) * stride;
-        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
-        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
-        vec3 oPos = texture2D(uPosTex, sUv).xyz;
+${NEIGHBOR_STRIDE_OPEN_GLSL}${NEIGHBOR_SELF_SKIP_GLSL}        vec3 oPos = texture2D(uPosTex, sUv).xyz;
         vec3 oVel = texture2D(uVelTex, sUv).xyz;
         float d = distance(pos, oPos);
         if (d < uBoidsRadius * 0.3 && d > 0.001) sepForce -= normalize(oPos - pos) / max(d, 0.5);
@@ -262,9 +252,7 @@ export const VEL_FRAG_FORCE_KURAMOTO = /* glsl */ `
       float kStride = uTexSizeF / 64.0;
       for (int i = 0; i < 64; i++) {
         float si = float(i) * kStride;
-        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
-        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
-        vec3 oPos = texture2D(uPosTex, sUv).xyz;
+${NEIGHBOR_SUV_GLSL}${NEIGHBOR_SELF_SKIP_GLSL}        vec3 oPos = texture2D(uPosTex, sUv).xyz;
         float wgt = clamp(1.5 - distance(pos, oPos) / max(uKuramotoRadius, 1.0), 0.0, 1.0);
         sumSin += wgt * sin(texture2D(uVelTex, sUv).w - phaseState);
       }
@@ -294,9 +282,7 @@ export const VEL_FRAG_FORCE_PARTICLE_LIFE = /* glsl */ `
       const float plBeta = 0.3;
       for (int i = 0; i < 64; i++) {
         float si = float(i) * plStride;
-        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
-        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
-        vec3 oPos = texture2D(uPosTex, sUv).xyz;
+${NEIGHBOR_SUV_GLSL}${NEIGHBOR_SELF_SKIP_GLSL}        vec3 oPos = texture2D(uPosTex, sUv).xyz;
         vec3 diff = oPos - pos;
         float d = length(diff);
         if (d < plRadius && d > 0.001) {
@@ -372,6 +358,81 @@ export const VEL_FRAG_FORCE_PARTICLE_LIFE = /* glsl */ `
       }
     }
 `;
+
+// Meander promotion (Grammar 2.0 stage 2, B7; lib/gpgpuMeander.ts):
+// the wander term's block inside the Particle Life chunk above,
+// verbatim — the two derived Particle Life forms below are built
+// from it by exact replacement, and the stage-2 B7 test pins that
+// this text occurs in the stock chunk exactly once, so the
+// derivations can never silently no-op.
+const VEL_FRAG_PL_MEANDER_BLOCK = `      // Meander (Phase AA1): per-particle wander — the phase is the
+      // particle's own (plHash family), the sines sample its own
+      // position, so neighbours wander differently. Amount 0 skips
+      // the term entirely. TS twin: meanderVector.
+      if (uParticleLifeMeanderAmount > 0.0) {
+        float selfIdx = floor(vUv.y * uTexSizeF) * uTexSizeF + floor(vUv.x * uTexSizeF);
+        float mPhase = plHash(selfIdx + 17.17) * 6.2831853;
+        float mScale = 0.02 * max(uParticleLifeMeanderScale, 0.001);
+        float mTime = uTime * 0.7;
+        vec3 mVec = vec3(
+          sin(pos.y * mScale + mPhase + mTime),
+          sin(pos.z * mScale + mPhase * 1.7 + mTime),
+          sin(pos.x * mScale + mPhase * 2.3 + mTime));
+        vel += mVec * uParticleLifeMeanderAmount * uDelta * 30.0;
+      }`;
+
+// The Particle Life chunk with its internal wander term removed.
+// Selected while the standalone 'meander' chunk stands, so the
+// term applies exactly once (from the chunk) even in a config
+// with Particle Life on. The stock chunk above is never mutated:
+// with the standalone off, this form is simply never selected.
+export const VEL_FRAG_FORCE_PARTICLE_LIFE_NO_MEANDER = VEL_FRAG_FORCE_PARTICLE_LIFE.replace(VEL_FRAG_PL_MEANDER_BLOCK, '');
+
+// The live-rules form of the Particle Life chunk: the internal
+// wander term multiplied by the REP permit (grpMeander, mask bit
+// 14) so a force-gate rule naming 'meander' also throttles the
+// term in its legacy home. Selected only under the live segment
+// (which declares grpMeander); the stock chunk stays the default.
+export const VEL_FRAG_FORCE_PARTICLE_LIFE_LIVE = VEL_FRAG_FORCE_PARTICLE_LIFE.replace(
+  '        vel += mVec * uParticleLifeMeanderAmount * uDelta * 30.0;',
+  '        vel += mVec * uParticleLifeMeanderAmount * uDelta * 30.0 * grpMeander;',
+);
+
+// The standalone Meander chunk (B7): the same wander law as the
+// block above, at main() scope, spliced in only while the
+// standalone variant stands (enable key on + amount above zero).
+// Same uniforms the Particle Life block already uses — no new
+// sampler, no new uniform supply.
+export const VEL_FRAG_FORCE_MEANDER = /* glsl */ `
+    // Meander (Grammar 2.0 stage 2, B7): the Phase AA1 wander
+    // term as a standalone chunk — the same law the Particle
+    // Life block carries internally (see VEL_FRAG_FORCE_
+    // PARTICLE_LIFE), so the wander runs with Particle Life
+    // off. While this chunk stands, the Particle Life chunk
+    // runs without its internal copy and the term applies
+    // exactly once. The phase is the particle's own (plHash
+    // family); the sines sample its own position, so
+    // neighbours wander differently. TS twin: meanderVector
+    // (lib/particleLifeBehavior.ts).
+    if (uParticleLifeMeanderAmount > 0.0) {
+      float selfIdx = floor(vUv.y * uTexSizeF) * uTexSizeF + floor(vUv.x * uTexSizeF);
+      float mPhase = plHash(selfIdx + 17.17) * 6.2831853;
+      float mScale = 0.02 * max(uParticleLifeMeanderScale, 0.001);
+      float mTime = uTime * 0.7;
+      vec3 mVec = vec3(
+        sin(pos.y * mScale + mPhase + mTime),
+        sin(pos.z * mScale + mPhase * 1.7 + mTime),
+        sin(pos.x * mScale + mPhase * 2.3 + mTime));
+      vel += mVec * uParticleLifeMeanderAmount * uDelta * 30.0;
+    }
+`;
+
+// The live-rules form of the standalone chunk: the application
+// multiplied by the REP permit (grpMeander, mask bit 14).
+export const VEL_FRAG_FORCE_MEANDER_LIVE = VEL_FRAG_FORCE_MEANDER.replace(
+  '      vel += mVec * uParticleLifeMeanderAmount * uDelta * 30.0;',
+  '      vel += mVec * uParticleLifeMeanderAmount * uDelta * 30.0 * grpMeander;',
+);
 export const VEL_FRAG_FORCE_ATTRACTOR = /* glsl */ `
     // Strange Attractor
     if (uAttractorEnabled) {
@@ -706,6 +767,113 @@ export const VEL_FRAG_FORCE_STEER_SEEK = /* glsl */ `
       }
     }
 `;
+export const VEL_FRAG_FORCE_STEER_SEEK_ASSET = /* glsl */ `
+    // Crowd steering over a path ASSET (Grammar 2.0 stage 2,
+    // B2): the asset variant of the Phase 20 chunk above —
+    // the same seek / arrive / state laws and the same
+    // path-follow walk (pathFollowTarget in lib/steering.ts),
+    // but the polyline comes from the shared column-data
+    // texture (lib/gpgpuPathAssets.ts): up to 64 points per
+    // path, up to 8 paths, closed loops walk cyclically and
+    // the look-ahead arc wraps (pathAssetFollowTarget). The
+    // particle's path is picked by the attribute slot while
+    // uPathAssetSlot >= 0 (pathAssetIndexForSlot — the crowd
+    // lane formula), else path 0. This chunk replaces
+    // 'steer-seek' ONLY in the path-assets variant (see
+    // buildMainForcesFragment): without the variant the
+    // assembly is byte-identical.
+    if (uSteerSeekEnabled) {
+      vec3 sTarget = uSteerSeekTarget;
+      int sMode = uSteerSeekMode;
+      bool sApply = true;
+      if (sMode == 3) {
+        float slotValue = kaloAttrChannel(attrData, uSteerSeekStateSlot);
+        bool isState1 = slotValue >= uSteerSeekStateThreshold;
+        sTarget = isState1 ? uSteerSeekTarget1 : uSteerSeekTarget;
+        sMode = isState1 ? 1 : 0;
+      }
+      if (sMode == 2) {
+        // Path following over the asset (pathAssetFollowTarget):
+        // closest segment projection, advanced lookAhead of
+        // arc length (wrapping on a closed loop).
+        if (uPathAssetCount <= 0) {
+          sApply = false;
+        } else {
+          int pIdx = 0;
+          if (uPathAssetSlot >= 0) {
+            float pSlot = kaloAttrChannel(attrData, uPathAssetSlot);
+            pIdx = int(min(floor(clamp(pSlot, 0.0, 1.0) * float(uPathAssetCount)), float(uPathAssetCount) - 1.0));
+          }
+          vec4 pHdr = kaloColFetch(uColPathHeadersBase + float(pIdx));
+          int pCount = int(pHdr.x + 0.5);
+          float pBase = uColPathsBase + pHdr.z;
+          bool pClosed = pHdr.y > 0.5;
+          if (pCount <= 0) {
+            sApply = false;
+          } else if (pCount == 1) {
+            sTarget = kaloColFetch(pBase).xyz;
+          } else {
+            int segCount = pClosed ? pCount : pCount - 1;
+            float bestDistSq = 1e30;
+            float bestArc = 0.0;
+            float arcBefore = 0.0;
+            for (int i = 0; i < 64; i++) {
+              if (i >= segCount) break;
+              int j = i + 1;
+              if (j >= pCount) j = 0;
+              vec3 pa = kaloColFetch(pBase + float(i)).xyz;
+              vec3 pb = kaloColFetch(pBase + float(j)).xyz;
+              vec3 ab = pb - pa;
+              float segLen = length(ab);
+              float lenSq = dot(ab, ab);
+              float pt = 0.0;
+              if (lenSq > 0.0) pt = clamp(dot(pos - pa, ab) / lenSq, 0.0, 1.0);
+              vec3 pq = pa + ab * pt;
+              vec3 pdq = pos - pq;
+              float distSq = dot(pdq, pdq);
+              if (distSq < bestDistSq) { bestDistSq = distSq; bestArc = arcBefore + segLen * pt; }
+              arcBefore += segLen;
+            }
+            float targetArc = pClosed && arcBefore > 0.0
+              ? mod(bestArc + max(uSteerSeekPathLookAhead, 0.0), arcBefore)
+              : clamp(bestArc + max(uSteerSeekPathLookAhead, 0.0), 0.0, arcBefore);
+            float walkArc = 0.0;
+            for (int i = 0; i < 64; i++) {
+              if (i >= segCount) break;
+              int j = i + 1;
+              if (j >= pCount) j = 0;
+              vec3 pa = kaloColFetch(pBase + float(i)).xyz;
+              vec3 pb = kaloColFetch(pBase + float(j)).xyz;
+              float segLen = length(pb - pa);
+              if (targetArc <= walkArc + segLen || i == segCount - 1) {
+                float pt = segLen > 0.0 ? clamp((targetArc - walkArc) / segLen, 0.0, 1.0) : 0.0;
+                sTarget = pa + (pb - pa) * pt;
+                break;
+              }
+              walkArc += segLen;
+            }
+            // PathRadius > 0: steer only outside the corridor.
+            if (uSteerSeekPathRadius > 0.0 && sqrt(bestDistSq) <= uSteerSeekPathRadius) sApply = false;
+          }
+        }
+      }
+      if (sApply) {
+        vec3 toTarget = sTarget - pos;
+        float sDist = length(toTarget);
+        float effSpeed = uSteerSeekMaxSpeed;
+        if (sMode == 1 && uSteerSeekSlowingRadius > 0.0 && sDist < uSteerSeekSlowingRadius) {
+          effSpeed = uSteerSeekMaxSpeed * sDist / uSteerSeekSlowingRadius;
+        }
+        vec3 desired = sDist > 0.0 ? (toTarget / sDist) * effSpeed : vec3(0.0);
+        vec3 steerForce = desired - vel;
+        if (uSteerSeekMaxForce > 0.0) {
+          float fLen = length(steerForce);
+          if (fLen > uSteerSeekMaxForce) steerForce *= uSteerSeekMaxForce / fLen;
+        }
+        vel += steerForce * uSteerSeekStrength * uDelta * 60.0;
+      }
+    }
+`;
 export const VEL_FRAG_FORCE_STEER_SEEK_CROWD = /* glsl */ `
     // Crowd steering + state machine (Round 84 gap 2, stage 1):
     // the crowd variant of the Phase 20 chunk above — the same
@@ -889,6 +1057,195 @@ export const VEL_FRAG_FORCE_STEER_SEEK_CROWD = /* glsl */ `
       }
     }
 `;
+// The crowd path branch in its legacy uniform-array form —
+// the exact substring of VEL_FRAG_FORCE_STEER_SEEK_CROWD the
+// crowd-asset derivation below replaces (pinned by
+// scripts/stage2-crowd-path-b2x.test.mjs).
+export const VEL_FRAG_CROWD_PATH_BRANCH_LEGACY = /* glsl */ `        if (uSteerSeekPathCount <= 0) {
+          sApply = false;
+        } else if (uSteerSeekPathCount == 1) {
+          sTarget = uSteerSeekPath[0];
+        } else {
+          float bestDistSq = 1e30;
+          float bestArc = 0.0;
+          float arcBefore = 0.0;
+          vec3 bestProj = pos;
+          vec3 bestTangent = vec3(1.0, 0.0, 0.0);
+          for (int i = 0; i < 7; i++) {
+            if (i >= uSteerSeekPathCount - 1) break;
+            vec3 pa = uSteerSeekPath[i];
+            vec3 pb = uSteerSeekPath[i + 1];
+            vec3 ab = pb - pa;
+            float segLen = length(ab);
+            float lenSq = dot(ab, ab);
+            float pt = 0.0;
+            if (lenSq > 0.0) pt = clamp(dot(pos - pa, ab) / lenSq, 0.0, 1.0);
+            vec3 pq = pa + ab * pt;
+            vec3 pdq = pos - pq;
+            float distSq = dot(pdq, pdq);
+            if (distSq < bestDistSq) { bestDistSq = distSq; bestArc = arcBefore + segLen * pt; bestProj = pq; bestTangent = ab; }
+            arcBefore += segLen;
+          }
+          float targetArc = clamp(bestArc + max(cLookAhead, 0.0), 0.0, arcBefore);
+          float walkArc = 0.0;
+          for (int i = 0; i < 7; i++) {
+            if (i >= uSteerSeekPathCount - 1) break;
+            vec3 pa = uSteerSeekPath[i];
+            vec3 pb = uSteerSeekPath[i + 1];
+            float segLen = length(pb - pa);
+            if (targetArc <= walkArc + segLen || i == uSteerSeekPathCount - 2) {
+              float pt = segLen > 0.0 ? clamp((targetArc - walkArc) / segLen, 0.0, 1.0) : 0.0;
+              sTarget = pa + (pb - pa) * pt;
+              break;
+            }
+            walkArc += segLen;
+          }
+          // Lane lateral (crowdLateralDir + the corridor law):
+          // offset the target onto the lane centre line; the
+          // spring engages only outside the lane width.
+          vec3 cLat = vec3(bestTangent.z, 0.0, -bestTangent.x);
+          float cLatLen = length(cLat);
+          if (cLatLen < 1e-4) {
+            cLat = vec3(-bestTangent.y, bestTangent.x, 0.0);
+            cLatLen = length(cLat);
+            if (cLatLen < 1e-4) { cLat = vec3(1.0, 0.0, 0.0); cLatLen = 1.0; }
+          }
+          cLat /= cLatLen;
+          sTarget += cLat * cLaneCenter;
+          float cLatDev = dot(pos - bestProj, cLat) - cLaneCenter;
+          if (abs(cLatDev) > uCrowdLaneWidth) {
+            cLatForce = cLat * (-cLatDev * uCrowdLaneLateralGain);
+          }
+          // PathRadius > 0: steer only outside the corridor.
+          if (uSteerSeekPathRadius > 0.0 && sqrt(bestDistSq) <= uSteerSeekPathRadius) sApply = false;
+        }`;
+// The crowd path branch over a path ASSET (Grammar 2.0
+// stage 2, B2 crowd follow-up): the walk mirrors the asset
+// variant (64-point column walk, closed loops wrap) while
+// the lane grammar stays the crowd chunk's own — the lane
+// comes from the state slot, the lane-scaled look-ahead
+// feeds the same arc walk, and the lateral spring / corridor
+// law are unchanged. The particle's path is picked by the
+// path slot (uPathAssetSlot), exactly as in the asset
+// variant, so lanes and path choice stay orthogonal.
+export const VEL_FRAG_CROWD_PATH_BRANCH_ASSET = /* glsl */ `        if (uPathAssetCount <= 0) {
+          sApply = false;
+        } else {
+          int pIdx = 0;
+          if (uPathAssetSlot >= 0) {
+            float pSlot = kaloAttrChannel(attrData, uPathAssetSlot);
+            pIdx = int(min(floor(clamp(pSlot, 0.0, 1.0) * float(uPathAssetCount)), float(uPathAssetCount) - 1.0));
+          }
+          vec4 pHdr = kaloColFetch(uColPathHeadersBase + float(pIdx));
+          int pCount = int(pHdr.x + 0.5);
+          float pBase = uColPathsBase + pHdr.z;
+          bool pClosed = pHdr.y > 0.5;
+          if (pCount <= 0) {
+            sApply = false;
+          } else if (pCount == 1) {
+            sTarget = kaloColFetch(pBase).xyz;
+          } else {
+            int segCount = pClosed ? pCount : pCount - 1;
+            float bestDistSq = 1e30;
+            float bestArc = 0.0;
+            float arcBefore = 0.0;
+            vec3 bestProj = pos;
+            vec3 bestTangent = vec3(1.0, 0.0, 0.0);
+            for (int i = 0; i < 64; i++) {
+              if (i >= segCount) break;
+              int j = i + 1;
+              if (j >= pCount) j = 0;
+              vec3 pa = kaloColFetch(pBase + float(i)).xyz;
+              vec3 pb = kaloColFetch(pBase + float(j)).xyz;
+              vec3 ab = pb - pa;
+              float segLen = length(ab);
+              float lenSq = dot(ab, ab);
+              float pt = 0.0;
+              if (lenSq > 0.0) pt = clamp(dot(pos - pa, ab) / lenSq, 0.0, 1.0);
+              vec3 pq = pa + ab * pt;
+              vec3 pdq = pos - pq;
+              float distSq = dot(pdq, pdq);
+              if (distSq < bestDistSq) { bestDistSq = distSq; bestArc = arcBefore + segLen * pt; bestProj = pq; bestTangent = ab; }
+              arcBefore += segLen;
+            }
+            float targetArc = pClosed && arcBefore > 0.0
+              ? mod(bestArc + max(cLookAhead, 0.0), arcBefore)
+              : clamp(bestArc + max(cLookAhead, 0.0), 0.0, arcBefore);
+            float walkArc = 0.0;
+            for (int i = 0; i < 64; i++) {
+              if (i >= segCount) break;
+              int j = i + 1;
+              if (j >= pCount) j = 0;
+              vec3 pa = kaloColFetch(pBase + float(i)).xyz;
+              vec3 pb = kaloColFetch(pBase + float(j)).xyz;
+              float segLen = length(pb - pa);
+              if (targetArc <= walkArc + segLen || i == segCount - 1) {
+                float pt = segLen > 0.0 ? clamp((targetArc - walkArc) / segLen, 0.0, 1.0) : 0.0;
+                sTarget = pa + (pb - pa) * pt;
+                break;
+              }
+              walkArc += segLen;
+            }
+            // Lane lateral (crowdLateralDir + the corridor law):
+            // offset the target onto the lane centre line; the
+            // spring engages only outside the lane width.
+            vec3 cLat = vec3(bestTangent.z, 0.0, -bestTangent.x);
+            float cLatLen = length(cLat);
+            if (cLatLen < 1e-4) {
+              cLat = vec3(-bestTangent.y, bestTangent.x, 0.0);
+              cLatLen = length(cLat);
+              if (cLatLen < 1e-4) { cLat = vec3(1.0, 0.0, 0.0); cLatLen = 1.0; }
+            }
+            cLat /= cLatLen;
+            sTarget += cLat * cLaneCenter;
+            float cLatDev = dot(pos - bestProj, cLat) - cLaneCenter;
+            if (abs(cLatDev) > uCrowdLaneWidth) {
+              cLatForce = cLat * (-cLatDev * uCrowdLaneLateralGain);
+            }
+            // PathRadius > 0: steer only outside the corridor.
+            if (uSteerSeekPathRadius > 0.0 && sqrt(bestDistSq) <= uSteerSeekPathRadius) sApply = false;
+          }
+        }`;
+// Crowd steering over a path asset: the crowd chunk with
+// ONLY its path branch swapped for the asset form — the
+// state machine, AVOID / IDLE / MOVE laws and every other
+// line are the crowd chunk's own, by construction.
+export const VEL_FRAG_FORCE_STEER_SEEK_CROWD_ASSET = VEL_FRAG_FORCE_STEER_SEEK_CROWD.replace(
+  VEL_FRAG_CROWD_PATH_BRANCH_LEGACY,
+  VEL_FRAG_CROWD_PATH_BRANCH_ASSET,
+);
+
+export const VEL_FRAG_FORCE_REL_DRAG = /* glsl */ `
+    // Relative-velocity drag (Grammar 2.0 stage 2, B3): the
+    // particle relaxes toward the wind velocity vector
+    // (uRelDragWindVel — the legacy wind direction at the new
+    // key's velocity-unit magnitude) with the exponential
+    // factor 1 − exp(−k·dt), so the approach is frame-rate
+    // independent and can never overshoot. The rate is
+    // modulated per particle by the attribute slot (judgment
+    // 1: slot value multiplies the coefficient; slot −1 or a
+    // missing attribute texture leaves the factor exactly 1).
+    // Unlike the legacy wind chunk this is not an additive
+    // acceleration — a particle already at the wind velocity
+    // feels nothing. TS twin: applyRelDrag in
+    // lib/gpgpuSpeedDragSpin.ts.
+    {
+      float rdFactor = 1.0;
+      if (uAttrEnabled && uRelDragSlot >= 0) rdFactor = max(kaloAttrChannel(attrData, uRelDragSlot), 0.0);
+      float rdK = 1.0 - exp(-uRelDragRate * rdFactor * uDelta);
+      vel += (uRelDragWindVel - vel) * rdK;
+    }
+`;
+export const VEL_FRAG_FORCE_FIELD_INSTANCES = /* glsl */ `
+    // Field instances (Grammar 2.0 stage 2, B1): placed
+    // vortex / well / wind volumes from the column-data
+    // texture (lib/gpgpuFieldInstances.ts), additively
+    // composed over the legacy singletons above. The force
+    // law lives in the helpers (kaloFieldForce); the gates
+    // passed here are the always-on values — the live variant
+    // below passes the REP gate locals instead.
+    vel += kaloFieldForce(pos, attrData, replicaSeed, replicaTime, grpWind, 1.0, 1.0);
+`;
 export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
   'pyro-buoyancy': VEL_FRAG_FORCE_PYRO_BUOYANCY,
   'turbulence': VEL_FRAG_FORCE_TURBULENCE,
@@ -913,6 +1270,9 @@ export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
   'magnetic': VEL_FRAG_FORCE_MAGNETIC,
   'steer-avoid': VEL_FRAG_FORCE_STEER_AVOID,
   'steer-seek': VEL_FRAG_FORCE_STEER_SEEK,
+  'field-instances': VEL_FRAG_FORCE_FIELD_INSTANCES,
+  'rel-drag': VEL_FRAG_FORCE_REL_DRAG,
+  'meander': VEL_FRAG_FORCE_MEANDER,
 };
 /** Assemble head + force chunks in the given order (names are
  * normalised by lib/gpgpuForceOrder: unknown / duplicate names
@@ -946,11 +1306,142 @@ const VEL_FRAG_PARTICLE_RULES_SEGMENT = /* glsl */ `
     }
 `;
 
+// Live particle rules (Grammar 2.0 stage 1, slice 1A):
+// spliced in right after the baked segment, so the live
+// permits AND into the same grp* gates before every force
+// chunk runs (design section 7: force permit = baked AND
+// live — a live rule can only restrict further). The mask is
+// the REP output's .r channel (same bit layout as the baked
+// mask's low bits). The segment reads the dedicated REP
+// texture through the preamble's spliced uniform set, gated
+// by uRuleLiveEnabled so a missing REP texture keeps the
+// baked-only path inside this variant string.
+const VEL_FRAG_PARTICLE_RULES_LIVE_SEGMENT = /* glsl */ `
+    // Live particle rules (Grammar 2.0 1A): REP permit mask.
+    // Slice 1C: the extension gates (drag / vortex /
+    // attractor / well, mask bits 8-11) are declared here —
+    // in main() scope, before every force chunk and the tail
+    // — and AND into the same mask; the gated chunk variants
+    // and the tail's drag block read them. While the REP
+    // supply is off they stay 1.0 and nothing is gated.
+    // External-force general form: grpCustom (bit 12) gates
+    // the user's custom force snippet, which the tail
+    // splices; buildVelocityFragment wraps the snippet so
+    // its net effect blends by this local.
+    // Stage 2 B7: grpMeander (bit 14) gates the Meander
+    // wander term in both of its homes — the standalone
+    // chunk and the Particle Life block's internal copy
+    // (their live chunk forms multiply by this local).
+    float grpDrag = 1.0;
+    float grpVortex = 1.0;
+    float grpAttractor = 1.0;
+    float grpWell = 1.0;
+    float grpCustom = 1.0;
+    float grpMeander = 1.0;
+    if (uRuleLiveEnabled) {
+      float liveMask = texture2D(uRuleLiveTex, globalUv).r;
+      grpGravity *= mod(floor(liveMask / 1.0), 2.0);
+      grpTurbulence *= mod(floor(liveMask / 2.0), 2.0);
+      grpCurl *= mod(floor(liveMask / 4.0), 2.0);
+      grpWind *= mod(floor(liveMask / 8.0), 2.0);
+      grpMorph *= mod(floor(liveMask / 16.0), 2.0);
+      grpDrag *= mod(floor(liveMask / 256.0), 2.0);
+      grpVortex *= mod(floor(liveMask / 512.0), 2.0);
+      grpAttractor *= mod(floor(liveMask / 1024.0), 2.0);
+      grpWell *= mod(floor(liveMask / 2048.0), 2.0);
+      grpCustom *= mod(floor(liveMask / 4096.0), 2.0);
+      grpMeander *= mod(floor(liveMask / 16384.0), 2.0);
+    }
+`;
+
+// Merged-supply form of the live segment (stage 2
+// texture-unit follow-up): derived from the stock segment by
+// the one sampling change — the aggregate is read from the
+// merged texture's live region (bottom texSize rows), so
+// globalUv.y scales by texSize / merged height (uTexSizeF is
+// the pass's own texture-size uniform). Every gate local and
+// bit decode is the stock text, so the two forms can never
+// drift apart.
+export const VEL_FRAG_PARTICLE_RULES_LIVE_SEGMENT_MERGED = VEL_FRAG_PARTICLE_RULES_LIVE_SEGMENT.replace(
+  'float liveMask = texture2D(uRuleLiveTex, globalUv).r;',
+  'float liveMask = texture2D(uMergedTex, vec2(globalUv.x, globalUv.y * uTexSizeF / uMergedTexHeight)).r;',
+);
+
+// Live-gated force chunks (Grammar 2.0 stage 1, slice 1C):
+// the extension forces the design's bit layout gates (bits
+// 8-11). Each gated variant is DERIVED from its stock chunk
+// by multiplying the force application by the gate local the
+// live segment above declares, so the force laws can never
+// drift apart — the same derivation discipline as the
+// attractor units below. The stock chunks (and therefore the
+// default assembly) are untouched.
+export function gateAttractorChunk(chunk: string): string {
+  return chunk
+    .replace(
+      '* uAttractorStrength * uDelta * 40.0;',
+      '* uAttractorStrength * uDelta * 40.0 * grpAttractor;',
+    )
+    .replace(
+      'vel = fv * uAttractorScale * 0.015 * uAttractorStrength;',
+      'vel = mix(vel, fv * uAttractorScale * 0.015 * uAttractorStrength, grpAttractor);',
+    );
+}
+export const VEL_FRAG_FORCE_VORTEX_LIVE = VEL_FRAG_FORCE_VORTEX.replace(
+  '* uVortexStrength * uDelta * 80.0;',
+  '* uVortexStrength * uDelta * 80.0 * grpVortex;',
+);
+export const VEL_FRAG_FORCE_WELL_LIVE = VEL_FRAG_FORCE_WELL
+  .replaceAll('* uDelta * 2000.0;', '* uDelta * 2000.0 * grpWell;')
+  .replaceAll('* uDelta * 50.0;', '* uDelta * 50.0 * grpWell;');
+export const VEL_FRAG_FORCE_ATTRACTOR_LIVE = gateAttractorChunk(VEL_FRAG_FORCE_ATTRACTOR);
+// B1: the field-instances chunk under the live gates — the
+// vortex instances take grpVortex and the well instances
+// grpWell (the wind instances already ride grpWind in both
+// forms). Derived from the stock chunk by the one call-site
+// replacement, so the two forms can never drift apart.
+export const VEL_FRAG_FORCE_FIELD_INSTANCES_LIVE = VEL_FRAG_FORCE_FIELD_INSTANCES.replace(
+  'grpWind, 1.0, 1.0);',
+  'grpWind, grpVortex, grpWell);',
+);
+/** The gated unit-N attractor chunk: the unit derivation
+ *  (header + uniform rename) applied to the gated unit-1
+ *  chunk, so gated units share the gated force law. */
+export function deriveAttractorUnitChunkLive(unit: number): string {
+  return VEL_FRAG_FORCE_ATTRACTOR_LIVE
+    .replace('// Strange Attractor\n', `// Strange Attractor (unit ${unit})\n`)
+    .replaceAll('uAttractor', `uAttractor${unit}`);
+}
+const VEL_FRAG_FORCE_CHUNKS_LIVE: Record<string, string> = {
+  'vortex': VEL_FRAG_FORCE_VORTEX_LIVE,
+  'well': VEL_FRAG_FORCE_WELL_LIVE,
+  'attractor': VEL_FRAG_FORCE_ATTRACTOR_LIVE,
+  'attractor-2': deriveAttractorUnitChunkLive(2),
+  'attractor-3': deriveAttractorUnitChunkLive(3),
+  'attractor-4': deriveAttractorUnitChunkLive(4),
+  'field-instances': VEL_FRAG_FORCE_FIELD_INSTANCES_LIVE,
+  // B7: the Particle Life chunk's live form gates its internal
+  // wander term by grpMeander; the standalone chunk's live
+  // form gates its own application the same way. (While the
+  // standalone stands, the no-meander form wins over this one
+  // — see the selection in buildMainForcesFragment.)
+  'particle-life': VEL_FRAG_FORCE_PARTICLE_LIFE_LIVE,
+  'meander': VEL_FRAG_FORCE_MEANDER_LIVE,
+};
+
 export interface MainForcesVariantOptions {
   steeringSeek?: boolean;
   // G10 stage 1: the particle-rule mask segment above is
   // spliced in only while an effective rule list exists.
   particleRules?: boolean;
+  // Grammar 2.0 stage 1 (slice 1A): the live-rule segment
+  // above is spliced in only while an effective LIVE rule
+  // list exists.
+  particleRulesLive?: boolean;
+  // Grammar 2.0 stage 2 (texture-unit follow-up): the merged
+  // supply form of the live segment, gated identically (only
+  // while the merged supply stands; implies
+  // particleRulesLive).
+  mergedSupply?: boolean;
   // Round 84 gap 2: while set (AND steeringSeek), the
   // 'steer-seek' name assembles the crowd variant chunk and
   // the standalone 'steer-avoid' chunk is skipped — the state
@@ -958,6 +1449,42 @@ export interface MainForcesVariantOptions {
   // places would double the push). Without it the assembly
   // is byte-identical.
   crowd?: boolean;
+  // Grammar 2.0 stage 2 (slice E2): the spawn allocator's
+  // gate line (effective rate over the envelope clock),
+  // spliced in only while the absolute rate key is set or
+  // the spawn envelope is enabled.
+  spawnAlloc?: boolean;
+  // Grammar 2.0 stage 2 (slice E2): the emitter-velocity
+  // activation segment, spliced in only while the emitter
+  // velocity mode is 'directed'.
+  emitterVelocity?: boolean;
+  // Grammar 2.0 stage 2 (slice B1): the 'field-instances'
+  // chunk, spliced in only while at least one field
+  // instance resolves.
+  fieldInstances?: boolean;
+  // Grammar 2.0 stage 2 (slice B2): while set (AND
+  // steeringSeek, AND NOT crowd), the 'steer-seek' name
+  // assembles the path-asset variant chunk — the polyline
+  // rides the column-data texture instead of the uniform
+  // array.
+  pathAssets?: boolean;
+  // Grammar 2.0 stage 2 (B2 crowd follow-up): while set
+  // (AND steeringSeek AND crowd), the 'steer-seek' name
+  // assembles the crowd-asset variant chunk — the crowd
+  // chunk with its path branch over the column-data
+  // texture, lane grammar unchanged.
+  crowdPathAssets?: boolean;
+  // Grammar 2.0 stage 2 (slice B3): the 'rel-drag' chunk,
+  // spliced in only while the relative-drag rate key is
+  // above zero.
+  relDrag?: boolean;
+  // Grammar 2.0 stage 2 (slice B7): the 'meander' chunk,
+  // spliced in only while the standalone enable stands
+  // (lib/gpgpuMeander.ts: meanderStandaloneActive). While
+  // it stands, the 'particle-life' name assembles the
+  // no-meander form instead, so the wander term applies
+  // exactly once.
+  meanderStandalone?: boolean;
   // Phase 27: the 'attractor-2' chunk is variant-gated the
   // same way — spliced in only while the attractor unit-2
   // enable key is on.
@@ -996,6 +1523,72 @@ const RIGID_BRANCH_OPEN_FREE = `    // Coupling stage 2: the free subset of the 
     // attached to its body. The phase state is preserved
     // verbatim; every force below is superseded whole.
     if (uRigidEnabled && !rigidFree) {`;
+// Spawn allocator (Grammar 2.0 stage 2, slice E2): while
+// the absolute rate key is set or the envelope is enabled,
+// the head's gate threshold reads the allocator's effective
+// rate over the envelope clock. The stock line stays the
+// default string's verbatim text.
+const VEL_SPAWN_GATE_LINE_LEGACY = /* glsl */ `      float sThr = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime));`;
+const VEL_SPAWN_GATE_LINE_ALLOC = /* glsl */ `      float sThr = min(1.0, uSpawnBurst + uSpawnRateEff * spawnPulseTimeEx(uSpawnClockTime));`;
+const VEL_SPAWN_EVENT_ANCHOR = /* glsl */ `    // Spawn burst event (Phase AX): on the single frame the`;
+/**
+ * The emitter-velocity activation segment (stage 2, E2),
+ * spliced into the head right BEFORE the spawn event block:
+ * on the single frame the release threshold crosses a parked
+ * particle's gate value — its activation frame, the same
+ * crossing the position pass respawns on — the particle is
+ * handed the emitter's directed initial velocity. The event
+ * block runs after it and wins on its own frame; the forces
+ * below then act on the result as usual. Age respawns keep
+ * the legacy no-reset, exactly like the event grammar. The
+ * threshold expressions follow the allocator variant when
+ * it is also built (same rate / clock the gate above used).
+ */
+function emitterVelocitySegment(spawnAlloc: boolean): string {
+  const rate = spawnAlloc ? 'uSpawnRateEff' : 'uSpawnRate';
+  const timeNow = spawnAlloc ? 'uSpawnClockTime' : 'uSpawnTime';
+  const timePrev = spawnAlloc ? 'uSpawnClockPrev' : 'uSpawnTime - uDelta';
+  return `    // Emitter initial velocity (Grammar 2.0 stage 2, E2):
+    // on the activation frame (the gate threshold crosses
+    // the particle's gate value this step) the particle is
+    // handed the emitter's directed initial velocity — the
+    // general port of the event cohort's velocity, applied
+    // before the event block so the event wins its frame.
+    if (uSpawnBurst < 1.0) {
+      float eGate = spawnGateValue(vUv);
+      float eThr = min(1.0, uSpawnBurst + ${rate} * spawnPulseTimeEx(${timeNow}));
+      float eThrPrev = min(1.0, uSpawnBurst + ${rate} * spawnPulseTimeEx(${timePrev}));
+      if (eGate >= eThrPrev && eGate < eThr) {
+        vel = kaloEmitterVelocity(vUv);
+      }
+    }
+
+`;
+}
+
+// Gravity application line (the head's last statement).
+// Gravity is the one gated force that lives in the fixed
+// head rather than in a named chunk — historically it sat
+// BEFORE the point where the rule segments below are
+// spliced in, so the baked (G10) and live (1A) permit
+// segments multiplied grpGravity only after gravity had
+// already been accumulated, and a force-gate on gravity
+// could never take effect (real-GPU gate finding, C2/C5:
+// the custom force, gated in the tail, blocked correctly
+// while gravity never did). In the rule variants the line
+// is lifted out of the head and re-applied verbatim right
+// after the segments — still ahead of every force chunk,
+// so its order against the chunks is unchanged, and the
+// segments (which touch only the grp* locals) are the only
+// code it crosses. The stock head string is untouched, so
+// the no-rules assembly stays byte-identical.
+const VEL_GRAVITY_LINE = /* glsl */ `    vel.y -= uGravity * uDelta * 9.8 * grpGravity;
+`;
+const VEL_FRAG_GRAVITY_SEGMENT = /* glsl */ `
+    // Gravity (relocated in the rule variants: applied
+    // after the permit segments above, under the composed
+    // group / baked / live gate).
+${VEL_GRAVITY_LINE}`;
 
 export function buildMainForcesFragment(
   order?: string | readonly string[],
@@ -1003,17 +1596,52 @@ export function buildMainForcesFragment(
 ): string {
   const names = normalizeGpgpuForceOrder(order);
   const crowdActive = !!options?.crowd && !!options?.steeringSeek;
-  const head = options?.rigidFree
-    ? VEL_FRAG_MAIN_FORCES_HEAD.replace(RIGID_BRANCH_OPEN, RIGID_BRANCH_OPEN_FREE)
-    : VEL_FRAG_MAIN_FORCES_HEAD;
-  let out = head + (options?.particleRules ? VEL_FRAG_PARTICLE_RULES_SEGMENT : '');
+  const rulesGated = !!options?.particleRules || !!options?.particleRulesLive;
+  let head = VEL_FRAG_MAIN_FORCES_HEAD;
+  if (options?.spawnAlloc) {
+    head = head.replace(VEL_SPAWN_GATE_LINE_LEGACY, VEL_SPAWN_GATE_LINE_ALLOC);
+  }
+  if (options?.emitterVelocity) {
+    head = head.replace(
+      VEL_SPAWN_EVENT_ANCHOR,
+      emitterVelocitySegment(!!options?.spawnAlloc) + VEL_SPAWN_EVENT_ANCHOR,
+    );
+  }
+  if (rulesGated) {
+    head = head.replace(VEL_GRAVITY_LINE, '');
+  }
+  if (options?.rigidFree) {
+    head = head.replace(RIGID_BRANCH_OPEN, RIGID_BRANCH_OPEN_FREE);
+  }
+  let out = head + (options?.particleRules ? VEL_FRAG_PARTICLE_RULES_SEGMENT : '') + (options?.particleRulesLive ? (options?.mergedSupply ? VEL_FRAG_PARTICLE_RULES_LIVE_SEGMENT_MERGED : VEL_FRAG_PARTICLE_RULES_LIVE_SEGMENT) : '') + (rulesGated ? VEL_FRAG_GRAVITY_SEGMENT : '');
   for (const name of names) {
     if (name === 'steer-seek' && !options?.steeringSeek) continue;
     if (name === 'steer-avoid' && crowdActive) continue;
     if (name === 'attractor-2' && !options?.attractor2) continue;
     if (name === 'attractor-3' && !options?.attractor3) continue;
     if (name === 'attractor-4' && !options?.attractor4) continue;
-    out += name === 'steer-seek' && crowdActive ? VEL_FRAG_FORCE_STEER_SEEK_CROWD : VEL_FRAG_FORCE_CHUNKS[name];
+    if (name === 'field-instances' && !options?.fieldInstances) continue;
+    if (name === 'rel-drag' && !options?.relDrag) continue;
+    if (name === 'meander' && !options?.meanderStandalone) continue;
+    // Slice 1C: in the live variant the extension forces run
+    // their gated chunk variants (the gate locals are
+    // declared by the live segment spliced in above).
+    // B7: while the standalone meander chunk stands, the
+    // Particle Life name assembles its no-meander form (the
+    // term lives in the chunk then) — ahead of the live
+    // lookup, whose Particle Life form gates the INTERNAL
+    // term that this form no longer carries.
+    out += name === 'steer-seek' && crowdActive && options?.crowdPathAssets
+      ? VEL_FRAG_FORCE_STEER_SEEK_CROWD_ASSET
+      : name === 'steer-seek' && crowdActive
+        ? VEL_FRAG_FORCE_STEER_SEEK_CROWD
+        : name === 'steer-seek' && options?.pathAssets
+          ? VEL_FRAG_FORCE_STEER_SEEK_ASSET
+          : name === 'particle-life' && options?.meanderStandalone
+            ? VEL_FRAG_FORCE_PARTICLE_LIFE_NO_MEANDER
+            : options?.particleRulesLive && VEL_FRAG_FORCE_CHUNKS_LIVE[name]
+              ? VEL_FRAG_FORCE_CHUNKS_LIVE[name]
+              : VEL_FRAG_FORCE_CHUNKS[name];
   }
   return out;
 }

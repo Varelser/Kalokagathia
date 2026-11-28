@@ -23,6 +23,7 @@ export const POST_FX_STAGE_META: readonly PostFxStageMeta[] = [
   { id: 'light-fx', label: 'Light FX' },
   { id: 'chromatic-aberration', label: 'Chromatic Aberration' },
   { id: 'depth-of-field', label: 'Depth of Field' },
+  { id: 'motion-blur', label: 'Motion Blur' },
   { id: 'radial-blur', label: 'Radial Blur' },
   { id: 'vignette', label: 'Vignette' },
   { id: 'kaleidoscope', label: 'Kaleidoscope' },

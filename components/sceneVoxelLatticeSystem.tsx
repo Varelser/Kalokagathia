@@ -7,6 +7,7 @@ import { estimateLayerPositionApprox } from './sceneMotionEstimator';
 import { getLayerParticleLayoutDeps, getLayerRuntimeVoxelSnapshot } from '../lib/sceneRenderRouting';
 import { applyVoxelProfilePbr } from '../lib/materialGrammar';
 import { audioSceneOutputSum } from '../lib/audioSceneGraph';
+import { dmHash11 } from '../lib/gpgpuRandom';
 
 type VoxelSettings = {
   opacity: number;
@@ -105,8 +106,6 @@ const scaleVec = new THREE.Vector3();
 const matrix = new THREE.Matrix4();
 const color = new THREE.Color();
 
-function fract(v: number) { return v - Math.floor(v); }
-function dmHash11(n: number) { let x = fract(n * 0.1031); let y = fract(n * 0.1030); let z = fract(n * 0.0973); const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33); x += d; y += d; z += d; return fract((x + y) * z); }
 function hash(v: number) { return dmHash11(v * 127.13 + 19.37); }
 function signedHash(v: number) { return hash(v) * 2 - 1; }
 

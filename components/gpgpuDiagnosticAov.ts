@@ -96,8 +96,116 @@ export interface DiagnosticFrameContext {
    * `webgpuState` instead.
    */
   route?: 'webgl' | 'webgpu';
-  /** The live WebGPU compute state on the 'webgpu' route. */
+  /**
+   * The live WebGPU compute state on the 'webgpu' route —
+   * also the gate measurement support's source for position
+   * readback; null on the WebGL route.
+   */
   webgpuState?: WebGPUComputeState | null;
+  /**
+   * Gate measurement support (2026-11-27 re-gate): the REP's
+   * latest output target (.b = condBits), or null while no REP
+   * stood this frame.
+   */
+  ruleLiveTarget: THREE.WebGLRenderTarget | null;
+  /**
+   * Gate measurement support: the contact pass's latest record
+   * target (.r = hits, .g = hit), or null while the contact
+   * pass does not stand.
+   */
+  contactTarget: THREE.WebGLRenderTarget | null;
+  /** Whether the contact pass is suppressed (hit/hits read 0). */
+  contactSuppressed: boolean;
+  /**
+   * Gate measurement support: the Aux level-1 targets holding
+   * the latest written state (resolved post-flip), or null
+   * while the Aux pool does not exist.
+   */
+  auxPosLatest: THREE.WebGLRenderTarget | null;
+  auxVelLatest: THREE.WebGLRenderTarget | null;
+  /**
+   * Gate measurement support (stage-4 gate fix round 4,
+   * G4-5 triage): the OTHER members of the Aux level-1
+   * ping-pong pair — the sides this frame's passes read FROM
+   * (resolved post-flip as .posOut / .velOut) — or null while
+   * the Aux pool does not exist. Published so the diag hook's
+   * captureAuxPoolProbe can read both sides of the pair from
+   * the same frame and tell a stale / divergent side apart
+   * from the latest one.
+   */
+  auxPosOther: THREE.WebGLRenderTarget | null;
+  auxVelOther: THREE.WebGLRenderTarget | null;
+  /**
+   * Gate measurement support (stage-4 gate fix round 4,
+   * G4-5 triage): Aux draw-binding texture identity — the
+   * uuid of the texture the Aux draw material currently
+   * samples (its uAuxPosTex / uAuxVelTex uniform value), and
+   * whether that texture IS (object identity, resolved at
+   * publish time) the latest targets' texture above. Null
+   * while nothing is bound / the pool does not exist. Read
+   * by captureAuxPoolProbe only.
+   */
+  auxDrawPosTextureUuid: string | null;
+  auxDrawVelTextureUuid: string | null;
+  auxDrawPosMatchesLatest: boolean | null;
+  auxDrawVelMatchesLatest: boolean | null;
+  /**
+   * Gate measurement support (stage-4 gate fix round 5,
+   * G4-5 triage): the simulation clock at publish time —
+   * timeRef's current value, and the Aux shaders' tick
+   * derived from it. The tick is floor(simTime * 60),
+   * exactly the definition findAuxEvent / findAuxChainEvent
+   * apply to their uTime uniform (gpgpuShaderAux.ts), which
+   * the passes fill from this same clock. Two reads across
+   * samples let the harness compare the tick increment
+   * against the integrated frame dt: a tick that skips
+   * residues (e.g. advancing in steps of 3 while dt is
+   * clamped) starves the event test's phase gate, while a
+   * tick that walks every residue exonerates the tick
+   * source. Read by captureAuxSpawnPhaseStats and
+   * captureAuxPassLandingStats.
+   */
+  simTime: number;
+  simTick: number;
+  /**
+   * Gate measurement support (2026-11-27 re-gate 2): the Aux
+   * level-1 spawn-inheritance target (single RT, the same one
+   * the Aux draw material samples), or null while the slots
+   * key is off / the target does not exist.
+   */
+  auxInheritTarget: THREE.WebGLRenderTarget | null;
+  /**
+   * Gate measurement support (2026-11-27 stage-2 confirm):
+   * the Aux level-2 (chain) counterparts of the two fields
+   * above — the level-2 spawn-inheritance target (the same RT
+   * the Aux2 draw material samples) and the level-2 pool's
+   * latest position target, or null while the chain level /
+   * target does not exist.
+   */
+  aux2PosLatest: THREE.WebGLRenderTarget | null;
+  aux2InheritTarget: THREE.WebGLRenderTarget | null;
+  /**
+   * Gate measurement support (2026-11-27 stage-2 B-group):
+   * the spin channel's current state target (angle in .x),
+   * or null while the spin channel does not stand. Read by
+   * the diag hook's captureSpinStats only.
+   */
+  spinTarget: THREE.WebGLRenderTarget | null;
+  /**
+   * Gate measurement support (stage 4, G4-1): the orient
+   * channel's current posture target (quaternion in .xyzw),
+   * or null while the orient channel does not stand. Read by
+   * the diag hook's captureOrientStats only.
+   */
+  orientTarget: THREE.WebGLRenderTarget | null;
+  /**
+   * Gate measurement support (2026-11-27 re-gate 2): the
+   * WebGPU mirror position DataTexture — the texture the draw
+   * actually samples on the WebGPU route, fed every frame by
+   * the app's own readbackWebGPUPositions mirror. Null on the
+   * WebGL route.
+   */
+  webgpuPosTexture: THREE.Texture | null;
 }
 
 export interface DiagnosticStateCapture {

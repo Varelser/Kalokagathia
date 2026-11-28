@@ -1,3 +1,4 @@
+import { dmHash11 } from './gpgpuRandom';
 /**
  * Hand-drawn line jitter (Phase AH).
  *
@@ -18,16 +19,6 @@
 export function clampLineJitter(v: number): number {
   if (!Number.isFinite(v)) return 0;
   return Math.max(0, Math.min(10, v));
-}
-
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
 }
 
 /**

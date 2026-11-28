@@ -2,7 +2,9 @@ import React from 'react';
 import type { FC } from 'react';
 import type { ParticleConfig } from '../types';
 import { getGpgpuRenderOutputPlan } from '../lib/sceneRenderRouting';
+import { SHADOW_CASTER_POINTS_USERDATA } from '../lib/lightShadowMap';
 import { resolveAuxChainLevels } from '../lib/auxChain';
+import { trailAuxActive } from '../lib/trailAux';
 import { MAX_TRAIL } from './gpgpuShaderConstants';
 import type { GpgpuAssetBundle } from './useGpgpuAssets';
 
@@ -51,9 +53,23 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
   return (
     <>
       {plan.pointSprites && (
-        <points geometry={drawGeo} material={drawMat} />
+        <points
+          geometry={drawGeo}
+          material={drawMat}
+          // Particle self-shadow (limit plan stage 4, S4): mark
+          // the main pool's points as a shadow caster candidate.
+          // Inert at the default — LightShadowCapture reads the
+          // mark only while gpgpuShadowMapCastParticles is on.
+          ref={(obj) => {
+            if (obj) obj.userData[SHADOW_CASTER_POINTS_USERDATA] = true;
+          }}
+        />
       )}
-      {config.gpgpuAuxMode !== 'none' && (
+      {/* Trail mechanism (stage 4, S6): the Aux pool's point
+          draw also mounts while the Aux-type trail drives the
+          pool at gpgpuAuxMode 'none' — that draw IS the trail
+          (design step (i): the trail as a series of points). */}
+      {(config.gpgpuAuxMode !== 'none' || trailAuxActive(config)) && (
         <points geometry={auxDrawGeo} material={auxDrawMat} />
       )}
       {chainLevels.some((l) => l.level === 2) && (

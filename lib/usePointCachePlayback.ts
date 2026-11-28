@@ -8,6 +8,12 @@ import {
   usePointCache,
   type PointCacheData,
 } from './pointCache';
+import {
+  cacheRetimerFrameFloat,
+  resolveCacheRetimerFromConfig,
+  type CacheRetimerConfig,
+  type ResolvedCacheRetimer,
+} from './cacheRetimer';
 import { getSequenceClockTime, isSequenceClockRunning } from './sequenceTracks';
 
 /**
@@ -44,8 +50,15 @@ export function usePointCachePlayback(args: {
   enabled: boolean;
   loop: boolean;
   bundledSample: boolean;
+  retimer: CacheRetimerConfig;
 }): void {
-  const { enabled, loop, bundledSample } = args;
+  const { enabled, loop, bundledSample, retimer } = args;
+  const retimerEnabled = retimer.pointCacheRetimerEnabled;
+  const retimerRate = retimer.pointCacheRetimerRate;
+  const retimerStartFrame = retimer.pointCacheRetimerStartFrame;
+  const retimerEndFrame = retimer.pointCacheRetimerEndFrame;
+  const retimerReverse = retimer.pointCacheRetimerReverse;
+  const retimerInterpolation = retimer.pointCacheRetimerInterpolation;
   const storeCache = usePointCache();
   const bundledCache = useMemo(
     () => (bundledSample && !storeCache ? buildBundledSamplePointCache() : null),
@@ -69,9 +82,29 @@ export function usePointCachePlayback(args: {
     }
     const effectiveLoop = loop && source.manifest.loop;
 
+    // Retimer (stage 3 S2, lib/cacheRetimer.ts): one
+    // resolution for whichever source plays — a loaded point
+    // cache, the bundled sample, or a state cache converted
+    // into this same store all share this mapping. Disabled
+    // resolves to null (the legacy mapping runs untouched);
+    // an invalid configuration also falls back to null here
+    // — the panel surfaces the refusal reason, and playback
+    // never breaks on a bad range.
+    const retimerResolution = resolveCacheRetimerFromConfig({
+      pointCacheRetimerEnabled: retimerEnabled,
+      pointCacheRetimerRate: retimerRate,
+      pointCacheRetimerStartFrame: retimerStartFrame,
+      pointCacheRetimerEndFrame: retimerEndFrame,
+      pointCacheRetimerReverse: retimerReverse,
+      pointCacheRetimerInterpolation: retimerInterpolation,
+    }, source.manifest.frameCount);
+    const resolvedRetimer: ResolvedCacheRetimer | null = retimerResolution.ok ? retimerResolution.resolved : null;
+
     const writeFrame = (timeSeconds: number, running: boolean): void => {
       if (suspendedRef.current) return;
-      const frameFloat = pointCacheFrameFloat(source, timeSeconds, effectiveLoop);
+      const frameFloat = resolvedRetimer
+        ? cacheRetimerFrameFloat(resolvedRetimer, source.manifest.frameCount, source.manifest.fps, timeSeconds, effectiveLoop)
+        : pointCacheFrameFloat(source, timeSeconds, effectiveLoop);
       if (lastFrameRef.current >= 0 && Math.abs(frameFloat - lastFrameRef.current) <= 1e-4) {
         setPointCachePlaybackState({ frameFloat, running, suspended: false });
         return;
@@ -83,7 +116,7 @@ export function usePointCachePlayback(args: {
         setPointCachePlaybackState({ frameFloat, running, suspended: true });
         return;
       }
-      setAttrPointCloudTransient(buildPointCacheCloud(source, timeSeconds, effectiveLoop));
+      setAttrPointCloudTransient(buildPointCacheCloud(source, timeSeconds, effectiveLoop, resolvedRetimer));
       lastWrittenRef.current = getAttrPointCloud();
       lastFrameRef.current = frameFloat;
       setPointCachePlaybackState({ frameFloat, running, suspended: false });
@@ -122,5 +155,5 @@ export function usePointCachePlayback(args: {
       cancelAnimationFrame(raf);
       setPointCachePlaybackState({ frameFloat: 0, running: false, suspended: false });
     };
-  }, [enabled, loop, source]);
+  }, [enabled, loop, source, retimerEnabled, retimerRate, retimerStartFrame, retimerEndFrame, retimerReverse, retimerInterpolation]);
 }

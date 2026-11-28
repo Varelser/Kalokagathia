@@ -1,3 +1,4 @@
+import { dmHash11 } from './gpgpuRandom';
 /**
  * Geometry spin random range (Phase AH).
  *
@@ -26,15 +27,6 @@ export function clampGeomSpinRandom(v: number): number {
  * (the Phase DM vector hash12) evaluated at p = uv + (19.19, 7.77).
  * Keep the offset in sync with `spinHash2` in the shader.
  */
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
-}
 
 export function spinRandomHashForUv(u: number, v: number): number {
   return dmHash11((u + 19.19) * 269.5 + (v + 7.77) * 183.3);

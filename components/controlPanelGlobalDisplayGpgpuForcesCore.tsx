@@ -27,6 +27,8 @@ import {
   type GpgpuGroupDef,
 } from '../lib/gpgpuGroups';
 import { getLastAttrBake } from '../lib/gpgpuGroupBridge';
+import { resolveFieldInstances } from '../lib/gpgpuFieldInstances';
+import { resolvePathAsset } from '../lib/gpgpuPathAssets';
 
 /** Free curve editor (Phase AJ): per-point t / value sliders with
  *  add / remove, plus shape presets. Controlled entirely by the
@@ -449,6 +451,188 @@ const AttrSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, update
   );
 };
 
+/** Path assets (Grammar 2.0 stage 2, B2): the Path Follow
+ *  polyline as a first-class asset (lib/gpgpuPathAssets.ts).
+ *  The legacy Path string above stays asset path 0; this
+ *  section authors the extended sources — a JSON list of
+ *  named paths (each up to 64 points, optionally closed) and
+ *  an SVG document whose subpaths become paths (sampled by
+ *  arc length, scaled into world space). While either source
+ *  is empty the asset is the legacy path alone and every
+ *  supply stays the shipped one. Draft + Apply, like the
+ *  field-instances editor. */
+const PathAssetSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const [pathsDraft, setPathsDraft] = React.useState<string | null>(null);
+  const [svgDraft, setSvgDraft] = React.useState<string | null>(null);
+  const resolved = resolvePathAsset(config);
+  const textareaClass = 'mt-1 w-full rounded bg-black/40 border border-white/15 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40';
+  return (
+    <div className="mt-3">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Path Assets （パス資産・第2段B2）</div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        パスを「点列の資産」として扱います。上の Path 文字列が資産のパス0、その後に JSON リストと SVG のサブパスが続きます（合計8本まで、各64点まで、closed で閉ループ）。現在 {resolved.paths.length} 本のパスが有効です{resolved.extended ? '（拡張資産：列テクスチャ供給）' : ''}。Path Slot（0〜3）を指定すると、粒子は属性スロットの値でパスを選びます（-1 は全員パス0）。発生源（Emission Source）の path は資産のパス0を使います。
+      </div>
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Paths (JSON)</div>
+      <textarea
+        value={pathsDraft ?? config.gpgpuSteerSeekPaths}
+        onChange={(event) => setPathsDraft(event.target.value)}
+        spellCheck={false}
+        rows={3}
+        className={textareaClass}
+        placeholder={'[{"name":"loop","closed":true,"points":[[40,0,0],[0,40,0],[-40,0,0],[0,-40,0]]}]'}
+      />
+      {pathsDraft !== null && pathsDraft !== config.gpgpuSteerSeekPaths && (
+        <button
+          type="button"
+          onClick={() => { updateConfig('gpgpuSteerSeekPaths', pathsDraft); setPathsDraft(null); }}
+          className="mt-1 rounded border border-white/25 px-2 py-1 text-[10px] text-white/85 hover:border-white/50"
+        >
+          パスリストを適用
+        </button>
+      )}
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Authored Path (SVG)</div>
+      <textarea
+        value={svgDraft ?? config.gpgpuSteerSeekPathSvg}
+        onChange={(event) => setSvgDraft(event.target.value)}
+        spellCheck={false}
+        rows={3}
+        className={textareaClass}
+        placeholder={'<svg viewBox="-1 -1 2 2"><path d="M -0.8 0 L 0.8 0"/></svg>'}
+      />
+      {svgDraft !== null && svgDraft !== config.gpgpuSteerSeekPathSvg && (
+        <button
+          type="button"
+          onClick={() => { updateConfig('gpgpuSteerSeekPathSvg', svgDraft); setSvgDraft(null); }}
+          className="mt-1 rounded border border-white/25 px-2 py-1 text-[10px] text-white/85 hover:border-white/50"
+        >
+          SVG を適用
+        </button>
+      )}
+      <Slider label="Path SVG Scale （SVG→世界の倍率）" value={config.gpgpuSteerSeekPathSvgScale} min={1} max={500} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekPathSvgScale', v)} />
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        SVG はモーフと同じ正規化空間で読み、サブパスごとに弧長で32点にサンプリングして z=0 平面へ置きます。空欄が従来同一（資産は Path 文字列のみ）です。群衆（Crowd）が有効な間、拡張資産はレガシーの8点供給のままになります。
+      </div>
+    </div>
+  );
+};
+
+/** Field instances + layers (Grammar 2.0 stage 2, B1): the
+ *  placed-field grammar — multiple vortex / well / wind
+ *  volumes with their own position, radius and strength,
+ *  grouped into weighted layers (a layer's per-particle
+ *  modulation rides an attribute slot). Authored as two JSON
+ *  lists (lib/gpgpuFieldInstances.ts); the parse is tolerant,
+ *  so a malformed list simply resolves to fewer instances.
+ *  Empty lists (the defaults) cost nothing: the velocity
+ *  shader keeps its stock string. Draft + Apply, like the
+ *  custom-force editor, so typing never fights the parse. */
+const FieldInstancesSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const [instancesDraft, setInstancesDraft] = React.useState<string | null>(null);
+  const [layersDraft, setLayersDraft] = React.useState<string | null>(null);
+  const resolved = resolveFieldInstances(config);
+  const textareaClass = 'mt-1 w-full rounded bg-black/40 border border-white/15 p-2 font-mono text-[10px] leading-relaxed text-white/85 outline-none focus:border-white/40';
+  return (
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Field Instances / Layers （配置型フォース・第2段B1）</div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        渦・引力（ウェル）・風ボリュームを「位置・半径・強さを持つインスタンス」として複数配置し、加算合成します（従来の単体フォースとは別に加わります）。レイヤーはインスタンスの集合＋重みで、slot（0〜3、-1で無し）を指定すると粒子ごとの属性値で重みが変調されます。現在 {resolved.instances.length} インスタンス / {resolved.layers.length} レイヤーが有効です。
+      </div>
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Instances (JSON)</div>
+      <textarea
+        value={instancesDraft ?? config.gpgpuFieldInstances}
+        onChange={(event) => setInstancesDraft(event.target.value)}
+        spellCheck={false}
+        rows={4}
+        className={textareaClass}
+        placeholder={'[{"kind":"vortex","pos":[30,0,0],"radius":50,"strength":1.5,"tilt":0.3},{"kind":"wind","pos":[0,20,0],"radius":60,"strength":1,"dir":[1,0,0]}]'}
+      />
+      {instancesDraft !== null && instancesDraft !== config.gpgpuFieldInstances && (
+        <button
+          type="button"
+          onClick={() => { updateConfig('gpgpuFieldInstances', instancesDraft); setInstancesDraft(null); }}
+          className="mt-1 rounded border border-white/25 px-2 py-1 text-[10px] text-white/85 hover:border-white/50"
+        >
+          インスタンスを適用
+        </button>
+      )}
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Layers (JSON)</div>
+      <textarea
+        value={layersDraft ?? config.gpgpuFieldLayers}
+        onChange={(event) => setLayersDraft(event.target.value)}
+        spellCheck={false}
+        rows={3}
+        className={textareaClass}
+        placeholder={'[{"name":"swirl","weight":0.8,"slot":-1,"members":[1]}]'}
+      />
+      {layersDraft !== null && layersDraft !== config.gpgpuFieldLayers && (
+        <button
+          type="button"
+          onClick={() => { updateConfig('gpgpuFieldLayers', layersDraft); setLayersDraft(null); }}
+          className="mt-1 rounded border border-white/25 px-2 py-1 text-[10px] text-white/85 hover:border-white/50"
+        >
+          レイヤーを適用
+        </button>
+      )}
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        members はインスタンスの1始まりの番号です。同じインスタンスが複数レイヤーに属する場合は先に書いたレイヤーが勝ちます。空欄が従来同一（インスタンス無し）です。
+      </div>
+    </div>
+  );
+};
+
+/** Speed / relative drag / spin (Grammar 2.0 stage 2, B3):
+ *  the target speed is a velocity-tail setting (an absolute
+ *  magnitude the tail blends the final velocity toward), the
+ *  relative drag pulls each particle's velocity toward the
+ *  wind velocity with an exponential approach (its rate is
+ *  slot-modulated), and the spin channel accumulates angle /
+ *  angular velocity in a dedicated state pass that the draw
+ *  side's two rotation systems read. All three are inert at
+ *  their defaults (lib/gpgpuSpeedDragSpin.ts). */
+const SpeedDragSpinSection: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  const slotOptions = [
+    { label: 'OFF', val: '-1' },
+    { label: 'Slot 1', val: '0' },
+    { label: 'Slot 2', val: '1' },
+    { label: 'Slot 3', val: '2' },
+    { label: 'Slot 4', val: '3' },
+  ];
+  return (
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Speed / Drag / Spin （速度・抗力・回転・第2段B3）</div>
+      <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+        Target Speed は速度パスの最後で速さの絶対値を目標値へ寄せます（Blend 1 で完全一致、slot で粒子ごとに目標を変調）。Relative Drag は風速との相対速度で効く抗力で、rate を slot で粒子ごとに変えられます。Spin は角度と角速度を専用の蓄積状態で持ち、描画側の回転（スプライト回転とジオメトリ自転）の両方がそれを読みます。すべて既定では従来と同一です。
+      </div>
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Target Speed</div>
+      <Slider label="Target Speed" value={config.gpgpuTargetSpeed} min={0} max={350} step={1} onChange={(v) => updateConfig('gpgpuTargetSpeed', v)} />
+      {config.gpgpuTargetSpeed > 0 && (
+        <>
+          <Slider label="Blend" value={config.gpgpuTargetSpeedBlend} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuTargetSpeedBlend', v)} />
+          <AttrSelect label="Attr → Target（目標変調）" value={String(config.gpgpuTargetSpeedSlot)} options={slotOptions} onChange={(v) => updateConfig('gpgpuTargetSpeedSlot', Number(v))} />
+        </>
+      )}
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Relative Drag （相対抗力）</div>
+      <Slider label="Rate" value={config.gpgpuRelDragRate} min={0} max={20} step={0.1} onChange={(v) => updateConfig('gpgpuRelDragRate', v)} />
+      {config.gpgpuRelDragRate > 0 && (
+        <>
+          <Slider label="Wind Speed" value={config.gpgpuRelDragWindSpeed} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuRelDragWindSpeed', v)} />
+          <AttrSelect label="Attr → Rate（抗力変調）" value={String(config.gpgpuRelDragSlot)} options={slotOptions} onChange={(v) => updateConfig('gpgpuRelDragSlot', Number(v))} />
+        </>
+      )}
+      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Spin （蓄積回転）</div>
+      <Toggle label="Spin Channel" value={config.gpgpuSpinEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuSpinEnabled', v)} />
+      {config.gpgpuSpinEnabled && (
+        <>
+          <Slider label="Spin Speed (deg/s)" value={config.gpgpuSpinSpeed} min={-720} max={720} step={5} onChange={(v) => updateConfig('gpgpuSpinSpeed', v)} />
+          <Slider label="Random" value={config.gpgpuSpinRandom} min={0} max={1} step={0.05} onChange={(v) => updateConfig('gpgpuSpinRandom', v)} />
+          <Slider label="Damping" value={config.gpgpuSpinDamping} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuSpinDamping', v)} />
+          <AttrSelect label="Attr → Spin（回転変調）" value={String(config.gpgpuSpinSlot)} options={slotOptions} onChange={(v) => updateConfig('gpgpuSpinSlot', Number(v))} />
+        </>
+      )}
+    </div>
+  );
+};
+
 export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsSharedProps> = ({
   config,
   updateConfig,
@@ -496,6 +680,12 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
       <div className="mb-1 text-[9px] uppercase tracking-widest opacity-60">Lifecycle — Spawn / Kill / Drag （ライフサイクル文法 — Phase AB）</div>
       <Slider label="Spawn Burst （開始バースト）" value={config.gpgpuSpawnBurst} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnBurst', v)} />
       <Slider label="Spawn Rate （放出レート）" value={config.gpgpuSpawnRate} min={0.01} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuSpawnRate', v)} />
+      <Slider label="Spawn Rate Absolute （放出レート絶対数・個/秒、0でOFF — 文法2.0第2段E2）" value={config.gpgpuSpawnRateAbsolute} min={0} max={5000} step={1} onChange={(v) => updateConfig('gpgpuSpawnRateAbsolute', Math.round(v))} />
+      {config.gpgpuSpawnRateAbsolute > 0 && (
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          絶対数が &gt;0 の間は割合レートに代わって放出ゲートを駆動します（バースト／パルスはそのまま効きます）。プール枯渇時は最も古い粒子から再利用されます。
+        </div>
+      )}
       <Slider label="Spawn Pulse Interval （周期バースト間隔・秒、0でOFF）" value={config.gpgpuSpawnPulseInterval} min={0} max={30} step={0.1} onChange={(v) => updateConfig('gpgpuSpawnPulseInterval', v)} />
       {config.gpgpuSpawnPulseInterval > 0 && (
         <>
@@ -527,6 +717,27 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
             年齢リスポーン（寿命での生まれ直し）を、周期の中でカーブの値の割合だけ通します。値 0 の区間は生まれ直しが止まり、寿命末尾の粒子が滞留します。Life System が OFF の間はリスポーン自体がないため無効です。全点 1（Flat）は有効でも従来同一です。
           </div>
         </>
+      )}
+      <Toggle label="Spawn Envelope （放出エンベロープ — 文法2.0第2段E2）" value={config.gpgpuSpawnEnvelopeEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuSpawnEnvelopeEnabled', v)} />
+      {config.gpgpuSpawnEnvelopeEnabled && (
+        <>
+          <Slider label="Envelope Start （開始時刻・秒）" value={config.gpgpuSpawnEnvelopeStart} min={0} max={600} step={0.1} onChange={(v) => updateConfig('gpgpuSpawnEnvelopeStart', v)} />
+          <Slider label="Envelope Stop （停止時刻・秒、0で停止なし）" value={config.gpgpuSpawnEnvelopeStop} min={0} max={600} step={0.1} onChange={(v) => updateConfig('gpgpuSpawnEnvelopeStop', v)} />
+          <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Envelope Curve （量カーブ — 開始〜停止の窓）</div>
+          <FreeCurveEditor
+            points={normalizeFreeCurvePoints(config.gpgpuSpawnEnvelopeCurve)}
+            onChange={(points) => updateConfig('gpgpuSpawnEnvelopeCurve', flattenFreeCurvePoints(points))}
+          />
+          <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+            放出時計（バーストで絞った残りの放出）の進む速さをカーブで制御します。開始前は時計が止まり、停止後は二度と進みません。全点 1（Flat）は有効でも従来同一です。
+          </div>
+        </>
+      )}
+      <Toggle label="Rule Spawn Gate （ルールスポーンゲート — 文法2.0第2段E2）" value={config.gpgpuSpawnRuleGateEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuSpawnRuleGateEnabled', v)} />
+      {config.gpgpuSpawnRuleGateEnabled && (
+        <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+          ライブルールの spawn アクションに一致した主プール粒子が、その場で再発生します（Aux の ruleSpawn が子を生む信号と同じ REP bit13 を主プール側で消費）。spawn アクションを含むライブルールが必要です。
+        </div>
       )}
       <Toggle label="Boundary Kill （境界キル）" value={config.gpgpuKillBoundary} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuKillBoundary', v)} />
       <Toggle label="Mask Kill （マスクキル）" value={config.gpgpuKillMask} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuKillMask', v)} />
@@ -764,6 +975,38 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
           )}
         </>
       )}
+      <div className="mt-3 border-t border-white/10 pt-3">
+        <Toggle label="Predation （捕食の意味論・文法2.0第2段B6）" value={config.gpgpuPredationEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuPredationEnabled', v)} />
+        {config.gpgpuPredationEnabled && (
+          <>
+            <Toggle
+              label="Prey Outcome （被食者の帰結）"
+              value={config.gpgpuPredationOutcome}
+              options={[{ label: 'Kill （真のkill）', val: 'kill' }, { label: 'Convert （同化状態へ遷移）', val: 'convert' }]}
+              onChange={(v) => updateConfig('gpgpuPredationOutcome', v)}
+            />
+            <Toggle label="Birth （捕食者のスポーン）" value={config.gpgpuPredationBirth} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuPredationBirth', v)} />
+            <Slider label="Strike （成立に要る捕食者数）" value={config.gpgpuPredationStrike} min={1} max={8} step={1} onChange={(v) => updateConfig('gpgpuPredationStrike', Math.round(v))} />
+            <Slider label="Strike Frames （成立が続く評価回数）" value={config.gpgpuPredationStrikeFrames} min={1} max={60} step={1} onChange={(v) => updateConfig('gpgpuPredationStrikeFrames', Math.round(v))} />
+            <Slider label="Grace （有効化直後の猶予・秒）" value={config.gpgpuPredationGraceSeconds} min={0} max={10} step={0.5} onChange={(v) => updateConfig('gpgpuPredationGraceSeconds', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              捕食チェーン（種 i は種 i+1 を食べる）の「結果」をライブルール（REP）で実行します。範囲・種数は上の Vision Range / Species を使い、Particle Life 本体の On/Off とは独立に働きます。Kill は被食者を真のkillで消し、Convert は同化状態（state 255）へ遷移させます。Birth は被食者が範囲内にいる捕食者へスポーン信号（bit13）を出し、Aux の ruleSpawn モード／ルールスポーンゲートが消費します。Off の間は従来と完全一致します。Strike の数え方は全体から拾った64標本中の捕食者数なので、密集した出現直後は1でも即座に成立します。出現直後の一斉消滅を避けるには Grace（猶予）と Strike Frames（成立の持続）を併用してください。種数が2のときは循環チェーンが相互捕食になり、被食者でない粒子は存在しません。
+            </div>
+          </>
+        )}
+      </div>
+      <div className="mt-3 border-t border-white/10 pt-3">
+        <Toggle label="Meander Standalone （徘徊の単独化・文法2.0第2段B7）" value={config.gpgpuMeanderEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuMeanderEnabled', v)} />
+        {config.gpgpuMeanderEnabled && (
+          <>
+            <Slider label="Meander Amount （徘徊）" value={config.gpgpuParticleLifeMeanderAmount} min={0} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuParticleLifeMeanderAmount', v)} />
+            <Slider label="Meander Scale （徘徊スケール）" value={config.gpgpuParticleLifeMeanderScale} min={0.1} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuParticleLifeMeanderScale', v)} />
+            <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+              Particle Life 内部の徘徊項（Meander）を独立したフォースとして切り出します。On の間は Particle Life 本体が Off でも徘徊だけが効き、フォース順序（Force Order）にも 'meander' として並びます。Particle Life も On のときは内部の徘徊項が外れて二重には効きません（摩擦・最大速度より後ろのチャンク位置で1回だけ適用されます）。Amount / Scale は上の Particle Life 側スライダと共通です。ライブルールのフォースゲートでは 'meander' と名指しで絞れます（REP bit14）。Off の間は従来と完全一致します。
+            </div>
+          </>
+        )}
+      </div>
     </div>
 
     {/* Crowd Steering (Phase 20 stage 2): lib/steering.ts GPU wiring */}
@@ -799,6 +1042,8 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
             <>
               <Slider label="Path Look Ahead （先読み距離）" value={config.gpgpuSteerSeekPathLookAhead} min={0} max={200} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekPathLookAhead', v)} />
               <Slider label="Path Radius （回廊半径・0で常時）" value={config.gpgpuSteerSeekPathRadius} min={0} max={100} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekPathRadius', v)} />
+              <Slider label="Path Slot （パスを選ぶ属性スロット・-1で全員パス0）" value={config.gpgpuSteerSeekPathSlot} min={-1} max={3} step={1} onChange={(v) => updateConfig('gpgpuSteerSeekPathSlot', Math.round(v))} />
+              <PathAssetSection config={config} updateConfig={updateConfig} />
             </>
           )}
           <Toggle label="Crowd （群衆状態機械）" value={config.gpgpuCrowdEnabled} options={[{ label: 'On', val: true }, { label: 'Off', val: false }]} onChange={(v) => updateConfig('gpgpuCrowdEnabled', v)} />
@@ -870,6 +1115,12 @@ export const GlobalDisplayGpgpuForcesCoreSection: React.FC<GlobalDisplayEffectsS
         </>
       )}
     </div>
+
+    {/* Field instances + layers (Grammar 2.0 stage 2, B1) */}
+    <FieldInstancesSection config={config} updateConfig={updateConfig} />
+
+    {/* Speed / relative drag / spin (Grammar 2.0 stage 2, B3) */}
+    <SpeedDragSpinSection config={config} updateConfig={updateConfig} />
 
     {/* Gravity Well */}
     <div className="mt-4 border-t border-white/10 pt-4">

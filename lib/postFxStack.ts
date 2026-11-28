@@ -1,6 +1,7 @@
 import type { ParticleConfig } from '../types';
 import { configUsesEdgeSupply } from './mapSourceSupply';
 import { validateCustomPostGlslCode } from './customPostGlsl';
+import { motionBlurOn } from './motionBlur';
 
 export type PostFxStageId =
   | 'brightness-contrast'
@@ -8,6 +9,7 @@ export type PostFxStageId =
   | 'bloom'
   | 'chromatic-aberration'
   | 'depth-of-field'
+  | 'motion-blur'
   | 'vignette'
   | 'kaleidoscope'
   | 'slit-scan'
@@ -77,12 +79,17 @@ export type PostFxStackProfile = ParticleConfig['postFxStackProfile'];
 // 'feedback' in every profile — both are frame-history stages,
 // and the accumulated strokes should still pass through the
 // tonal finishes and the output grade like the rest of the frame.
+// Stage 4 S5: 'motion-blur' (velocity-buffer gathering, NOT a
+// frame-history blend) sits immediately after 'depth-of-field'
+// in every profile — the two are the spatial lens pair the
+// limit plan judges together (DOF+MB), and the blur gathers
+// the focused frame before the other spatial warps move it.
 const STACK_ORDERS: Record<PostFxStackProfile, PostFxStageId[]> = {
-  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
-  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
-  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
-  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
-  'dream-smear': ['brightness-contrast', 'depth-of-field', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
+  manual: ['brightness-contrast', 'noise', 'bloom', 'light-fx', 'chromatic-aberration', 'depth-of-field', 'motion-blur', 'radial-blur', 'vignette', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
+  'touch-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'bloom', 'light-fx', 'vignette', 'depth-of-field', 'motion-blur', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
+  'particular-glow': ['brightness-contrast', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'depth-of-field', 'motion-blur', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
+  'retro-feedback': ['brightness-contrast', 'noise', 'chromatic-aberration', 'vignette', 'bloom', 'light-fx', 'depth-of-field', 'motion-blur', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
+  'dream-smear': ['brightness-contrast', 'depth-of-field', 'motion-blur', 'bloom', 'light-fx', 'chromatic-aberration', 'noise', 'vignette', 'radial-blur', 'kaleidoscope', 'slit-scan', 'displace', 'glitch', 'pixel-sort', 'fractal', 'cellular', 'moire', 'feedback', 'brush-accum', 'posterize', 'ordered-dither', 'halftone', 'edge-detect', 'composite', 'custom-glsl-post', 'output-grade', 'edge-capture', 'chroma-key'],
 };
 
 export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[] {
@@ -101,6 +108,12 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   }
   if (config.postDofEnabled) {
     active.add('depth-of-field');
+  }
+  // Stage 4 S5: the motion-blur stage exists only while it
+  // would change a pixel (enabled with a usable strength) —
+  // the stack-wide rule, resolved in lib/motionBlur.ts.
+  if (motionBlurOn(config)) {
+    active.add('motion-blur');
   }
   if (config.postVignetteEnabled && (config.postVignetteDarkness > 0.001 || config.postVignetteOffset > 0.001)) {
     active.add('vignette');
@@ -220,7 +233,7 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
 // mirroring lib/gpgpuForceOrder.ts: unknown ids and
 // duplicates are dropped, and any stage the list omits is
 // appended in profile order, so the result is always a
-// permutation of the full 27-stage set over the selected
+// permutation of the full stage set over the selected
 // profile's order. With the key unset, resolution returns
 // the profile order itself and behaviour is unchanged.
 

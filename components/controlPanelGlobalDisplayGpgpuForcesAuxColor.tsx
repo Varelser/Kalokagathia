@@ -88,6 +88,8 @@ export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffe
         <option value="bounceSplash">Bounce Splash (バウンス時に飛沫)</option>
         <option value="sparkTrail">Spark Trail (火花を落としながら進む)</option>
         <option value="birthBurst">Birth Burst (誕生時に飛沫)</option>
+        <option value="ruleSpawn">Rule Spawn (ルールスポーン — 文法2.0のspawnアクションが発火した粒子から放出)</option>
+        <option value="emit">Emit (子エミッタ放出 — 生きている親が放出し続ける)</option>
       </select>
       {config.gpgpuAuxMode !== 'none' && (
         <>
@@ -96,6 +98,23 @@ export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffe
           <Slider label="Aux Life (s)" value={config.gpgpuAuxLife} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAuxLife', v)} />
           <Slider label="Aux Speed" value={config.gpgpuAuxSpeed} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuAuxSpeed', v)} />
           <Slider label="Aux Size" value={config.gpgpuAuxSize} min={0.3} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuAuxSize', v)} />
+          {config.gpgpuAuxMode === 'emit' && (
+            <>
+              <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Child Emitter （子エミッタ放出 — 文法2.0 第1段 1D-2）</div>
+              <select
+                value={config.gpgpuAuxEmitShape}
+                onChange={(e) => updateConfig('gpgpuAuxEmitShape', e.target.value as typeof config.gpgpuAuxEmitShape)}
+                className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+              >
+                <option value="sphere">Sphere （全方向）</option>
+                <option value="cone">Cone （親速度方向の円錐）</option>
+                <option value="disc">Disc （親速度に直交する円盤）</option>
+                <option value="point">Point （ほぼ静止 — 位置だけ受けて漂う）</option>
+              </select>
+              <Slider label="Emit Rate (/s)" value={config.gpgpuAuxEmitRate} min={0} max={240} step={1} onChange={(v) => updateConfig('gpgpuAuxEmitRate', v)} />
+              <Slider label="Emit Spread" value={config.gpgpuAuxEmitSpread} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuAuxEmitSpread', v)} />
+            </>
+          )}
           <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Child Physics / Look （子独自の物理・見た目 — Phase Q）</div>
           <Slider label="Child Gravity Scale （子の重力倍率）" value={config.gpgpuAuxGravityScale} min={-3} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAuxGravityScale', v)} />
           <Slider label="Child Drag （子の追加ドラッグ）" value={config.gpgpuAuxDrag} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuAuxDrag', v)} />
@@ -131,6 +150,7 @@ export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffe
                 <option value="bounceSplash">Bounce Splash （子のバウンス時に飛沫）</option>
                 <option value="sparkTrail">Spark Trail （子が火花を落とす）</option>
                 <option value="birthBurst">Birth Burst （子が誕生時に飛沫）</option>
+                <option value="emit">Emit （子エミッタ放出 — 生きている子が放出し続ける）</option>
               </select>
               {config.gpgpuAux2Mode !== 'none' && (
                 <>
@@ -138,6 +158,23 @@ export const GlobalDisplayGpgpuForcesAuxColorSection: React.FC<GlobalDisplayEffe
                   <Slider label="Grandchild Life (s)" value={config.gpgpuAux2Life} min={0.1} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAux2Life', v)} />
                   <Slider label="Grandchild Speed" value={config.gpgpuAux2Speed} min={1} max={80} step={1} onChange={(v) => updateConfig('gpgpuAux2Speed', v)} />
                   <Slider label="Grandchild Size" value={config.gpgpuAux2Size} min={0.3} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuAux2Size', v)} />
+                  {config.gpgpuAux2Mode === 'emit' && (
+                    <>
+                      <div className="mb-1 mt-3 text-[9px] uppercase tracking-widest opacity-60">Grandchild Emitter （孫エミッタ放出 — 文法2.0 第1段 1D-2）</div>
+                      <select
+                        value={config.gpgpuAux2EmitShape}
+                        onChange={(e) => updateConfig('gpgpuAux2EmitShape', e.target.value as typeof config.gpgpuAux2EmitShape)}
+                        className="mb-3 w-full cursor-pointer rounded border border-white/20 bg-black/40 px-2 py-1.5 text-[11px] text-white/90 outline-none focus:border-white/40"
+                      >
+                        <option value="sphere">Sphere （全方向）</option>
+                        <option value="cone">Cone （親速度方向の円錐）</option>
+                        <option value="disc">Disc （親速度に直交する円盤）</option>
+                        <option value="point">Point （ほぼ静止）</option>
+                      </select>
+                      <Slider label="Grandchild Emit Rate (/s)" value={config.gpgpuAux2EmitRate} min={0} max={240} step={1} onChange={(v) => updateConfig('gpgpuAux2EmitRate', v)} />
+                      <Slider label="Grandchild Emit Spread" value={config.gpgpuAux2EmitSpread} min={0} max={2} step={0.05} onChange={(v) => updateConfig('gpgpuAux2EmitSpread', v)} />
+                    </>
+                  )}
                   <Slider label="Grandchild Gravity Scale （孫の重力倍率）" value={config.gpgpuAux2GravityScale} min={-3} max={3} step={0.05} onChange={(v) => updateConfig('gpgpuAux2GravityScale', v)} />
                   <Slider label="Grandchild Drag （孫の追加ドラッグ）" value={config.gpgpuAux2Drag} min={0} max={5} step={0.05} onChange={(v) => updateConfig('gpgpuAux2Drag', v)} />
                   <Slider label="Grandchild Curl （孫の渦）" value={config.gpgpuAux2Curl} min={-5} max={5} step={0.1} onChange={(v) => updateConfig('gpgpuAux2Curl', v)} />

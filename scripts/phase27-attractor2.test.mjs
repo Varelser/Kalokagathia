@@ -89,7 +89,7 @@ check('preamble Phase 27 adds exactly the five unit-2 declarations',
 
 // ── WGSL twin ───────────────────────────────────────────────────
 const wgsl = readFileSync(join(ROOT, 'lib/webgpuCompute.ts'), 'utf8');
-check('VEL uniform buffer 752 (736 through G10 stage 2; stage 3 appended the particle-rules field)', wgsl.includes('const VEL_UNIFORM_BYTES = 752;'));
+check('VEL uniform buffer 768 (736 through G10 stage 2; stage 3 appended the particle-rules field)', wgsl.includes('const VEL_UNIFORM_BYTES = 768;'));
 check('uniform struct appends attractor2 fields after steerPath',
   wgsl.indexOf('attractor2Enabled : f32') > wgsl.indexOf('steerPath : array<vec3f, 8>')
   && wgsl.includes('attractor2Type : i32') && wgsl.includes('attractor2Strength : f32') && wgsl.includes('attractor2Scale : f32'));

@@ -25,6 +25,19 @@ export interface ParticleConfigGpgpu {
   gpgpuTrailLength: number;
   gpgpuTrailFade: number;
   gpgpuTrailVelocityScale: number;
+  // Trail mechanism (Limit plan stage 4, slice S6): 'history'
+  // (default) is the legacy snapshot ring — 16 position RTs,
+  // byte-identical in every respect. 'aux' re-sources the
+  // trail from the level-1 Aux pool instead: each Aux slot
+  // sheds a short-lived child from its parent main particle
+  // on its own emit tick (lib/trailAux.ts is the semantics'
+  // source of truth). The emit keys are read only in 'aux'
+  // mode; gpgpuTrailAuxLife 0 derives the child life from
+  // gpgpuTrailLength (length * interval / 60 seconds).
+  gpgpuTrailMode: 'history' | 'aux';
+  gpgpuTrailEmitInterval: number;
+  gpgpuTrailEmitRate: number;
+  gpgpuTrailAuxLife: number;
   // Instanced Geometry
   gpgpuGeomMode: 'point' | 'cube' | 'tetra' | 'octa' | 'icosa' | 'torus' | 'cone' | 'obj';
   gpgpuGeomVelocityAlign: boolean;
@@ -60,6 +73,14 @@ export interface ParticleConfigGpgpu {
   gpgpuGeomSpecies2Mode: 'point' | 'cube' | 'tetra' | 'octa' | 'icosa' | 'torus' | 'cone' | 'obj' | 'follow';
   gpgpuGeomSpecies3Mode: 'point' | 'cube' | 'tetra' | 'octa' | 'icosa' | 'torus' | 'cone' | 'obj' | 'follow';
   gpgpuGeomSpecies4Mode: 'point' | 'cube' | 'tetra' | 'octa' | 'icosa' | 'torus' | 'cone' | 'obj' | 'follow';
+  // Per-zone OBJ sources (limit plan stage 4, slice S1): when a
+  // species zone resolves to 'obj' and its zone source is
+  // non-empty, that document builds the zone's base geometry;
+  // '' (default) follows the single gpgpuMorphObjSource, so
+  // default configs build byte-identical geometry to before.
+  gpgpuGeomSpecies2ObjSource: string;
+  gpgpuGeomSpecies3ObjSource: string;
+  gpgpuGeomSpecies4ObjSource: string;
   gpgpuGeomSpinSpeed: number;
   // Spin random range (Phase AH): per-particle multiplier spread
   // around the spin speed. 0 = every instance at exactly the base
@@ -137,6 +158,36 @@ export interface ParticleConfigGpgpu {
   gpgpuSpawnEventCount: number;
   gpgpuSpawnEventSpeed: number;
   gpgpuSpawnEventSpread: number;
+  // Spawn allocator (Grammar 2.0 stage 2, E2): the release
+  // rate as an ABSOLUTE count (particles per second) instead
+  // of the legacy pool fraction per second. 0 (default) = off:
+  // the legacy fraction key drives the gate and every string
+  // is the shipped one. Above 0 it replaces the gate's rate
+  // term (the burst / pulse grammar still applies); the
+  // allocator's semantics live in lib/gpgpuSpawnAllocator.ts.
+  gpgpuSpawnRateAbsolute: number;
+  // Spawn envelope (Grammar 2.0 stage 2, E2): an authored
+  // window over the spawn epoch — before `Start` the release
+  // clock does not advance, inside the window it advances at
+  // the free curve's value (the curve asset below, over the
+  // normalised window), and at/after `Stop` it stops for good
+  // (Stop 0 = no stop: after Start the curve's tail value 1
+  // applies, i.e. the plain clock). Disabled (default) = the
+  // legacy clock verbatim. The clock is accumulated CPU-side
+  // (advanceSpawnEnvelopeClock) and consumed by both sim
+  // passes as uSpawnClockTime.
+  gpgpuSpawnEnvelopeEnabled: boolean;
+  gpgpuSpawnEnvelopeStart: number;
+  gpgpuSpawnEnvelopeStop: number;
+  gpgpuSpawnEnvelopeCurve: number[];
+  // Rule spawn gate (Grammar 2.0 stage 2, E2): while on, a
+  // main-pool particle whose live-rule spawn pulse (REP mask
+  // bit 13, slice 1D-3) stands re-births through the shared
+  // respawn block — the main-pool opening of the connection
+  // the Aux ruleSpawn mode already consumes. Off (default) =
+  // the shipped strings; the flag additionally requires an
+  // effective live rule list with a spawn action.
+  gpgpuSpawnRuleGateEnabled: boolean;
   // Emission curve (Phase AJ): a free control-point curve asset
   // (lib/freeCurve.ts, flat [t, v, …] pairs) whose value over a
   // repeating period gates the age respawn probabilistically, so
@@ -233,6 +284,20 @@ export interface ParticleConfigGpgpu {
   // string (lib/gpgpuParticleRules.ts; '' = no rules = legacy
   // behaviour).
   gpgpuParticleRules: string;
+  // Live particle rules (Grammar 2.0 stage 1, slice 1A): the
+  // live rule list as one serialised JSON string
+  // (lib/gpgpuParticleRulesLive.ts; '' = no live rules = the
+  // rule evaluation pass never exists = legacy behaviour), and
+  // the REP re-evaluation interval in frames (the
+  // gpgpuAttrDynInterval cadence discipline).
+  gpgpuParticleRulesLive: string;
+  // Pipeline graph (limit plan stage 5, slice S3): the
+  // pipeline-graph-v1 JSON for the same configuration the
+  // live-rules / force-order keys express in row-list form
+  // (lib/pipelinePersist.ts; '' = no graph = legacy
+  // row-list-only configuration).
+  gpgpuPipelineGraph: string;
+  gpgpuRuleEvalInterval: number;
   // Phase DG: the named group referenced by gpgpuGroupRef also
   // drives two more consumers — a position-pass kill (non-members
   // respawn) and the draw-side attribute colour (members only).
@@ -319,6 +384,15 @@ export interface ParticleConfigGpgpu {
   gpgpuWindVolumeZ: number;
   gpgpuWindVolumeRadius: number;
   gpgpuWindVolumeStrength: number;
+  // Field instances + layers (Grammar 2.0 stage 2, B1):
+  // serialised JSON lists (lib/gpgpuFieldInstances.ts) — placed
+  // vortex / well / wind instances with position, radius and
+  // strength, grouped into weighted layers whose per-particle
+  // modulation rides an attribute slot. Empty strings (the
+  // defaults) = no instances, the velocity pass is verbatim
+  // legacy.
+  gpgpuFieldInstances: string;
+  gpgpuFieldLayers: string;
   // Gravity Well
   gpgpuWellEnabled: boolean;
   gpgpuWellStrength: number;
@@ -586,11 +660,38 @@ export interface ParticleConfigGpgpu {
   // legacy matrix-only behaviour bit-identical.
   gpgpuParticleLifePursue: number;
   gpgpuParticleLifeEvade: number;
+  // Predator-Prey semantics (Grammar 2.0 stage 2, slice B6,
+  // lib/gpgpuPredation.ts): the outcome layer over the
+  // behaviour chain — while enabled, generated live rules
+  // (appended after the user's own) true-kill prey with a
+  // predator in range (or, in 'convert' outcome, transition
+  // them to the assimilated state) and pulse spawn for
+  // predators with prey in range. Range / species reuse the
+  // Particle Life keys above. Disabled (default) = no rules
+  // generated, bit-identical to legacy.
+  gpgpuPredationEnabled: boolean;
+  gpgpuPredationOutcome: 'kill' | 'convert';
+  gpgpuPredationBirth: boolean;
+  gpgpuPredationStrike: number;
+  // B6 follow-up: consecutive evaluations the strike must
+  // hold (1 = immediate, the identity) and the activation
+  // grace in seconds (0 = none, the identity).
+  gpgpuPredationStrikeFrames: number;
+  gpgpuPredationGraceSeconds: number;
   gpgpuParticleLifeVisionRange: number;
   gpgpuParticleLifeVisionAngle: number;
   gpgpuParticleLifeMaxSpeed: number;
   gpgpuParticleLifeMeanderAmount: number;
   gpgpuParticleLifeMeanderScale: number;
+  // Meander promotion (Grammar 2.0 stage 2, slice B7,
+  // lib/gpgpuMeander.ts): the wander term's standalone
+  // enable. While on (and Amount > 0) the term runs as its
+  // own 'meander' force chunk outside the Particle Life
+  // block — Particle Life itself may stay off — and the
+  // block's internal copy is suppressed so the term applies
+  // exactly once. Off (default) = the term lives only inside
+  // the Particle Life block, bit-identical to legacy.
+  gpgpuMeanderEnabled: boolean;
   // Obstacle avoidance (Phase AB): the third Steering term — a
   // push along the SDF collider's normal, quadratic in the
   // proximity inside the vision range. 0 (default) = off; only
@@ -661,7 +762,55 @@ export interface ParticleConfigGpgpu {
   gpgpuSteerSeekPath: string;
   gpgpuSteerSeekPathLookAhead: number;
   gpgpuSteerSeekPathRadius: number;
-  // Spring (to spawn pos)
+  // Path assets (Grammar 2.0 stage 2, B2): the path list as a
+  // first-class asset (lib/gpgpuPathAssets.ts) — extra authored
+  // paths as a JSON list, an authored SVG document whose
+  // subpaths become paths, and the attribute slot that picks
+  // a particle's path (-1 = every particle follows path 0).
+  // All inert at their defaults (the legacy string alone is
+  // the asset, supplied exactly as before).
+  gpgpuSteerSeekPaths: string;
+  gpgpuSteerSeekPathSvg: string;
+  gpgpuSteerSeekPathSvgScale: number;
+  gpgpuSteerSeekPathSlot: number;
+  // Speed / relative drag / Spin (Grammar 2.0 stage 2, B3;
+  // lib/gpgpuSpeedDragSpin.ts is the single resolution
+  // point). Target speed: the velocity tail's final magnitude
+  // setting (0 = off, the legacy clamps-only behaviour).
+  // Relative drag: the 'rel-drag' force chunk relaxing the
+  // velocity toward the wind velocity (rate 0 = off; the wind
+  // speed is a velocity-unit magnitude along the legacy wind
+  // direction). Spin: the accumulated angle / angular-velocity
+  // channel in a dedicated ping-pong RT pair, consumed by the
+  // two draw rotation systems (disabled = the analytic forms).
+  // The three Slot keys modulate per particle through the
+  // attribute slots (-1 = no modulation).
+  gpgpuTargetSpeed: number;
+  gpgpuTargetSpeedBlend: number;
+  gpgpuTargetSpeedSlot: number;
+  gpgpuRelDragRate: number;
+  gpgpuRelDragWindSpeed: number;
+  gpgpuRelDragSlot: number;
+  gpgpuSpinEnabled: boolean;
+  gpgpuSpinSpeed: number;
+  gpgpuSpinRandom: number;
+  gpgpuSpinDamping: number;
+  gpgpuSpinSlot: number;
+  // Orientation channel (Limit plan stage 4, S2;
+  // lib/gpgpuOrient.ts is the single resolution point): a
+  // full quaternion posture accumulated in a dedicated
+  // ping-pong RT pair, consumed by the instanced-geometry
+  // vertex innermost (align ∘ spin ∘ orient). Mode 'axis'
+  // rotates about the fixed axis (0,1,0); 'velocity' about
+  // the particle's velocity direction. The speed key is in
+  // rad/s (unlike the Spin key's deg/s). Disabled = no pass,
+  // no draw variant, byte-identical stock strings.
+  gpgpuOrientEnabled: boolean;
+  gpgpuOrientMode: 'axis' | 'velocity';
+  gpgpuOrientSpeed: number;
+  gpgpuOrientRandom: number;
+  gpgpuOrientDamping: number;
+  gpgpuOrientSlot: number;
   gpgpuSpringEnabled: boolean;
   gpgpuSpringStrength: number;
   // Morph Targets (Kinetix integration B1a): per-particle target points
@@ -669,6 +818,15 @@ export interface ParticleConfigGpgpu {
   // toward its assigned target with the Kinetix morph spring law.
   gpgpuMorphEnabled: boolean;
   gpgpuMorphTarget: 'trefoil' | 'torusKnot' | 'galaxy' | 'mobius' | 'geodesic' | 'crown' | 'blackhole' | 'klein' | 'cymatic' | 'gyroid' | 'dnaRibbon' | 'hypercube' | 'mandelbulb' | 'shell' | 'text' | 'image' | 'svg' | 'obj' | 'terrain' | 'data' | 'contour' | 'polygon';
+  // Morph text font (Grammar 2.0 stage 2, E3): the font family
+  // NAME the 'text' morph bake rasterises with, saved in the
+  // config so a preset reproduces its text cloud (and its text
+  // emission) without a session-only font selection. '' (the
+  // default) falls back to the layer-2 TextMap family
+  // (layer2TextMapFontFamily) — the legacy source, bit-identical.
+  // Only the name is stored; a custom font FILE's bytes remain
+  // session-only, as before.
+  gpgpuMorphTextFont: string;
   // Noise-field morph supply (Phase 15, TD §1): on the 'image'
   // target, the bake's media map comes from the noise field's
   // static slice (lib/mapSourceSupply getNoiseFieldLuma) instead
@@ -1208,6 +1366,62 @@ export interface ParticleConfigGpgpu {
   /** Use the bundled sample cache when no file cache is loaded
    *  (the BZ starter's source). A loaded file cache wins. */
   pointCacheBundledSample: boolean;
+  // Retimer (Grammar 2.0 stage 3, slice S2 —
+  // lib/cacheRetimer.ts): a playback-side frame mapping for
+  // the cache playback above (rate / range / reverse /
+  // interpolation override), shared by point caches and by
+  // state caches played through the same path. Playback
+  // only — the simulation's timeScale is a separate
+  // mechanism and is never touched. Disabled by default:
+  // the driver resolves no retimer and the legacy mapping
+  // runs untouched.
+  pointCacheRetimerEnabled: boolean;
+  /** Playback rate multiplier (> 0). 1 is the legacy speed. */
+  pointCacheRetimerRate: number;
+  /** First frame of the retimed range (0-based). */
+  pointCacheRetimerStartFrame: number;
+  /** Last frame of the retimed range; -1 means the cache's
+   *  own last frame. */
+  pointCacheRetimerEndFrame: number;
+  /** Play the range backwards (from its end to its start). */
+  pointCacheRetimerReverse: boolean;
+  /** Interpolation override: 'inherit' keeps the manifest's
+   *  declared interpolation (the legacy behaviour). */
+  pointCacheRetimerInterpolation: 'inherit' | 'linear' | 'nearest';
+  // Skinning (stage 3 S6): parameters of the isosurface
+  // export that turns a held state cache into a mesh
+  // series (lib/stateCacheSkinning.ts). Export-action
+  // parameters only — nothing else reads them, and the
+  // density kernel's own scale stays with the existing
+  // SPH keys (gpgpuSphRadius / gpgpuSphRestDensity) and
+  // the bounds key (gpgpuBounceRadius).
+  /** Density-grid nodes per axis for the skinning export. */
+  stateCacheSkinningResolution: number;
+  /** Iso level of the skinning export, in field units
+   *  (SPH kernel sum / rest density). */
+  stateCacheSkinningIsoLevel: number;
+  /** Particle-count limit of the skinning export; a cache
+   *  above it is refused with the reason. */
+  stateCacheSkinningMaxParticles: number;
+  // Trail geometry (stage 3 S7): parameters of the export
+  // that turns a held state cache into per-particle trail
+  // tube documents (lib/stateCacheTrailGeometry.ts).
+  // Export-action parameters only — nothing else reads
+  // them, and no display trail key is bridged (the drawing
+  // tubes' radii are draw parameters, not a definition
+  // this data path shares).
+  /** Tube radius of the trail geometry export, in world units. */
+  stateCacheTrailRadius: number;
+  /** Cross-section vertices per ring of the trail tube
+   *  (integer, 3..32). */
+  stateCacheTrailRadialSegments: number;
+  /** Particle-count limit of the trail export; a cache
+   *  above it is refused with the reason. */
+  stateCacheTrailMaxParticles: number;
+  /** History frame limit of the trail export; a longer
+   *  cache contributes its most recent frames (the
+   *  trailing window, stated in the export result). */
+  stateCacheTrailMaxFrames: number;
   // Floor plane bounce (Kinetix integration B3, Kinetix floorBounce /
   // floorY / floorRestitution): a horizontal floor at gpgpuFloorY that
   // reflects velocity in the velocity pass and clamps position in the
@@ -1223,12 +1437,24 @@ export interface ParticleConfigGpgpu {
   // continuous spark shedding from live main particles (Kinetix
   // auxMode). 'none' (default) runs no aux passes at all. The layer
   // Aux/Spark systems are unrelated and keep working as before.
-  gpgpuAuxMode: 'none' | 'deathBurst' | 'bounceSplash' | 'sparkTrail' | 'birthBurst';
+  gpgpuAuxMode: 'none' | 'deathBurst' | 'bounceSplash' | 'sparkTrail' | 'birthBurst' | 'ruleSpawn' | 'emit';
   gpgpuAuxCount: number;
   gpgpuAuxIntensity: number;
   gpgpuAuxLife: number;
   gpgpuAuxSpeed: number;
   gpgpuAuxSize: number;
+  // Child emitter (Grammar 2.0 stage 1, slice 1D-2): the 'emit'
+  // mode turns a living source particle into an emitter that
+  // sheds this level's particles at a rate (per second, rolled
+  // per 60 Hz tick as rate/60) with a shaped velocity
+  // distribution. The keys are read only while the mode is
+  // 'emit'; the defaults (rate 30, sphere, spread 0.5) never
+  // engage otherwise, and the mode itself defaults to the
+  // legacy modes above ('none' included), so an untouched
+  // config is bit-identical to before.
+  gpgpuAuxEmitRate: number;
+  gpgpuAuxEmitShape: 'sphere' | 'cone' | 'disc' | 'point';
+  gpgpuAuxEmitSpread: number;
   // Child-emitter independence (Phase Q, Parent/Child): the Aux pool
   // is a full second simulation spawned by parent events; these keys
   // give the CHILD its own physics and look instead of sharing the
@@ -1239,6 +1465,17 @@ export interface ParticleConfigGpgpu {
   gpgpuAuxDrag: number;
   gpgpuAuxCurl: number;
   gpgpuAuxColor: string;
+  // Spawn inheritance (Grammar 2.0 stage 1, slice 1D-1): at spawn
+  // time the velocity pass's decision is mirrored into a per-level
+  // inheritance texture (parent attribute slots 0/1/2 + species),
+  // which the chain copies down particle-by-particle and the draw
+  // can blend into the level colour. Every default reproduces the
+  // legacy behaviour: velocity scale 1 (the legacy trail / birth
+  // coefficients unchanged), colour mix 0 (the level colour alone),
+  // slots 1 (the inheritance texture is generated while Aux runs).
+  gpgpuAuxInheritVelScale: number;
+  gpgpuAuxInheritColor: number;
+  gpgpuAuxInheritSlots: number;
   // Aux chain (Phase W1, grandchild emitters): the Aux pool's own
   // events can spawn a SECOND aux pool (level 2 = grandchildren),
   // and — at depth 3 — a third (level 3), each an identical 128x128
@@ -1251,11 +1488,17 @@ export interface ParticleConfigGpgpu {
   // pool is allocated or run, and depth 1 (default) is exactly the
   // legacy single-pool behaviour.
   gpgpuAuxDepth: number;
-  gpgpuAux2Mode: 'none' | 'deathBurst' | 'bounceSplash' | 'sparkTrail' | 'birthBurst';
+  gpgpuAux2Mode: 'none' | 'deathBurst' | 'bounceSplash' | 'sparkTrail' | 'birthBurst' | 'emit';
   gpgpuAux2Intensity: number;
   gpgpuAux2Life: number;
   gpgpuAux2Speed: number;
   gpgpuAux2Size: number;
+  // Child emitter (slice 1D-2): the Aux2 counterparts of the
+  // emit keys above, shared by chain levels 2 and 3 exactly
+  // like the rest of the Aux2 set.
+  gpgpuAux2EmitRate: number;
+  gpgpuAux2EmitShape: 'sphere' | 'cone' | 'disc' | 'point';
+  gpgpuAux2EmitSpread: number;
   gpgpuAux2GravityScale: number;
   gpgpuAux2Drag: number;
   gpgpuAux2Curl: number;
@@ -1265,6 +1508,77 @@ export interface ParticleConfigGpgpu {
   // Particular's Light Emitter; it works whether or not the light
   // itself is enabled).
   gpgpuEmitShape: 'sphere' | 'disc' | 'ring' | 'box' | 'shell' | 'cone' | 'light';
+  // Respawn shape (Grammar 2.0 stage 2, E1): 'auto' = the
+  // legacy respawn placement; any other value places respawns
+  // through the shared bake shape law (lib/gpgpuEmitShapes.ts).
+  gpgpuRespawnShape: 'auto' | 'sphere' | 'disc' | 'ring' | 'box' | 'shell' | 'cone' | 'light';
+  // Distribution operators (Grammar 2.0 stage 2, B5): a JSON
+  // list of fixed operators (power / invert / stratify /
+  // cluster) layered over the shape law's placed point, in
+  // the bake and the respawn alike (lib/gpgpuDistribution.ts).
+  // '' (default) = no layer — bit-identical legacy placement.
+  gpgpuEmitDistribution: string;
+  // Shader seed (Grammar 2.0 stage 2, B5): the opt-in that
+  // lets a seed reach the respawn hash draws (judgment 3 —
+  // seeds reach shaders only through a new key's opt-in).
+  // 0 (default) = off; the legacy hash phase stands.
+  gpgpuShaderSeed: number;
+  // Emission source (Grammar 2.0 stage 2, E3): where (re)births
+  // are placed FROM. 'shape' (default) is the legacy analytic
+  // shape law above (bit-identical). 'morph' draws placements
+  // from the morph target's sample cloud — the same baked cloud
+  // the morph force targets, used at birth instead of as a
+  // target (lib/gpgpuEmissionSource.ts). 'bitmap' draws from a
+  // sample cloud built from the layer-2 media luma map by the
+  // ported CPU media sampler. 'path' places on the steering
+  // path polyline (the gpgpuSteerSeekPath point list, shared
+  // with Path Follow) with the bake's initial velocity along
+  // the path tangent.
+  gpgpuEmitSource: 'shape' | 'morph' | 'bitmap' | 'path';
+  // Bitmap emission cloud (E3): the ported CPU sampler's
+  // threshold / relief depth / invert (defaults = the CPU
+  // layer sampler's media defaults). Only read while the
+  // emission source is 'bitmap'.
+  gpgpuEmitBitmapThreshold: number;
+  gpgpuEmitBitmapDepth: number;
+  gpgpuEmitBitmapInvert: boolean;
+  // Path emission (E3): the bake's initial speed along the
+  // path tangent. 0 keeps the legacy velocity draws. Only
+  // read while the emission source is 'path'.
+  gpgpuEmitPathSpeed: number;
+  // Emission mask (E3): while on, placements (bake + respawn)
+  // are gated by the Phase X raster mask — the bake consults
+  // the config mask grid, the respawn consults the mask
+  // texture with the kill mask's own UV rule / threshold /
+  // invert. Off (default) = no gating anywhere.
+  gpgpuEmitMaskEnabled: boolean;
+  // Emitter transform (stage 2, E0): position / rotation in
+  // degrees / uniform scale of the emitter frame, applied to
+  // placements on the bake and the respawn alike. The
+  // defaults (0 / 0 / 1) are the identity transform.
+  gpgpuEmitterPosX: number;
+  gpgpuEmitterPosY: number;
+  gpgpuEmitterPosZ: number;
+  gpgpuEmitterRotX: number;
+  gpgpuEmitterRotY: number;
+  gpgpuEmitterRotZ: number;
+  gpgpuEmitterScale: number;
+  // Emitter initial velocity (Grammar 2.0 stage 2, E2): the
+  // general port of the spawn event's directly specified
+  // velocity. 'cube' (default) is the legacy bake scatter
+  // (±2 cube, no respawn reset — every string and array is
+  // the shipped one). 'directed' hands each (re)birth the
+  // velocity of lib/gpgpuLifecycle.ts directedInitialVelocity:
+  // direction blended from the authored axis toward a hash
+  // sphere direction by Spread, magnitude Speed jittered by
+  // the same blend. Applies at the bake and on the spawn-gate
+  // activation frame; age respawns keep the legacy no-reset.
+  gpgpuEmitterVelMode: 'cube' | 'directed';
+  gpgpuEmitterVelDirX: number;
+  gpgpuEmitterVelDirY: number;
+  gpgpuEmitterVelDirZ: number;
+  gpgpuEmitterVelSpeed: number;
+  gpgpuEmitterVelSpread: number;
   // 3D Light (Phase T): a single monochrome point light / spotlight
   // that multiplies the DRAWN brightness of GPGPU points (see
   // lib/gpgpuLight.ts). It never touches the simulation — positions
@@ -1287,6 +1601,39 @@ export interface ParticleConfigGpgpu {
   gpgpuLightDirX: number;
   gpgpuLightDirY: number;
   gpgpuLightDirZ: number;
+  // Light units 2-4 (Grammar 2.0 stage 2, E4): the Phase T
+  // light becomes a unit list (lib/gpgpuLightUnits.ts is the
+  // single resolution point). Unit 1 IS the legacy light above;
+  // units 2-4 are point lights (no cone) with their own
+  // position / radius / intensity, mirroring unit 1's defaults
+  // and shipping disabled, so every existing config resolves
+  // bit-identically. Enabled extra units join the points draw
+  // (multiplicatively) and the Phase Z occlusion bake's light
+  // list. The volume / trail / true shadow map stay unit-1
+  // features.
+  gpgpuLight2Enabled: boolean;
+  gpgpuLight2PosX: number;
+  gpgpuLight2PosY: number;
+  gpgpuLight2PosZ: number;
+  gpgpuLight2Intensity: number;
+  gpgpuLight2Radius: number;
+  gpgpuLight3Enabled: boolean;
+  gpgpuLight3PosX: number;
+  gpgpuLight3PosY: number;
+  gpgpuLight3PosZ: number;
+  gpgpuLight3Intensity: number;
+  gpgpuLight3Radius: number;
+  gpgpuLight4Enabled: boolean;
+  gpgpuLight4PosX: number;
+  gpgpuLight4PosY: number;
+  gpgpuLight4PosZ: number;
+  gpgpuLight4Intensity: number;
+  gpgpuLight4Radius: number;
+  // Which light unit the 'light' emit shape places around
+  // (1-4, default 1 = the legacy light position). A pure
+  // position reference like the legacy behaviour: the named
+  // unit's draw enable is not consulted.
+  gpgpuEmitLightUnit: number;
   // Visible light volume + light trail (Phase Y): a volumetric
   // cone / sphere drawn IN the scene at the 3D light's position
   // (lib/lightVolume.ts), plus a ribbon along the light's movement
@@ -1354,6 +1701,20 @@ export interface ParticleConfigGpgpu {
   gpgpuShadowMapBias: number;
   /** PCF blur radius in texels; 0 = hard shadow. */
   gpgpuShadowMapSoftness: number;
+  /** Particle self-shadowing (limit plan stage 4, slice S4):
+   *  while true, the main pool casts into the shadow map —
+   *  the geometry instances via a dedicated instanced depth
+   *  material and the points via a dedicated point-size depth
+   *  draw, both rendered by LightShadowCapture into the same
+   *  target after the scene pass. False (default) = the
+   *  capture is byte-identical to before this slice: particles
+   *  never cast and no caster pass exists. Only takes effect
+   *  while the capture is mounted (strength > 0). */
+  gpgpuShadowMapCastParticles: boolean;
+  /** Diameter multiplier for the points depth draw (the geom
+   *  instances cast at their true instanced scale and ignore
+   *  this). Resolved with a clamp in lib/lightShadowMap.ts. */
+  gpgpuShadowMapParticleSize: number;
   /** Fog / volumetric self-shadow strength; 0 = legacy fog. */
   gpgpuFogSelfShadow: number;
   /** Secondary march steps for the fog self-shadow (1..16). */
@@ -1418,8 +1779,19 @@ export interface ParticleConfigGpgpu {
   // lib/spriteSheet.ts for the pure frame math.
   gpgpuSpriteSheetCols: number;
   gpgpuSpriteSheetRows: number;
-  gpgpuSpriteFrameMode: 'age' | 'fps' | 'random';
+  gpgpuSpriteFrameMode: 'age' | 'fps' | 'random' | 'channel';
   gpgpuSpriteFrameFps: number;
+  // Sprite frame channel drive (Limit plan stage 4, S3,
+  // lib/spriteSheet.ts): in 'channel' mode a per-particle
+  // channel value (age ratio / speed / attribute slot / live
+  // state id / live rule bits), divided by the range and
+  // clamped to [0, 1], sweeps the sheet like age mode sweeps
+  // normAge. The defaults (ageRatio / slot -1 / range 1) are
+  // inert: the draw variant stands only in 'channel' mode, so
+  // every legacy mode keeps its byte-identical strings.
+  gpgpuSpriteFrameChannel: 'ageRatio' | 'speed' | 'attr' | 'state' | 'rule';
+  gpgpuSpriteFrameSlot: number;
+  gpgpuSpriteFrameRange: number;
   gpgpuSpriteLoop: boolean;
   // Sprite rotation (Phase AX, lib/spriteRotation.ts): the point
   // sprite itself rotates with the particle's age — angle =
@@ -1465,6 +1837,23 @@ export interface ParticleConfigGpgpu {
   gpgpuAgeCurveForcePoints: number[];
   gpgpuAgeCurveRotationEnabled: boolean;
   gpgpuAgeCurveRotationPoints: number[];
+  // Age free curves (Grammar 2.0 stage 2, B4): per-target free
+  // control-point assets (lib/freeCurve.ts flat [t, v, …] form)
+  // over the same normalised age. While a target's FreeEnabled
+  // is on (and the target itself is enabled), the free curve
+  // replaces the 5-point curve as that target's evaluation
+  // source; off (the default) the 5-point path is untouched.
+  // Resolution: lib/gpgpuAgeFreeCurves.ts.
+  gpgpuAgeCurveSizeFreeEnabled: boolean;
+  gpgpuAgeCurveSizeFreePoints: number[];
+  gpgpuAgeCurveOpacityFreeEnabled: boolean;
+  gpgpuAgeCurveOpacityFreePoints: number[];
+  gpgpuAgeCurveVelocityFreeEnabled: boolean;
+  gpgpuAgeCurveVelocityFreePoints: number[];
+  gpgpuAgeCurveForceFreeEnabled: boolean;
+  gpgpuAgeCurveForceFreePoints: number[];
+  gpgpuAgeCurveRotationFreeEnabled: boolean;
+  gpgpuAgeCurveRotationFreePoints: number[];
   // Layer Maps per property (Phase U): the gradient image
   // (gpgpuGradImageSource, sampled by particle position through the
   // existing MediaLumaMap-style plumbing) modulates size / opacity

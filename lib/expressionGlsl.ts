@@ -324,6 +324,151 @@ function astCallToGlsl(name: string, args: string[]): string | null {
 }
 
 /**
+ * Emit the WGSL for one compiled AST — the twin of astToGlsl
+ * (Grammar 2.0 stage 1, the WGSL slice), or null when a node
+ * has no faithful WGSL form. The expression language's value
+ * semantics are float-with-truthiness on both sides, so every
+ * construct astToGlsl lowers to a `?:` ternary is lowered here
+ * to a `select(false, true, cond)` instead (WGSL has no
+ * ternary operator), and the two-argument arctangent maps to
+ * WGSL's atan2 (GLSL spells it atan(y, x)). Everything else —
+ * the arithmetic operators, the mod/^ expansions, the function
+ * table — is textually identical, so a condition is
+ * representable in WGSL exactly when it is representable in
+ * GLSL, modulo the variable homes the resolver supplies.
+ */
+export function astToWgsl(node: AstNode, resolveVar: GlslVarResolver): string | null {
+  switch (node.type) {
+    case 'num':
+      return formatGlslNumber(node.value);
+    case 'const':
+      return formatGlslNumber(node.value);
+    case 'var':
+      return resolveVar(node.name);
+    case 'unary': {
+      const arg = astToWgsl(node.arg, resolveVar);
+      if (arg === null) return null;
+      return node.op === '-' ? `(-${arg})` : `select(0.0, 1.0, (${arg}) == 0.0)`;
+    }
+    case 'ternary': {
+      const cond = astToWgsl(node.cond, resolveVar);
+      const then = astToWgsl(node.then, resolveVar);
+      const els = astToWgsl(node.else, resolveVar);
+      if (cond === null || then === null || els === null) return null;
+      return `select((${els}), (${then}), (${cond}) != 0.0)`;
+    }
+    case 'binary': {
+      const left = astToWgsl(node.left, resolveVar);
+      const right = astToWgsl(node.right, resolveVar);
+      if (left === null || right === null) return null;
+      switch (node.op) {
+        case '+':
+          return `((${left}) + (${right}))`;
+        case '-':
+          return `((${left}) - (${right}))`;
+        case '*':
+          return `((${left}) * (${right}))`;
+        case '/':
+          return `((${left}) / (${right}))`;
+        case '%':
+          // The language's mod definition, with the b == 0 → 0
+          // guard (the GLSL ternary lowered to select).
+          return `select(((${left}) - (${right}) * floor(((${left}) / (${right})))), 0.0, (${right}) == 0.0)`;
+        case '^':
+          return `pow((${left}), (${right}))`;
+        case '<':
+          return `select(0.0, 1.0, (${left}) < (${right}))`;
+        case '<=':
+          return `select(0.0, 1.0, (${left}) <= (${right}))`;
+        case '>':
+          return `select(0.0, 1.0, (${left}) > (${right}))`;
+        case '>=':
+          return `select(0.0, 1.0, (${left}) >= (${right}))`;
+        case '==':
+          return `select(0.0, 1.0, (${left}) == (${right}))`;
+        case '!=':
+          return `select(0.0, 1.0, (${left}) != (${right}))`;
+        case '&&':
+          return `select(0.0, 1.0, ((${left}) != 0.0) && ((${right}) != 0.0))`;
+        case '||':
+          return `select(0.0, 1.0, ((${left}) != 0.0) || ((${right}) != 0.0))`;
+        default:
+          return null;
+      }
+    }
+    case 'call': {
+      const args: string[] = [];
+      for (const arg of node.args) {
+        const emitted = astToWgsl(arg, resolveVar);
+        if (emitted === null) return null;
+        args.push(emitted);
+      }
+      return astCallToWgsl(node.name, args);
+    }
+  }
+}
+
+/**
+ * Map one FUNCTIONS call to WGSL — the twin of astCallToGlsl.
+ * Every entry of the lib/expression.ts FUNCTIONS table is
+ * covered; anything else returns null.
+ */
+function astCallToWgsl(name: string, args: string[]): string | null {
+  const a = args[0];
+  const b = args[1];
+  switch (name) {
+    case 'abs':
+    case 'sin':
+    case 'cos':
+    case 'tan':
+    case 'asin':
+    case 'acos':
+    case 'atan':
+    case 'sqrt':
+    case 'exp':
+    case 'log':
+    case 'floor':
+    case 'ceil':
+    case 'sign':
+    case 'fract':
+      // WGSL twins with the same names and definitions.
+      return `${name}((${a}))`;
+    case 'atan2':
+      return `atan2((${a}), (${b}))`;
+    case 'pow':
+      return `pow((${a}), (${b}))`;
+    case 'round':
+      // Math.round rounds half toward +Infinity: floor(v + 0.5)
+      // (same derivation as the GLSL side).
+      return `floor((${a}) + 0.5)`;
+    case 'mod':
+      return `select(((${a}) - (${b}) * floor(((${a}) / (${b})))), 0.0, (${b}) == 0.0)`;
+    case 'min':
+    case 'max': {
+      let acc = `(${a})`;
+      for (let i = 1; i < args.length; i++) {
+        acc = `${name}((${acc}), (${args[i]}))`;
+      }
+      return acc;
+    }
+    case 'clamp':
+      // Math.min(hi, Math.max(lo, v)) — the JS evaluation order.
+      return `min((${args[2]}), max((${args[1]}), (${args[0]})))`;
+    case 'lerp':
+      return `((${a}) + ((${b}) - (${a})) * (${args[2]}))`;
+    case 'smoothstep': {
+      const lo = args[0];
+      const hi = args[1];
+      const v = args[2];
+      const u = `clamp((((${v}) - (${lo})) / ((${hi}) - (${lo}))), 0.0, 1.0)`;
+      return `select(((${u}) * (${u}) * (3.0 - 2.0 * (${u}))), select(1.0, 0.0, (${v}) < (${lo})), (${hi}) == (${lo}))`;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
  * Build the attribute dynamic pass's fragment shader for the
  * given per-slot expressions and slot names, or null when the
  * pass must not exist:

@@ -15,6 +15,7 @@
 // structure and statistics, not bit-for-bit.
 
 import { SIM_VEL_FRAG } from '../components/gpgpuShaderSimulationVelocity';
+import { dmHash11 } from './gpgpuRandom';
 
 /**
  * Slice the curl GLSL chunk (hash3 through curlField) out of the
@@ -39,16 +40,6 @@ function glslMod(x: number, y: number): number {
 
 function dot3(a: Vec3, b: Vec3): number {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
 }
 
 export function hash3(p: Vec3): Vec3 {

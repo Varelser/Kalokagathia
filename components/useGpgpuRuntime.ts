@@ -3,7 +3,15 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
-import { buildSpawnDistanceValues } from '../lib/gpgpuLifecycle';
+import { registerStateCacheInitialStateApplier } from '../lib/gpgpuInitialState';
+import { resolveGpgpuExecutionFoundation } from '../lib/gpgpuExecutionFoundation';
+import { resolvePingPongTargets } from './gpgpuExecutionRouting';
+import { clampEmitterVelSpeed, clampEmitterVelSpread, emitterTransformActive, emitterVelocityDirectedActive, resolveEmitterBaseDirection, resolveEmitterTransform } from '../lib/gpgpuEmitter';
+import { resolveEmitLightPos } from '../lib/gpgpuLightUnits';
+import { fieldLayerSlotAttrActive } from '../lib/gpgpuFieldInstances';
+import { b3SlotAttrActive } from '../lib/gpgpuSpeedDragSpin';
+import { distributionActive, resolveDistributionOps } from '../lib/gpgpuDistribution';
+import { buildSpawnDistanceValues, spawnDistanceMaxValue } from '../lib/gpgpuLifecycle';
 import { buildVellumBakeData, buildVellumVolumeGradientData, vellumStatePoolActive, vellumVolumeActive, vellumXpbdPoolActive, type VellumComponent } from '../lib/gpgpuVellum';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
 import { setBakedSpeciesData } from '../lib/speciesAllocation';
@@ -11,6 +19,13 @@ import { planVerticalTextOnPath, splitTextOnPathGlyphs, type TextGlyphRaster } f
 import type { TextColumnAdjustments } from '../lib/textColumnLayout';
 import { traceContourGeometry } from '../lib/contourTrace';
 import { fractureOptionFromConfig } from '../lib/voronoiFracture';
+import {
+  applyLiveFractureComposite,
+  createLiveFractureTriggerGate,
+  extractLiveFractureTriggerSet,
+  resolveLiveFractureBake,
+  type LiveFractureTriggerGate,
+} from '../lib/gpgpuLiveFracture';
 import { publishFragmentBake, resolveFragmentRestoreGate, type FragmentRestoreStatus } from '../lib/fragmentCollection';
 import { buildBodyClusterColorLut, RIGID_CLUSTER_COLOR_COUNT } from '../lib/rigidClusterColors';
 import {
@@ -43,6 +58,7 @@ import { FLUID_SIZE } from './gpgpuShaders';
 import { AUX_TEX_SIZE } from './gpgpuShaderAux';
 import { WW_TEX_SIZE } from './gpgpuShaderWhitewater';
 import { clampAuxDepth } from '../lib/auxChain';
+import { auxInheritAttrBakeStands, auxInheritSlotsEnabled } from '../lib/auxInherit';
 import { getMaxGpgpuTexSize } from '../lib/gpuTier';
 import {
   replicaBlockRange,
@@ -91,6 +107,16 @@ import {
   particleRulesReferenceExtSlots,
   resolveParticleRules,
 } from '../lib/gpgpuParticleRules';
+import { liveRuleEvalStands } from '../lib/gpgpuParticleRulesLive';
+import { predationRepStands } from '../lib/gpgpuPredation';
+import {
+  buildBitmapEmissionCloud,
+  buildEmissionMaskPredicate,
+  resolveBitmapEmission,
+  resolveEmissionPath,
+  resolveEmissionSourceKind,
+  resolveMorphTextFont,
+} from '../lib/gpgpuEmissionSource';
 import { resolveGrainsCellSortActive } from '../lib/flip3dAtlasDowngrade';
 import { grainsPileActive } from '../lib/gpgpuGrains';
 import { getMaxTextureImageUnits } from '../lib/gpuDiagnostics';
@@ -357,6 +383,38 @@ function disposeAuxPool(pool: AuxPoolTargets | null): void {
 }
 
 /**
+ * One aux inheritance target (Grammar 2.0 stage 1, slice 1D-1):
+ * a single 128x128 RGBA float target, zero-initialised through
+ * the same DataTexture copy path as the pools. Unlike the pools
+ * it is NOT ping-ponged — the inheritance write pass updates it
+ * sparsely (discard on non-spawning texels), so a slot's record
+ * persists from its spawn until its next spawn. All-zero is the
+ * "never spawned" record (slots 0, species 0).
+ */
+function createAuxInheritTarget(gl: THREE.WebGLRenderer): THREE.WebGLRenderTarget {
+  const target = makeRT(AUX_TEX_SIZE);
+  const count = AUX_TEX_SIZE * AUX_TEX_SIZE;
+  const zeroTex = new THREE.DataTexture(
+    new Float32Array(count * 4), AUX_TEX_SIZE, AUX_TEX_SIZE, THREE.RGBAFormat, THREE.FloatType,
+  );
+  zeroTex.needsUpdate = true;
+  const copyScene = new THREE.Scene();
+  const copyCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const copyGeo = new THREE.PlaneGeometry(2, 2);
+  const copyMat = new THREE.MeshBasicMaterial({ map: zeroTex });
+  copyMat.blending = THREE.NoBlending;
+  const copyMesh = new THREE.Mesh(copyGeo, copyMat);
+  copyScene.add(copyMesh);
+  gl.setRenderTarget(target);
+  gl.render(copyScene, copyCam);
+  gl.setRenderTarget(null);
+  zeroTex.dispose();
+  copyMat.dispose();
+  copyGeo.dispose();
+  return target;
+}
+
+/**
  * One replica simulation stack (Phase W2, method (a)): the
  * state-separated sim for a single morph-replica block — its own
  * ping-pong targets and Verlet previous-position target, seeded
@@ -478,8 +536,16 @@ export type GpgpuRuntimeRefs = {
   // max-normalised initial distances (R channel), built with the
   // initial data; the passes only read it in a distance mode.
   spawnOrderTexRef: MutableRefObject<THREE.DataTexture | null>;
+  // Texture-unit fix (Grammar 2.0 stage 1): the order bake's
+  // normaliser, for the live variants' derived gate value.
+  spawnOrderMaxRef: MutableRefObject<number>;
   morphTexRef: MutableRefObject<THREE.DataTexture | null>;
   morphNormalTexRef: MutableRefObject<THREE.DataTexture | null>;
+  // Emission cloud (stage 2, E3): the emission source's cloud
+  // texture (morph cloud reused as a source, or the bitmap
+  // cloud), published by the morph / bitmap bake effects and
+  // read by the position pass's cloud variant.
+  emitCloudTexRef: MutableRefObject<THREE.DataTexture | null>;
   attrTexRef: MutableRefObject<THREE.DataTexture | null>;
   attrTex2Ref: MutableRefObject<THREE.DataTexture | null>;
   fluidRTARef: MutableRefObject<THREE.WebGLRenderTarget | null>;
@@ -515,6 +581,11 @@ export type GpgpuRuntimeRefs = {
   aux2PingIsA: MutableRefObject<boolean>;
   aux3RtRef: MutableRefObject<AuxPoolTargets | null>;
   aux3PingIsA: MutableRefObject<boolean>;
+  // Spawn inheritance targets (slice 1D-1): one per chain
+  // level, present only while gpgpuAuxInheritSlots is on.
+  auxInheritRtRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
+  aux2InheritRtRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
+  aux3InheritRtRef: MutableRefObject<THREE.WebGLRenderTarget | null>;
   replicaStacksRef: MutableRefObject<ReplicaStack[] | null>;
   // Vellum (Phase AR): the static rest-pose texture (the grid
   // bake itself) and the tear link-survival ping-pong pair
@@ -572,6 +643,18 @@ export type GpgpuRuntimeRefs = {
   webgpuStateRef: MutableRefObject<WebGPUComputeState | null>;
   webgpuPosTexRef: MutableRefObject<THREE.DataTexture | null>;
   webgpuPingIsARef: MutableRefObject<boolean>;
+  // Live fracture consumption (Grammar 2.0 stage 1, fracture
+  // follow-up): the scene feeds each REP readback's mask
+  // channel (RGBA-packed, mask in .r) with the evaluation
+  // frame number; an activation re-bakes the morph target
+  // with the triggered particles fractured. Returns true when
+  // the presentation activated (a re-bake was requested).
+  noteLiveFractureMask: (maskChannel: ArrayLike<number>, frame: number) => boolean;
+  // Reset the live fracture history (the scene calls this
+  // when the REP is rebuilt or disposed: a new live rule list
+  // starts a new history). Re-bakes only when particles were
+  // actually fractured.
+  resetLiveFracture: () => void;
 };
 
 type UseGpgpuRuntimeArgs = {
@@ -702,7 +785,7 @@ export function buildContourGeometryOption(config: ParticleConfig): PathGeometry
       config.layer2TextMapText,
       128,
       128,
-      config.layer2TextMapFontFamily,
+      resolveMorphTextFont(config),
       config.layer2TextMapWeight,
       config.layer2TextMapSize,
       config.layer2TextMapPadding,
@@ -731,7 +814,7 @@ export function buildMorphBakeData(
       config.layer2TextMapText,
       128,
       128,
-      config.layer2TextMapFontFamily,
+      resolveMorphTextFont(config),
       config.layer2TextMapWeight,
       config.layer2TextMapSize,
       config.layer2TextMapPadding,
@@ -773,7 +856,7 @@ export function buildMorphBakeData(
     enabled: config.gpgpuMorphTextOnPathEnabled,
     pathMode: config.gpgpuMorphPathMode,
     text: config.layer2TextMapText,
-    fontFamily: config.layer2TextMapFontFamily,
+    fontFamily: resolveMorphTextFont(config),
     weight: config.layer2TextMapWeight,
     size: config.layer2TextMapSize,
     padding: config.layer2TextMapPadding,
@@ -932,8 +1015,43 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const prevPosRTRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const initPosTexRef = useRef<THREE.DataTexture | null>(null);
   const spawnOrderTexRef = useRef<THREE.DataTexture | null>(null);
+  // Texture-unit fix (Grammar 2.0 stage 1): the spawn-order
+  // bake's normaliser, kept alongside the texture for the
+  // live shader variants, which derive the gate value from
+  // the initial-position texture instead of sampling the
+  // order texture (see lib/gpgpuLifecycle.ts
+  // spawnDistanceMaxValue).
+  const spawnOrderMaxRef = useRef(0);
   const morphTexRef = useRef<THREE.DataTexture | null>(null);
   const morphNormalTexRef = useRef<THREE.DataTexture | null>(null);
+  const emitCloudTexRef = useRef<THREE.DataTexture | null>(null);
+  // Live fracture consumption (Grammar 2.0 stage 1, fracture
+  // follow-up): the trigger gate the scene's REP readback
+  // feeds, and the bake version an activation bumps. The
+  // version is a dep of the morph bake effect below, so an
+  // activation re-bakes the morph target with the triggered
+  // particles composited in (see the bake effect). While no
+  // live fracture rule exists the gate is never fed, the
+  // version stays 0 and the bake is bit-identical to before.
+  const liveFractureGateRef = useRef<LiveFractureTriggerGate | null>(null);
+  if (liveFractureGateRef.current === null) {
+    liveFractureGateRef.current = createLiveFractureTriggerGate();
+  }
+  const [liveFractureVersion, setLiveFractureVersion] = useState(0);
+  const noteLiveFractureMask = (maskChannel: ArrayLike<number>, frame: number): boolean => {
+    const gate = liveFractureGateRef.current;
+    if (!gate) return false;
+    const triggerSet = extractLiveFractureTriggerSet(maskChannel, texSize * texSize);
+    if (gate.consider(triggerSet, frame) === null) return false;
+    setLiveFractureVersion((v) => v + 1);
+    return true;
+  };
+  const resetLiveFracture = (): void => {
+    const gate = liveFractureGateRef.current;
+    if (!gate || gate.fractured.size === 0) return;
+    gate.reset();
+    setLiveFractureVersion((v) => v + 1);
+  };
   const attrTexRef = useRef<THREE.DataTexture | null>(null);
   // Phase 28 (9-5): the latest attribute bake copy (the exact
   // array bound as the WebGL texture) awaiting / mirroring the
@@ -979,6 +1097,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const flip3dRef = useRef<Flip3dTargets | null>(null);
   const aux3RtRef = useRef<AuxPoolTargets | null>(null);
   const aux3PingIsA = useRef(true);
+  const auxInheritRtRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const aux2InheritRtRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const aux3InheritRtRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const replicaStacksRef = useRef<ReplicaStack[] | null>(null);
   const vellumRestTexRef = useRef<THREE.DataTexture | null>(null);
   const vellumStateRtRef = useRef<{ a: THREE.WebGLRenderTarget; b: THREE.WebGLRenderTarget } | null>(null);
@@ -1013,9 +1134,24 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // masked to 0 unless the 'light' emitter is in use, so dragging
   // the light never reseeds other shapes' clouds. Extracted here
   // so the dependency arrays hold plain values.
-  const lightPosDepX = config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0;
-  const lightPosDepY = config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0;
-  const lightPosDepZ = config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0;
+  // Light units (stage 2, E4): the position is the emit unit's
+  // (lib/gpgpuLightUnits.ts) — at the default unit 1 this is the
+  // legacy light position verbatim.
+  const emitLightPos = resolveEmitLightPos(config);
+  const lightPosDepX = config.gpgpuEmitShape === 'light' ? emitLightPos.x : 0;
+  const lightPosDepY = config.gpgpuEmitShape === 'light' ? emitLightPos.y : 0;
+  const lightPosDepZ = config.gpgpuEmitShape === 'light' ? emitLightPos.z : 0;
+  // Emission sources (stage 2, E3): while a source or the
+  // emission mask is live, the bake reads emission inputs
+  // from across the config (the morph cloud's whole input
+  // set, the media map, the steering path, the mask grid),
+  // so the reseed dependency rides a config signature — the
+  // attrSignature discipline. While everything is off the
+  // signature is '' and the field dep list alone rules, so
+  // the legacy reseed behaviour is untouched.
+  const emitSignature = (resolveEmissionSourceKind(config) !== 'shape' || config.gpgpuEmitMaskEnabled)
+    ? JSON.stringify(config)
+    : '';
 
   useEffect(() => {
     if (rtRef.current) {
@@ -1046,6 +1182,32 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // legacy initial data runs verbatim and no rest texture is
     // built (the passes never see one).
     const vellumOn = !!config.gpgpuVellumEnabled;
+    // Emission sources (stage 2, E3): the bake-side emission
+    // inputs, built synchronously like the morph bake (pure
+    // functions of the config). The morph cloud reuses the
+    // shared bake builder with morph forced on — the same
+    // pure function the morph effect publishes from, so the
+    // bake cloud and the respawn cloud cannot drift apart.
+    // The bitmap cloud frames with the morph media framing.
+    const emitKind = resolveEmissionSourceKind(config);
+    const emitBitmap = emitKind === 'bitmap' ? resolveBitmapEmission(config) : null;
+    const emitCloudData = emitKind === 'morph'
+      ? buildMorphBakeData({ ...config, gpgpuMorphEnabled: true }, texSize)?.data ?? null
+      : emitBitmap
+        ? buildBitmapEmissionCloud({
+          map: config.layer2MediaLumaMap,
+          width: config.layer2MediaMapWidth,
+          height: config.layer2MediaMapHeight,
+          threshold: emitBitmap.threshold,
+          depth: emitBitmap.depth,
+          invert: emitBitmap.invert,
+          count: texSize * texSize,
+          seed: config.gpgpuSeed,
+          worldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,
+        })
+        : null;
+    const emitPathData = resolveEmissionPath(config);
+    const emitMaskPredicate = buildEmissionMaskPredicate(config);
     const { posData, velData } = vellumOn
       ? buildVellumBakeData(texSize, config.gpgpuVellumMode, config.gpgpuBounceRadius, config.gpgpuSeed, config.gpgpuAgeMax)
       : buildGpgpuInitialData(
@@ -1062,8 +1224,37 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         // Light emitter (Phase T): the light position is an emitter
         // input only for the 'light' shape; every other shape ignores
         // it, so their seeded arrays stay byte-identical.
-        config.gpgpuEmitShape === 'light'
-          ? { lightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ } }
+        // Emitter transform (stage 2, E0): the same transform the
+        // respawn applies, resolved from the emitter keys; while
+        // identity (and not the light shape) the options stay null
+        // and the seeded arrays are the legacy ones byte for byte.
+        config.gpgpuEmitShape === 'light' || emitterTransformActive(config) || emitterVelocityDirectedActive(config)
+          || emitCloudData !== null || emitPathData !== null || emitMaskPredicate !== null || distributionActive(config)
+          ? {
+              lightPos: emitLightPos,
+              transform: emitterTransformActive(config) ? resolveEmitterTransform(config) : null,
+              // Directed initial velocity (stage 2, E2): the
+              // bake consumes the same base direction the
+              // velocity pass is handed, so the frame-0
+              // velocities and the activation-frame velocities
+              // are one law.
+              initialVelocity: emitterVelocityDirectedActive(config)
+                ? {
+                    dir: resolveEmitterBaseDirection(config),
+                    speed: clampEmitterVelSpeed(config.gpgpuEmitterVelSpeed ?? 2),
+                    spread: clampEmitterVelSpread(config.gpgpuEmitterVelSpread ?? 0.5),
+                  }
+                : null,
+              // Emission sources (stage 2, E3): the resolved
+              // cloud / path / mask gate for this seed. All
+              // null while their features are off.
+              cloud: emitCloudData,
+              path: emitPathData,
+              maskAccept: emitMaskPredicate,
+              // Distribution layer (stage 2, B5): the resolved
+              // operators over the shape law (null while off).
+              distribution: distributionActive(config) ? resolveDistributionOps(config) : null,
+            }
           : null,
       );
     if (vellumOn) {
@@ -1082,6 +1273,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     spawnOrderTexRef.current?.dispose();
     {
       const distValues = buildSpawnDistanceValues(posData, false);
+      spawnOrderMaxRef.current = spawnDistanceMaxValue(posData);
       const orderData = new Float32Array(texSize * texSize * 4);
       for (let i = 0; i < distValues.length; i++) orderData[i * 4] = distValues[i];
       const orderTex = new THREE.DataTexture(orderData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
@@ -1155,6 +1347,17 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       auxPosTex.needsUpdate = true;
       auxVelTex.needsUpdate = true;
       const auxCopyMat = new THREE.MeshBasicMaterial({ map: auxPosTex });
+      // FIX13 (stage-4 gate fix round 8): NoBlending, like
+      // every other initialisation copy in this file. With
+      // the default blending the material counts as OPAQUE
+      // and three.js forces the output alpha to 1.0, which
+      // rewrote the (age 10, life 0) inactive sentinel into
+      // (age 1, life 1) across the whole pool — the [1, 1]
+      // texels and the saturated life-assignment diag counts
+      // measured in gate phases 5-8 (see
+      // STAGE4_FIX13_RCP_MOD_RECORD). NoBlending copies all
+      // four channels verbatim.
+      auxCopyMat.blending = THREE.NoBlending;
       const auxCopyMesh = new THREE.Mesh(copyGeo, auxCopyMat);
       copyScene.add(auxCopyMesh);
       gl.setRenderTarget(auxPosA);
@@ -1204,6 +1407,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       wwPosTex.needsUpdate = true;
       wwVelTex.needsUpdate = true;
       const wwCopyMat = new THREE.MeshBasicMaterial({ map: wwPosTex });
+      // FIX13: NoBlending for the same reason as auxCopyMat
+      // above — this pool's (age 10, life 0) sentinel went
+      // through the same OPAQUE alpha rewrite.
+      wwCopyMat.blending = THREE.NoBlending;
       const wwCopyMesh = new THREE.Mesh(copyGeo, wwCopyMat);
       copyScene.add(wwCopyMesh);
       gl.setRenderTarget(wwPosA);
@@ -1246,6 +1453,11 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     const fluidInitTex = new THREE.DataTexture(fluidInitData, FLUID_SIZE, FLUID_SIZE, THREE.RGBAFormat, THREE.FloatType);
     fluidInitTex.needsUpdate = true;
     const fluidCopyMat = new THREE.MeshBasicMaterial({ map: fluidInitTex });
+    // FIX13: NoBlending like the other initialisation
+    // copies. The fluid init data's w lane is uniformly 1,
+    // so the OPAQUE alpha rewrite changed nothing here;
+    // this makes the copy verbatim by construction.
+    fluidCopyMat.blending = THREE.NoBlending;
     const fluidCopyMesh = new THREE.Mesh(copyGeo, fluidCopyMat);
     copyScene.add(fluidCopyMesh);
     gl.setRenderTarget(fluidRTARef.current);
@@ -1306,6 +1518,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       initPosTexRef.current = null;
       spawnOrderTexRef.current?.dispose();
       spawnOrderTexRef.current = null;
+      spawnOrderMaxRef.current = 0;
       vellumRestTexRef.current?.dispose();
       vellumRestTexRef.current = null;
       sortRTARef.current?.dispose();
@@ -1342,7 +1555,100 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     // Vellum (Phase AR): toggling the solver or its shape reseeds
     // the pool from the grid bake (the "reset = re-bake" rule).
     config.gpgpuVellumEnabled, config.gpgpuVellumMode,
+    // Emitter transform (stage 2, E0): the bake reads the
+    // transform keys, so changing them reseeds the pool into
+    // the new emitter frame.
+    config.gpgpuEmitterPosX, config.gpgpuEmitterPosY, config.gpgpuEmitterPosZ,
+    config.gpgpuEmitterRotX, config.gpgpuEmitterRotY, config.gpgpuEmitterRotZ,
+    config.gpgpuEmitterScale,
+    // Directed initial velocity (stage 2, E2): the bake reads
+    // the velocity keys, so changing them reseeds the pool
+    // with the new initial velocities (positions unchanged —
+    // the bake consumes the same draws in both modes).
+    config.gpgpuEmitterVelMode, config.gpgpuEmitterVelDirX, config.gpgpuEmitterVelDirY, config.gpgpuEmitterVelDirZ,
+    config.gpgpuEmitterVelSpeed, config.gpgpuEmitterVelSpread,
+    // Emission sources (stage 2, E3): the config signature
+    // ('' while every E3 feature is off).
+    emitSignature,
+    // Distribution layer (stage 2, B5): the bake reads the
+    // operator list, so changing it reseeds the pool with the
+    // transformed distribution.
+    config.gpgpuEmitDistribution,
     lightPosDepX, lightPosDepY, lightPosDepZ]);
+
+  // Initial State (Grammar 2.0 stage 3, slice S1): the live
+  // applier for lib/gpgpuInitialState.ts. It writes a restored
+  // frame into the pool through the bake's own DataTexture
+  // copy path — the current ping-pong inputs (posIn / velIn)
+  // and the previous-position target, exactly the targets the
+  // reseed above seeds — and adopts the restored arrays as
+  // the runtime's initial arrays (initDataRef) plus the
+  // initial-position texture, so consumers that read "the
+  // pool's initial state" see the restored state until the
+  // next re-bake. Refusals state their reason: a texSize
+  // mismatch is never resampled, and the WebGPU route is
+  // refused outright — its compute state is seeded from the
+  // bake inside its own init (below), not from these WebGL
+  // targets, so writing here would silently do nothing.
+  // The config object is a dep so the closure's foundation
+  // resolution never goes stale; re-registering is cheap
+  // and changes no sim state.
+  useEffect(() => registerStateCacheInitialStateApplier(({ texSize: dataTexSize, initialData }) => {
+    if (dataTexSize !== texSize) {
+      return {
+        ok: false,
+        error: `キャッシュの粒子数（texSize ${dataTexSize}）が現在のプール（texSize ${texSize}）と一致しないため、初期状態として適用できません。粒子数のリサンプルはしません。`,
+      };
+    }
+    const foundation = resolveGpgpuExecutionFoundation(config, {
+      webgpuAvailable: webgpuStateRef.current !== null,
+    });
+    if (foundation.requestedBackend === 'webgpu-compute') {
+      return {
+        ok: false,
+        error: 'WebGPU 経路では初期状態の適用は未対応です（WebGPU 側の状態はベイクから別途シードされるため、WebGL 側への書き込みでは再開できません）。WebGL 経路に切り替えてお試しください。',
+      };
+    }
+    const rt = rtRef.current;
+    const prevPos = prevPosRTRef.current;
+    if (!rt || !prevPos) {
+      return { ok: false, error: 'GPGPU プールがまだ初期化されていません。' };
+    }
+    const { posData, velData } = initialData;
+    initDataRef.current = { posData, velData };
+    const initTex = new THREE.DataTexture(posData.slice(), texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    initTex.needsUpdate = true;
+    initPosTexRef.current?.dispose();
+    initPosTexRef.current = initTex;
+    const { posIn, velIn } = resolvePingPongTargets(rt, pingIsA.current);
+    const copyScene = new THREE.Scene();
+    const copyCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const copyGeo = new THREE.PlaneGeometry(2, 2);
+    const posTex = new THREE.DataTexture(posData.slice(), texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    const velTex = new THREE.DataTexture(velData.slice(), texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    posTex.needsUpdate = true;
+    velTex.needsUpdate = true;
+    const copyMat = new THREE.MeshBasicMaterial({ map: posTex });
+    // Same exact-passthrough discipline as the bake's copy:
+    // NoBlending, so the w lane (age) is copied verbatim.
+    copyMat.blending = THREE.NoBlending;
+    const copyMesh = new THREE.Mesh(copyGeo, copyMat);
+    copyScene.add(copyMesh);
+    gl.setRenderTarget(posIn);
+    gl.render(copyScene, copyCam);
+    gl.setRenderTarget(prevPos);
+    gl.render(copyScene, copyCam);
+    copyMat.map = velTex;
+    copyMat.needsUpdate = true;
+    gl.setRenderTarget(velIn);
+    gl.render(copyScene, copyCam);
+    gl.setRenderTarget(null);
+    posTex.dispose();
+    velTex.dispose();
+    copyMat.dispose();
+    copyGeo.dispose();
+    return { ok: true };
+  }), [gl, texSize, config]);
 
   // Aux chain pools (Phase W1): allocated only while the configured
   // chain depth reaches them — depth 1 (the default) allocates
@@ -1364,6 +1670,36 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       aux3RtRef.current = null;
     };
   }, [gl, auxDepth]);
+
+  // Spawn inheritance targets (Grammar 2.0 stage 1, slice
+  // 1D-1): one 128x128 target per chain level, allocated only
+  // while the inheritance slots key is on (and, for levels >=
+  // 2, while the chain depth reaches them) — with the key off
+  // no target exists and no pass runs, so memory and pass count
+  // are exactly the legacy ones. Kept in dedicated effects in
+  // the chain-pool pattern so toggling never reseeds a pool; a
+  // fresh target simply starts all-zero ("never spawned").
+  const auxInheritOn = auxInheritSlotsEnabled(config);
+  useEffect(() => {
+    auxInheritRtRef.current?.dispose();
+    auxInheritRtRef.current = auxInheritOn ? createAuxInheritTarget(gl) : null;
+    return () => {
+      auxInheritRtRef.current?.dispose();
+      auxInheritRtRef.current = null;
+    };
+  }, [gl, auxInheritOn]);
+  useEffect(() => {
+    aux2InheritRtRef.current?.dispose();
+    aux3InheritRtRef.current?.dispose();
+    aux2InheritRtRef.current = auxInheritOn && auxDepth >= 2 ? createAuxInheritTarget(gl) : null;
+    aux3InheritRtRef.current = auxInheritOn && auxDepth >= 3 ? createAuxInheritTarget(gl) : null;
+    return () => {
+      aux2InheritRtRef.current?.dispose();
+      aux2InheritRtRef.current = null;
+      aux3InheritRtRef.current?.dispose();
+      aux3InheritRtRef.current = null;
+    };
+  }, [gl, auxDepth, auxInheritOn]);
 
   // Pyro grid (Phase CA): the target set exists only while the
   // grid key is on AND the diagnostics gate has confirmed float
@@ -1646,6 +1982,15 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     config.gpgpuSeed,
     config.gpgpuAgeMax,
     config.gpgpuMorphReplicaAgeStep,
+    // Emitter transform (stage 2, E0): the stacks seed from the
+    // baked arrays, which the transform keys reshape.
+    config.gpgpuEmitterPosX,
+    config.gpgpuEmitterPosY,
+    config.gpgpuEmitterPosZ,
+    config.gpgpuEmitterRotX,
+    config.gpgpuEmitterRotY,
+    config.gpgpuEmitterRotZ,
+    config.gpgpuEmitterScale,
     lightPosDepX,
     lightPosDepY,
     lightPosDepZ,
@@ -1659,6 +2004,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // no texture exists and the velocity shader skips the force entirely,
   // leaving the stock behaviour bit-identical.
   const morphEnabled = config.gpgpuMorphEnabled;
+  // Emission source (stage 2, E3): while the source is
+  // 'morph', the bake below ALSO feeds the respawn cloud, so
+  // the effect runs for the cloud alone when morph is off.
+  const emitSourceKind = resolveEmissionSourceKind(config);
   // Rigid bodies (Phase AU): the solver's build rides the morph
   // bake, so its switches are bake inputs here.
   const rigidEnabled = config.gpgpuRigidEnabled;
@@ -1687,7 +2036,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   const morphSeed = config.gpgpuSeed;
   const morphBounceRadius = config.gpgpuBounceRadius;
   const morphText = config.layer2TextMapText;
-  const morphTextFont = config.layer2TextMapFontFamily;
+  // Morph text font (stage 2, E3): the dedicated key wins;
+  // '' falls back to the TextMap family (the legacy source).
+  const morphTextFont = resolveMorphTextFont(config);
   const morphTextWeight = config.layer2TextMapWeight;
   const morphTextSize = config.layer2TextMapSize;
   const morphTextPadding = config.layer2TextMapPadding;
@@ -1842,7 +2193,8 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphTexRef.current = null;
     morphNormalTexRef.current?.dispose();
     morphNormalTexRef.current = null;
-    if (!morphEnabled) return;
+    const wantEmitCloud = emitSourceKind === 'morph';
+    if (!morphEnabled && !wantEmitCloud) return;
     let mediaMap: MorphMediaMap | null = null;
     if (morphTarget === 'text') {
       const map = extractTextLumaMap(
@@ -2062,6 +2414,41 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         ? getAttrPointCloud()?.unitPositions ?? null
         : null,
     });
+    if (!morphEnabled) {
+      // Emission-cloud-only bake (stage 2, E3): morph is off,
+      // so nothing else is published — no species, no WebGPU
+      // sync, no rigid build. The cloud texture alone is the
+      // deliverable; its cleanup mirrors the morph texture's
+      // identity-checked discipline.
+      const cloudTex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+      cloudTex.needsUpdate = true;
+      emitCloudTexRef.current = cloudTex;
+      return () => {
+        cloudTex.dispose();
+        if (emitCloudTexRef.current === cloudTex) emitCloudTexRef.current = null;
+      };
+    }
+    // Live fracture (Grammar 2.0 stage 1, fracture
+    // consumption): OR composition with the static option the
+    // bake above received — while the static fracture is
+    // enabled the bake has already fractured the whole cloud
+    // and the live path adds nothing; while it is off, the
+    // gate's fractured union is composited in with the
+    // fracture keys' cells / seed / gap (the bake's own
+    // transform, restricted to the triggered particles).
+    // Suppressed while the rigid solver is enabled: the
+    // solver owns its division (its cell table is computed
+    // inside the bake from the pre-transform cloud), the same
+    // suppression discipline as the live kill's. With an
+    // empty union (no live fracture rule, or none fired yet)
+    // this block changes nothing.
+    const liveFracturedSet = liveFractureGateRef.current?.fractured;
+    if (!rigidEnabled && liveFracturedSet && liveFracturedSet.size > 0) {
+      const liveFracture = resolveLiveFractureBake(config, liveFracturedSet);
+      if (liveFracture.source === 'live' && liveFracture.options) {
+        applyLiveFractureComposite(data, texSize * texSize, liveFracturedSet, liveFracture.options);
+      }
+    }
     // Fragment collection (Phase 17 stage 4): publish this bake's
     // cell table so the panel can save the current division as a
     // named asset. Write-only metadata — nothing in the bake, the
@@ -2109,6 +2496,17 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
     tex.needsUpdate = true;
     morphTexRef.current = tex;
+    // Emission cloud (stage 2, E3): the same baked cloud is
+    // published as the respawn's emission source — a separate
+    // DataTexture over the same data (the morph texture's
+    // lifetime is the morph system's; the cloud's is the
+    // emitter's, and each is disposed independently).
+    let emitCloudTex: THREE.DataTexture | null = null;
+    if (wantEmitCloud) {
+      emitCloudTex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+      emitCloudTex.needsUpdate = true;
+      emitCloudTexRef.current = emitCloudTex;
+    }
     // Phase R: keep the WebGPU morph buffer in sync with the bake.
     // (If the WebGPU state does not exist yet, its init path bakes
     // the same data itself via buildMorphBakeData.)
@@ -2181,6 +2579,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       if (morphTexRef.current === tex) morphTexRef.current = null;
       normalTex.dispose();
       if (morphNormalTexRef.current === normalTex) morphNormalTexRef.current = null;
+      if (emitCloudTex) {
+        emitCloudTex.dispose();
+        if (emitCloudTexRef.current === emitCloudTex) emitCloudTexRef.current = null;
+      }
       if (rigidCellTex) {
         rigidCellTex.dispose();
         if (rigidCellTexRef.current === rigidCellTex) rigidCellTexRef.current = null;
@@ -2200,6 +2602,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   }, [
     texSize,
     morphEnabled,
+    emitSourceKind,
     morphTarget,
     morphScale,
     morphJitter,
@@ -2307,7 +2710,57 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     morphFractureCells,
     morphFractureSeed,
     morphFractureGap,
+    // Live fracture consumption: an activation (or a reset
+    // that clears one) re-bakes with the gate's union.
+    liveFractureVersion,
     attrCloudVersion,
+  ]);
+
+  // Bitmap emission cloud (stage 2, E3): while the emission
+  // source is 'bitmap', the cloud is built from the layer-2
+  // media luma map by the ported CPU sampler law
+  // (lib/gpgpuEmissionSource.ts) and published as a texture
+  // for the respawn's cloud variant. A dedicated effect in
+  // the morph effect's pattern (identity-checked cleanup),
+  // keyed by exactly the cloud's inputs; while the source is
+  // anything else it publishes nothing.
+  const emitBitmapThreshold = config.gpgpuEmitBitmapThreshold;
+  const emitBitmapDepth = config.gpgpuEmitBitmapDepth;
+  const emitBitmapInvert = config.gpgpuEmitBitmapInvert;
+  useEffect(() => {
+    if (emitSourceKind !== 'bitmap') return;
+    const bitmap = resolveBitmapEmission(config);
+    const data = buildBitmapEmissionCloud({
+      map: config.layer2MediaLumaMap,
+      width: config.layer2MediaMapWidth,
+      height: config.layer2MediaMapHeight,
+      threshold: bitmap.threshold,
+      depth: bitmap.depth,
+      invert: bitmap.invert,
+      count: texSize * texSize,
+      seed: config.gpgpuSeed,
+      worldScale: config.gpgpuMorphScale * config.gpgpuBounceRadius * 0.48,
+    });
+    const tex = new THREE.DataTexture(data, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    tex.needsUpdate = true;
+    emitCloudTexRef.current = tex;
+    return () => {
+      tex.dispose();
+      if (emitCloudTexRef.current === tex) emitCloudTexRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- フィールド単位の依存が意図的: 雲の入力だけに限る（モーフ effect と同じ規律）
+  }, [
+    texSize,
+    emitSourceKind,
+    config.gpgpuSeed,
+    config.gpgpuBounceRadius,
+    config.gpgpuMorphScale,
+    config.layer2MediaLumaMap,
+    config.layer2MediaMapWidth,
+    config.layer2MediaMapHeight,
+    emitBitmapThreshold,
+    emitBitmapDepth,
+    emitBitmapInvert,
   ]);
 
   // Named point attributes (Phase AK): the attribute texture is
@@ -2341,7 +2794,63 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // layer) rather than inside resolveAttrConsumers, to keep
   // lib/gpgpuAttributes free of the import cycle.
   const particleRules = resolveParticleRules(config.gpgpuParticleRules ?? '');
-  const attrSignature = (attrConsumers.anyActive || particleRules.length > 0)
+  // Live particle rules (Grammar 2.0 stage 1): the REP is an
+  // attribute consumer of its own, by the same reasoning as
+  // the baked list above — it reads the final attribute
+  // texture (the scene's simAttrTex), so the bake must stand
+  // whenever the REP stands. Resolved through the shared
+  // predicate with the scene's own build options, so the
+  // standing condition is the fragment test itself. Without
+  // it a live-rules-only config leaves attrTexRef null, the
+  // scene suppresses the REP run on the null texture, and
+  // live rules silently never evaluate (real-GPU gate
+  // finding, C group).
+  const liveRepStands = liveRuleEvalStands(config.gpgpuParticleRulesLive ?? '', {
+    names: config.gpgpuAttrNames,
+    names2: config.gpgpuAttrNames2,
+    groupDefs: parseGpgpuGroups(config.gpgpuGroupsData ?? ''),
+    densityAvailable: true,
+  }) || predationRepStands(config, {
+    names: config.gpgpuAttrNames,
+    names2: config.gpgpuAttrNames2,
+    groupDefs: parseGpgpuGroups(config.gpgpuGroupsData ?? ''),
+    densityAvailable: true,
+  });
+  // Spawn inheritance (Grammar 2.0 stage 1, slice 1D-1): the
+  // level-1 inheritance write is an attribute consumer of its
+  // own, by the same reasoning as the rule lists above — it
+  // reads the parent's slots out of the final attribute
+  // texture (the scene's simAttrTex), and the passes suppress
+  // the write while that texture is null. Resolved through
+  // the shared predicate in lib/auxInherit (colour mix active
+  // AND an aux mode selected — the exact conditions under
+  // which the write can run and its product is read), so the
+  // standing condition cannot drift from the consumption
+  // side. Without it an inheritance-colour-only config leaves
+  // attrTexRef null, the inheritance texture stays zero, and
+  // children mix toward black instead of the parent's slots
+  // (real-GPU gate finding, C4). The bake's data does not
+  // depend on the inheritance keys, so — like liveRepStands —
+  // only the standing switch changes, never the signature's
+  // contents.
+  const inheritAttrStands = auxInheritAttrBakeStands(config);
+  // Field layers (Grammar 2.0 stage 2, B1): a layer naming an
+  // attribute slot is an attribute consumer of its own — the
+  // velocity pass reads the slot per particle to modulate the
+  // layer weight, so the bake must stand while such a layer
+  // has members. Resolved here (component layer) through the
+  // shared predicate, like the rule lists above; the bake's
+  // data does not depend on the field keys, so only the
+  // standing switch changes.
+  const fieldLayerAttrStands = fieldLayerSlotAttrActive(config);
+  // Speed / drag / spin slot modulation (Grammar 2.0 stage 2,
+  // B3): a B3 feature naming an attribute slot is an attribute
+  // consumer of its own — the velocity tail / 'rel-drag' chunk
+  // / spin pass read the slot per particle, so the bake must
+  // stand while one is active with a slot. Same discipline as
+  // the field layers above: only the standing switch changes.
+  const b3AttrStands = b3SlotAttrActive(config);
+  const attrSignature = (attrConsumers.anyActive || particleRules.length > 0 || liveRepStands || inheritAttrStands || fieldLayerAttrStands || b3AttrStands)
     ? [
       texSize,
       config.gpgpuSeed,
@@ -2360,9 +2869,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       attrCloud?.version ?? 0,
       // The initial cloud depends on the light position only for
       // the 'light' emit shape (the main effect's masking rule).
-      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0,
-      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0,
-      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0,
+      config.gpgpuEmitShape === 'light' ? emitLightPos.x : 0,
+      config.gpgpuEmitShape === 'light' ? emitLightPos.y : 0,
+      config.gpgpuEmitShape === 'light' ? emitLightPos.z : 0,
       // 'target' source inputs: the morph bake's own signature
       // (the shared builder is a pure function of the config).
       attrSourcesKey.includes('target') ? JSON.stringify(config) : '',
@@ -2555,9 +3064,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
       attrExtDenKey,
       attrConsumers.colorActive ? 'attrColor' : '',
       attrCloud?.version ?? 0,
-      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosX : 0,
-      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosY : 0,
-      config.gpgpuEmitShape === 'light' ? config.gpgpuLightPosZ : 0,
+      config.gpgpuEmitShape === 'light' ? emitLightPos.x : 0,
+      config.gpgpuEmitShape === 'light' ? emitLightPos.y : 0,
+      config.gpgpuEmitShape === 'light' ? emitLightPos.z : 0,
       (attrSourcesKey.includes('target') || attrSources2Key.includes('target')) ? JSON.stringify(config) : '',
     ].join('|')
     : '';
@@ -2622,8 +3131,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     prevPosRTRef,
     initPosTexRef,
     spawnOrderTexRef,
+    spawnOrderMaxRef,
     morphTexRef,
     morphNormalTexRef,
+    emitCloudTexRef,
     attrTexRef,
     attrTex2Ref,
     fluidRTARef,
@@ -2645,6 +3156,9 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     aux2PingIsA,
     aux3RtRef,
     aux3PingIsA,
+    auxInheritRtRef,
+    aux2InheritRtRef,
+    aux3InheritRtRef,
     replicaStacksRef,
     vellumRestTexRef,
     vellumStateRtRef,
@@ -2666,5 +3180,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     webgpuStateRef,
     webgpuPosTexRef,
     webgpuPingIsARef,
+    noteLiveFractureMask,
+    resetLiveFracture,
   };
 }

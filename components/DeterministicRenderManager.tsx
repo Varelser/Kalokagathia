@@ -323,6 +323,12 @@ export const DeterministicRenderManager: React.FC = () => {
                 blobs.push(blob);
               }
               onProgress(index + 1, job.frames);
+              // State-cache capture hook (stage 3 S0 wiring): the
+              // just-stepped frame's sim state is still current —
+              // nothing advances until this resolves.
+              if (job.onSimFrame) {
+                await job.onSimFrame({ index, timeSeconds: step * dt });
+              }
               // Yield so progress UI can paint; the frameloop is 'never',
               // so nothing else renders meanwhile.
               await new Promise((resolve) => {

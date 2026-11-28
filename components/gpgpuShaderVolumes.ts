@@ -4,6 +4,7 @@ import {
 } from "../lib/geomCustomGlsl";
 import { IBL_GLSL_HELPERS } from "../lib/iblGlsl";
 import { LIGHT_SHADOW_GLSL } from "../lib/lightShadowMap";
+import { ageFreeEvalGlsl, ageFreeIntegralGlsl } from "../lib/gpgpuAgeFreeCurves";
 
 // ── Volumetric sphere sprite vertex ──
 // ── Volumetric sphere sprite vertex (builder form, Phase 30
@@ -368,6 +369,51 @@ const GEOM_VERT_TAIL = /* glsl */ `    gl_Position = projectionMatrix * modelVie
 // the default exports below are byte-identical to v2.00 and
 // the *_PHASE19 exports are byte-identical to the Phase 19
 // strings (both pinned by scripts/phase18-shader-hash.mjs).
+const GEOM_VERT_SPIN_UNIFORMS = /* glsl */ `  // Spin channel (Grammar 2.0 stage 2, B3): the accumulated
+  // angle state texture (components/gpgpuSpinPass.ts); its
+  // .x replaces the analytic spin angle below while the
+  // channel stands.
+  uniform sampler2D uSpinTex;
+`;
+const GEOM_VERT_ORIENT_UNIFORMS = /* glsl */ `  // Orientation channel (Limit plan stage 4, S2): the
+  // accumulated quaternion posture texture
+  // (components/gpgpuOrientPass.ts), composed innermost
+  // below. kaloQuatMat3 is term for term with quatToMat3Columns
+  // in lib/gpgpuOrient.ts (GLSL mat3 constructor order =
+  // column-major: the three columns of the rotation matrix).
+  uniform sampler2D uOrientTex;
+  mat3 kaloQuatMat3(vec4 q) {
+    float x = q.x;
+    float y = q.y;
+    float z = q.z;
+    float w = q.w;
+    return mat3(
+      1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y + z * w), 2.0 * (x * z - y * w),
+      2.0 * (x * y - z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z + x * w),
+      2.0 * (x * z + y * w), 2.0 * (y * z - x * w), 1.0 - 2.0 * (x * x + y * y));
+  }
+`;
+// The total-rotation composition line in GEOM_VERT_MID_B:
+// the orient splice extends it in place, after the legacy
+// align / spin terms have been computed.
+const GEOM_VERT_TOTALROT_ANCHOR = /* glsl */ `    mat3 totalRot = rot * spin;`;
+const GEOM_VERT_TOTALROT_ORIENT = /* glsl */ `    mat3 totalRot = rot * spin;
+    // Orientation channel (S2): the accumulated posture
+    // composes innermost (align ∘ spin ∘ orient), so the
+    // posture tumbles the base geometry in instance space
+    // before the legacy spin and velocity alignment act.
+    totalRot = totalRot * kaloQuatMat3(texture2D(uOrientTex, aTexCoord));`;
+// The analytic angle's last consumer line in GEOM_VERT_MID_B:
+// the override is spliced in directly in front of it, after
+// every analytic term (plain / age-curve) has been computed.
+const GEOM_VERT_SPIN_ANCHOR = /* glsl */ `    mat3 spin = rotYMat(spinAng);`;
+const GEOM_VERT_SPIN_OVERRIDE = /* glsl */ `    // Spin channel (B3): the accumulated state replaces the
+    // analytic angle (the state was initialised from the
+    // same phase hash, so the replacement is continuous with
+    // the legacy distribution of angles).
+    spinAng = texture2D(uSpinTex, aTexCoord).x;
+    mat3 spin = rotYMat(spinAng);`;
+
 export interface GeomShaderVariantOptions {
   vellumCrack?: boolean;
   /** True shadow map (Phase 24, wiring stage 3): splices the
@@ -378,18 +424,69 @@ export interface GeomShaderVariantOptions {
    *  the Phase 19 strings byte-identically — the chunk is
    *  never part of the stock strings. */
   shadowMap?: boolean;
+  /** Spin channel (Grammar 2.0 stage 2, B3): splices the
+   *  spin state texture uniform into the vertex and overrides
+   *  the analytic spin angle with the accumulated state. Off
+   *  (the default) assembles the stock strings
+   *  byte-identically — no uSpinTex uniform appears. */
+  spinChannel?: boolean;
+  /** Orientation channel (Limit plan stage 4, S2): splices
+   *  the posture state texture uniform + the quaternion
+   *  matrix helper into the vertex and composes the posture
+   *  innermost — totalRot = velocityAlign ∘ spin ∘ orient —
+   *  so the legacy terms keep their exact meaning and an
+   *  identity posture is an exact no-op. Off (the default)
+   *  assembles the stock strings byte-identically — no
+   *  uOrientTex uniform appears. */
+  orientChannel?: boolean;
+  /** Age free curve, rotation (Grammar 2.0 stage 2, B4):
+   *  splices the rotation target's free-curve uniform set +
+   *  evaluation / integral functions into the vertex and
+   *  replaces the 5-point evaluations (integral, midpoint
+   *  value and the beyond-max-age tail rate) with the free
+   *  ones. Off (the default) assembles the stock strings
+   *  byte-identically — no FreeT/FreeV uniform appears. */
+  ageFreeRotation?: boolean;
 }
+
+const GEOM_AGE_CURVE5_INTEGRAL_WHOLE_CALL = /* glsl */ `kaloCurveIntegral5(1.0, uAgeCurveRotation[0], uAgeCurveRotation[1], uAgeCurveRotation[2], uAgeCurveRotation[3], uAgeCurveRotation[4])`;
+const GEOM_AGE_FREE_INTEGRAL_WHOLE_CALL = /* glsl */ `kaloAgeFreeIntegralRotation(1.0)`;
+const GEOM_AGE_CURVE5_INTEGRAL_PART_CALL = /* glsl */ `kaloCurveIntegral5(ageSec / ageMax, uAgeCurveRotation[0], uAgeCurveRotation[1], uAgeCurveRotation[2], uAgeCurveRotation[3], uAgeCurveRotation[4])`;
+const GEOM_AGE_FREE_INTEGRAL_PART_CALL = /* glsl */ `kaloAgeFreeIntegralRotation(ageSec / ageMax)`;
+const GEOM_AGE_CURVE5_MID_CALL = /* glsl */ `kaloEvalCurve5(0.5, uAgeCurveRotation[0], uAgeCurveRotation[1], uAgeCurveRotation[2], uAgeCurveRotation[3], uAgeCurveRotation[4])`;
+const GEOM_AGE_FREE_MID_CALL = /* glsl */ `kaloEvalAgeFreeRotation(0.5)`;
+const GEOM_AGE_CURVE5_TAIL_CALL = /* glsl */ `(ageSec - ageMax) * uAgeCurveRotation[4]`;
+const GEOM_AGE_FREE_TAIL_CALL = /* glsl */ `(ageSec - ageMax) * kaloEvalAgeFreeRotation(1.0)`;
 
 export function buildGeomVertShader(options?: GeomShaderVariantOptions): string {
   const crack = !!options?.vellumCrack;
   const shadowMap = !!options?.shadowMap;
+  const spinChannel = !!options?.spinChannel;
+  const orientChannel = !!options?.orientChannel;
+  const ageFreeRotation = !!options?.ageFreeRotation;
+  let midB = spinChannel
+    ? GEOM_VERT_MID_B.replace(GEOM_VERT_SPIN_ANCHOR, GEOM_VERT_SPIN_OVERRIDE)
+    : GEOM_VERT_MID_B;
+  if (orientChannel) {
+    midB = midB.replace(GEOM_VERT_TOTALROT_ANCHOR, GEOM_VERT_TOTALROT_ORIENT);
+  }
+  if (ageFreeRotation) {
+    midB = midB
+      .replace(GEOM_AGE_CURVE5_INTEGRAL_WHOLE_CALL, GEOM_AGE_FREE_INTEGRAL_WHOLE_CALL)
+      .replace(GEOM_AGE_CURVE5_INTEGRAL_PART_CALL, GEOM_AGE_FREE_INTEGRAL_PART_CALL)
+      .replace(GEOM_AGE_CURVE5_MID_CALL, GEOM_AGE_FREE_MID_CALL)
+      .replace(GEOM_AGE_CURVE5_TAIL_CALL, GEOM_AGE_FREE_TAIL_CALL);
+  }
   return GEOM_VERT_HEAD
     + (crack ? GEOM_VERT_CRACK_UNIFORMS : '')
+    + (spinChannel ? GEOM_VERT_SPIN_UNIFORMS : '')
+    + (orientChannel ? GEOM_VERT_ORIENT_UNIFORMS : '')
+    + (ageFreeRotation ? ageFreeEvalGlsl('rotation') + ageFreeIntegralGlsl('rotation') : '')
     + GEOM_VERT_MID_A
     + (crack ? GEOM_VERT_CRACK_VARYING : '')
     + (shadowMap ? GEOM_VERT_SHADOWMAP_VARYING : '')
     + (shadowMap ? LIGHT_SHADOW_GLSL : '')
-    + GEOM_VERT_MID_B
+    + midB
     + (crack ? GEOM_VERT_CRACK_COMPUTE : '')
     + (shadowMap ? GEOM_VERT_SHADOWMAP_COMPUTE : '')
     + GEOM_VERT_TAIL;

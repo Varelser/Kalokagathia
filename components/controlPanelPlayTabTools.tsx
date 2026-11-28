@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, Film, Gamepad2, Grid3x3, History, Search } from 'lucide-react';
+import { Camera, Database, Film, Gamepad2, Grid3x3, History, Search } from 'lucide-react';
 import type { ParticleConfig } from '../types';
 import { PARAMETER_CATALOG, searchParameters, type ParameterCatalogEntry } from '../lib/parameterCatalog';
 import { buildDataLumaMap, buildSampleDataPoints, getDataSourceUpdates, parseDataPoints, type ParsedData } from '../lib/dataSource';
@@ -15,7 +15,34 @@ import {
   POINT_CACHE_MAX_FRAMES,
   POINT_CACHE_MAX_POINTS,
 } from '../lib/pointCache';
-import { Toggle } from './controlPanelParts';
+import { stateCacheExportAllowed, stateCacheToPointCacheData } from '../lib/gpgpuStateCache';
+import {
+  buildStateCacheFiles,
+  loadStateCacheFromFiles,
+  runStateCacheCaptureJob,
+  stateCacheEditionForPublicLibrary,
+} from '../lib/gpgpuStateCacheCapture';
+import {
+  applyHeldStateCacheFrameAsInitialState,
+  getHeldStateCache,
+  setHeldStateCache,
+  type HeldStateCache,
+} from '../lib/gpgpuInitialState';
+import { buildPrtFileForFrame, decodePrtFiles } from '../lib/stateCachePrt';
+import { buildAlembicFile } from '../lib/stateCacheAlembic';
+import { buildStateCacheMeshSeriesZip, type MeshSeriesFormat } from '../lib/stateCacheMeshSeries';
+import {
+  buildStateCacheSkinningSeriesZip,
+  resolveStateCacheSkinningFromConfig,
+  type SkinningFormat,
+} from '../lib/stateCacheSkinning';
+import {
+  buildStateCacheTrailGeometryZip,
+  resolveStateCacheTrailFromConfig,
+  type TrailGeometryFormat,
+} from '../lib/stateCacheTrailGeometry';
+import { Slider, Toggle } from './controlPanelParts';
+import { resolveCacheRetimerFromConfig } from '../lib/cacheRetimer';
 import { TEXTURE_DEFINITIONS, TEXTURE_MAP_SIZE, generateTextureMap, getTextureDefinition, type NoiseTextureKind } from '../lib/texturePack';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { SectionTitle, TAB_SHORT_LABELS } from './controlPanelPlayTabShared';
@@ -440,6 +467,11 @@ export const PointCacheSection: React.FC<{
   };
 
   const frameTotal = cache?.manifest.frameCount ?? (config.pointCacheBundledSample ? 48 : 0);
+  // Retimer (stage 3 S2): validate the configured range
+  // against the current source so an invalid range shows
+  // its refusal reason here (the driver falls back to the
+  // un-retimed mapping while it is invalid).
+  const retimerCheck = resolveCacheRetimerFromConfig(config, frameTotal);
 
   return (
     <section>
@@ -465,6 +497,62 @@ export const PointCacheSection: React.FC<{
         options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
         onChange={(v) => write('pointCacheBundledSample', v)}
       />
+      <Toggle
+        label="Retimer （リタイマー）"
+        value={config.pointCacheRetimerEnabled}
+        options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+        onChange={(v) => write('pointCacheRetimerEnabled', v)}
+      />
+      <p className="text-[11px] leading-relaxed text-white/45 mb-4 -mt-2">
+        リタイマーは再生側だけのフレーム写像です（倍率・区間・逆再生・補間の上書き）。この下の状態キャッシュの再生にも同じ設定が効きます（再生路が共通のため）。シミュレーション自体の timeScale とは別物で、sim には触れません。Off（既定）では従来どおりの再生です。
+      </p>
+      {config.pointCacheRetimerEnabled && (
+        <>
+          <Slider
+            label="Retimer Rate （再生倍率）"
+            value={config.pointCacheRetimerRate}
+            min={0.1}
+            max={4}
+            step={0.05}
+            onChange={(v) => write('pointCacheRetimerRate', v)}
+          />
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <label className="flex items-center gap-1 text-[10px] text-white/50">
+              開始フレーム
+              <input type="number" min={0} step={1} value={config.pointCacheRetimerStartFrame}
+                onChange={(event) => write('pointCacheRetimerStartFrame', Number(event.target.value))}
+                className="w-20 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] outline-none focus:border-white/40" />
+            </label>
+            <label className="flex items-center gap-1 text-[10px] text-white/50">
+              終了フレーム（-1 = 最終）
+              <input type="number" min={-1} step={1} value={config.pointCacheRetimerEndFrame}
+                onChange={(event) => write('pointCacheRetimerEndFrame', Number(event.target.value))}
+                className="w-20 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] outline-none focus:border-white/40" />
+            </label>
+          </div>
+          <Toggle
+            label="Reverse （逆再生）"
+            value={config.pointCacheRetimerReverse}
+            options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+            onChange={(v) => write('pointCacheRetimerReverse', v)}
+          />
+          <Toggle
+            label="Interpolation （補間）"
+            value={config.pointCacheRetimerInterpolation}
+            options={[
+              { label: 'Inherit （マニフェストどおり）', val: 'inherit' as const },
+              { label: 'Linear', val: 'linear' as const },
+              { label: 'Nearest', val: 'nearest' as const },
+            ]}
+            onChange={(v) => write('pointCacheRetimerInterpolation', v)}
+          />
+          {frameTotal > 0 && !retimerCheck.ok && (
+            <p className="text-[11px] text-red-300/90 mb-3">
+              リタイマーを適用できません: {retimerCheck.error}（この間はリタイマーなしで再生します）
+            </p>
+          )}
+        </>
+      )}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <button
           onClick={() => fileRef.current?.click()}
@@ -518,6 +606,643 @@ export const PointCacheSection: React.FC<{
         </p>
       )}
       {isPublicLibrary && <p className="text-[11px] text-white/35 mt-1">公開ビルドでは適用できません。</p>}
+    </section>
+  );
+};
+
+// State cache (Grammar 2.0 stage 3, slice S0 wiring): capture
+// this app's OWN simulation as a frame-sequence cache through
+// a deterministic render job (fixed timestep, one readback
+// per stepped frame — lib/gpgpuStateCacheCapture.ts), save it
+// as a manifest + binary file pair, and load a saved pair back
+// onto the EXISTING point-cache playback path above (no second
+// consumer). Capture / save are full-edition features: the
+// edition gate is resolved in exactly one place
+// (stateCacheEditionForPublicLibrary + stateCacheExportAllowed).
+// The Initial State block at the bottom is slice S1: the
+// captured / loaded cache is also held as StateCacheData
+// (lib/gpgpuInitialState.ts) and one of its frames can be
+// applied back into the sim as its initial state — only on
+// the explicit button press, and with the public-library
+// load gate's convention (disabled in the public build).
+// The PRT block below that is slice S3: the held cache
+// converts to and from Thinkbox PRT files (one file per
+// frame) through lib/stateCachePrt.ts — export goes
+// through the same edition gate as the capture / save
+// above, import lands on the same held store + playback
+// path as the state-cache load.
+// The Alembic block at the bottom is slice S4: the user
+// picks the export format (杉 decision §4.5-1) — PRT
+// above (one frame per file, import included) or Alembic
+// here (the whole sequence in ONE .abc file, export only)
+// through lib/stateCacheAlembic.ts, under the same
+// edition gate.
+// The Skinning block below it is slice S6: the held cache's
+// frames become isosurface meshes (the density field is
+// rebuilt on the CPU from the cached positions with the
+// SPH kernel — no density field exists as GPU-side data —
+// through lib/stateCacheSkinning.ts) and download as one
+// ZIP, a derived artefact under the same edition gate.
+// Its parameters are config keys, so this section takes
+// config / updateConfig like the Point Cache section.
+// The Trail Geometry block at the very bottom is slice
+// S7: each particle's trajectory is reconstructed from
+// the held cache's frame sequence (the drawing trails'
+// histories are GPU render targets / a component-local
+// buffer — neither exists as obtainable data) and swept
+// into a tube, one OBJ / STL document per particle in one
+// ZIP, through lib/stateCacheTrailGeometry.ts — again a
+// derived artefact under the same edition gate, and the
+// drawing trail modes are not touched.
+// The Mesh Series block above it is slice S5:
+// the held cache's frames become a time series of
+// grid-topology meshes (one OBJ / STL document per frame,
+// built by the EXISTING single-frame builders in
+// lib/meshExport.ts through lib/stateCacheMeshSeries.ts)
+// and download as ONE ZIP — a derived artefact of the
+// cache, regenerable at any time, under the same
+// edition gate.
+export const StateCacheSection: React.FC<{
+  config: ParticleConfig;
+  updateConfig: ControlPanelContentProps['updateConfig'];
+  isPublicLibrary: boolean;
+}> = ({ config, updateConfig, isPublicLibrary }) => {
+  const write = updateConfig as (key: keyof ParticleConfig, value: ParticleConfig[keyof ParticleConfig]) => void;
+  const [fps, setFps] = React.useState(30);
+  const [frames, setFrames] = React.useState(60);
+  const [warmupFrames, setWarmupFrames] = React.useState(30);
+  const [busy, setBusy] = React.useState(false);
+  const [progress, setProgress] = React.useState('');
+  const [status, setStatus] = React.useState('');
+  // Initial State (stage 3, slice S1): the cache this section
+  // captured or loaded is also held as StateCacheData
+  // (lib/gpgpuInitialState.ts) so one of its frames can be
+  // applied back into the sim as its initial state. Mirrors
+  // the held store; both are written together in the
+  // capture / load handlers below.
+  const [held, setHeld] = React.useState<HeldStateCache | null>(() => getHeldStateCache());
+  const [initFrame, setInitFrame] = React.useState(0);
+  const [initStatus, setInitStatus] = React.useState('');
+  // PRT (stage 3, slice S3): one PRT file holds one frame,
+  // so export names a single frame of the held cache.
+  const [prtFrame, setPrtFrame] = React.useState(0);
+  const [prtStatus, setPrtStatus] = React.useState('');
+  // Alembic (stage 3, slice S4): one .abc file holds the
+  // whole sequence, so export needs no frame choice.
+  const [abcStatus, setAbcStatus] = React.useState('');
+  // Mesh series (stage 3, slice S5): one mesh document
+  // per frame, packed into one ZIP; the only choice is
+  // the document format (OBJ / STL, as in the single-frame
+  // mesh export).
+  const [meshFormat, setMeshFormat] = React.useState<MeshSeriesFormat>('obj');
+  const [meshStatus, setMeshStatus] = React.useState('');
+  // Skinning (stage 3, slice S6): the held cache's frames
+  // become isosurface meshes (density field rebuilt on the
+  // CPU from the cached positions, lib/stateCacheSkinning
+  // .ts) and download as one ZIP. The parameters live in
+  // config keys (stateCacheSkinning* + the SPH / bounds
+  // keys), edited below like the retimer's keys.
+  const [skinFormat, setSkinFormat] = React.useState<SkinningFormat>('obj');
+  const [skinStatus, setSkinStatus] = React.useState('');
+  // Trail geometry (stage 3, slice S7): each particle's
+  // trajectory is reconstructed from the held cache's
+  // frame sequence and swept into a tube, one document
+  // per particle in one ZIP (lib/stateCacheTrailGeometry
+  // .ts). The parameters live in config keys
+  // (stateCacheTrail*), edited below like the skinning
+  // keys.
+  const [trailFormat, setTrailFormat] = React.useState<TrailGeometryFormat>('obj');
+  const [trailStatus, setTrailStatus] = React.useState('');
+  const fileRef = React.useRef<HTMLInputElement | null>(null);
+  const prtFileRef = React.useRef<HTMLInputElement | null>(null);
+  const edition = stateCacheEditionForPublicLibrary(isPublicLibrary);
+  const exportAllowed = stateCacheExportAllowed(edition);
+
+  const holdCache = (cache: Parameters<typeof setHeldStateCache>[0], sourceName: string) => {
+    setHeldStateCache(cache, sourceName);
+    const next = getHeldStateCache();
+    setHeld(next);
+    // The most-solved frame is the natural resume point.
+    setInitFrame(cache.manifest.frameCount - 1);
+    setPrtFrame(cache.manifest.frameCount - 1);
+    setInitStatus('');
+    setPrtStatus('');
+    setAbcStatus('');
+    setMeshStatus('');
+    setSkinStatus('');
+    setTrailStatus('');
+    return next;
+  };
+
+  const handleApplyInitialState = () => {
+    const result = applyHeldStateCacheFrameAsInitialState({ frameIndex: initFrame });
+    if (!result.ok) {
+      setInitStatus(`適用できませんでした: ${result.error}`);
+      return;
+    }
+    setInitStatus(
+      `フレーム ${result.frameIndex} を初期状態として適用しました。この状態からシミュレーションが解き直されます（プールの再ベイクではありません。設定を変えると通常どおりベイクから再シードされます）。`,
+    );
+  };
+
+  const handlePrtExport = async () => {
+    const current = getHeldStateCache();
+    if (!current || busy) return;
+    setBusy(true);
+    const result = await buildPrtFileForFrame(current.cache, prtFrame, edition);
+    setBusy(false);
+    if (!result.ok) {
+      setPrtStatus(`書き出せませんでした: ${result.error}`);
+      return;
+    }
+    download(result.fileName, new Blob([result.buffer], { type: 'application/octet-stream' }));
+    setPrtStatus(
+      `フレーム ${prtFrame} を PRT（${result.fileName}）で保存しました。ID チャンネルは粒子インデックスから生成したものです（正本形式に ID の実体はありません）。`,
+    );
+  };
+
+  const handleAlembicExport = () => {
+    const current = getHeldStateCache();
+    if (!current || busy) return;
+    const result = buildAlembicFile(current.cache, edition);
+    if (!result.ok) {
+      setAbcStatus(`書き出せませんでした: ${result.error}`);
+      return;
+    }
+    download(result.fileName, new Blob([result.buffer], { type: 'application/octet-stream' }));
+    setAbcStatus(
+      `全 ${current.cache.manifest.frameCount} フレームを Alembic（${result.fileName}）で保存しました。.pointIds は粒子インデックスから生成したものです（正本形式に ID の実体はありません）。`,
+    );
+  };
+
+  const handleMeshSeriesExport = async () => {
+    const current = getHeldStateCache();
+    if (!current || busy) return;
+    setBusy(true);
+    const result = await buildStateCacheMeshSeriesZip(current.cache, { format: meshFormat, edition });
+    setBusy(false);
+    if (!result.ok) {
+      setMeshStatus(`書き出せませんでした: ${result.error}`);
+      return;
+    }
+    download(result.fileName, new Blob([result.buffer], { type: 'application/zip' }));
+    setMeshStatus(
+      `全 ${result.fileCount} フレームの時系列メッシュを ZIP（${result.fileName}）で保存しました（合計 ${result.totalVertices.toLocaleString()} 頂点／${result.totalFaces.toLocaleString()} 面）。中身はフレームごとの ${meshFormat.toUpperCase()} ファイルです。`,
+    );
+  };
+
+  const handleSkinningExport = async () => {
+    const current = getHeldStateCache();
+    if (!current || busy) return;
+    const resolved = resolveStateCacheSkinningFromConfig(config);
+    if (!resolved.ok) {
+      setSkinStatus(`書き出せませんでした: ${resolved.error}`);
+      return;
+    }
+    setBusy(true);
+    const result = await buildStateCacheSkinningSeriesZip(current.cache, resolved.params, { format: skinFormat, edition });
+    setBusy(false);
+    if (!result.ok) {
+      setSkinStatus(`書き出せませんでした: ${result.error}`);
+      return;
+    }
+    download(result.fileName, new Blob([result.buffer], { type: 'application/zip' }));
+    setSkinStatus(
+      `全 ${result.fileCount} フレームの等値面メッシュを ZIP（${result.fileName}）で保存しました（合計 ${result.totalVertices.toLocaleString()} 頂点／${result.totalFaces.toLocaleString()} 面）。中身はフレームごとの ${skinFormat.toUpperCase()} ファイルです。`,
+    );
+  };
+
+  const handleTrailExport = async () => {
+    const current = getHeldStateCache();
+    if (!current || busy) return;
+    const resolved = resolveStateCacheTrailFromConfig(config);
+    if (!resolved.ok) {
+      setTrailStatus(`書き出せませんでした: ${resolved.error}`);
+      return;
+    }
+    setBusy(true);
+    const result = await buildStateCacheTrailGeometryZip(current.cache, resolved.params, { format: trailFormat, edition });
+    setBusy(false);
+    if (!result.ok) {
+      setTrailStatus(`書き出せませんでした: ${result.error}`);
+      return;
+    }
+    download(result.fileName, new Blob([result.buffer], { type: 'application/zip' }));
+    const windowNote = result.window.framesUsed < result.window.framesTotal
+      ? `履歴は直近 ${result.window.framesUsed} フレーム（フレーム ${result.window.windowStartFrame} から）を使いました。`
+      : `履歴は全 ${result.window.framesTotal} フレームを使いました。`;
+    setTrailStatus(
+      `粒子 ${result.fileCount} 点ぶんのトレイルチューブを ZIP（${result.fileName}）で保存しました（合計 ${result.totalVertices.toLocaleString()} 頂点／${result.totalFaces.toLocaleString()} 面）。中身は粒子ごとの ${trailFormat.toUpperCase()} ファイルです。${windowNote}`,
+    );
+  };
+
+  const handlePrtFiles = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const files: { name: string; buffer: ArrayBuffer }[] = [];
+    for (const file of Array.from(fileList)) {
+      files.push({ name: file.name, buffer: await file.arrayBuffer() });
+    }
+    // PRT carries no frame rate; the fps field above is
+    // what the imported cache is stamped with.
+    const loaded = await decodePrtFiles(files, { fps });
+    if (!loaded.ok) {
+      setPrtStatus(`読み込めませんでした: ${loaded.error}`);
+      return;
+    }
+    holdCache(loaded.cache, '読み込んだ PRT');
+    const notes: string[] = [];
+    if (loaded.report.droppedChannels.length > 0) {
+      notes.push(`取り込めなかったチャンネル: ${loaded.report.droppedChannels.map((d) => `${d.name}（${d.reason}）`).join('、')}`);
+    }
+    if (loaded.report.convertedChannels.length > 0) {
+      notes.push(`型を変換したチャンネル: ${loaded.report.convertedChannels.map((c) => `${c.name}（${c.fromType} → float32）`).join('、')}`);
+    }
+    if (loaded.report.filledChannels.length > 0) {
+      notes.push(`補ったチャンネル: ${loaded.report.filledChannels.join('、')}`);
+    }
+    const converted = stateCacheToPointCacheData(loaded.cache);
+    if (!converted.ok) {
+      setPrtStatus(`読み込みましたが再生できません: ${converted.error}${notes.length > 0 ? ` ${notes.join(' ')}` : ''}`);
+      return;
+    }
+    setPointCache(converted.data, 'PRT');
+    setPrtStatus(
+      `PRT を読み込みました（${loaded.cache.manifest.count.toLocaleString()} 点 × ${loaded.cache.manifest.frameCount} フレーム）。上の Point Cache セクションで再生を On にすると再生します。${notes.length > 0 ? ` ${notes.join(' ')}` : ''}`,
+    );
+  };
+
+  const download = (name: string, blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = name;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+
+  const handleCapture = async () => {
+    if (busy) return;
+    setBusy(true);
+    setProgress('');
+    setStatus('決定性レンダー（固定ステップ）で撮影しています…');
+    const result = await runStateCacheCaptureJob(
+      { fps, frames, warmupFrames, edition },
+      (done, total) => setProgress(`${done} / ${total}`),
+    );
+    setBusy(false);
+    setProgress('');
+    if (!result.ok) {
+      setStatus(`撮影できませんでした: ${result.error}`);
+      return;
+    }
+    holdCache(result.cache, '撮影した状態キャッシュ');
+    const files = buildStateCacheFiles(result.cache);
+    download(files.manifestFileName, new Blob([files.manifestText], { type: 'application/json' }));
+    download(files.framesFileName, new Blob([files.framesBuffer], { type: 'application/octet-stream' }));
+    setStatus(
+      `${result.cache.manifest.count.toLocaleString()} 点 × ${result.cache.manifest.frameCount} フレームを保存しました（マニフェスト .json ＋ バイナリ .bin の2ファイル）。読み込むと上の Point Cache の再生路でそのまま再生できます。`,
+    );
+  };
+
+  const handleFiles = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const files = new Map<string, ArrayBuffer>();
+    for (const file of Array.from(fileList)) {
+      files.set(file.name, await file.arrayBuffer());
+    }
+    const loaded = loadStateCacheFromFiles(files);
+    if (!loaded.ok) {
+      setStatus(`読み込めませんでした: ${loaded.error}`);
+      return;
+    }
+    // Held for Initial State (S1) even when the playback
+    // conversion below refuses (the playback caps are the
+    // point-cache consumer's, not the initial-state path's).
+    holdCache(loaded.cache, '読み込んだ状態キャッシュ');
+    const converted = stateCacheToPointCacheData(loaded.cache);
+    if (!converted.ok) {
+      setStatus(`読み込みましたが再生できません: ${converted.error}`);
+      return;
+    }
+    setPointCache(converted.data, '状態キャッシュ');
+    setStatus(
+      `状態キャッシュを読み込みました（${loaded.cache.manifest.count.toLocaleString()} 点 × ${loaded.cache.manifest.frameCount} フレーム / ${loaded.cache.manifest.fps} fps）。上の Point Cache セクションで再生を On にすると、シーケンスの時計に連動して再生します。`,
+    );
+  };
+
+  const numberInputClass = 'w-20 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] outline-none focus:border-white/40 disabled:opacity-40';
+
+  return (
+    <section>
+      <SectionTitle icon={<Camera size={12} />}>State Cache · 状態キャッシュ</SectionTitle>
+      <p className="text-[11px] leading-relaxed text-white/45 mb-4">
+        自分のシミュレーション結果（位置・速度・年齢）を、決定性レンダーの固定ステップでフレームごとに撮影してファイルに保存します。保存はマニフェスト（.json）＋バイナリ（.bin）の2ファイルで、読み込むと上の Point Cache と同じ再生路に乗ります（再シミュレーションなしの再生＝展示・ライブ用途）。撮影中は内部で PNG 連番レンダーも走りますが、その画像は破棄され、残るのはキャッシュの2ファイルだけです。形式の上限は 65,536 点 × 3,600 フレーム、再生側の上限は Point Cache と同じ 8,192 点 × 240 フレームで、超えるものは理由を表示して扱いません（間引きはしません）。撮影・保存は完全版の機能です。
+      </p>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <label className="flex items-center gap-1 text-[10px] text-white/50">
+          fps
+          <input type="number" min={1} max={240} step={1} value={fps} disabled={busy}
+            onChange={(event) => setFps(Number(event.target.value))} className={numberInputClass} />
+        </label>
+        <label className="flex items-center gap-1 text-[10px] text-white/50">
+          フレーム数
+          <input type="number" min={1} max={3600} step={1} value={frames} disabled={busy}
+            onChange={(event) => setFrames(Number(event.target.value))} className={numberInputClass} />
+        </label>
+        <label className="flex items-center gap-1 text-[10px] text-white/50">
+          ウォームアップ
+          <input type="number" min={0} max={3600} step={1} value={warmupFrames} disabled={busy}
+            onChange={(event) => setWarmupFrames(Number(event.target.value))} className={numberInputClass} />
+        </label>
+        <button
+          onClick={() => void handleCapture()}
+          disabled={busy || !exportAllowed}
+          className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 hover:bg-gray-200 transition-colors"
+        >
+          {busy ? `撮影中… ${progress}` : '撮影して保存（.json＋.bin）'}
+        </button>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={busy || isPublicLibrary}
+          className="px-3 py-2 rounded-full border border-white/20 text-[10px] uppercase tracking-widest text-white/70 hover:bg-white/10 disabled:opacity-30"
+        >
+          状態キャッシュを読む（.json＋.bin）
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,.bin"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            void handleFiles(event.target.files);
+            event.target.value = '';
+          }}
+        />
+      </div>
+      {status && <p className="text-[11px] text-white/55">{status}</p>}
+      {!exportAllowed && <p className="text-[11px] text-white/35 mt-1">公開版では撮影・保存はできません（完全版の機能です）。</p>}
+      {isPublicLibrary && <p className="text-[11px] text-white/35 mt-1">公開ビルドでは適用できません。</p>}
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <p className="text-[11px] font-bold text-white/70 mb-2">Initial State · 初期状態として再開</p>
+        <p className="text-[11px] leading-relaxed text-white/45 mb-3">
+          撮影・読み込みで保持した状態キャッシュの任意フレーム（位置・速度・年齢）を、シミュレーションの初期状態としてプールに戻し、そこから解き直します。適用はこのボタンを押したときだけです。キャッシュの粒子数（texSize）が現在のプールと一致しないもの、年齢（age）属性の無いものは、理由を表示して適用しません（リサンプルや年齢の捏造はしません）。速度の w レーン（Kuramoto 位相）は形式に含まれないため、ベイクと同じ 0 から始まります。WebGPU 経路では未対応で、理由を表示して適用しません。
+        </p>
+        {held ? (
+          <>
+            <p className="text-[11px] text-white/55 mb-3">
+              保持中: {held.sourceName}（{held.cache.manifest.count.toLocaleString()} 点 × {held.cache.manifest.frameCount} フレーム / {held.cache.manifest.fps} fps / texSize {held.cache.manifest.texSize}）
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <label className="flex items-center gap-1 text-[10px] text-white/50">
+                フレーム
+                <input type="number" min={0} max={held.cache.manifest.frameCount - 1} step={1} value={initFrame} disabled={busy}
+                  onChange={(event) => setInitFrame(Number(event.target.value))} className={numberInputClass} />
+              </label>
+              <button
+                onClick={handleApplyInitialState}
+                disabled={busy || isPublicLibrary}
+                className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 hover:bg-gray-200 transition-colors"
+              >
+                このフレームを初期状態として適用
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="text-[11px] text-white/35 mb-3">保持中の状態キャッシュはありません。上の「撮影して保存」か「状態キャッシュを読む」で用意してください。</p>
+        )}
+        {initStatus && <p className="text-[11px] text-white/55">{initStatus}</p>}
+      </div>
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <p className="text-[11px] font-bold text-white/70 mb-2">PRT · 粒子フォーマット入出力</p>
+        <p className="text-[11px] leading-relaxed text-white/45 mb-3">
+          保持中の状態キャッシュを Thinkbox PRT 形式（Krakatoa の粒子ファイル形式、v1.1）で書き出し・読み込みします。PRT は1ファイルに1フレームだけを持つ形式のため、書き出しは指定した1フレーム分です。読み込みは連番の .prt を複数選ぶと、ファイル名の番号順にフレーム列として取り込みます。位置・速度・年齢とカスタム属性が往復します。ID チャンネルは正本形式に実体が無いため、書き出し時に粒子インデックスから生成し、読み込み時は保存しません。PRT にはフレームレートが無いため、読み込んだキャッシュの fps は上の fps 欄の値になります。座標の値は変換せずそのまま通し、座標系はメタデータ（CoordSys）で伝えます。粒子数が平方数でない PRT は、正本形式（texSize の二乗が点数）に取り込めないため、理由を表示して読み込みません（リサンプルはしません）。書き出しは完全版の機能です。
+        </p>
+        {held ? (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <label className="flex items-center gap-1 text-[10px] text-white/50">
+              フレーム
+              <input type="number" min={0} max={held.cache.manifest.frameCount - 1} step={1} value={prtFrame} disabled={busy}
+                onChange={(event) => setPrtFrame(Number(event.target.value))} className={numberInputClass} />
+            </label>
+            <button
+              onClick={() => void handlePrtExport()}
+              disabled={busy || !exportAllowed}
+              className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 hover:bg-gray-200 transition-colors"
+            >
+              このフレームを PRT で保存（.prt）
+            </button>
+            <button
+              onClick={() => prtFileRef.current?.click()}
+              disabled={busy || isPublicLibrary}
+              className="px-3 py-2 rounded-full border border-white/20 text-[10px] uppercase tracking-widest text-white/70 hover:bg-white/10 disabled:opacity-30"
+            >
+              PRT を読む（.prt、複数可）
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="text-[11px] text-white/35 mb-3">保持中の状態キャッシュはありません。上の「撮影して保存」か「状態キャッシュを読む」で用意してください（PRT の読み込みだけなら、そのまま選べます）。</p>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <button
+                onClick={() => prtFileRef.current?.click()}
+                disabled={busy || isPublicLibrary}
+                className="px-3 py-2 rounded-full border border-white/20 text-[10px] uppercase tracking-widest text-white/70 hover:bg-white/10 disabled:opacity-30"
+              >
+                PRT を読む（.prt、複数可）
+              </button>
+            </div>
+          </>
+        )}
+        <input
+          ref={prtFileRef}
+          type="file"
+          accept=".prt"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            void handlePrtFiles(event.target.files);
+            event.target.value = '';
+          }}
+        />
+        {prtStatus && <p className="text-[11px] text-white/55">{prtStatus}</p>}
+        {!exportAllowed && <p className="text-[11px] text-white/35 mt-1">公開版では PRT の書き出しはできません（完全版の機能です）。</p>}
+      </div>
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <p className="text-[11px] font-bold text-white/70 mb-2">Alembic · 書き出し</p>
+        <p className="text-[11px] leading-relaxed text-white/45 mb-3">
+          保持中の状態キャッシュを Alembic 形式（.abc、Ogawa 形式）で書き出します。書き出し形式は上の PRT とこちらから選べます。PRT と違い、1ファイルに全フレームが Points オブジェクトの時刻サンプル列として入ります。位置・速度・年齢とカスタム属性が入り、座標の値は変換せずそのまま通し、フレームレートは時刻サンプルの間隔（TimeSampling）として伝えます。.pointIds は PRT の ID と同じく粒子インデックスから生成します（正本形式に ID の実体はありません）。Alembic の読み込みには対応していません。書き出しは完全版の機能です。
+        </p>
+        {held ? (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <button
+              onClick={handleAlembicExport}
+              disabled={busy || !exportAllowed}
+              className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 hover:bg-gray-200 transition-colors"
+            >
+              全フレームを Alembic で保存（.abc）
+            </button>
+          </div>
+        ) : (
+          <p className="text-[11px] text-white/35 mb-3">保持中の状態キャッシュはありません。上の「撮影して保存」か「状態キャッシュを読む」で用意してください。</p>
+        )}
+        {abcStatus && <p className="text-[11px] text-white/55">{abcStatus}</p>}
+        {!exportAllowed && <p className="text-[11px] text-white/35 mt-1">公開版では Alembic の書き出しはできません（完全版の機能です）。</p>}
+      </div>
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <p className="text-[11px] font-bold text-white/70 mb-2">Mesh Series · 時系列メッシュ書き出し</p>
+        <p className="text-[11px] leading-relaxed text-white/45 mb-3">
+          保持中の状態キャッシュの各フレームを、グリッド位相メッシュ（単発のメッシュ書き出しと同じ生成方法）でジオメトリ化し、フレームごとの OBJ／STL ファイルとして書き出します。メッシュはキャッシュから再生成できる派生データで、正本は状態キャッシュのままです。粒子は texSize × texSize のグリッド順（キャッシュの保持順そのまま）で並んでいる前提で面を張ります。キャッシュの粒子数がグリッドの二乗と一致しないものは、理由を表示して書き出しません（並べ替えやリサンプルはしません）。ファイルはフレーム数だけできます（最大 3,600 ファイル）が、ブラウザの複数ダウンロード制限に触れないよう、連番ファイル一式を1つの ZIP にまとめて1回でダウンロードします。フレーム数・粒子数が大きいと ZIP も大きくなります（特に STL はテキスト形式のため大きくなります）。書き出しは完全版の機能です。
+        </p>
+        {held ? (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <select
+              value={meshFormat}
+              onChange={(event) => setMeshFormat(event.target.value as MeshSeriesFormat)}
+              disabled={busy}
+              className="bg-white/5 border border-white/10 rounded px-2 py-2 text-[11px] outline-none focus:border-white/40 disabled:opacity-40"
+            >
+              <option value="obj" className="bg-neutral-900">OBJ 連番</option>
+              <option value="stl" className="bg-neutral-900">STL 連番</option>
+            </select>
+            <button
+              onClick={() => void handleMeshSeriesExport()}
+              disabled={busy || !exportAllowed}
+              className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 hover:bg-gray-200 transition-colors"
+            >
+              全フレームを時系列メッシュで保存（ZIP）
+            </button>
+          </div>
+        ) : (
+          <p className="text-[11px] text-white/35 mb-3">保持中の状態キャッシュはありません。上の「撮影して保存」か「状態キャッシュを読む」で用意してください。</p>
+        )}
+        {meshStatus && <p className="text-[11px] text-white/55">{meshStatus}</p>}
+        {!exportAllowed && <p className="text-[11px] text-white/35 mt-1">公開版では時系列メッシュの書き出しはできません（完全版の機能です）。</p>}
+      </div>
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <p className="text-[11px] font-bold text-white/70 mb-2">Skinning · 等値面メッシュ書き出し</p>
+        <p className="text-[11px] leading-relaxed text-white/45 mb-3">
+          保持中の状態キャッシュの各フレームを、等値面メッシュ（スキニング）としてジオメトリ化し、フレームごとの OBJ／STL ファイルを1つの ZIP にまとめて書き出します。密度場は GPU から読み戻すのではなく、キャッシュの粒子位置から SPH と同じカーネル（半径は SPH 半径キー、割る数は rest density キー）で CPU 上に組み立て直し、対象範囲（跳ね返り半径キーの立方体）の中に等値の面を張ります。表示用のメタボール描画とは独立したデータ生成で、描画には影響しません。メッシュはキャッシュから再生成できる派生データで、正本は状態キャッシュのままです。粒子数が上限を超えるキャッシュや、カーネル半径がグリッド間隔より小さい設定は、理由を表示して書き出しません。等値まで届かないフレームは空のメッシュ（0面）として系列に残ります。フレーム数・解像度が大きいと ZIP も大きくなります。書き出しは完全版の機能です。
+        </p>
+        <Slider
+          label="Skinning Resolution （密度グリッド解像度）"
+          value={config.stateCacheSkinningResolution}
+          min={8}
+          max={96}
+          step={1}
+          onChange={(v) => write('stateCacheSkinningResolution', v)}
+        />
+        <Slider
+          label="Skinning Iso Level （等値）"
+          value={config.stateCacheSkinningIsoLevel}
+          min={0.05}
+          max={2}
+          step={0.05}
+          onChange={(v) => write('stateCacheSkinningIsoLevel', v)}
+        />
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <label className="flex items-center gap-1 text-[10px] text-white/50">
+            粒子数上限
+            <input type="number" min={1} step={1} value={config.stateCacheSkinningMaxParticles}
+              onChange={(event) => write('stateCacheSkinningMaxParticles', Number(event.target.value))}
+              className="w-24 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] outline-none focus:border-white/40" />
+          </label>
+        </div>
+        {held && !resolveStateCacheSkinningFromConfig(config).ok && (
+          <p className="text-[11px] text-red-300/90 mb-3">
+            スキニングを適用できません: {(resolveStateCacheSkinningFromConfig(config) as { error: string }).error}
+          </p>
+        )}
+        {held ? (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <select
+              value={skinFormat}
+              onChange={(event) => setSkinFormat(event.target.value as SkinningFormat)}
+              disabled={busy}
+              className="bg-white/5 border border-white/10 rounded px-2 py-2 text-[11px] outline-none focus:border-white/40 disabled:opacity-40"
+            >
+              <option value="obj" className="bg-neutral-900">OBJ 連番</option>
+              <option value="stl" className="bg-neutral-900">STL 連番</option>
+            </select>
+            <button
+              onClick={() => void handleSkinningExport()}
+              disabled={busy || !exportAllowed}
+              className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 hover:bg-gray-200 transition-colors"
+            >
+              全フレームを等値面メッシュで保存（ZIP）
+            </button>
+          </div>
+        ) : (
+          <p className="text-[11px] text-white/35 mb-3">保持中の状態キャッシュはありません。上の「撮影して保存」か「状態キャッシュを読む」で用意してください。</p>
+        )}
+        {skinStatus && <p className="text-[11px] text-white/55">{skinStatus}</p>}
+        {!exportAllowed && <p className="text-[11px] text-white/35 mt-1">公開版では等値面メッシュの書き出しはできません（完全版の機能です）。</p>}
+      </div>
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <p className="text-[11px] font-bold text-white/70 mb-2">Trail Geometry · トレイルジオメトリ書き出し</p>
+        <p className="text-[11px] leading-relaxed text-white/45 mb-3">
+          保持中の状態キャッシュから、粒子ごとの軌跡（全フレームにわたる同じ粒子の位置の列）を再構成し、その軌跡に円断面のチューブを沿わせたジオメトリを、粒子ごとの OBJ／STL ファイルとして1つの ZIP にまとめて書き出します。表示側のトレイル（リボン／チューブ描画）の履歴は GPU テクスチャとコンポーネント内バッファに閉じていてデータとして取り出せないため、軌跡はキャッシュから再構成します。描画側のトレイルには一切触れません。チューブの座標系は平行移動フレーム（軌跡に沿ってねじれを運ばない決め方）で、両端は開いています。静止した粒子はチューブにならず空のファイルとして系列に残ります。キャッシュが履歴フレーム上限より長い場合は直近のフレームだけを使い、その範囲を結果に明示します。粒子数が上限を超えるキャッシュは、理由を表示して書き出しません。メッシュはキャッシュから再生成できる派生データで、正本は状態キャッシュのままです。書き出しは完全版の機能です。
+        </p>
+        <Slider
+          label="Trail Radius （チューブ半径）"
+          value={config.stateCacheTrailRadius}
+          min={0.1}
+          max={20}
+          step={0.1}
+          onChange={(v) => write('stateCacheTrailRadius', v)}
+        />
+        <Slider
+          label="Trail Radial Segments （断面分割数）"
+          value={config.stateCacheTrailRadialSegments}
+          min={3}
+          max={32}
+          step={1}
+          onChange={(v) => write('stateCacheTrailRadialSegments', v)}
+        />
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <label className="flex items-center gap-1 text-[10px] text-white/50">
+            粒子数上限
+            <input type="number" min={1} step={1} value={config.stateCacheTrailMaxParticles}
+              onChange={(event) => write('stateCacheTrailMaxParticles', Number(event.target.value))}
+              className="w-24 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] outline-none focus:border-white/40" />
+          </label>
+          <label className="flex items-center gap-1 text-[10px] text-white/50">
+            履歴フレーム上限
+            <input type="number" min={2} step={1} value={config.stateCacheTrailMaxFrames}
+              onChange={(event) => write('stateCacheTrailMaxFrames', Number(event.target.value))}
+              className="w-24 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] outline-none focus:border-white/40" />
+          </label>
+        </div>
+        {held && !resolveStateCacheTrailFromConfig(config).ok && (
+          <p className="text-[11px] text-red-300/90 mb-3">
+            トレイルジオメトリを適用できません: {(resolveStateCacheTrailFromConfig(config) as { error: string }).error}
+          </p>
+        )}
+        {held ? (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <select
+              value={trailFormat}
+              onChange={(event) => setTrailFormat(event.target.value as TrailGeometryFormat)}
+              disabled={busy}
+              className="bg-white/5 border border-white/10 rounded px-2 py-2 text-[11px] outline-none focus:border-white/40 disabled:opacity-40"
+            >
+              <option value="obj" className="bg-neutral-900">OBJ（粒子ごと）</option>
+              <option value="stl" className="bg-neutral-900">STL（粒子ごと）</option>
+            </select>
+            <button
+              onClick={() => void handleTrailExport()}
+              disabled={busy || !exportAllowed}
+              className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 hover:bg-gray-200 transition-colors"
+            >
+              全粒子のトレイルをジオメトリで保存（ZIP）
+            </button>
+          </div>
+        ) : (
+          <p className="text-[11px] text-white/35 mb-3">保持中の状態キャッシュはありません。上の「撮影して保存」か「状態キャッシュを読む」で用意してください。</p>
+        )}
+        {trailStatus && <p className="text-[11px] text-white/55">{trailStatus}</p>}
+        {!exportAllowed && <p className="text-[11px] text-white/35 mt-1">公開版ではトレイルジオメトリの書き出しはできません（完全版の機能です）。</p>}
+      </div>
     </section>
   );
 };

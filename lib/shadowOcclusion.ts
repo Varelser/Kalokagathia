@@ -49,6 +49,9 @@
  * Fixed-direction lights are NOT shadowed: occlusion applies
  * only against the Phase T light OBJECT (position), exactly as
  * the brief requires, so the two light meanings never mix.
+ * (Stage 2 E4: the object is now a unit list — the enabled
+ * extra units 2-4 join via scene.extraLightPosList and their
+ * occlusion unions with unit 1's; see occlusionAtPoint.)
  *
  * Flame colour / temperature are out of scope by design (the
  * monochrome policy); nothing here touches colour, only
@@ -69,6 +72,7 @@ import {
   objMeshRepeatOffsets,
   objMeshWorldScale,
 } from './objMesh';
+import { resolveShadowExtraLightPositions } from './gpgpuLightUnits';
 
 export interface ShadowVec3 {
   x: number;
@@ -94,6 +98,16 @@ export interface ShadowScene {
   worldScale: number;
   /** Phase T light object position (world). */
   lightPos: ShadowVec3;
+  /**
+   * Extra light positions (Grammar 2.0 stage 2, E4): the
+   * enabled units 2-4 of the light unit list
+   * (lib/gpgpuLightUnits.ts). When present and non-empty,
+   * occlusionAtPoint evaluates the occlusion toward EACH
+   * light and unions them (a point is lit only if no light
+   * is blocked). Absent / empty = the single-light behaviour
+   * byte for byte.
+   */
+  extraLightPosList?: ShadowVec3[];
   sourceTerrain: boolean;
   sourceObj: boolean;
   /** OBJ bounding sphere in world units, or null when absent. */
@@ -352,16 +366,15 @@ function soften(raw: number, softness: number): number {
 }
 
 /**
- * Total occlusion in [0, 1] at a world point: 0 = fully lit,
- * 1 = fully blocked from the Phase T light by terrain and/or the
- * OBJ sphere. Pure and deterministic.
+ * Raw (pre-soften) occlusion toward the scene's lightPos: the
+ * historical single-light body of occlusionAtPoint, verbatim.
  */
-export function occlusionAtPoint(
+function rawOcclusionTowardLight(
   px: number,
   py: number,
   pz: number,
   scene: ShadowScene,
-  marchSteps = 8,
+  marchSteps: number,
 ): number {
   let occ = 0;
   if (scene.sourceTerrain && scene.terrain.amplitude > 0 && scene.worldScale > 0) {
@@ -380,7 +393,38 @@ export function occlusionAtPoint(
     const objOcc = sphereOcclusionAt(px, py, pz, scene);
     occ = 1 - (1 - occ) * (1 - objOcc);
   }
-  return soften(occ, scene.softness);
+  return occ;
+}
+
+/**
+ * Total occlusion in [0, 1] at a world point: 0 = fully lit,
+ * 1 = fully blocked from the Phase T light by terrain and/or the
+ * OBJ sphere. Pure and deterministic.
+ *
+ * Light units (stage 2, E4): while scene.extraLightPosList is
+ * non-empty, the occlusion is evaluated toward every light in
+ * the list (unit 1 first), each softened on its own, and the
+ * results union as 1 - Π(1 - occ_i) — the same composition the
+ * two shadow systems already use with each other. With no
+ * extra lights the single-light value is returned untouched.
+ */
+export function occlusionAtPoint(
+  px: number,
+  py: number,
+  pz: number,
+  scene: ShadowScene,
+  marchSteps = 8,
+): number {
+  const extras = scene.extraLightPosList;
+  if (!extras || extras.length === 0) {
+    return soften(rawOcclusionTowardLight(px, py, pz, scene, marchSteps), scene.softness);
+  }
+  let lit = 1 - soften(rawOcclusionTowardLight(px, py, pz, scene, marchSteps), scene.softness);
+  for (const extra of extras) {
+    const sub: ShadowScene = { ...scene, lightPos: extra, extraLightPosList: undefined };
+    lit *= 1 - soften(rawOcclusionTowardLight(px, py, pz, sub, marchSteps), scene.softness);
+  }
+  return 1 - lit;
 }
 
 /** Brightness multiplier for a point: exactly 1 when strength is 0. */
@@ -590,6 +634,20 @@ export interface ShadowSceneConfig {
   gpgpuLightPosX: number;
   gpgpuLightPosY: number;
   gpgpuLightPosZ: number;
+  // Light units 2-4 (stage 2, E4): optional so partial config
+  // literals keep compiling; absent = no extra lights.
+  gpgpuLight2Enabled?: boolean;
+  gpgpuLight2PosX?: number;
+  gpgpuLight2PosY?: number;
+  gpgpuLight2PosZ?: number;
+  gpgpuLight3Enabled?: boolean;
+  gpgpuLight3PosX?: number;
+  gpgpuLight3PosY?: number;
+  gpgpuLight3PosZ?: number;
+  gpgpuLight4Enabled?: boolean;
+  gpgpuLight4PosX?: number;
+  gpgpuLight4PosY?: number;
+  gpgpuLight4PosZ?: number;
   gpgpuShadowSourceTerrain: boolean;
   gpgpuShadowSourceObj: boolean;
   gpgpuShadowSoftness: number;
@@ -681,6 +739,14 @@ export function buildShadowScene(config: ShadowSceneConfig): ShadowScene {
     seed: config.gpgpuSeed,
     worldScale,
     lightPos: { x: config.gpgpuLightPosX, y: config.gpgpuLightPosY, z: config.gpgpuLightPosZ },
+    // Light units (stage 2, E4): the enabled extra units join
+    // the bake's light list through the single resolution
+    // point; the field stays undefined while none is enabled,
+    // so the single-light bake is byte-identical.
+    extraLightPosList: (() => {
+      const extras = resolveShadowExtraLightPositions(config);
+      return extras.length > 0 ? extras : undefined;
+    })(),
     sourceTerrain: config.gpgpuShadowSourceTerrain,
     sourceObj: config.gpgpuShadowSourceObj,
     objSphere,

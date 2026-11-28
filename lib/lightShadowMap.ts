@@ -22,6 +22,14 @@
  * (terrain, OBJ, primitives, GEOM instances). Particles do NOT
  * cast — they are hidden during the capture, and per-system
  * depth passes for them are a later stage's work.
+ *
+ * Particle casting (limit plan stage 4, slice S4): behind
+ * gpgpuShadowMapCastParticles (default false) the main pool
+ * DOES cast, through a dedicated caster pass the capture runs
+ * into the same target after the scene pass — see the caster
+ * section below. At the default the pass never runs, the
+ * marked objects follow exactly the stage-1 discipline above,
+ * and the capture is byte-identical.
  */
 
 import * as THREE from 'three';
@@ -199,6 +207,145 @@ export function injectTerrainShadowFragment(src: string): string {
       'outgoingLight *= mix(1.0, kaloShadowFactor(vWorldPosSmap), uShadowMapStrength);\n\t#include <opaque_fragment>',
     );
 }
+
+// ---------------------------------------------------------------------------
+// Particle casters (limit plan stage 4, slice S4): the main pool
+// casts into the SAME shadow target through a dedicated caster
+// pass (components/LightShadowCapture.tsx runs it after the
+// scene pass, with clearing off, while
+// gpgpuShadowMapCastParticles is on). Receivers are untouched:
+// they keep sampling uShadowMapTex — the caster pass only
+// changes what is IN the map, so no receiver gains a sampler.
+//
+// How the capture finds the casters: the two draw sites mark
+// their objects in userData (the main GPGPU points in
+// components/gpgpuRenderOutputs.tsx, the geometry meshes in
+// components/useGpgpuMeshAssets.ts) under the keys below, and
+// the caster materials read the live uniforms (uPosTex, and
+// uGeomScale for the instances) off the marked objects'
+// materials each frame — no second copy of the simulation
+// textures is kept anywhere.
+//
+// Geometry path: a caster Mesh shares each marked mesh's
+// InstancedBufferGeometry and expands instances from uPosTex
+// at uGeomScale — the same base transform the stock GEOM
+// vertex applies before its rotations. The caster vertex
+// deliberately omits the spin / orient / velocity-align /
+// stretch rotations: the cast silhouette is the unrotated
+// base shape at the true position and scale (a recorded
+// approximation; the gate for this feature judges shadow
+// presence and direction, not silhouette fidelity).
+//
+// Points path: a caster Points shares the draw geometry and
+// draws round sprites (fragment discards outside the disc, so
+// points never stamp squares) at a CPU-computed pixel size:
+// the light camera is orthographic, so a world diameter maps
+// to pixels by diameter * SHADOW_MAP_SIZE / (2 * extent). The
+// world diameter itself is an approximation by construction —
+// the main points draw is screen-space sized
+// (uSize * min(4, 500 / dist)), which has no single world
+// size — so the caster defines one: gpgpuSize in the same
+// world unit the geometry path uses (bounceRadius * 0.02 per
+// unit, the uGeomScale unit), times the resolved
+// gpgpuShadowMapParticleSize multiplier. Two recorded
+// consequences: the cast disc grows/shrinks with the key even
+// though the visible sprite sizing is distance-based, and
+// gl_PointSize hardware caps (often 1024–2048px, some
+// platforms far less) clamp the disc when the light extent is
+// small or the size is large — the shadow then under-covers
+// rather than misplacing.
+
+/** userData marker on the main GPGPU points object. */
+export const SHADOW_CASTER_POINTS_USERDATA = 'kaloShadowCasterPoints';
+/** userData marker on the GPGPU geometry meshes (single + species). */
+export const SHADOW_CASTER_GEOM_USERDATA = 'kaloShadowCasterGeom';
+
+/** The caster-pass predicate: only the literal true enables it. */
+export function shadowCastParticlesOn(
+  config: { gpgpuShadowMapCastParticles?: unknown },
+): boolean {
+  return config.gpgpuShadowMapCastParticles === true;
+}
+
+/**
+ * Resolved points-caster diameter multiplier (TS twin of the
+ * value the capture feeds the diameter formula): a finite
+ * number clamped to [0.1, 8]; anything else resolves to the
+ * key default 1.
+ */
+export function resolveShadowMapParticleSize(raw: unknown): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return 1;
+  return Math.min(8, Math.max(0.1, raw));
+}
+
+/**
+ * World diameter of one points caster sprite: gpgpuSize in
+ * the geometry path's world unit (bounceRadius * 0.02),
+ * times the resolved multiplier. Non-positive inputs give 0
+ * (the capture skips the points caster at 0).
+ */
+export function shadowCasterPointDiameterWorld(
+  gpgpuSize: number,
+  bounceRadius: number,
+  sizeRaw: unknown,
+): number {
+  const size = Number.isFinite(gpgpuSize) ? Math.max(0, gpgpuSize) : 0;
+  const radius = Number.isFinite(bounceRadius) ? Math.max(0, bounceRadius) : 0;
+  return size * radius * 0.02 * resolveShadowMapParticleSize(sizeRaw);
+}
+
+/**
+ * Pixel diameter of a world diameter under the orthographic
+ * light camera: the frustum spans 2 * extent world units
+ * across SHADOW_MAP_SIZE pixels.
+ */
+export function shadowCasterPointSizePx(diameterWorld: number, extent: number): number {
+  if (!(diameterWorld > 0) || !(extent > 0)) return 0;
+  return (diameterWorld * SHADOW_MAP_SIZE) / (2 * extent);
+}
+
+// Caster shaders: plain depth draws (the renderer's depth
+// buffer of the capture target is what becomes the shadow
+// map; the colour output is never read). Both declare exactly
+// one sampler (uPosTex, the simulation position texture) —
+// they are caster-side programs, not receivers, so the
+// receiver sampler budget is unaffected.
+
+export const SHADOW_CASTER_POINTS_VERT = /* glsl */ `
+attribute vec2 aTexCoord;
+uniform sampler2D uPosTex;
+uniform float uCasterPointSizePx;
+void main() {
+  vec3 pos = texture2D(uPosTex, aTexCoord).xyz;
+  gl_PointSize = uCasterPointSizePx;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+}
+`;
+
+export const SHADOW_CASTER_POINTS_FRAG = /* glsl */ `
+void main() {
+  vec2 c = gl_PointCoord - vec2(0.5);
+  if (dot(c, c) > 0.25) discard;
+  gl_FragColor = vec4(1.0);
+}
+`;
+
+export const SHADOW_CASTER_GEOM_VERT = /* glsl */ `
+attribute vec2 aTexCoord;
+uniform sampler2D uPosTex;
+uniform float uGeomScale;
+void main() {
+  vec3 pos = texture2D(uPosTex, aTexCoord).xyz;
+  vec3 world = pos + position * uGeomScale;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(world, 1.0);
+}
+`;
+
+export const SHADOW_CASTER_GEOM_FRAG = /* glsl */ `
+void main() {
+  gl_FragColor = vec4(1.0);
+}
+`;
 
 // ---------------------------------------------------------------------------
 // Shared shadow-source store (capture publishes, receivers read)

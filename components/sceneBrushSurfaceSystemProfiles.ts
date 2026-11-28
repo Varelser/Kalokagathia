@@ -1,6 +1,7 @@
 import type { ParticleConfig } from '../types';
 import { materialStyleToInt } from '../lib/materialGrammar';
 import type { BrushMode, BrushProfile, BrushSettings, BrushSourceProfile } from './sceneBrushSurfaceSystemTypes';
+import { dmHash11 } from '../lib/gpgpuRandom';
 
 const DEFAULT_BRUSH_SOURCE_PROFILE: BrushSourceProfile = {
   spiralAmount: 0,
@@ -17,16 +18,6 @@ const DEFAULT_BRUSH_SOURCE_PROFILE: BrushSourceProfile = {
   rotYAdd: 0,
   rotZAdd: 0,
 };
-
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
-}
 
 function hash(value: number) {
   return dmHash11(value * 91.173 + 17.137);

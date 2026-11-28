@@ -29,20 +29,13 @@ import type { MorphMediaMap } from './gpgpuMorphTargets';
 import type { PathGeometry } from './pathGeometry';
 import type { TextGlyphRaster } from './gpgpuTextOnPath';
 import { fractureOptionFromConfig } from './voronoiFracture';
+import { mulberry32 } from './gpgpuRandom';
 
 export const CPU_PARTICLE_CAP = 4000;
 const CPU_PARTICLE_MIN = 240;
 
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// mulberry32: the shared random channel (lib/gpgpuRandom.ts,
+// stage 2 B5) — bit-identical to the local copy this replaces.
 
 function hashSeed(config: ParticleConfig): number {
   let seed = (config.gpgpuSeed || 1) >>> 0;

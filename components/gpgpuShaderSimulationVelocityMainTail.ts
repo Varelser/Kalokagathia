@@ -472,14 +472,95 @@ export interface VelocityTailVariantOptions {
   // on). Assumes the main-forces rigidFree splice declared
   // the rigidFree flag earlier in main().
   rigidFree?: boolean;
+  // Grammar 2.0 stage 1 (slice 1C): the global drag block is
+  // spliced in its live-gated form — the rate is multiplied
+  // by grpDrag, the gate local the main-forces live segment
+  // declares (permit semantics: 1 = drag applies, 0 = the
+  // particle keeps its velocity). Only in this variant; the
+  // stock tail string is byte-identical.
+  particleRulesLive?: boolean;
+  // Grammar 2.0 stage 2 (slice B3): the target-speed block
+  // is spliced in as the tail's final magnitude operation,
+  // right before the output write. Only in this variant;
+  // the stock tail string is byte-identical.
+  targetSpeed?: boolean;
+  // Grammar 2.0 stage 2 (slice B4): the age free curves —
+  // the tail's 5-point evaluations for the velocity / force
+  // targets are replaced by the free-curve evaluations
+  // (the preamble carries the uniform sets + functions).
+  // Only in these variants; the stock tail string is
+  // byte-identical.
+  ageFreeVelocity?: boolean;
+  ageFreeForce?: boolean;
 }
 
 const VEL_FRAG_TAIL_FINAL_WRITE = '    gl_FragColor = vec4(vel, phaseState);';
 
+const VEL_FRAG_TAIL_AGE_CURVE5_FORCE_CALL = /* glsl */ `kaloEvalCurve5(ageNorm, uAgeCurveForce[0], uAgeCurveForce[1], uAgeCurveForce[2], uAgeCurveForce[3], uAgeCurveForce[4])`;
+const VEL_FRAG_TAIL_AGE_FREE_FORCE_CALL = /* glsl */ `kaloEvalAgeFreeForce(ageNorm)`;
+const VEL_FRAG_TAIL_AGE_CURVE5_VELOCITY_CALL = /* glsl */ `kaloEvalCurve5(ageNorm, uAgeCurveVelocity[0], uAgeCurveVelocity[1], uAgeCurveVelocity[2], uAgeCurveVelocity[3], uAgeCurveVelocity[4])`;
+const VEL_FRAG_TAIL_AGE_FREE_VELOCITY_CALL = /* glsl */ `kaloEvalAgeFreeVelocity(ageNorm)`;
+
+const VEL_FRAG_TAIL_OUTPUT_LINE = /* glsl */ `    gl_FragColor = vec4(vel, phaseState);`;
+const VEL_FRAG_TAIL_TARGET_SPEED_BLOCK = /* glsl */ `    // Target speed (Grammar 2.0 stage 2, B3): the tail's
+    // final magnitude setting — the pool previously had only
+    // upper clamps (the hard 350 ceiling and gpgpuMaxSpeed).
+    // Placed after the clamps, the global drag and the
+    // velocity-over-lifetime curve, so the set value is the
+    // magnitude the position pass integrates (the boundary
+    // reflection above preserves magnitude). Blend 1 (the
+    // default) is a hard set; lower blends approach the
+    // target geometrically per step. The attribute slot
+    // multiplies the target per particle (judgment 1; slot
+    // −1 or a missing attribute texture leaves it unscaled).
+    // The effective target is capped at the hard ceiling, so
+    // the setting can never defeat the safety clamp. A
+    // zero-velocity particle has no direction to scale and
+    // is left untouched. TS twin: applyTargetSpeed in
+    // lib/gpgpuSpeedDragSpin.ts.
+    {
+      float tsSpd = length(vel);
+      if (tsSpd > 0.00001) {
+        float tsTarget = uTargetSpeed;
+        if (uAttrEnabled && uTargetSpeedSlot >= 0) tsTarget *= max(kaloAttrChannel(attrData, uTargetSpeedSlot), 0.0);
+        tsTarget = min(tsTarget, 350.0);
+        float tsNext = mix(tsSpd, tsTarget, uTargetSpeedBlend);
+        vel *= tsNext / tsSpd;
+      }
+    }
+
+`;
+
+const VEL_FRAG_TAIL_DRAG_BLOCK = /* glsl */ `    if (uDragRate == 1.1) {
+      vel *= (1.0 - 1.1 * uDelta);
+    } else {
+      vel *= (1.0 - uDragRate * uDelta);
+    }`;
+const VEL_FRAG_TAIL_DRAG_BLOCK_LIVE = /* glsl */ `    if (uDragRate == 1.1) {
+      vel *= (1.0 - 1.1 * grpDrag * uDelta);
+    } else {
+      vel *= (1.0 - uDragRate * grpDrag * uDelta);
+    }`;
+
 export function buildVelocityTail(options?: VelocityTailVariantOptions): string {
-  const rest = options?.rigidFree
-    ? VEL_FRAG_TAIL_REST.replace(VEL_FRAG_TAIL_FINAL_WRITE, VEL_FRAG_TAIL_RIGID_FREE + VEL_FRAG_TAIL_FINAL_WRITE)
+  let rest = options?.particleRulesLive
+    ? VEL_FRAG_TAIL_REST.replace(VEL_FRAG_TAIL_DRAG_BLOCK, VEL_FRAG_TAIL_DRAG_BLOCK_LIVE)
     : VEL_FRAG_TAIL_REST;
+  if (options?.rigidFree) {
+    rest = rest.replace(VEL_FRAG_TAIL_FINAL_WRITE, VEL_FRAG_TAIL_RIGID_FREE + VEL_FRAG_TAIL_FINAL_WRITE);
+  }
+  if (options?.targetSpeed) {
+    rest = rest.replace(
+      VEL_FRAG_TAIL_OUTPUT_LINE,
+      VEL_FRAG_TAIL_TARGET_SPEED_BLOCK + VEL_FRAG_TAIL_OUTPUT_LINE,
+    );
+  }
+  if (options?.ageFreeForce) {
+    rest = rest.replace(VEL_FRAG_TAIL_AGE_CURVE5_FORCE_CALL, VEL_FRAG_TAIL_AGE_FREE_FORCE_CALL);
+  }
+  if (options?.ageFreeVelocity) {
+    rest = rest.replace(VEL_FRAG_TAIL_AGE_CURVE5_VELOCITY_CALL, VEL_FRAG_TAIL_AGE_FREE_VELOCITY_CALL);
+  }
   return VEL_FRAG_TAIL_HEAD
     + (options?.flip3dCouple ? VEL_FRAG_TAIL_FLIP3D_COUPLE : '')
     + rest;

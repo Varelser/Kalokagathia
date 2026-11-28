@@ -23,6 +23,14 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuTrailLength: 8,
   gpgpuTrailFade: 0.75,
   gpgpuTrailVelocityScale: 1.0,
+  // Trail mechanism (stage 4, S6): 'history' (default) is
+  // the legacy snapshot ring, byte-identical. 'aux' drives
+  // the level-1 Aux pool as the trail source; the emit keys
+  // are read only in that mode.
+  gpgpuTrailMode: 'history' as const,
+  gpgpuTrailEmitInterval: 2,
+  gpgpuTrailEmitRate: 1.0,
+  gpgpuTrailAuxLife: 0,
   gpgpuGeomMode: 'point' as const,
   gpgpuGeomVelocityAlign: false,
   gpgpuGeomScale: 1.0,
@@ -42,6 +50,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGeomSpecies2Mode: 'follow' as const,
   gpgpuGeomSpecies3Mode: 'follow' as const,
   gpgpuGeomSpecies4Mode: 'follow' as const,
+  // Per-zone OBJ sources (stage 4 S1): '' = follow gpgpuMorphObjSource.
+  gpgpuGeomSpecies2ObjSource: '',
+  gpgpuGeomSpecies3ObjSource: '',
+  gpgpuGeomSpecies4ObjSource: '',
   gpgpuGeomSpinSpeed: 0.0,
   gpgpuGeomSpinRandom: 0,
   gpgpuGeomStretch: 0.0,
@@ -78,6 +90,16 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSpawnEventCount: 0.3,
   gpgpuSpawnEventSpeed: 2,
   gpgpuSpawnEventSpread: 0.5,
+  // Spawn allocator (Grammar 2.0 stage 2, E2): absolute rate
+  // 0 = off (the legacy fraction rate drives the gate);
+  // envelope disabled with the identity curve; rule spawn
+  // gate off. Every default keeps the shipped behaviour.
+  gpgpuSpawnRateAbsolute: 0,
+  gpgpuSpawnEnvelopeEnabled: false,
+  gpgpuSpawnEnvelopeStart: 0,
+  gpgpuSpawnEnvelopeStop: 0,
+  gpgpuSpawnEnvelopeCurve: [0, 1, 1, 1],
+  gpgpuSpawnRuleGateEnabled: false,
   // Emission curve (Phase AJ): disabled, identity curve, 8 s period.
   gpgpuFreeCurvePoints: [0, 1, 1, 1],
   gpgpuEmissionCurveEnabled: false,
@@ -132,6 +154,14 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuGroupInvert: false,
   gpgpuGroupsData: '',
   gpgpuParticleRules: '',
+  gpgpuParticleRulesLive: '',
+  // Pipeline graph (limit plan stage 5, slice S3): the
+  // graph representation of the live rules + force order
+  // (lib/pipelinePersist.ts). '' = no graph saved = the
+  // row-list keys alone are the configuration, exactly as
+  // before this key existed.
+  gpgpuPipelineGraph: '',
+  gpgpuRuleEvalInterval: 1,
   gpgpuGroupRef: '',
   gpgpuGroupKillEnabled: false,
   gpgpuGroupColorEnabled: false,
@@ -204,6 +234,11 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuWindVolumeZ: 0.0,
   gpgpuWindVolumeRadius: 60.0,
   gpgpuWindVolumeStrength: 1.0,
+  // Field instances + layers (Grammar 2.0 stage 2, B1):
+  // serialised JSON lists, empty = no instances (verbatim
+  // legacy). See lib/gpgpuFieldInstances.ts.
+  gpgpuFieldInstances: '',
+  gpgpuFieldLayers: '',
   // Gravity Well
   gpgpuWellEnabled: false,
   gpgpuWellStrength: 1.0,
@@ -679,11 +714,25 @@ f 8 1 105`,
   // uncapped by default — the matrix-only legacy behaviour.
   gpgpuParticleLifePursue: 0,
   gpgpuParticleLifeEvade: 0,
+  // Predator-Prey semantics (stage 2 B6): off by default —
+  // no generated rules, no REP neighbourhood supply.
+  gpgpuPredationEnabled: false,
+  gpgpuPredationOutcome: 'kill' as const,
+  gpgpuPredationBirth: true,
+  gpgpuPredationStrike: 1,
+  // B6 follow-up: persistence + activation grace, both at
+  // the identity (1 evaluation = the original immediate
+  // strike; 0 seconds = no grace window).
+  gpgpuPredationStrikeFrames: 1,
+  gpgpuPredationGraceSeconds: 0,
   gpgpuParticleLifeVisionRange: 120,
   gpgpuParticleLifeVisionAngle: 360,
   gpgpuParticleLifeMaxSpeed: 0,
   gpgpuParticleLifeMeanderAmount: 0,
   gpgpuParticleLifeMeanderScale: 1,
+  // Meander promotion (stage 2 B7): standalone chunk off —
+  // the wander term stays inside the Particle Life block.
+  gpgpuMeanderEnabled: false,
   // Obstacle avoidance (Phase AB): 0 = off (Steering stays
   // pursue / evade only, the Phase AA behaviour).
   gpgpuParticleLifeAvoid: 0,
@@ -723,12 +772,42 @@ f 8 1 105`,
   gpgpuSteerSeekPath: '',
   gpgpuSteerSeekPathLookAhead: 20,
   gpgpuSteerSeekPathRadius: 0,
-  // Spring (to spawn pos)
+  gpgpuSteerSeekPaths: '',
+  gpgpuSteerSeekPathSvg: '',
+  gpgpuSteerSeekPathSvgScale: 100,
+  gpgpuSteerSeekPathSlot: -1,
+  // Speed / relative drag / Spin (stage 2, B3): all inert at
+  // these defaults (target 0 = off, drag rate 0 = off, spin
+  // disabled) — see lib/gpgpuSpeedDragSpin.ts.
+  gpgpuTargetSpeed: 0,
+  gpgpuTargetSpeedBlend: 1,
+  gpgpuTargetSpeedSlot: -1,
+  gpgpuRelDragRate: 0,
+  gpgpuRelDragWindSpeed: 30,
+  gpgpuRelDragSlot: -1,
+  gpgpuSpinEnabled: false,
+  gpgpuSpinSpeed: 0,
+  gpgpuSpinRandom: 0,
+  gpgpuSpinDamping: 0,
+  gpgpuSpinSlot: -1,
+  // Orientation channel (stage 4, S2): disabled at rest —
+  // no pass stands and the geometry vertex keeps its stock
+  // string. Speed is rad/s (1.0 when enabled).
+  gpgpuOrientEnabled: false,
+  gpgpuOrientMode: 'axis' as const,
+  gpgpuOrientSpeed: 1,
+  gpgpuOrientRandom: 0,
+  gpgpuOrientDamping: 0,
+  gpgpuOrientSlot: -1,
   gpgpuSpringEnabled: false,
   gpgpuSpringStrength: 1.0,
   // Morph Targets (Kinetix integration B1a)
   gpgpuMorphEnabled: false,
   gpgpuMorphTarget: 'trefoil' as const,
+  // Morph text font (E3): '' = the layer-2 TextMap family
+  // (legacy). A family name here is saved with the config so
+  // text morph / text emission presets reproduce.
+  gpgpuMorphTextFont: '',
   gpgpuMorphNoiseMapEnabled: false,
   gpgpuMorphStrength: 3.0,
   gpgpuMorphScale: 1.0,
@@ -965,6 +1044,25 @@ f 8 1 105`,
   pointCacheEnabled: false,
   pointCacheLoop: true,
   pointCacheBundledSample: false,
+  // Retimer (stage 3 S2): off by default; the identity
+  // values below keep even the enabled path legacy-exact.
+  pointCacheRetimerEnabled: false,
+  pointCacheRetimerRate: 1,
+  pointCacheRetimerStartFrame: 0,
+  pointCacheRetimerEndFrame: -1,
+  pointCacheRetimerReverse: false,
+  pointCacheRetimerInterpolation: 'inherit',
+  // Skinning (stage 3 S6): export-action parameters only;
+  // nothing reads them unless the isosurface export runs.
+  stateCacheSkinningResolution: 32,
+  stateCacheSkinningIsoLevel: 0.35,
+  stateCacheSkinningMaxParticles: 8192,
+  // Trail geometry (stage 3 S7): export-action parameters
+  // only; nothing reads them unless the trail export runs.
+  stateCacheTrailRadius: 2,
+  stateCacheTrailRadialSegments: 8,
+  stateCacheTrailMaxParticles: 256,
+  stateCacheTrailMaxFrames: 240,
   // Floor bounce (B3): off by default.
   gpgpuFloorEnabled: false,
   gpgpuFloorY: -110.0,
@@ -982,6 +1080,17 @@ f 8 1 105`,
   gpgpuAuxDrag: 0,
   gpgpuAuxCurl: 0,
   gpgpuAuxColor: '',
+  // Child emitter (Grammar 2.0 stage 1, slice 1D-2): read only
+  // while gpgpuAuxMode is 'emit' (rate 30/s, sphere, spread 0.5).
+  gpgpuAuxEmitRate: 30,
+  gpgpuAuxEmitShape: 'sphere' as const,
+  gpgpuAuxEmitSpread: 0.5,
+  // Spawn inheritance (Grammar 2.0 stage 1, slice 1D-1): defaults
+  // reproduce the legacy behaviour (velocity coefficients x1,
+  // no inherited colour in the draw, inheritance texture on).
+  gpgpuAuxInheritVelScale: 1.0,
+  gpgpuAuxInheritColor: 0,
+  gpgpuAuxInheritSlots: 1,
   // Aux chain (Phase W1): depth 1 + Aux2 'none' = the legacy
   // single-pool chain. The Aux2 defaults mirror the level-1
   // defaults (intensity 1, life 0.75, speed 26, size 1.1, gravity
@@ -997,8 +1106,60 @@ f 8 1 105`,
   gpgpuAux2Drag: 0,
   gpgpuAux2Curl: 0,
   gpgpuAux2Color: '',
+  // Child emitter (slice 1D-2): the Aux2 counterparts, read
+  // only while gpgpuAux2Mode is 'emit'.
+  gpgpuAux2EmitRate: 30,
+  gpgpuAux2EmitShape: 'sphere' as const,
+  gpgpuAux2EmitSpread: 0.5,
   // Emission Shape
   gpgpuEmitShape: 'sphere' as const,
+  // Respawn shape (Grammar 2.0 stage 2, E1): 'auto' keeps the
+  // legacy respawn placement (origin ball, or the light ball
+  // while the emit shape is 'light'); naming a shape places
+  // respawns through the shared bake shape law of that shape
+  // (lib/gpgpuEmitShapes.ts).
+  gpgpuRespawnShape: 'auto' as const,
+  // Distribution operators (stage 2, B5): '' = no layer over
+  // the shape law (bit-identical). See lib/gpgpuDistribution.ts.
+  gpgpuEmitDistribution: '',
+  // Shader seed (stage 2, B5): 0 = off (the opt-in of
+  // STAGE2_DESIGN judgment 3). See lib/gpgpuRandom.ts.
+  gpgpuShaderSeed: 0,
+  // Emission source (Grammar 2.0 stage 2, E3): 'shape' is the
+  // legacy analytic placement (bit-identical). 'morph' /
+  // 'bitmap' place (re)births from a sample cloud, 'path' on
+  // the steering path polyline (lib/gpgpuEmissionSource.ts).
+  gpgpuEmitSource: 'shape' as const,
+  // Bitmap emission cloud (E3): the ported CPU media sampler's
+  // defaults (threshold 0.45 / depth 0.65, the layer sampler's
+  // media defaults).
+  gpgpuEmitBitmapThreshold: 0.45,
+  gpgpuEmitBitmapDepth: 0.65,
+  gpgpuEmitBitmapInvert: false,
+  // Path emission (E3): bake initial speed along the tangent.
+  gpgpuEmitPathSpeed: 6,
+  // Emission mask (E3): raster-mask gating of placements.
+  gpgpuEmitMaskEnabled: false,
+  // Emitter transform (stage 2, E0): position / rotation
+  // (degrees) / uniform scale of the emitter frame, applied
+  // to placements on both the bake and the respawn. All
+  // defaults together are the identity transform.
+  gpgpuEmitterPosX: 0,
+  gpgpuEmitterPosY: 0,
+  gpgpuEmitterPosZ: 0,
+  gpgpuEmitterRotX: 0,
+  gpgpuEmitterRotY: 0,
+  gpgpuEmitterRotZ: 0,
+  gpgpuEmitterScale: 1,
+  // Emitter initial velocity (stage 2, E2): 'cube' = the
+  // legacy bake scatter; the directed defaults mirror the
+  // spawn event's (+Y axis, speed 2, spread 0.5).
+  gpgpuEmitterVelMode: 'cube',
+  gpgpuEmitterVelDirX: 0,
+  gpgpuEmitterVelDirY: 1,
+  gpgpuEmitterVelDirZ: 0,
+  gpgpuEmitterVelSpeed: 2,
+  gpgpuEmitterVelSpread: 0.5,
   // 3D Light (Phase T): disabled by default — the draw path is
   // bit-identical to before until the user opts in (and intensity 0
   // stays an exact identity even when enabled).
@@ -1013,6 +1174,30 @@ f 8 1 105`,
   gpgpuLightDirX: 0,
   gpgpuLightDirY: -1,
   gpgpuLightDirZ: 0,
+  // Light units 2-4 (stage 2, E4): disabled, mirroring unit
+  // 1's intensity / radius defaults — the unit list resolves
+  // to the single legacy light until a unit is opted in.
+  gpgpuLight2Enabled: false,
+  gpgpuLight2PosX: 0,
+  gpgpuLight2PosY: 0,
+  gpgpuLight2PosZ: 0,
+  gpgpuLight2Intensity: 1,
+  gpgpuLight2Radius: 3,
+  gpgpuLight3Enabled: false,
+  gpgpuLight3PosX: 0,
+  gpgpuLight3PosY: 0,
+  gpgpuLight3PosZ: 0,
+  gpgpuLight3Intensity: 1,
+  gpgpuLight3Radius: 3,
+  gpgpuLight4Enabled: false,
+  gpgpuLight4PosX: 0,
+  gpgpuLight4PosY: 0,
+  gpgpuLight4PosZ: 0,
+  gpgpuLight4Intensity: 1,
+  gpgpuLight4Radius: 3,
+  // Emit light unit (stage 2, E4): 1 = the legacy light
+  // position, so 'light'-shape bakes stay bit-identical.
+  gpgpuEmitLightUnit: 1,
   // Visible light volume + trail (Phase Y): both off by default
   // (and volume intensity 0) — the scene mounts nothing extra and
   // the render is bit-identical to v1.29.0 until opted in.
@@ -1042,6 +1227,8 @@ f 8 1 105`,
   gpgpuShadowMapStrength: 0,
   gpgpuShadowMapBias: 0.001,
   gpgpuShadowMapSoftness: 1,
+  gpgpuShadowMapCastParticles: false,
+  gpgpuShadowMapParticleSize: 1,
   // Color over Lifetime
   gpgpuAgeColorEnabled: false,
   gpgpuAgeColorYoung: '#00aaff',
@@ -1075,6 +1262,11 @@ f 8 1 105`,
   gpgpuSpriteSheetRows: 1,
   gpgpuSpriteFrameMode: 'age' as const,
   gpgpuSpriteFrameFps: 12,
+  // Sprite frame channel drive (stage 4, S3): inert unless
+  // the frame mode is 'channel'.
+  gpgpuSpriteFrameChannel: 'ageRatio' as const,
+  gpgpuSpriteFrameSlot: -1,
+  gpgpuSpriteFrameRange: 1,
   gpgpuSpriteLoop: true,
   // Sprite rotation (Phase AX): all 0 = un-rotated legacy sampling.
   gpgpuSpriteRotInitial: 0,
@@ -1101,6 +1293,19 @@ f 8 1 105`,
   gpgpuAgeCurveForcePoints: [1, 1, 1, 1, 1],
   gpgpuAgeCurveRotationEnabled: false,
   gpgpuAgeCurveRotationPoints: [1, 1, 1, 1, 1],
+  // Age free curves (Grammar 2.0 stage 2, B4): free mode off
+  // and the identity asset ([0,1, 1,1] = flat 1) per target, so
+  // both layers of the identity hold here too.
+  gpgpuAgeCurveSizeFreeEnabled: false,
+  gpgpuAgeCurveSizeFreePoints: [0, 1, 1, 1],
+  gpgpuAgeCurveOpacityFreeEnabled: false,
+  gpgpuAgeCurveOpacityFreePoints: [0, 1, 1, 1],
+  gpgpuAgeCurveVelocityFreeEnabled: false,
+  gpgpuAgeCurveVelocityFreePoints: [0, 1, 1, 1],
+  gpgpuAgeCurveForceFreeEnabled: false,
+  gpgpuAgeCurveForceFreePoints: [0, 1, 1, 1],
+  gpgpuAgeCurveRotationFreeEnabled: false,
+  gpgpuAgeCurveRotationFreePoints: [0, 1, 1, 1],
   // Layer Maps per property (Phase U): 0 = no modulation.
   gpgpuMapSizeAmount: 0,
   gpgpuMapOpacityAmount: 0,

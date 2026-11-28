@@ -14,7 +14,7 @@ import {
   extractCustomForceControls,
 } from '../lib/gpgpuCustomForceControls';
 import { VEL_FRAG_PREAMBLE, buildVelocityPreamble } from './gpgpuShaderSimulationVelocityPreamble';
-import { VEL_FRAG_HELPERS } from './gpgpuShaderSimulationVelocityHelpers';
+import { VEL_FRAG_HELPERS, buildVelocityHelpers } from './gpgpuShaderSimulationVelocityHelpers';
 import { VEL_FRAG_MAIN_FORCES, buildMainForcesFragment } from './gpgpuShaderSimulationVelocityMainForces';
 import { isDefaultGpgpuForceOrder } from '../lib/gpgpuForceOrder';
 import { VEL_FRAG_MAIN_SPH_GRAINS, buildVelocitySphGrains } from './gpgpuShaderSimulationVelocityMainSphGrains';
@@ -76,6 +76,66 @@ export interface VelocityFragmentVariantOptions {
   // reflection segment), spliced in in the same manner — only
   // while the free-particles key is on.
   rigidFree?: boolean;
+  // Grammar 2.0 stage 1 (slice 1A): live particle rules
+  // (preamble uniform set + the main-forces live segment),
+  // spliced in in the same manner — only while an effective
+  // LIVE rule list exists.
+  particleRulesLive?: boolean;
+  // Grammar 2.0 stage 2 (texture-unit follow-up): the merged
+  // supply (preamble merged chunk + helpers merged fetch +
+  // main-forces merged live segment), spliced in in the same
+  // manner — only while the merged supply stands (implies
+  // particleRulesLive and a column consumer).
+  mergedSupply?: boolean;
+  // Grammar 2.0 stage 2 (slice E2): the spawn allocator
+  // (preamble uniform set + the main-forces gate line),
+  // spliced in in the same manner — only while the absolute
+  // rate key is set or the spawn envelope is enabled.
+  spawnAlloc?: boolean;
+  // Grammar 2.0 stage 2 (slice E2): the emitter's directed
+  // initial velocity (preamble uniform set + the helpers
+  // function + the main-forces activation segment), spliced
+  // in in the same manner — only while the emitter velocity
+  // mode is 'directed'.
+  emitterVelocity?: boolean;
+  // Grammar 2.0 stage 2 (slice B1): field instances (preamble
+  // column-data uniform set + the helpers force function +
+  // the 'field-instances' force chunk), spliced in in the
+  // same manner — only while at least one field instance
+  // resolves.
+  fieldInstances?: boolean;
+  // Grammar 2.0 stage 2 (slice B2): path assets (preamble
+  // path uniform set over the same column texture + the
+  // asset variant of the 'steer-seek' chunk), spliced in in
+  // the same manner — only while steering follows an
+  // extended path asset.
+  pathAssets?: boolean;
+  crowdPathAssets?: boolean;
+  // Grammar 2.0 stage 2 (slice B3): relative-velocity drag
+  // (preamble uniform set + the 'rel-drag' force chunk),
+  // spliced in in the same manner — only while the drag
+  // rate key is above zero.
+  relDrag?: boolean;
+  // Grammar 2.0 stage 2 (slice B3): target speed (preamble
+  // uniform set + the tail's final magnitude block),
+  // spliced in in the same manner — only while the target
+  // speed key is above zero.
+  targetSpeed?: boolean;
+  // Grammar 2.0 stage 2 (slice B4): age free curves for the
+  // velocity / force targets (preamble uniform sets + the
+  // tail's free evaluations replacing the 5-point ones),
+  // spliced in in the same manner — only while the target's
+  // Enabled and FreeEnabled are both on.
+  ageFreeVelocity?: boolean;
+  ageFreeForce?: boolean;
+  // Grammar 2.0 stage 2 (slice B7): standalone Meander (the
+  // 'meander' force chunk + the Particle Life chunk's
+  // no-meander form), spliced in in the same manner — only
+  // while the standalone enable stands (enable key on +
+  // amount above zero, lib/gpgpuMeander.ts). No preamble
+  // additions: the term reuses the Particle Life meander
+  // uniforms the stock preamble already declares.
+  meanderStandalone?: boolean;
 }
 
 export const SIM_VEL_FRAG_PHASE19 =
@@ -154,19 +214,35 @@ export function buildVelocityFragment(customCode: string, forceOrder?: string, o
   // Phase 19 gate fix: a Phase 19 variant option rebuilds the
   // affected chunks in their variant form. With no variant on,
   // the historical paths above are untouched.
-  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci || !!options?.attractor2 || !!options?.attractor3 || !!options?.attractor4 || !!options?.grainsPileXsph || !!options?.crowd || !!options?.particleRules || !!options?.rigidFree;
+  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci || !!options?.attractor2 || !!options?.attractor3 || !!options?.attractor4 || !!options?.grainsPileXsph || !!options?.crowd || !!options?.particleRules || !!options?.particleRulesLive || !!options?.spawnAlloc || !!options?.emitterVelocity || !!options?.fieldInstances || !!options?.pathAssets || !!options?.crowdPathAssets || !!options?.relDrag || !!options?.targetSpeed || !!options?.ageFreeVelocity || !!options?.ageFreeForce || !!options?.meanderStandalone || !!options?.rigidFree;
   const base = !hasVariant && (!forceOrder || isDefaultGpgpuForceOrder(forceOrder))
     ? SIM_VEL_FRAG
-    : buildVelocityPreamble(options) + VEL_FRAG_HELPERS + buildMainForcesFragment(forceOrder, options)
+    : buildVelocityPreamble(options) + buildVelocityHelpers(options) + buildMainForcesFragment(forceOrder, options)
       + buildVelocitySphGrains(options) + buildVelocityTail(options);
   if (!snippet) return base;
   const extraction = extractCustomForceControls(snippet);
   const decls = extraction.ok ? extraction.decls : [];
   const body = applyCtrlDeclarations(snippet, decls);
-  const injected = base.replace(
-    '    // __CUSTOM_FORCE__',
-    `    { // custom force (user GLSL)\n${body}\n    }`,
-  );
+  // External-force general form (Grammar 2.0 stage 1): in
+  // the live-rules variant the snippet is a force-gate
+  // target (REP mask bit 12, gate local grpCustom declared
+  // by the main-forces live segment). A snippet mutates vel
+  // arbitrarily, so the gate cannot multiply an application
+  // term the way the built-in chunks do — instead the
+  // velocity is snapshotted before the block and the
+  // snippet's net effect is blended by the permit:
+  // grpCustom 1 keeps the snippet's result exactly, 0
+  // restores the pre-snippet velocity exactly. Outside the
+  // live variant the historical injection is byte-identical.
+  const injected = options?.particleRulesLive
+    ? base.replace(
+      '    // __CUSTOM_FORCE__',
+      `    { // custom force (user GLSL), live-gated by grpCustom (REP bit 12)\n      vec3 velPreCustomForce = vel;\n${body}\n      vel = mix(velPreCustomForce, vel, grpCustom);\n    }`,
+    )
+    : base.replace(
+      '    // __CUSTOM_FORCE__',
+      `    { // custom force (user GLSL)\n${body}\n    }`,
+    );
   if (decls.length === 0) return injected;
   return injected.replace(
     '  precision highp float;\n',

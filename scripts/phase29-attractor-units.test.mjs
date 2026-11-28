@@ -117,7 +117,7 @@ for (const unit of [3, 4]) {
 
 // ── WGSL twin ───────────────────────────────────────────────────
 const wgsl = readFileSync(join(ROOT, 'lib/webgpuCompute.ts'), 'utf8');
-check('VEL uniform buffer is 752 bytes (736 through G10 stage 2; stage 3 appended the particle-rules field)', wgsl.includes('const VEL_UNIFORM_BYTES = 752;'));
+check('VEL uniform buffer is 768 bytes (736 through G10 stage 2; stage 3 appended the particle-rules field)', wgsl.includes('const VEL_UNIFORM_BYTES = 768;'));
 check('uniform struct appends unit-3/4 fields at the tail (after the Phase 28 pads)',
   wgsl.indexOf('attractor3Enabled : f32') > wgsl.indexOf('steerStatePad1 : f32')
   && wgsl.indexOf('attractor4Enabled : f32') > wgsl.indexOf('attractor3Enabled : f32')

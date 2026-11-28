@@ -7,6 +7,24 @@ import {
 import { flip3dMode } from './flip3d';
 import { GRAINS_DEM_FEATURE, resolveGrainsDemPlan } from './gpgpuGrains';
 import { hasEffectiveParticleRules } from './gpgpuParticleRules';
+import {
+  hasEffectiveLiveRules,
+  liveRulesWgslCoverable,
+  resolveLiveParticleRules,
+} from './gpgpuParticleRulesLive';
+import { parseGpgpuGroups } from './gpgpuGroups';
+import { emitterRespawnShapeActive, emitterTransformActive, emitterVelocityDirectedActive } from './gpgpuEmitter';
+import { spawnRateAbsoluteActive, spawnRuleGateKeyOn } from './gpgpuSpawnAllocator';
+import { emissionMaskActive, emissionMaskVariantActive, emissionPathActive, emissionSourceActive } from './gpgpuEmissionSource';
+import { fieldInstancesActive } from './gpgpuFieldInstances';
+import { pathAssetExtended, steeringPathAssetActive, steeringCrowdPathAssetActive } from './gpgpuPathAssets';
+import { relDragActive, spinChannelActive, targetSpeedActive } from './gpgpuSpeedDragSpin';
+import { orientChannelActive } from './gpgpuOrient';
+import { ageFreeCurvesActive } from './gpgpuAgeFreeCurves';
+import { distributionActive } from './gpgpuDistribution';
+import { predationActive } from './gpgpuPredation';
+import { meanderStandaloneActive } from './gpgpuMeander';
+import { shaderSeedActive } from './gpgpuRandom';
 
 export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   'particles',
@@ -94,6 +112,23 @@ export const WEBGPU_COMPUTE_SUPPORTED_FEATURES = [
   // respawn there), exactly like the other position-side
   // lifecycle entries under DEM.
   'particle-rules',
+  // Live particle rules (Grammar 2.0 stage 1, the WGSL
+  // slice): the REP now also exists as a WGSL compute pass
+  // (buildRuleEvalWgsl in lib/gpgpuParticleRulesLive.ts) and
+  // the WGSL velocity / position passes consume its aggregate
+  // with the same composition as WebGL (permits AND, kill OR,
+  // the latched true-kill, the extension gates bits 8-11).
+  // The coverage is partial by construction: a config whose
+  // live rules reach past the WGSL subset — a condition
+  // reading den / hit / hits / an ext slot, a baked-fallback
+  // rule, a spawn or display action, or a slot-reading
+  // condition while an attribute dynamic stage would rewrite
+  // the slots the WebGL REP reads — additionally requests
+  // 'particle-rules-live-full' below, which stays unsupported
+  // and keeps those configs on the WebGL route. While the DEM
+  // engine replaces the position pass, the live kill /
+  // true-kill are not consumed, exactly like the baked kill.
+  'particle-rules-live',
 ] as const;
 
 export type WebgpuComputeFeature = typeof WEBGPU_COMPUTE_SUPPORTED_FEATURES[number];
@@ -190,6 +225,125 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // Emission curve (Phase AJ): the respawn gate lives in the
   // WebGL position pass only — declaring it routes to WebGL.
   if (config.gpgpuEmissionCurveEnabled) features.push('emission-curve');
+  // Emitter respawn shape / transform (Grammar 2.0 stage 2,
+  // E0+E1): the bake side is shared initial data and applies
+  // on every route, but the WGSL position pass still places
+  // respawns with the legacy law only (its age / rule-kill
+  // blocks above), so a config that names a respawn shape or
+  // moves the emitter frame would silently diverge at the
+  // first respawn. Declaring the gap (deliberately NOT added
+  // to the supported list) routes those configs to WebGL.
+  if (emitterRespawnShapeActive(config) || emitterTransformActive(config)) features.push('emitter-respawn-shape');
+  // Spawn allocator (Grammar 2.0 stage 2, E2): the absolute
+  // rate, the envelope clock, the rule spawn gate and the
+  // directed initial velocity live in the WebGL sim passes
+  // only — the WGSL gate still runs the legacy fraction rate
+  // over the plain spawn time and never resets velocity on
+  // activation. Declaring each gap (deliberately NOT added
+  // to the supported list) routes those configs to WebGL.
+  if (spawnRateAbsoluteActive(config)) features.push('spawn-rate-absolute');
+  if (config.gpgpuSpawnEnvelopeEnabled) features.push('spawn-envelope');
+  if (spawnRuleGateKeyOn(config)) features.push('spawn-rule-gate');
+  if (emitterVelocityDirectedActive(config)) features.push('emitter-directed-velocity');
+  // Emission sources (Grammar 2.0 stage 2, E3): the cloud /
+  // path placements and the emission mask gate live in the
+  // WebGL position pass only — the WGSL respawn still places
+  // with the legacy law. Declaring the gaps (deliberately NOT
+  // added to the supported list) routes those configs to
+  // WebGL instead of silently dropping the source at the
+  // first respawn. (The bake side is shared initial data and
+  // applies on every route, like E0–E2.)
+  if (emissionSourceActive(config)) features.push('emission-source');
+  if (emissionMaskActive(config) || emissionMaskVariantActive(config)) features.push('emission-mask');
+  // Field instances + layers (Grammar 2.0 stage 2, B1): the
+  // column-data texture, the instance loop and the attribute-
+  // slot layer modulation live in the WebGL velocity pass
+  // only — the WGSL velocity implements none of them.
+  // Declaring the gap (deliberately NOT added to the
+  // supported list) routes those configs to WebGL instead of
+  // silently dropping the placed fields.
+  if (fieldInstancesActive(config)) features.push('field-instances');
+  // Path assets (Grammar 2.0 stage 2, B2): an extended path
+  // asset (multiple paths / over 8 points / closed loops /
+  // SVG-derived) is followed and emitted from over the
+  // column-data texture in the WebGL passes only — the WGSL
+  // twins still carry the legacy 8-point uniform path.
+  // Declaring the gap (deliberately NOT added to the
+  // supported list) routes those configs to WebGL instead of
+  // silently truncating the asset to its first 8 points.
+  if (steeringPathAssetActive(config) || steeringCrowdPathAssetActive(config) || (emissionPathActive(config) && pathAssetExtended(config))) {
+    features.push('path-assets');
+  }
+  // Speed / drag / spin (Grammar 2.0 stage 2, B3): the target
+  // speed is a velocity-tail setting, the relative drag is a
+  // new force chunk with a slot-modulated rate, and the spin
+  // channel is a dedicated ping-pong state pass feeding the
+  // draw side — none of the three has a WebGPU counterpart in
+  // this foundation. Declaring the gaps (deliberately NOT
+  // added to the supported list) routes those configs to
+  // WebGL instead of silently dropping the features. None of
+  // the three is ever required at its default.
+  if (targetSpeedActive(config)) features.push('target-speed');
+  if (relDragActive(config)) features.push('rel-drag');
+  if (spinChannelActive(config)) features.push('spin-channel');
+  // Orientation channel (Limit plan stage 4, S2): a dedicated
+  // quaternion ping-pong pass feeding the geometry vertex —
+  // no WebGPU counterpart in this foundation. Declaring the
+  // gap (deliberately NOT added to the supported list) routes
+  // those configs to WebGL instead of silently dropping the
+  // posture. Never requested at the default (channel off).
+  if (orientChannelActive(config)) features.push('orient-channel');
+  // Age free curves (Grammar 2.0 stage 2, B4): a target's
+  // free control-point curve over age is evaluated by the
+  // WebGL shader variants only — the WGSL twins carry the
+  // fixed 5-point curves. Declaring the gap (deliberately
+  // NOT added to the supported list) routes those configs
+  // to WebGL instead of silently falling back to the
+  // 5-point shape. Requested only while some target's free
+  // mode stands with a non-identity curve.
+  if (ageFreeCurvesActive(config)) features.push('age-free-curves');
+  // Distribution operators + shader seed (Grammar 2.0 stage 2,
+  // B5): the operator layer over the shape law and the
+  // seed-phase respawn draws live in the WebGL position pass
+  // only — the WGSL respawn still places with the unlayered
+  // law at the legacy hash phase. (The bake side is shared
+  // initial data and applies on every route, like E0–E3.)
+  // Declaring the gaps (deliberately NOT added to the
+  // supported list) routes those configs to WebGL instead of
+  // silently dropping the layer / seed at the first respawn.
+  if (distributionActive(config)) features.push('emission-distribution');
+  if (shaderSeedActive(config)) features.push('shader-seed');
+  // Predator-Prey semantics (Grammar 2.0 stage 2, B6): the
+  // generated rules ride on the WebGL REP, whose neighbourhood
+  // supply (prey / pred) has no WGSL home — the WGSL REP does
+  // no neighbour sampling, and the generated true-kill / spawn
+  // consumers are the WebGL position pass and Aux pool.
+  // Declaring the gap (deliberately NOT added to the
+  // supported list) routes those configs to WebGL instead of
+  // silently dropping the predation outcomes. (A user-written
+  // live rule reading prey / pred without the predation keys
+  // routes the same way through 'particle-rules-live-full':
+  // liveConditionWgsl has no form for the variables.)
+  if (predationActive(config)) features.push('predation');
+  // Meander (Grammar 2.0 stage 2, B7 + WGSL follow-up)
+  // deliberately declares NOTHING here: B7 originally routed
+  // standalone configs to WebGL ('meander-standalone')
+  // because the WGSL velocity pass carried no wander term,
+  // but the follow-up implemented the term in WGSL — both
+  // homes (inside the Particle Life block and the standalone
+  // block after it, exactly once either way) and the REP
+  // gate consumption (mask bit 14, livePermitMeander) — so
+  // no route can silently lose the wander anymore. The
+  // meanderStandaloneActive import stays for the record of
+  // that history; it no longer gates routing.
+  void meanderStandaloneActive;
+  // Light units (Grammar 2.0 stage 2, E4) deliberately declare
+  // NOTHING here: the emit-unit selection resolves on the CPU
+  // (lib/gpgpuLightUnits.ts resolveEmitLightPos) before supply,
+  // so both routes receive the same single position value; the
+  // extra units' draw lives in the points draw shader, which
+  // is WebGL on every route; and the Phase Z connection is a
+  // CPU bake shared by all routes. No route can diverge.
   // Named attributes (Phase AK): the velocity-side consumers
   // (force drive / group gate) read the attribute texture in
   // the WebGL velocity pass only — declaring them routes to
@@ -213,6 +367,38 @@ function getRequestedGpgpuFeatures(config: ParticleConfig): string[] {
   // consumption (velocity permits + position kill) and the
   // feature joined the supported list above.
   if (hasEffectiveParticleRules(config.gpgpuParticleRules ?? '')) features.push('particle-rules');
+  // Live particle rules (Grammar 2.0 stage 1, slice 1A;
+  // WGSL slice): the feature is requested while effective
+  // live rules exist and is supported (the WGSL REP +
+  // consumption above). Configs reaching past the WGSL
+  // subset additionally request 'particle-rules-live-full',
+  // which is deliberately NOT supported, so they keep
+  // routing to WebGL — the same declare-the-gap discipline
+  // as the attr-* entries below. The dynamic-stage test
+  // mirrors those entries: while dyn / feedback / chain
+  // would rewrite slot values, the WebGL REP reads the
+  // rewritten texture but the WGSL REP reads the mirrored
+  // bake, so a slot-reading live condition would diverge.
+  if (hasEffectiveLiveRules(config.gpgpuParticleRulesLive ?? '')) {
+    features.push('particle-rules-live');
+    const attrDynamicActive = (
+      (config.gpgpuAttrDynEnabled && normalizeAttrExprs(config.gpgpuAttrExprs).some((expr) => expr.trim().length > 0))
+      || (config.gpgpuAttrFeedbackEnabled && normalizeAttrExprs(config.gpgpuAttrExprs).some((expr) => expr.trim().length > 0))
+      || (config.gpgpuAttrChainEnabled && normalizeAttrExprs(config.gpgpuAttrChainExprs).some((expr) => expr.trim().length > 0))
+    );
+    if (!liveRulesWgslCoverable(
+      resolveLiveParticleRules(config.gpgpuParticleRulesLive ?? ''),
+      {
+        names: config.gpgpuAttrNames,
+        names2: config.gpgpuAttrNames2,
+        groupDefs: parseGpgpuGroups(config.gpgpuGroupsData ?? ''),
+        densityAvailable: true,
+        attrDynamicActive,
+      },
+    )) {
+      features.push('particle-rules-live-full');
+    }
+  }
   // Attribute feedback (Phase BV): the feedback pass's output
   // reaches the draw-side drives on every path (the draw shader
   // is WebGL throughout, exactly as with Phase BO's dynamic

@@ -18,6 +18,17 @@ export const GlobalDisplayGpgpuTrailsSection: React.FC<GlobalDisplayEffectsShare
           <Slider label="Trail Length" value={config.gpgpuTrailLength} min={2} max={16} step={1} onChange={(v) => updateConfig('gpgpuTrailLength', v)} />
           <Slider label="Trail Fade" value={config.gpgpuTrailFade} min={0} max={0.99} step={0.01} onChange={(v) => updateConfig('gpgpuTrailFade', v)} />
           <Slider label="Velocity Scale" value={config.gpgpuTrailVelocityScale} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuTrailVelocityScale', v)} />
+          <Toggle label="Trail Mode （軌跡の作り方・第4段S6）" value={config.gpgpuTrailMode} options={[{ label: 'History', val: 'history' as const }, { label: 'Aux', val: 'aux' as const }]} onChange={(v) => updateConfig('gpgpuTrailMode', v)} />
+          {config.gpgpuTrailMode === 'aux' && (
+            <>
+              <div className="mt-1 mb-2 text-[9px] text-white/40 leading-relaxed">
+                Aux 方式では副粒子（Aux プール）が親粒子から一定間隔で子を落として軌跡を作ります。履歴 RT は構築されず、履歴系の描画（トレイル点・リボン・チューブ）は描かれません。
+              </div>
+              <Slider label="Emit Interval （発生間隔・フレーム）" value={config.gpgpuTrailEmitInterval} min={1} max={240} step={1} onChange={(v) => updateConfig('gpgpuTrailEmitInterval', Math.round(v))} />
+              <Slider label="Emit Rate （発生対象率）" value={config.gpgpuTrailEmitRate} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuTrailEmitRate', v)} />
+              <Slider label="Aux Life （副粒子の寿命・秒、0=長さから換算）" value={config.gpgpuTrailAuxLife} min={0} max={60} step={0.05} onChange={(v) => updateConfig('gpgpuTrailAuxLife', v)} />
+            </>
+          )}
         </>
       )}
     </div>

@@ -1,3 +1,10 @@
+import { EMIT_SHAPE_GLSL } from '../lib/gpgpuEmitShapes';
+import { NEIGHBOR_SELF_SKIP_GLSL, NEIGHBOR_SUV_GLSL } from '../lib/gpgpuNeighborLoop';
+import { DM_HASH11_GLSL_INDENTED } from '../lib/gpgpuRandom';
+import { DIST_GLSL, DIST_MAX_OPS } from '../lib/gpgpuDistribution';
+import { EMIT_PATH_GLSL } from '../lib/gpgpuEmissionSource';
+import { EMIT_PATH_ASSET_GLSL } from '../lib/gpgpuPathAssets';
+
 // ── Position sim fragment (+ Life/Age in .w) ──
 const POS_FRAG_HEAD = /* glsl */ `
   precision highp float;
@@ -174,12 +181,7 @@ const POS_FRAG_MID = /* glsl */ `  // Rigid bodies (Phase AU): while the CPU rig
   uniform bool  uGroupInvert;
   varying vec2 vUv;
 
-  float dmHash11(float n) {
-    vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
-    p3 += dot(p3, p3.yxz + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-  }
-  float hash1(vec2 p) {
+${DM_HASH11_GLSL_INDENTED}  float hash1(vec2 p) {
     return dmHash11(p.x * 127.1 + p.y * 311.7);
   }
 
@@ -531,9 +533,7 @@ const POS_FRAG_PROJECTION_SEGMENT_A = /* glsl */ `    // Grains projection (Phas
 const POS_FRAG_PROJECTION_SEGMENT_LOOP = /* glsl */ `      for (int i = 0; i < 65536; i++) {
         if (float(i) >= gCount) break;
         float si = float(i) * gStride;
-        vec2 sUv = (vec2(mod(si, uTexSizeF), floor(si / uTexSizeF)) + 0.5) / uTexSizeF;
-        if (length(sUv - vUv) < 1.5 / uTexSizeF) continue;
-        vec3 oPos = texture2D(uPosTex, sUv).xyz;
+${NEIGHBOR_SUV_GLSL}${NEIGHBOR_SELF_SKIP_GLSL}        vec3 oPos = texture2D(uPosTex, sUv).xyz;
         vec3 r = posData.xyz - oPos;
         float r2 = dot(r, r);
         if (r2 < gd2 && r2 > 0.0001) {
@@ -864,6 +864,362 @@ const POS_FRAG_PARTICLE_RULES_SEGMENT = /* glsl */ `    // Particle rule kill (G
       if (mod(floor(ruleAttrData.a / 32.0), 2.0) > 0.5) doRespawn = true;
     }
 `;
+// Live particle rules (Grammar 2.0 stage 1, slice 1A): the
+// kill bit of the REP output's .r channel, composed with the
+// baked kill by OR (design section 7 — both use the unified
+// "kill = bit set" polarity). The uniforms are declared only
+// in this variant; the segment is spliced in right after the
+// baked rule-kill segment (or after the group-kill block when
+// no baked segment exists). The enabled flag is resolved
+// CPU-side (REP texture exists AND a live kill rule exists),
+// so a false uniform keeps the exact legacy path inside this
+// variant string.
+const POS_FRAG_PARTICLE_RULES_LIVE_UNIFORMS = /* glsl */ `
+uniform sampler2D uRuleLiveTex;
+uniform bool uParticleRuleLiveKillEnabled;
+uniform bool uParticleRuleLiveTrueKillEnabled;
+`;
+// Texture-unit fix (Grammar 2.0 stage 1): the velocity
+// pass's live variant must drop the spawn-order sampler to
+// stay inside the 16-unit floor (see
+// gpgpuShaderSimulationVelocityPreamble.ts at
+// VEL_FRAG_SPAWN_ORDER_DECL_STOCK and
+// kalokagathia-pro/STAGE1_TEXUNIT_FIX_RECORD.md). The gate
+// value both passes compute must stay identical — the
+// position pass (cohort → respawn) and the velocity pass
+// (cohort → velocity) have to pick the same particles — so
+// the position live variant derives it the same way: from
+// the initial-position texture (declared here in place of
+// the order sampler; the position budget has room, so the
+// swap is unit-neutral) divided by the bake's normaliser,
+// uSpawnOrderMaxDist (CPU twin spawnGateDistanceValue in
+// lib/gpgpuLifecycle.ts). Both stock lines occur exactly
+// once in POS_FRAG_MID.
+export const POS_FRAG_SPAWN_ORDER_DECL_STOCK = '  uniform sampler2D uSpawnOrderTex;';
+export const POS_FRAG_SPAWN_ORDER_DECL_LIVE = '  uniform sampler2D uInitPosTex;\n  uniform float uSpawnOrderMaxDist;';
+export const POS_FRAG_SPAWN_GATE_READ_STOCK = '    float v = texture2D(uSpawnOrderTex, uv).r;';
+export const POS_FRAG_SPAWN_GATE_READ_LIVE = '    float v = clamp(length(texture2D(uInitPosTex, uv).xyz) / max(uSpawnOrderMaxDist, 1.0e-6), 0.0, 1.0);';
+const POS_FRAG_PARTICLE_RULES_LIVE_SEGMENT = /* glsl */ `    // Live particle rule kill (Grammar 2.0 1A): bit 5 of the
+    // REP mask respawns matched particles (OR with baked).
+    if (uParticleRuleLiveKillEnabled) {
+      float liveMask = texture2D(uRuleLiveTex, vUv).r;
+      if (mod(floor(liveMask / 32.0), 2.0) > 0.5) doRespawn = true;
+    }
+`;
+// Live true-kill (Grammar 2.0 stage 1, slice 1C): bit 6 of
+// the REP mask. The REP latches the bit once set, so this
+// test is stable: a true-killed particle is parked off-screen
+// with its age frozen — the spawn gate's parking form — and
+// returns before any integration or the respawn block, so it
+// never revives and never re-births (no Aux birth signal).
+// The segment is spliced into the MID right after the spawn
+// gate (its anchor below), where pos / age are the loaded
+// values; the enabled flag is resolved CPU-side with the
+// same suppression discipline as the live kill (vellum /
+// rigid / replica stacks resolve it off).
+const POS_FRAG_SPAWN_GATE_ANCHOR = /* glsl */ `      spawnActivating = sHash >= thrPrev;
+    }
+`;
+const POS_FRAG_PARTICLE_RULES_LIVE_TRUE_KILL_SEGMENT = /* glsl */ `
+    // Live particle rule true-kill (Grammar 2.0 1C): bit 6
+    // of the REP mask is latched — park the particle
+    // off-screen with its age frozen and never respawn it.
+    if (uParticleRuleLiveTrueKillEnabled) {
+      float liveMaskTk = texture2D(uRuleLiveTex, vUv).r;
+      if (mod(floor(liveMaskTk / 64.0), 2.0) > 0.5) {
+        gl_FragColor = vec4(0.0, -99999.0, 0.0, age);
+        return;
+      }
+    }
+`;
+
+// Emitter respawn shape (Grammar 2.0 stage 2, slice E1):
+// while gpgpuRespawnShape names a shape (not 'auto'), the
+// shared respawn block places through the SAME sampling law
+// the bake uses — the GLSL twin kaloEmitShapePos from
+// lib/gpgpuEmitShapes.ts — instead of the legacy origin ball /
+// light ball statement. The four hash draws feed the twin in
+// its canonical order (theta, then the shape draws). The
+// legacy placement block below stays the default string's
+// verbatim text; this variant replaces it wholesale.
+const POS_FRAG_RESPAWN_PLACEMENT_LEGACY = /* glsl */ `        float r   = uBounceRadius * (0.05 + hash1(vUv + vec2(age)) * 0.9);
+        float th  = hash1(vUv + vec2(1.3)) * 6.2832;
+        float phi = acos(2.0 * hash1(vUv + vec2(2.7)) - 1.0);
+        if (uEmitLight) {
+          // Light emitter (Phase T): respawn as a small ball around
+          // the light position — the same hash draws, the radius
+          // scaled to 5% — so the emitter keeps feeding particles
+          // from the light. Every other shape takes the legacy
+          // statement below, verbatim.
+          float jr = r * 0.05;
+          pos = uEmitLightPos + vec3(jr * sin(phi) * cos(th), jr * sin(phi) * sin(th), jr * cos(phi));
+        } else {
+          pos = vec3(r * sin(phi) * cos(th), r * sin(phi) * sin(th), r * cos(phi));
+        }
+`;
+const POS_FRAG_EMITTER_SHAPE_UNIFORMS = /* glsl */ `
+uniform int uRespawnShape;
+`;
+const POS_FRAG_RESPAWN_PLACEMENT_SHAPE = /* glsl */ `        // Emitter shape law (stage 2, E1): the shared bake /
+        // respawn sampling law — the same formulas the bake's
+        // JS twin evaluates, fed by four hash draws in the
+        // twin's canonical order. uRespawnShape is the shape
+        // id from lib/gpgpuEmitShapes.ts (EMIT_SHAPE_IDS);
+        // the 'light' shape reads the existing uEmitLightPos.
+        pos = kaloEmitShapePos(uRespawnShape, vec4(hash1(vUv + vec2(11.1)), hash1(vUv + vec2(23.7)), hash1(vUv + vec2(37.3)), hash1(vUv + vec2(51.9))), uBounceRadius, uEmitLightPos);
+`;
+// Distribution layer + shader seed (Grammar 2.0 stage 2,
+// B5): while the distribution key resolves to effective
+// operators, the placed position passes through the layer
+// (lib/gpgpuDistribution.ts DIST_GLSL — the GLSL twin of the
+// bake's applyDistributionOps) right after the placement,
+// before the emitter transform — the same pipeline position
+// the bake uses. While the shader-seed opt-in key is set,
+// the placement draws carry the seed phase (the ONLY way a
+// seed reaches a shader; judgment 3). Both are variants:
+// the default string contains neither.
+const POS_FRAG_DIST_UNIFORMS = /* glsl */ `
+uniform vec4 uDistOps[${DIST_MAX_OPS}];
+uniform int uDistOpCount;
+` + DIST_GLSL;
+const POS_FRAG_SEED_UNIFORMS = /* glsl */ `
+uniform float uShaderSeedPhase;
+`;
+const POS_FRAG_DIST_SEGMENT = /* glsl */ `        // Distribution layer (stage 2, B5): transform the
+        // placed point in emitter space — the bake twin is
+        // applyDistributionOps in lib/gpgpuDistribution.ts.
+        pos = kaloDistApply(pos, uBounceRadius);
+`;
+const POS_FRAG_RESPAWN_PLACEMENT_SHAPE_SEED = /* glsl */ `        // Emitter shape law (stage 2, E1) with the shader
+        // seed phase (stage 2, B5): the four hash draws are
+        // shifted by the opt-in seed — the same law, a
+        // seed-dependent scatter.
+        pos = kaloEmitShapePos(uRespawnShape, vec4(hash1(vUv + vec2(11.1 + uShaderSeedPhase)), hash1(vUv + vec2(23.7 + uShaderSeedPhase)), hash1(vUv + vec2(37.3 + uShaderSeedPhase)), hash1(vUv + vec2(51.9 + uShaderSeedPhase))), uBounceRadius, uEmitLightPos);
+`;
+const POS_FRAG_RESPAWN_PLACEMENT_LEGACY_SEED = /* glsl */ `        float r   = uBounceRadius * (0.05 + hash1(vUv + vec2(age + uShaderSeedPhase)) * 0.9);
+        float th  = hash1(vUv + vec2(1.3 + uShaderSeedPhase)) * 6.2832;
+        float phi = acos(2.0 * hash1(vUv + vec2(2.7 + uShaderSeedPhase)) - 1.0);
+        if (uEmitLight) {
+          float jr = r * 0.05;
+          pos = uEmitLightPos + vec3(jr * sin(phi) * cos(th), jr * sin(phi) * sin(th), jr * cos(phi));
+        } else {
+          pos = vec3(r * sin(phi) * cos(th), r * sin(phi) * sin(th), r * cos(phi));
+        }
+`;
+const POS_FRAG_RESPAWN_PLACEMENT_PATH_SEED = /* glsl */ `        // Path emission (stage 2, E3) with the shader seed
+        // phase (stage 2, B5): the arc draw is shifted by
+        // the opt-in seed.
+        pos = kaloEmitPathPos(hash1(vUv + vec2(61.7 + uShaderSeedPhase)));
+`;
+// Emitter transform (Grammar 2.0 stage 2, slice E0): while
+// the emitter transform keys are non-identity, the placed
+// position passes through the same scale / rotation /
+// translation the bake applies (lib/gpgpuEmitter.ts produces
+// the matrix for both routes), so a respawn lands in the
+// transformed emitter frame exactly like an initially baked
+// particle. Spliced right after the placement (either law),
+// before the replica age restart.
+const POS_FRAG_EMITTER_TRANSFORM_UNIFORMS = /* glsl */ `
+uniform vec3 uEmitterPos;
+uniform mat3 uEmitterRotScale;
+`;
+const POS_FRAG_RESPAWN_AGE_ANCHOR = /* glsl */ `        // Replica age phase (Phase M): the respawn restarts the`;
+
+// Spawn allocator (Grammar 2.0 stage 2, E2): while the
+// absolute rate key is set or the spawn envelope is enabled,
+// the gate's threshold reads the allocator's effective rate
+// (uSpawnRateEff — the absolute rate's fraction equivalent,
+// or the legacy fraction) over the envelope clock
+// (uSpawnClockTime / uSpawnClockPrev, accumulated CPU-side
+// by advanceSpawnEnvelopeClock in lib/gpgpuSpawnAllocator.ts;
+// with the envelope disabled the clock IS the spawn time and
+// its previous value). The stock lines below stay the
+// default string's verbatim text; this variant replaces the
+// two threshold expressions wholesale.
+const POS_FRAG_SPAWN_ALLOC_UNIFORMS = /* glsl */ `
+uniform float uSpawnRateEff;
+uniform float uSpawnClockTime;
+uniform float uSpawnClockPrev;
+`;
+const POS_FRAG_THR_NOW_LEGACY = /* glsl */ `      float thrNow = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime));`;
+const POS_FRAG_THR_NOW_ALLOC = /* glsl */ `      float thrNow = min(1.0, uSpawnBurst + uSpawnRateEff * spawnPulseTimeEx(uSpawnClockTime));`;
+const POS_FRAG_THR_PREV_LEGACY = /* glsl */ `      float thrPrev = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime - uDelta));`;
+const POS_FRAG_THR_PREV_ALLOC = /* glsl */ `      float thrPrev = min(1.0, uSpawnBurst + uSpawnRateEff * spawnPulseTimeEx(uSpawnClockPrev));`;
+// Rule spawn gate (Grammar 2.0 stage 2, E2): bit 13 of the
+// REP mask is the live rules' spawn pulse (slice 1D-3). While
+// the gate key is on, a matched particle re-births through
+// the shared respawn block — the main-pool opening of the
+// connection the Aux ruleSpawn mode consumes for children.
+// The segment is spliced in right after the live rule-kill
+// segment (it shares that variant's uRuleLiveTex uniform);
+// the enabled flag is resolved CPU-side with the same
+// suppression discipline as the live kill (REP texture
+// exists AND a live spawn rule exists AND the key is on).
+const POS_FRAG_SPAWN_RULE_GATE_UNIFORMS = /* glsl */ `
+uniform bool uSpawnRuleGateEnabled;
+`;
+const POS_FRAG_SPAWN_RULE_GATE_SEGMENT = /* glsl */ `    // Rule spawn gate (Grammar 2.0 stage 2, E2): bit 13 of
+    // the REP mask is the spawn pulse — a matched particle
+    // re-births through the shared respawn block below.
+    if (uSpawnRuleGateEnabled) {
+      float spawnGateMask = texture2D(uRuleLiveTex, vUv).r;
+      if (mod(floor(spawnGateMask / 8192.0), 2.0) > 0.5) doRespawn = true;
+    }
+`;
+const POS_FRAG_EMITTER_TRANSFORM_SEGMENT = /* glsl */ `        // Emitter transform (stage 2, E0): scale / rotation /
+        // translation of the emitter frame — the bake twin is
+        // applyEmitterTransform in lib/gpgpuEmitter.ts.
+        pos = uEmitterPos + uEmitterRotScale * pos;
+`;
+
+// Emission sources (Grammar 2.0 stage 2, slice E3): while the
+// emission source is a sample cloud or the steering path, the
+// respawn placement reads the source instead of the analytic
+// law — the cloud through the particle's own texel (the cloud
+// index IS the particle identity, exactly like the morph
+// target assignment), the path through one hash draw fed to
+// the arc-length twin (EMIT_PATH_GLSL in
+// lib/gpgpuEmissionSource.ts). Both replace the legacy
+// placement wholesale, like the E1 shape law.
+const POS_FRAG_EMITTER_CLOUD_UNIFORMS = /* glsl */ `
+uniform sampler2D uEmitCloudTex;
+`;
+const POS_FRAG_RESPAWN_PLACEMENT_CLOUD = /* glsl */ `        // Emission cloud (stage 2, E3): the placement is the
+        // particle's own point of the emission cloud (the
+        // morph target's cloud or the bitmap cloud) — the
+        // same texture contract the morph force reads.
+        pos = texture2D(uEmitCloudTex, vUv).xyz;
+`;
+const POS_FRAG_EMITTER_PATH_UNIFORMS = /* glsl */ `
+uniform vec3 uEmitPath[${8}];
+uniform float uEmitPathCum[${8}];
+uniform int uEmitPathCount;
+` + EMIT_PATH_GLSL;
+// Path-asset emission (stage 2, B2): while the path asset is
+// extended, the respawn placement walks asset path 0 over the
+// shared column-data texture (the same supply the velocity
+// pass's Path Follow reads) instead of the uniform arrays —
+// the point cap rises from 8 to the asset's 64 with it. The
+// walk function keeps the legacy name (kaloEmitPathPos), so
+// the placement and mask-candidate segments are shared.
+const POS_FRAG_EMITTER_PATH_ASSET_UNIFORMS = /* glsl */ `
+uniform sampler2D uEmitColTex;
+uniform float uEmitColWidth;
+uniform float uEmitColHeight;
+uniform float uEmitPathBase;
+uniform int uEmitPathTexCount;
+` + EMIT_PATH_ASSET_GLSL;
+const POS_FRAG_RESPAWN_PLACEMENT_PATH = /* glsl */ `        // Path emission (stage 2, E3): one hash draw is the
+        // arc parameter over the steering path polyline.
+        pos = kaloEmitPathPos(hash1(vUv + vec2(61.7)));
+`;
+// Emission mask (stage 2, E3): while the mask gate is live,
+// the placement — whichever law produced it — is tested
+// against the mask texture with the KILL mask's own UV rule
+// (pos.xy / (2 * bounceRadius) + 0.5, the Phase X discipline)
+// and its threshold / invert uniforms, and a rejected
+// candidate is re-drawn up to 4 attempts (the shader-side
+// bound of the bake's 12); the last candidate stands. A
+// rejected CLOUD point cannot be re-drawn (its index is the
+// particle identity), so it degrades to the active respawn
+// law's draws, exactly like the bake degrades to shape
+// samples. While uEmitMaskEnabled is false (no mask texture
+// resolved this frame) the first candidate stands untouched,
+// so the block degenerates to the plain placement. The
+// emitter transform, when active, is folded into each
+// candidate so the gate tests the WORLD position like the
+// bake does; the standalone transform segment is then not
+// spliced (see buildPositionFragment).
+const POS_FRAG_EMITTER_MASK_UNIFORMS = /* glsl */ `
+uniform bool uEmitMaskEnabled;
+`;
+type EmitMaskLaw = 'legacy' | 'shape' | 'path';
+function emitMaskCandidate(law: EmitMaskLaw, seed = false): string {
+  // Shader seed (stage 2, B5): while the opt-in stands, every
+  // candidate draw also carries the seed phase.
+  const ph = seed ? ' + uShaderSeedPhase' : '';
+  if (law === 'shape') {
+    return /* glsl */ `          emitCand = kaloEmitShapePos(uRespawnShape, vec4(hash1(vUv + vec2(11.1 + eOff${ph})), hash1(vUv + vec2(23.7 + eOff${ph})), hash1(vUv + vec2(37.3 + eOff${ph})), hash1(vUv + vec2(51.9 + eOff${ph}))), uBounceRadius, uEmitLightPos);
+`;
+  }
+  if (law === 'path') {
+    return /* glsl */ `          emitCand = kaloEmitPathPos(hash1(vUv + vec2(61.7 + eOff${ph})));
+`;
+  }
+  return /* glsl */ `          float eR = uBounceRadius * (0.05 + hash1(vUv + vec2(age + eOff${ph})) * 0.9);
+          float eTh = hash1(vUv + vec2(1.3 + eOff${ph})) * 6.2832;
+          float ePhi = acos(2.0 * hash1(vUv + vec2(2.7 + eOff${ph})) - 1.0);
+          if (uEmitLight) {
+            float eJr = eR * 0.05;
+            emitCand = uEmitLightPos + vec3(eJr * sin(ePhi) * cos(eTh), eJr * sin(ePhi) * sin(eTh), eJr * cos(ePhi));
+          } else {
+            emitCand = vec3(eR * sin(ePhi) * cos(eTh), eR * sin(ePhi) * sin(eTh), eR * cos(ePhi));
+          }
+`;
+}
+function emitMaskTest(indent: string): string {
+  return /* glsl */ `${indent}vec2 eMuv = emitCand.xy / (2.0 * uBounceRadius) + 0.5;
+${indent}float eLuma = texture2D(uKillMaskTex, eMuv).r;
+${indent}if (uKillMaskInvert) eLuma = 1.0 - eLuma;
+${indent}if (eLuma >= uKillMaskThreshold) break;
+`;
+}
+function emitMaskPlacement(law: 'legacy' | 'shape' | 'cloud' | 'path', fallbackLaw: EmitMaskLaw, withTransform: boolean, dist = false, seed = false): string {
+  // Distribution layer (stage 2, B5): each shape-law
+  // candidate passes through the layer before the transform
+  // fold and the mask test — the bake's per-attempt order.
+  // Cloud points and path points are source placements, not
+  // shape samples, and are never distributed (the bake's
+  // override discipline); the cloud branch's shape-law
+  // fallback candidates are.
+  const distLine = dist
+    ? /* glsl */ `          emitCand = kaloDistApply(emitCand, uBounceRadius);
+`
+    : '';
+  const distLineIn = dist
+    ? /* glsl */ `              emitCand = kaloDistApply(emitCand, uBounceRadius);
+`
+    : '';
+  const transformLine = withTransform
+    ? /* glsl */ `          emitCand = uEmitterPos + uEmitterRotScale * emitCand;
+`
+    : '';
+  const header = /* glsl */ `        // Emission mask (stage 2, E3): candidates are gated
+        // by the raster mask (kill-mask UV rule / threshold /
+        // invert); rejected candidates re-draw, last stands.
+`;
+  if (law === 'cloud') {
+    const transformLineIn = withTransform
+      ? /* glsl */ `            emitCand = uEmitterPos + uEmitterRotScale * emitCand;
+`
+      : '';
+    return header + /* glsl */ `        vec3 emitCand = texture2D(uEmitCloudTex, vUv).xyz;
+` + (withTransform ? /* glsl */ `        emitCand = uEmitterPos + uEmitterRotScale * emitCand;
+` : '') + /* glsl */ `        if (uEmitMaskEnabled) {
+          vec2 eMuv0 = emitCand.xy / (2.0 * uBounceRadius) + 0.5;
+          float eLuma0 = texture2D(uKillMaskTex, eMuv0).r;
+          if (uKillMaskInvert) eLuma0 = 1.0 - eLuma0;
+          if (eLuma0 < uKillMaskThreshold) {
+            for (int eAtt = 0; eAtt < 4; eAtt++) {
+              float eOff = float(eAtt) * 13.7 + 7.3;
+` + emitMaskCandidate(fallbackLaw, seed).replace(/^          /gm, '              ') + distLineIn + transformLineIn + /* glsl */ `              vec2 eMuv = emitCand.xy / (2.0 * uBounceRadius) + 0.5;
+              float eLuma = texture2D(uKillMaskTex, eMuv).r;
+              if (uKillMaskInvert) eLuma = 1.0 - eLuma;
+              if (eLuma >= uKillMaskThreshold) break;
+            }
+          }
+        }
+        pos = emitCand;
+`;
+  }
+  return header + /* glsl */ `        vec3 emitCand = vec3(0.0);
+        for (int eAtt = 0; eAtt < 4; eAtt++) {
+          float eOff = float(eAtt) * 13.7;
+` + emitMaskCandidate(law, seed) + (law === 'path' ? '' : distLine) + transformLine + /* glsl */ `          if (!uEmitMaskEnabled) break;
+` + emitMaskTest('          ') + /* glsl */ `        }
+        pos = emitCand;
+`;
+}
 
 // Coupling stage 2 (rigid ⇄ particle): the free-particle
 // pieces of this pass, spliced in only behind the rigidFree
@@ -922,15 +1278,102 @@ export interface PositionFragmentVariantOptions {
   // gated identically (only while the free-particles key is
   // on).
   rigidFree?: boolean;
+  // Grammar 2.0 stage 1 (slice 1A): live-rule kill segment,
+  // spliced in only while an effective LIVE rule list exists.
+  particleRulesLive?: boolean;
+  // Grammar 2.0 stage 2 (texture-unit follow-up): the merged
+  // supply forms of the live segments + uniforms, gated
+  // identically (only while the merged supply stands;
+  // implies particleRulesLive).
+  particleRulesLiveMerged?: boolean;
+  // Grammar 2.0 stage 2 (slice E1): respawn placement through
+  // the shared emitter shape law, spliced in only while
+  // gpgpuRespawnShape names a shape (not 'auto').
+  emitterShape?: boolean;
+  // Grammar 2.0 stage 2 (slice E0): emitter transform of the
+  // placed position, spliced in only while the emitter
+  // transform keys are non-identity.
+  emitterTransform?: boolean;
+  // Grammar 2.0 stage 2 (slice E2): the spawn allocator's
+  // threshold (effective rate over the envelope clock),
+  // spliced in only while the absolute rate key is set or
+  // the spawn envelope is enabled.
+  spawnAlloc?: boolean;
+  // Grammar 2.0 stage 2 (slice E2): the rule spawn gate
+  // segment (REP bit 13 → respawn), spliced in only while
+  // the gate key is on and an effective LIVE rule list
+  // exists (it shares the live variant's REP texture).
+  spawnRuleGate?: boolean;
+  // Grammar 2.0 stage 2 (slice E3): respawn placement from
+  // the emission cloud texture, spliced in only while the
+  // emission source is 'morph' or 'bitmap'.
+  emitterCloud?: boolean;
+  // Grammar 2.0 stage 2 (slice E3): respawn placement on
+  // the steering path polyline, spliced in only while the
+  // emission source is 'path' with a usable path.
+  emitterPath?: boolean;
+  // Grammar 2.0 stage 2 (slice B2): the path-asset form of
+  // the path placement — the polyline rides the shared
+  // column-data texture, spliced in only while the emission
+  // source is 'path' over an extended path asset. Mutually
+  // exclusive with emitterPath (the assets pick one).
+  emitterPathAsset?: boolean;
+  // Grammar 2.0 stage 2 (slice E3): the emission mask gate
+  // wraps whichever placement law is active, spliced in
+  // only while the mask key is on and a mask source is
+  // authored. While it is on, the emitter transform (when
+  // also active) is folded into the gated candidates and
+  // the standalone transform segment is NOT spliced.
+  emitterMask?: boolean;
+  // Grammar 2.0 stage 2 (slice B5): the distribution
+  // operator layer over the shape law, spliced in only
+  // while gpgpuEmitDistribution resolves to effective
+  // operators. Applies after the placement (inside the mask
+  // variant: to each shape-law candidate), before the
+  // emitter transform.
+  emitDistribution?: boolean;
+  // Grammar 2.0 stage 2 (slice B5): the shader-seed opt-in,
+  // spliced in only while gpgpuShaderSeed is non-zero. The
+  // placement draws (legacy / shape / path, and the mask
+  // candidates) carry the seed phase uniform.
+  shaderSeed?: boolean;
+  // Grammar 2.0 stage 2 (slice B1): field instances. The
+  // position pass reads no field data — the option exists
+  // only so this pass derives the spawn gate value from the
+  // initial-position texture while the velocity pass runs
+  // its field variant (which gave the spawn-order unit to
+  // the column texture), keeping the two passes' gate values
+  // identical (the texture-unit-fix discipline).
+  fieldInstances?: boolean;
 }
+
+// Merged-supply forms (stage 2 texture-unit follow-up):
+// while the merged supply stands, the texture bound to
+// uRuleLiveTex is the REP's taller target and every live
+// read scales vUv.y by uLiveTexYScale (texSize / total
+// height, supplied per frame; the lib/gpgpuMergedSupply.ts
+// plan). Derived from the stock chunks by the one sampling
+// change, so the forms can never drift apart; the stock
+// chunks — and every non-merged string — are untouched.
+const POS_FRAG_PARTICLE_RULES_LIVE_UNIFORMS_MERGED = POS_FRAG_PARTICLE_RULES_LIVE_UNIFORMS + /* glsl */ `
+uniform float uLiveTexYScale;
+`;
+const scaleLiveRead = (segment: string): string =>
+  segment.split('texture2D(uRuleLiveTex, vUv)').join('texture2D(uRuleLiveTex, vec2(vUv.x, vUv.y * uLiveTexYScale))');
+const POS_FRAG_PARTICLE_RULES_LIVE_SEGMENT_MERGED = scaleLiveRead(POS_FRAG_PARTICLE_RULES_LIVE_SEGMENT);
+const POS_FRAG_PARTICLE_RULES_LIVE_TRUE_KILL_SEGMENT_MERGED = scaleLiveRead(POS_FRAG_PARTICLE_RULES_LIVE_TRUE_KILL_SEGMENT);
+const POS_FRAG_SPAWN_RULE_GATE_SEGMENT_MERGED = scaleLiveRead(POS_FRAG_SPAWN_RULE_GATE_SEGMENT);
 
 export function buildPositionFragment(options?: PositionFragmentVariantOptions): string {
   const projection = !!options?.grainsProjection;
   const cell = projection && !!options?.grainsCellSort;
-  let tail = options?.particleRules
+  let tail = options?.particleRules || options?.particleRulesLive || options?.spawnRuleGate
     ? POS_FRAG_TAIL.replace(
         POS_FRAG_GROUP_KILL_BLOCK,
-        POS_FRAG_GROUP_KILL_BLOCK + POS_FRAG_PARTICLE_RULES_SEGMENT,
+        POS_FRAG_GROUP_KILL_BLOCK
+          + (options?.particleRules ? POS_FRAG_PARTICLE_RULES_SEGMENT : '')
+          + (options?.particleRulesLive ? (options?.particleRulesLiveMerged ? POS_FRAG_PARTICLE_RULES_LIVE_SEGMENT_MERGED : POS_FRAG_PARTICLE_RULES_LIVE_SEGMENT) : '')
+          + (options?.spawnRuleGate ? (options?.particleRulesLiveMerged ? POS_FRAG_SPAWN_RULE_GATE_SEGMENT_MERGED : POS_FRAG_SPAWN_RULE_GATE_SEGMENT) : ''),
       )
     : POS_FRAG_TAIL;
   if (options?.rigidFree) {
@@ -939,12 +1382,110 @@ export function buildPositionFragment(options?: PositionFragmentVariantOptions):
       POS_FRAG_RIGID_FREE_SEGMENT + POS_FRAG_FLOOR_CLAMP_OPEN,
     );
   }
-  const mid = options?.rigidFree
-    ? POS_FRAG_MID.replace(POS_FRAG_RIGID_BRANCH_OPEN, POS_FRAG_RIGID_BRANCH_OPEN_FREE)
-    : POS_FRAG_MID;
+  // Emitter variants (stage 2, E0+E1): the shape law replaces
+  // the legacy placement wholesale; the transform statement
+  // goes right after whichever placement ran. Neither fires
+  // in the default build, so the default string is untouched.
+  //
+  // Emission sources (stage 2, E3): the cloud / path laws
+  // replace the placement the same way (cloud > path > shape
+  // precedence mirrors the runtime's single-source
+  // resolution). The mask gate wraps the active law instead
+  // of replacing it, and folds the transform into its
+  // candidates — so while the mask is on, the standalone
+  // transform segment below is skipped.
+  const emitLaw: 'legacy' | 'shape' | 'cloud' | 'path' = options?.emitterCloud
+    ? 'cloud'
+    : options?.emitterPath || options?.emitterPathAsset
+      ? 'path'
+      : options?.emitterShape
+        ? 'shape'
+        : 'legacy';
+  if (options?.emitterMask) {
+    tail = tail.replace(
+      POS_FRAG_RESPAWN_PLACEMENT_LEGACY,
+      emitMaskPlacement(emitLaw, options?.emitterShape ? 'shape' : 'legacy', !!options?.emitterTransform, !!options?.emitDistribution, !!options?.shaderSeed),
+    );
+  } else if (options?.emitterCloud) {
+    tail = tail.replace(POS_FRAG_RESPAWN_PLACEMENT_LEGACY, POS_FRAG_RESPAWN_PLACEMENT_CLOUD);
+  } else if (options?.emitterPath || options?.emitterPathAsset) {
+    tail = tail.replace(POS_FRAG_RESPAWN_PLACEMENT_LEGACY, options?.shaderSeed ? POS_FRAG_RESPAWN_PLACEMENT_PATH_SEED : POS_FRAG_RESPAWN_PLACEMENT_PATH);
+  } else if (options?.emitterShape) {
+    tail = tail.replace(POS_FRAG_RESPAWN_PLACEMENT_LEGACY, options?.shaderSeed ? POS_FRAG_RESPAWN_PLACEMENT_SHAPE_SEED : POS_FRAG_RESPAWN_PLACEMENT_SHAPE);
+  } else if (options?.shaderSeed) {
+    // The legacy placement with seed-shifted draws.
+    tail = tail.replace(POS_FRAG_RESPAWN_PLACEMENT_LEGACY, POS_FRAG_RESPAWN_PLACEMENT_LEGACY_SEED);
+  }
+  if (options?.emitterTransform && !options?.emitterMask) {
+    tail = tail.replace(
+      POS_FRAG_RESPAWN_AGE_ANCHOR,
+      POS_FRAG_EMITTER_TRANSFORM_SEGMENT + POS_FRAG_RESPAWN_AGE_ANCHOR,
+    );
+  }
+  if (options?.emitDistribution && !options?.emitterMask && (emitLaw === 'legacy' || emitLaw === 'shape')) {
+    // Distribution layer (stage 2, B5): right after the
+    // placement, BEFORE the emitter transform segment (the
+    // bake's order). Cloud / path placements are source
+    // placements, not shape samples — the bake's override
+    // discards the distributed sample there too, so the
+    // segment stands only over the analytic laws. The mask
+    // variant applies it inside its candidates instead
+    // (above).
+    const anchorCombo = options?.emitterTransform
+      ? POS_FRAG_EMITTER_TRANSFORM_SEGMENT + POS_FRAG_RESPAWN_AGE_ANCHOR
+      : POS_FRAG_RESPAWN_AGE_ANCHOR;
+    tail = tail.replace(anchorCombo, POS_FRAG_DIST_SEGMENT + anchorCombo);
+  }
+  let mid = POS_FRAG_MID;
+  // Coupling stage 2: while rigidFree stands, the MID's
+  // rigid branch opens with the free-subset test instead of
+  // the stock branch open (applied before the live / field /
+  // spawn-alloc MID rewrites below, whose anchors are disjoint).
+  if (options?.rigidFree) {
+    mid = mid.replace(POS_FRAG_RIGID_BRANCH_OPEN, POS_FRAG_RIGID_BRANCH_OPEN_FREE);
+  }
+  if (options?.particleRulesLive || options?.fieldInstances) {
+    // Texture-unit fix: derive the spawn gate value from
+    // the initial-position texture (see the note at
+    // POS_FRAG_SPAWN_ORDER_DECL_STOCK). The live variant
+    // needs the unit for the REP texture; the field variant
+    // (B1) needs the VELOCITY pass's unit for the column
+    // texture, and this pass derives identically so the
+    // cohort choice stays the same in both passes.
+    mid = mid
+      .replace(POS_FRAG_SPAWN_ORDER_DECL_STOCK, POS_FRAG_SPAWN_ORDER_DECL_LIVE)
+      .replace(POS_FRAG_SPAWN_GATE_READ_STOCK, POS_FRAG_SPAWN_GATE_READ_LIVE);
+  }
+  if (options?.particleRulesLive) {
+    // Splice the true-kill segment as before.
+    mid = mid.replace(
+      POS_FRAG_SPAWN_GATE_ANCHOR,
+      POS_FRAG_SPAWN_GATE_ANCHOR + (options?.particleRulesLiveMerged ? POS_FRAG_PARTICLE_RULES_LIVE_TRUE_KILL_SEGMENT_MERGED : POS_FRAG_PARTICLE_RULES_LIVE_TRUE_KILL_SEGMENT),
+    );
+  }
+  // Spawn allocator (stage 2, E2): the gate's two threshold
+  // expressions read the effective rate over the envelope
+  // clock. Only in this variant — the default MID is the
+  // shipped string.
+  if (options?.spawnAlloc) {
+    mid = mid
+      .replace(POS_FRAG_THR_NOW_LEGACY, POS_FRAG_THR_NOW_ALLOC)
+      .replace(POS_FRAG_THR_PREV_LEGACY, POS_FRAG_THR_PREV_ALLOC);
+  }
   return POS_FRAG_HEAD
     + (options?.particleRules ? POS_FRAG_PARTICLE_RULES_UNIFORMS : '')
     + (options?.rigidFree ? POS_FRAG_RIGID_FREE_UNIFORMS : '')
+    + (options?.particleRulesLive || options?.spawnRuleGate ? (options?.particleRulesLiveMerged ? POS_FRAG_PARTICLE_RULES_LIVE_UNIFORMS_MERGED : POS_FRAG_PARTICLE_RULES_LIVE_UNIFORMS) : '')
+    + (options?.spawnAlloc ? POS_FRAG_SPAWN_ALLOC_UNIFORMS : '')
+    + (options?.spawnRuleGate ? POS_FRAG_SPAWN_RULE_GATE_UNIFORMS : '')
+    + (options?.emitterShape ? POS_FRAG_EMITTER_SHAPE_UNIFORMS + EMIT_SHAPE_GLSL : '')
+    + (options?.emitterTransform ? POS_FRAG_EMITTER_TRANSFORM_UNIFORMS : '')
+    + (options?.emitterCloud ? POS_FRAG_EMITTER_CLOUD_UNIFORMS : '')
+    + (options?.emitterPath ? POS_FRAG_EMITTER_PATH_UNIFORMS : '')
+    + (options?.emitterPathAsset ? POS_FRAG_EMITTER_PATH_ASSET_UNIFORMS : '')
+    + (options?.emitterMask ? POS_FRAG_EMITTER_MASK_UNIFORMS : '')
+    + (options?.emitDistribution ? POS_FRAG_DIST_UNIFORMS : '')
+    + (options?.shaderSeed ? POS_FRAG_SEED_UNIFORMS : '')
     + (projection ? POS_FRAG_PROJECTION_UNIFORMS : '')
     + (cell ? POS_FRAG_PROJECTION_CELL : '')
     + mid

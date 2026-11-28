@@ -1,3 +1,4 @@
+import { dmHash11 } from './gpgpuRandom';
 // ── Glitch field (Phase AM) ────────────────────────────────────
 // The CPU twin of components/glitchPass.ts: horizontal bands
 // of the frame displaced sideways by a deterministic hash of
@@ -22,16 +23,6 @@ export function clampGlitchBands(v: number): number {
 export function clampGlitchRate(v: number): number {
   if (!Number.isFinite(v)) return 8;
   return Math.max(0.5, Math.min(30, v));
-}
-
-function dmHash11(n: number): number {
-  const fract = (v: number): number => v - Math.floor(v);
-  let x = fract(n * 0.1031);
-  let y = fract(n * 0.1030);
-  let z = fract(n * 0.0973);
-  const d = x * (y + 33.33) + y * (x + 33.33) + z * (z + 33.33);
-  x += d; y += d; z += d;
-  return fract((x + y) * z);
 }
 
 /** Two stable uniforms for (band, quantum) — the GLSL twin

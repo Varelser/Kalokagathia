@@ -183,6 +183,7 @@ export const SAFE_MODE_HEAVY_POST_STAGES: ReadonlySet<string> = new Set([
   'bloom',
   'light-fx',
   'depth-of-field',
+  'motion-blur',
   'radial-blur',
   'kaleidoscope',
   'slit-scan',
