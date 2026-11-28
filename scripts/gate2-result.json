@@ -1,0 +1,13 @@
+{
+  "gate2": {
+    "positionMaxComponentError": 0.000762939453125,
+    "positionBoundWorstBox": 0.0007644769970244908,
+    "positionEuclideanReference": 0.0007632581317988377,
+    "quatMaxAngleErrorRadU32": 0.0025385890984914285,
+    "quatMaxAngleErrorRadU48": 0.00008246141582827246,
+    "quatGateLineRad": 0.001,
+    "quatGateLineMetBy": "u48 only (u32 max exceeds the line; see record)",
+    "velocityMaxRelativeError": 0.00048693860892172285
+  },
+  "failures": 0
+}

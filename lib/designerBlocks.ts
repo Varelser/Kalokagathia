@@ -41,6 +41,19 @@
  * read back, verify every record id is present; failures are
  * reported with a reason instead of losing data silently.
  *
+ * Layer 1 WP10 phase B extends the composition with the two
+ * pool-level entities the first instalment did not carry:
+ * the emitter configuration (the `gpgpuEmitters` key, parsed
+ * by lib/gpgpuEmitterList.ts) and the emission deform stack
+ * (the `gpgpuEmitDeform` key, parsed by
+ * lib/gpgpuDeformStack.ts). Both ride on the SOURCE node's
+ * `params` — the pool is what they configure — as optional
+ * fields, so a composition that does not speak for them is
+ * byte-identical to the first instalment's form, applies
+ * exactly as before, and leaves both config keys untouched.
+ * Extraction validates through the entities' own parsers,
+ * exactly like rules and groups.
+ *
  * This module is additive only: nothing in the render, save
  * or rule-evaluation paths reads it. The defaults therefore
  * cannot change existing behaviour.
@@ -57,6 +70,15 @@ import {
   serializeGpgpuGroups,
   type GpgpuGroupDef,
 } from './gpgpuGroups';
+import {
+  parseEmitterList,
+  serializeEmitterList,
+  type GpgpuEmitterListElement,
+} from './gpgpuEmitterList';
+import {
+  parseDeformOps,
+  type DeformOp,
+} from './gpgpuDeformStack';
 
 // ---------------------------------------------------------------------------
 // Model
@@ -74,8 +96,11 @@ export interface DesignerBlockNode {
   enabled: boolean;
   /**
    * The serialised entity this node stands for (rule node:
-   * the ParticleRule; group node: the GpgpuGroupDef). Absent
-   * on the source node and on dangling group references.
+   * the ParticleRule; group node: the GpgpuGroupDef). On the
+   * source node it carries the pool-level entities instead
+   * (WP10 phase B: `emitters` / `deformOps`, both optional).
+   * Absent on dangling group references, and on the source
+   * node whenever the composition carries neither entity.
    */
   params?: Record<string, unknown>;
   /** Group node referenced by a rule but defined nowhere. */
@@ -106,6 +131,60 @@ const NODE_ID_RE = /^[A-Za-z0-9:._-]{1,96}$/;
 export const designerGroupNodeId = (groupId: string): string => `group:${groupId}`;
 export const designerRuleNodeId = (ruleId: string): string => `rule:${ruleId}`;
 
+/**
+ * The pool-level entities a composition may additionally
+ * carry (WP10 phase B), in the config keys' own forms:
+ * `emitters` is the `gpgpuEmitters` value (or its parsed
+ * elements), `deformOps` is the `gpgpuEmitDeform` value.
+ * Absent / empty attachments change nothing: the source node
+ * then carries no `params`, exactly as before.
+ */
+export interface DesignerBlockAttachments {
+  emitters?: string | readonly GpgpuEmitterListElement[];
+  deformOps?: string | null;
+}
+
+/** Field names under the source node's `params`. */
+export const DESIGNER_SOURCE_PARAM_EMITTERS = 'emitters';
+export const DESIGNER_SOURCE_PARAM_DEFORM_OPS = 'deformOps';
+
+/**
+ * Build the source node's `params` from the attachments.
+ * Returns undefined when neither entity is effectively
+ * present (empty emitter list, deform stack that resolves
+ * to no operator, unparseable payload) — the legacy shape.
+ * Emitter elements are normalised through the entity's own
+ * parser; deform entries are carried verbatim (the authored
+ * form) and only their resolvability is checked here.
+ */
+function buildDesignerSourceParams(
+  attachments: DesignerBlockAttachments | undefined,
+): Record<string, unknown> | undefined {
+  if (!attachments) return undefined;
+  const params: Record<string, unknown> = {};
+
+  if (attachments.emitters !== undefined) {
+    const elements = typeof attachments.emitters === 'string'
+      ? parseEmitterList(attachments.emitters)
+      : parseEmitterList(serializeEmitterList(attachments.emitters));
+    if (elements.length > 0) params[DESIGNER_SOURCE_PARAM_EMITTERS] = elements;
+  }
+
+  if (typeof attachments.deformOps === 'string' && attachments.deformOps.length > 0) {
+    let entries: unknown;
+    try {
+      entries = JSON.parse(attachments.deformOps);
+    } catch {
+      entries = undefined;
+    }
+    if (Array.isArray(entries) && parseDeformOps(attachments.deformOps).length > 0) {
+      params[DESIGNER_SOURCE_PARAM_DEFORM_OPS] = entries;
+    }
+  }
+
+  return Object.keys(params).length > 0 ? params : undefined;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -120,6 +199,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function buildDesignerBlockModel(
   rules: readonly ParticleRule[],
   groups: readonly GpgpuGroupDef[],
+  attachments?: DesignerBlockAttachments,
 ): DesignerBlockModel {
   const nodes: DesignerBlockNode[] = [];
   const edges: DesignerBlockEdge[] = [];
@@ -129,12 +209,15 @@ export function buildDesignerBlockModel(
     edgeSeq += 1;
   };
 
-  nodes.push({
+  const sourceNode: DesignerBlockNode = {
     id: DESIGNER_SOURCE_NODE_ID,
     kind: 'source',
     label: 'Particle Pool',
     enabled: true,
-  });
+  };
+  const sourceParams = buildDesignerSourceParams(attachments);
+  if (sourceParams) sourceNode.params = sourceParams;
+  nodes.push(sourceNode);
 
   const definedGroupIds = new Set(groups.map((def) => def.id));
   for (const def of groups) {
@@ -200,14 +283,22 @@ export function buildDesignerBlockModel(
   return { format: DESIGNER_BLOCKS_FORMAT, nodes, edges };
 }
 
-/** Build the model straight from the two serialised config keys. */
+/** Build the model straight from the serialised config keys.
+ *  The emitter / deform keys are optional: leaving them out
+ *  (or empty) yields exactly the model earlier callers got. */
 export function buildDesignerBlockModelFromConfig(config: {
   gpgpuParticleRules?: string | null;
   gpgpuGroupsData?: string | null;
+  gpgpuEmitters?: string | null;
+  gpgpuEmitDeform?: string | null;
 }): DesignerBlockModel {
   return buildDesignerBlockModel(
     parseParticleRules(config.gpgpuParticleRules),
     parseGpgpuGroups(config.gpgpuGroupsData ?? ''),
+    {
+      emitters: config.gpgpuEmitters ?? undefined,
+      deformOps: config.gpgpuEmitDeform ?? undefined,
+    },
   );
 }
 
@@ -234,21 +325,83 @@ export function designerBlockModelGroups(model: DesignerBlockModel): GpgpuGroupD
   return parseGpgpuGroups(JSON.stringify(defs));
 }
 
+function designerSourceNode(model: DesignerBlockModel): DesignerBlockNode | undefined {
+  return model.nodes.find((node) => node.kind === 'source');
+}
+
+/** True when the composition speaks for the emitter
+ *  configuration (the source node carries the field, even if
+ *  it resolves empty — applying then clears the key, which
+ *  is the authored intent). */
+export function designerBlockModelHasEmitters(model: DesignerBlockModel): boolean {
+  const params = designerSourceNode(model)?.params;
+  return !!params && Array.isArray(params[DESIGNER_SOURCE_PARAM_EMITTERS]);
+}
+
+/** True when the composition speaks for the deform stack. */
+export function designerBlockModelHasDeformOps(model: DesignerBlockModel): boolean {
+  const params = designerSourceNode(model)?.params;
+  return !!params && Array.isArray(params[DESIGNER_SOURCE_PARAM_DEFORM_OPS]);
+}
+
+/** The emitter configuration a model stands for, validated
+ *  by the entity's own parser ([] when not carried). */
+export function designerBlockModelEmitters(model: DesignerBlockModel): GpgpuEmitterListElement[] {
+  const params = designerSourceNode(model)?.params;
+  if (!params || !Array.isArray(params[DESIGNER_SOURCE_PARAM_EMITTERS])) return [];
+  return parseEmitterList(JSON.stringify(params[DESIGNER_SOURCE_PARAM_EMITTERS]));
+}
+
+/** The authored deform entries a model stands for, verbatim
+ *  ([] when not carried). */
+export function designerBlockModelDeformEntries(model: DesignerBlockModel): unknown[] {
+  const params = designerSourceNode(model)?.params;
+  if (!params || !Array.isArray(params[DESIGNER_SOURCE_PARAM_DEFORM_OPS])) return [];
+  return params[DESIGNER_SOURCE_PARAM_DEFORM_OPS];
+}
+
+/** The resolved deform stack a model stands for, validated
+ *  by the entity's own parser ([] when not carried). */
+export function designerBlockModelDeformOps(model: DesignerBlockModel): DeformOp[] {
+  const entries = designerBlockModelDeformEntries(model);
+  if (entries.length === 0) return [];
+  return parseDeformOps(JSON.stringify(entries));
+}
+
 /**
- * The config write-back for applying a model: both serialised
+ * The config write-back for applying a model: the serialised
  * keys, produced by the entities' own serializers.
  * `gpgpuGroupsData` is null when the group payload would
  * exceed its cap (the serializer's own refusal) — the caller
  * must surface that instead of applying a partial composition.
+ * `gpgpuEmitters` / `gpgpuEmitDeform` are present ONLY when
+ * the composition carries the corresponding entity: a model
+ * that does not speak for them leaves both keys untouched,
+ * which is what keeps applying a pre-WP10 composition
+ * byte-identical to before.
  */
 export function designerBlockModelToConfigUpdates(model: DesignerBlockModel): {
   gpgpuParticleRules: string;
   gpgpuGroupsData: string | null;
+  gpgpuEmitters?: string;
+  gpgpuEmitDeform?: string;
 } {
-  return {
+  const updates: {
+    gpgpuParticleRules: string;
+    gpgpuGroupsData: string | null;
+    gpgpuEmitters?: string;
+    gpgpuEmitDeform?: string;
+  } = {
     gpgpuParticleRules: serializeParticleRules(designerBlockModelRules(model)),
     gpgpuGroupsData: serializeGpgpuGroups(designerBlockModelGroups(model)),
   };
+  if (designerBlockModelHasEmitters(model)) {
+    updates.gpgpuEmitters = serializeEmitterList(designerBlockModelEmitters(model));
+  }
+  if (designerBlockModelHasDeformOps(model)) {
+    updates.gpgpuEmitDeform = JSON.stringify(designerBlockModelDeformEntries(model));
+  }
+  return updates;
 }
 
 // ---------------------------------------------------------------------------

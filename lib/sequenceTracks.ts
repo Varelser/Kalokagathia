@@ -202,6 +202,57 @@ export function useSequenceTracks(): SequenceTrack[] {
   return React.useSyncExternalStore(subscribeSequenceTracks, getSequenceTracks, getSequenceTracks);
 }
 
+/* ---------------- config bridge (Layer 1 WP9 Phase C) ---------------- */
+
+/**
+ * The track set can also be authored into the work itself via the
+ * `sequenceTracks` config key (a JSON string in exactly the
+ * localStorage format above), so it travels with presets/projects.
+ *
+ * Resolution discipline (option (c) + sentinel, decided):
+ * - The config key is authoritative whenever it carries authorship:
+ *   the sentinel is the RAW string, judged before parsing. '' (or a
+ *   non-string) means "not authored" and the localStorage
+ *   performance state applies, exactly as before this bridge.
+ * - Any non-empty string wins over localStorage — including the
+ *   valid empty authored form '[]', so deleting every track in a
+ *   work stays deleted instead of resurrecting the local set.
+ * - Broken JSON degrades through sanitizeSequenceTracks to the
+ *   empty set (never throws), the same degradation as a broken
+ *   localStorage payload.
+ * - There is NO migration: localStorage content is never copied
+ *   into config automatically. Editors write to the config key, so
+ *   the first edit promotes the edited set into the work.
+ * - The apply engine (applySequenceTracks) never writes config;
+ *   only editor user actions do.
+ */
+
+/** Parse a config-key value; null when it carries no authorship. */
+export function parseSequenceTracksConfigValue(serialized: unknown): SequenceTrack[] | null {
+  if (typeof serialized !== 'string' || serialized === '') return null;
+  try {
+    return sanitizeSequenceTracks(JSON.parse(serialized) as unknown);
+  } catch {
+    return [];
+  }
+}
+
+/** Effective track set: config authorship first, fallback otherwise. Pure and deterministic. */
+export function resolveSequenceTracks(serialized: unknown, fallback: SequenceTrack[]): SequenceTrack[] {
+  return parseSequenceTracksConfigValue(serialized) ?? fallback;
+}
+
+/** Serialize a track set for the config key (sanitized, localStorage format). */
+export function serializeSequenceTracks(tracks: SequenceTrack[]): string {
+  return JSON.stringify(sanitizeSequenceTracks(tracks));
+}
+
+/** Store tracks overlaid by the config key's authorship, if any. */
+export function useResolvedSequenceTracks(serialized: string | undefined): SequenceTrack[] {
+  const stored = useSequenceTracks();
+  return React.useMemo(() => resolveSequenceTracks(serialized, stored), [serialized, stored]);
+}
+
 /* ---------------- mutations (pure; UI calls setSequenceTracks) ---------------- */
 
 export function addSequenceTrack(tracks: SequenceTrack[], key: keyof ParticleConfig, keyframe: SequenceTrackKeyframe): SequenceTrack[] {

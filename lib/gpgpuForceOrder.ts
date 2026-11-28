@@ -82,6 +82,19 @@ export const GPGPU_FORCE_CHUNK_NAMES = [
   // 'particle-life' block and this name assembles nothing.
   // Appended last (the append-only discipline again).
   'meander',
+  // Layer 1 WP5 phase D: the generic surface-tension chunk —
+  // the Akinci law (lib/gpgpuLifecycle.ts
+  // sphSurfaceTensionAkinciForce) standing on its own
+  // neighbour scan, for pools without the SPH solver.
+  // Variant-gated identically: spliced in only while
+  // genericSurfaceTensionActive resolves (Akinci strength
+  // above zero AND the SPH solver off — the CPU-side mutual
+  // exclusion with the SPH form, which applies the same law
+  // inside its own loop while SPH stands), so the
+  // default-order assembly without the variant stays
+  // byte-identical. Appended last (the append-only discipline
+  // again).
+  'surface-tension',
 ] as const;
 
 export type GpgpuForceChunkName = (typeof GPGPU_FORCE_CHUNK_NAMES)[number];

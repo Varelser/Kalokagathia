@@ -11,6 +11,37 @@ export interface ParticleConfigCore {
   // 1 while a job runs (see lib/playbackTime.ts), so fixed-timestep
   // exports are never affected by this key.
   timeScale: number;
+  // Sequence tracks authored into the work (Layer 1 WP9 Phase C):
+  // a JSON string carrying the SequenceTrack[] array in exactly
+  // the localStorage format of lib/sequenceTracks.ts. '' (default)
+  // means "not authored" — the effective track set falls back to
+  // the localStorage performance state, so legacy behaviour is
+  // bit-identical. Any non-empty string is authoritative (the
+  // sentinel is the raw string, judged before parsing): even an
+  // empty authored set ('[]') wins over localStorage. Parsing and
+  // validation live on the consumer side (sanitizeSequenceTracks),
+  // the same discipline as the gpgpuEmitters JSON string keys.
+  sequenceTracks: string;
+  // Modulation setup authored into the work (Layer 1 WP9 Phase C):
+  // a JSON string carrying the ModulationSetup object in exactly
+  // the localStorage format of lib/modulation.ts. Same sentinel
+  // discipline as sequenceTracks: '' falls back to the localStorage
+  // performance state; any non-empty string (including '{}', the
+  // empty authored form) is authoritative. Validation reuses
+  // sanitizeSetup on the consumer side.
+  modulationSetup: string;
+  // Shared GLSL snippet definitions authored into the work
+  // (Layer 1 WP11 Phase C): a JSON string carrying the
+  // { name, code } definition array of lib/glslSharedSnippets.ts
+  // — the Scratch Pad set every GLSL injection point can
+  // reference with a whole-line `// @use <name>` directive. Same
+  // sentinel discipline as sequenceTracks: '' (default) means
+  // "not authored" and resolves to the empty set, so existing
+  // shaders stay byte-identical; any non-empty string is
+  // authoritative, including the valid empty authored form
+  // '[]'. A broken value degrades to the empty set on the
+  // consumer side and never throws.
+  glslSharedSnippets: string;
   renderQuality: RenderQuality;
   autoLod: boolean;
   rotationSpeedX: number;
@@ -312,6 +343,15 @@ export interface ParticleConfigCore {
   postCustomGlslEnabled: boolean;
   postCustomGlslCode: string;
   postCustomGlslLumaLock: boolean;
+  // Full-fragment replacement at the same point (Layer 1 WP11
+  // Phase D2's slot, wired in Phase C): while the replacement
+  // is enabled and its code is non-empty, the user code IS the
+  // whole post fragment (host declarations supplied, the code
+  // defines main and writes gl_FragColor) instead of the
+  // snippet stages above. Defaults (disabled / empty) keep the
+  // snippet form exactly, so existing output stays identical.
+  postCustomGlslReplacementEnabled: boolean;
+  postCustomGlslReplacementCode: string;
   // Particle points vertex GLSL (Phase CD): the third injection
   // point on the shared foundation (lib/glslInjection.ts),
   // spliced into the particle points vertex shader where `pos`
@@ -330,6 +370,13 @@ export interface ParticleConfigCore {
   // shader in use as-is (bit-identical rendering).
   particlePointsFragmentGlslEnabled: boolean;
   particlePointsFragmentGlslCode: string;
+  // Full-fragment replacement at the same point (Layer 1 WP11
+  // Phase D2's slot, wired in Phase C): while enabled with
+  // non-empty code, the user code replaces the whole particle
+  // points fragment (the vertex shader and its varyings are
+  // unchanged). Defaults keep the snippet form exactly.
+  particlePointsFragmentGlslReplacementEnabled: boolean;
+  particlePointsFragmentGlslReplacementCode: string;
   // Volume fog fragment GLSL (Phase CE): the fifth injection
   // point, spliced into the volume fog fragment shader where
   // the density application completes, before the fades. The
@@ -338,6 +385,13 @@ export interface ParticleConfigCore {
   // keep the stock fragment shader in use as-is.
   volumeFogGlslEnabled: boolean;
   volumeFogGlslCode: string;
+  // Full-fragment replacement at the same point (Layer 1 WP11
+  // Phase D2's slot, wired in Phase C): while enabled with
+  // non-empty code, the user code replaces the whole volume fog
+  // fragment on every slice. Defaults keep the snippet form
+  // exactly.
+  volumeFogGlslReplacementEnabled: boolean;
+  volumeFogGlslReplacementCode: string;
   // LightFX (Phase D): Trapcode Shine / Starglow / Lux equivalents as
   // a single post stage. One shared light-source position (UV) feeds
   // the Shine ray centre and the Lux source. Every sub-effect defaults
@@ -353,6 +407,12 @@ export interface ParticleConfigCore {
   postShineLength: number;
   postShineThreshold: number;
   postShineDensity: number;
+  // Density splat source layers (Layer 1 WP7 Phase D): which
+  // particle layers fold into the shared density field — a
+  // comma / space separated list of main / aux / aux2 / aux3,
+  // resolved by lib/particleDensity.ts. Default 'main' is the
+  // Phase 22 behaviour verbatim (main layer only).
+  postShineDensityLayers: string;
   postStarglowEnabled: boolean;
   postStarglowIntensity: number;
   postStarglowLength: number;

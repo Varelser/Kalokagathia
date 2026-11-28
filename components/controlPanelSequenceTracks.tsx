@@ -9,13 +9,14 @@ import {
   removeSequenceKeyframe,
   removeSequenceTrack,
   sequenceTimeAtPosition,
-  setSequenceTracks,
+  serializeSequenceTracks,
   updateSequenceKeyframe,
   upsertSequenceKeyframe,
+  useResolvedSequenceTracks,
   useSequenceClockTime,
-  useSequenceTracks,
   type SequenceTrack,
 } from '../lib/sequenceTracks';
+import type { UpdateConfig } from './controlPanelTabsShared';
 
 const EASING_OPTIONS: SequenceTransitionEasing[] = ['linear', 'ease-in', 'ease-out', 'ease-in-out'];
 
@@ -26,9 +27,16 @@ const EASING_OPTIONS: SequenceTransitionEasing[] = ['linear', 'ease-in', 'ease-o
  * modulation setup pattern), persisted under its own localStorage
  * key; this panel is only the editing surface. In the public build
  * the tracks still apply during playback, but editing is locked.
+ *
+ * WP9 Phase C: the displayed set is the resolved one — the config
+ * key `sequenceTracks` when authored, the store otherwise — and
+ * every edit writes the full set into the config key (the first
+ * edit promotes it into the work). The store is never written by
+ * this panel anymore.
  */
 export const SequenceTracksSection: React.FC<{
   config: ParticleConfig;
+  updateConfig: UpdateConfig;
   isPublicLibrary: boolean;
   isSequencePlaying: boolean;
   presetSequence: PresetSequenceItem[];
@@ -37,6 +45,7 @@ export const SequenceTracksSection: React.FC<{
   sequenceSinglePassDuration: number;
 }> = ({
   config,
+  updateConfig,
   isPublicLibrary,
   isSequencePlaying,
   presetSequence,
@@ -44,7 +53,8 @@ export const SequenceTracksSection: React.FC<{
   sequenceStepProgress,
   sequenceSinglePassDuration,
 }) => {
-  const tracks = useSequenceTracks();
+  const tracks = useResolvedSequenceTracks(config.sequenceTracks);
+  const commitTracks = (next: SequenceTrack[]) => updateConfig('sequenceTracks', serializeSequenceTracks(next));
   const clockTime = useSequenceClockTime();
   const [search, setSearch] = React.useState('');
   const [selected, setSelected] = React.useState<{ trackId: string; index: number } | null>(null);
@@ -75,7 +85,7 @@ export const SequenceTracksSection: React.FC<{
   const handleAddTrack = (key: keyof ParticleConfig) => {
     const value = config[key];
     if (typeof value !== 'number') return;
-    setSequenceTracks(addSequenceTrack(tracks, key, { time: clampTime(playhead), value, easing: 'linear' }));
+    commitTracks(addSequenceTrack(tracks, key, { time: clampTime(playhead), value, easing: 'linear' }));
     setSearch('');
   };
 
@@ -83,14 +93,14 @@ export const SequenceTracksSection: React.FC<{
     const value = config[track.key];
     if (typeof value !== 'number') return;
     const time = clampTime(playhead);
-    setSequenceTracks(upsertSequenceKeyframe(tracks, track.id, { time, value, easing: 'linear' }));
+    commitTracks(upsertSequenceKeyframe(tracks, track.id, { time, value, easing: 'linear' }));
     setSelected({ trackId: track.id, index: track.keyframes.findIndex((kf) => kf.time === time) });
   };
 
   const commitNumber = (trackId: string, index: number, field: 'time' | 'value', raw: string) => {
     const parsed = Number.parseFloat(raw);
     if (!Number.isFinite(parsed)) return;
-    setSequenceTracks(updateSequenceKeyframe(tracks, trackId, index, field === 'time' ? { time: clampTime(parsed) } : { value: parsed }));
+    commitTracks(updateSequenceKeyframe(tracks, trackId, index, field === 'time' ? { time: clampTime(parsed) } : { value: parsed }));
   };
 
   return (
@@ -164,7 +174,7 @@ export const SequenceTracksSection: React.FC<{
                     <button
                       type="button"
                       disabled={isPublicLibrary}
-                      onClick={() => setSequenceTracks(removeSequenceTrack(tracks, track.id))}
+                      onClick={() => commitTracks(removeSequenceTrack(tracks, track.id))}
                       title="Remove track"
                       className="rounded border border-white/15 bg-white/5 p-1.5 text-white/60 transition-colors hover:bg-white/10 disabled:opacity-30"
                     >
@@ -226,7 +236,7 @@ export const SequenceTracksSection: React.FC<{
                         <select
                           value={kf.easing}
                           disabled={isPublicLibrary}
-                          onChange={(event) => setSequenceTracks(updateSequenceKeyframe(tracks, track.id, index, { easing: event.target.value as SequenceTransitionEasing }))}
+                          onChange={(event) => commitTracks(updateSequenceKeyframe(tracks, track.id, index, { easing: event.target.value as SequenceTransitionEasing }))}
                           className="rounded border border-white/10 bg-white/5 px-1 py-0.5 text-[10px] text-white/85 disabled:opacity-30"
                           title="Easing toward this keyframe"
                         >
@@ -237,7 +247,7 @@ export const SequenceTracksSection: React.FC<{
                         <button
                           type="button"
                           disabled={isPublicLibrary}
-                          onClick={() => setSequenceTracks(removeSequenceKeyframe(tracks, track.id, index))}
+                          onClick={() => commitTracks(removeSequenceKeyframe(tracks, track.id, index))}
                           title="Remove keyframe"
                           className="ml-auto rounded border border-white/10 bg-white/5 p-1 text-white/55 transition-colors hover:bg-white/10 disabled:opacity-30"
                         >

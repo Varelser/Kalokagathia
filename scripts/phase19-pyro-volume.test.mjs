@@ -68,7 +68,11 @@ const {
   // only change is the additive pyroGridMergedLayout helper
   // (merged Vel/Base atlas layout); solver math untouched.
   // Record: ~/workspace/kalokagathia-pro/PIN_RERECORD_20261125_FLIP3D.md
-  pin('lib/pyroGrid.ts', '2ac816c55090a2bf339daf18051aa871d21eac2e59c9667fe5992ab7cb1b1801');
+  // Pin updated again 2026-11-28 (Layer 1 WP6 Phase B2): additive
+  // append only — buoyancy/cooling twins, radiative cooling and the
+  // combustion species model; existing functions untouched.
+  // Record: ~/workspace/kalokagathia-pro/LAYER1_WP6_IMPL_RECORD.md
+  pin('lib/pyroGrid.ts', 'aa26ea404656da13b06cf33754548439dc89624ee6a01ebeca0a8c4c6d22c29c');
   pin('components/gpgpuShaderPyroGrid.ts', 'ba4603f66a3454a983120add1a0e94101351eb3cb76f2a9073bec5028911968f');
   pin('components/gpgpuPyroGridPasses.ts', '12e3e32b5e44cebf6c7fb3cfe8c0c34d85c0a636c2eb7033cc26fb6abcced3b6');
 }

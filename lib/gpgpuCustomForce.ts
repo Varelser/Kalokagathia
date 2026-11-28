@@ -39,10 +39,13 @@
 import {
   createGlslInjectionStatusStore,
   registerGlslInjection,
+  resolveGlslSnippet,
   validateGlslSnippet,
   type GlslInjectionContract,
   type GlslInjectionStatus,
+  type GlslSnippetResolution,
 } from './glslInjection';
+import type { GlslSharedSnippetSet } from './glslSharedSnippets';
 import {
   applyCtrlDeclarations,
   buildCtrlUniformDeclarations,
@@ -88,6 +91,23 @@ export function validateCustomForceCode(code: string): CustomForceValidation {
   const extraction = extractCustomForceControls(code);
   if (!extraction.ok) return { ok: false, error: extraction.error };
   return { ok: true };
+}
+
+/**
+ * Resolve the stored snippet against the shared definition set
+ * (Layer 1 WP11 phase C wiring): `// @use` directives expand
+ * under this point's own forbidden-token list and length cap,
+ * before this point's own processing — so a ctrl() declaration
+ * inside a shared definition is extracted from the resolved
+ * text by validateCustomForceCode / the harness exactly as if
+ * it had been written inline (the phase A decision). A snippet
+ * without directives resolves to the identical string.
+ */
+export function resolveCustomForceSnippet(
+  code: string,
+  defs: GlslSharedSnippetSet,
+): GlslSnippetResolution {
+  return resolveGlslSnippet(code, defs, FORBIDDEN_TOKENS, CUSTOM_FORCE_MAX_LENGTH);
 }
 
 export const CUSTOM_FORCE_EXAMPLE = `// 渦巻き上昇: 中心軸の周りに回転しながら持ち上げる

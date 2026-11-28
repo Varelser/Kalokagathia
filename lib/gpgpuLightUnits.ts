@@ -40,6 +40,22 @@
  *     occlusion unions with unit 1's (lib/shadowOcclusion.ts).
  *     With no extra unit enabled the list is empty and the
  *     bake is byte-identical to the single-light one.
+ *   - the true shadow map (via resolveShadowLightPos,
+ *     Layer 1 WP7 Phase B): the capture
+ *     (components/LightShadowCapture.tsx) renders from ONE
+ *     resolved unit's viewpoint — the unit named by
+ *     gpgpuShadowMapLightUnit while that key is positive, or
+ *     the first ENABLED unit in list order while it is 0
+ *     (auto), falling back to unit 1 while no unit is enabled
+ *     (the legacy unconditional unit-1 read). Multiple shadow
+ *     maps (one per unit) are deliberately NOT provided: each
+ *     map costs a full scene re-render into a 2048x2048 depth
+ *     target per frame, so the RT / draw budget grows linearly
+ *     with the unit count; one map following one resolved
+ *     light is the recorded design (see lib/lightShadowMap.ts).
+ *     The selection resolves on the CPU before supply, exactly
+ *     like the emit selection, so every receiver keeps reading
+ *     the single published source.
  *
  * Identity discipline: every new key defaults to the value
  * that reproduces the legacy behaviour (units 2-4 disabled,
@@ -98,6 +114,7 @@ export interface LightUnitConfigLike {
   gpgpuLight4Intensity?: number;
   gpgpuLight4Radius?: number;
   gpgpuEmitLightUnit?: number;
+  gpgpuShadowMapLightUnit?: number;
 }
 
 /** Unit-1 mirror defaults for units 2-4 (appStateDefaultGpgpu). */
@@ -200,6 +217,56 @@ export function resolveShadowExtraLightPositions(cfg: LightUnitConfigLike): Ligh
   return resolveLightUnits(cfg)
     .filter((u) => u.index > 1 && u.enabled)
     .map((u) => u.pos);
+}
+
+// ── Shadow-map light (Layer 1 WP7 Phase B) ───────────────────
+
+/**
+ * The explicit shadow-map unit selection: 0 (the default) is
+ * AUTO — the shadow light follows the unit list. 1..4 names
+ * one unit explicitly. Junk / negative / non-finite → 0.
+ */
+export function resolveShadowMapLightUnit(cfg: LightUnitConfigLike): number {
+  const raw = cfg.gpgpuShadowMapLightUnit;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(LIGHT_UNIT_COUNT, Math.round(raw));
+}
+
+/**
+ * The unit the true shadow map is captured from:
+ *  - explicit selection (gpgpuShadowMapLightUnit > 0): that
+ *    unit, its position read as a pure reference whether or
+ *    not its draw light is enabled (the emit rule);
+ *  - auto (0): the first ENABLED unit in list order;
+ *  - no unit enabled: unit 1 — the legacy capture read unit
+ *    1's position unconditionally, so the defaults (auto, all
+ *    units disabled) resolve exactly as before, and enabling
+ *    unit 1 (the usual case) also resolves to unit 1.
+ */
+export function resolveShadowLightUnit(cfg: LightUnitConfigLike): LightUnit {
+  const explicit = resolveShadowMapLightUnit(cfg);
+  if (explicit > 0) return readUnit(cfg, explicit);
+  const units = resolveLightUnits(cfg);
+  for (const u of units) {
+    if (u.enabled) return u;
+  }
+  return units[0];
+}
+
+/** The position the shadow capture renders from. */
+export function resolveShadowLightPos(cfg: LightUnitConfigLike): LightUnitPos {
+  return resolveShadowLightUnit(cfg).pos;
+}
+
+/**
+ * True while the shadow light is anything other than the
+ * legacy unconditional unit-1 read: an explicit selection is
+ * set, or auto resolved to a unit other than 1. Reporting /
+ * dependency predicate only, mirroring
+ * emitLightUnitSelectionActive.
+ */
+export function shadowLightUnitSelectionActive(cfg: LightUnitConfigLike): boolean {
+  return resolveShadowMapLightUnit(cfg) !== 0 || resolveShadowLightUnit(cfg).index !== 1;
 }
 
 // ── GLSL segments for the points draw variant ─────────────────

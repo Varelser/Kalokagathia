@@ -17,12 +17,21 @@ import {
   shadowCasterPointDiameterWorld,
   shadowCasterPointSizePx,
 } from '../lib/lightShadowMap';
+import { resolveShadowLightPos } from '../lib/gpgpuLightUnits';
 
 // Light shadow capture (Phase 22 stage 4, wiring stage 1):
 // re-renders the scene once per frame from the Phase T light
 // object's viewpoint into a 2048x2048 depth target and
 // publishes it through lib/lightShadowMap.ts for receivers
 // (stage 1: the terrain mesh).
+//
+// Shadow light (Layer 1 WP7 Phase B): the viewpoint is the
+// ONE unit resolved by resolveShadowLightPos
+// (lib/gpgpuLightUnits.ts) — the unit named by
+// gpgpuShadowMapLightUnit, or the first enabled unit, or
+// unit 1 while none is enabled (the legacy read). There is
+// still exactly one capture and one published source, so
+// every receiver follows the resolved light automatically.
 //
 // Mount discipline is the identity guarantee (the Phase 16
 // depth-base pattern): AppScene mounts this component ONLY
@@ -206,11 +215,7 @@ export const LightShadowCapture: React.FC<{ config: ParticleConfig }> = ({ confi
 
   useFrame(({ scene }) => {
     const rt = ensureTarget();
-    const lightPos = {
-      x: config.gpgpuLightPosX,
-      y: config.gpgpuLightPosY,
-      z: config.gpgpuLightPosZ,
-    };
+    const lightPos = resolveShadowLightPos(config);
     const frustum = lightShadowFrustum(lightPos, config.gpgpuBounceRadius);
     let cam = cameraRef.current;
     if (!cam) {

@@ -16,6 +16,23 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuSize: 1.5,
   gpgpuSpeed: 1.0,
   gpgpuColor: '#88aaff',
+  // Colour master switch (Layer 1 WP7 Phase A): default off —
+  // see types/configGpgpu.ts. Off keeps every colour feature
+  // resolved off and the draw byte-identical to the legacy
+  // monochrome strings.
+  gpgpuColorMasterEnabled: false,
+  // Gaussian splat draw (Layer 1 WP7 Phase C1): default off —
+  // see types/configGpgpu.ts. The scale / opacity multipliers
+  // are neutral at 1 and the tint is white, so even the
+  // enabled path starts from the baked parameters verbatim.
+  gpgpuSplatEnabled: false,
+  gpgpuSplatScale: 1,
+  gpgpuSplatOpacity: 1,
+  gpgpuSplatColor: '#ffffff',
+  // Phase C2 supply: no slot named — the parameter bake stays
+  // the uniform one until a slot (or 'velocity') is authored.
+  gpgpuSplatScaleAttr: '',
+  gpgpuSplatOpacityAttr: '',
   gpgpuOpacity: 0.7,
   gpgpuAudioReactive: false,
   gpgpuAudioBlast: 1.5,
@@ -69,6 +86,7 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   gpgpuVelColorSaturation: 0.9,
   gpgpuAgeEnabled: false,
   gpgpuAgeMax: 8.0,
+  gpgpuAgeMaxJitter: 0,
   gpgpuAgeFadeIn: 0.1,
   gpgpuAgeFadeOut: 0.2,
   // Lifecycle grammar (Phase AB): burst 1 disables the spawn gate
@@ -135,6 +153,10 @@ export const APP_STATE_DEFAULT_GPGPU: Partial<ParticleConfig> = {
   // stage-1 texture reaches consumers verbatim.
   gpgpuAttrChainEnabled: false,
   gpgpuAttrChainExprs: ['', '', '', ''],
+  // Attribute channel mappings (Layer 1 WP2 phase B2): the
+  // mapping table (lib/gpgpuAttrMappings.ts). '' = no mappings
+  // = the mapping stage is never built.
+  gpgpuAttrMappings: '',
   gpgpuAttrSizeSlot: -1,
   gpgpuAttrSizeAmount: 1,
   gpgpuAttrBrightSlot: -1,
@@ -1052,6 +1074,11 @@ f 8 1 105`,
   pointCacheRetimerEndFrame: -1,
   pointCacheRetimerReverse: false,
   pointCacheRetimerInterpolation: 'inherit',
+  // Speed curve (S2 follow-up): off by default, and the
+  // stored curve is the identity asset, so even enabling
+  // the curve alone keeps the legacy mapping bit-exact.
+  pointCacheRetimerSpeedCurveEnabled: false,
+  pointCacheRetimerSpeedCurvePoints: [0, 1, 1, 1],
   // Skinning (stage 3 S6): export-action parameters only;
   // nothing reads them unless the isosurface export runs.
   stateCacheSkinningResolution: 32,
@@ -1122,6 +1149,21 @@ f 8 1 105`,
   // Distribution operators (stage 2, B5): '' = no layer over
   // the shape law (bit-identical). See lib/gpgpuDistribution.ts.
   gpgpuEmitDistribution: '',
+  // Deform stack (Layer 1 WP8, phases A + D): '' = no stack
+  // over the final placed point (bit-identical).
+  // See lib/gpgpuDeformStack.ts.
+  gpgpuEmitDeform: '',
+  // Local time (Layer 1 WP9, phase D): '' = no local time
+  // (bit-identical). See lib/gpgpuLocalTime.ts.
+  gpgpuLocalTimeGroups: '',
+  // Script bake (C1, Layer 1 WP11, phase B): OFF = no script
+  // bake (bit-identical). See lib/gpgpuScriptBake.ts.
+  gpgpuScriptEnabled: false,
+  gpgpuScriptTarget: 'attrBake' as const,
+  gpgpuScriptSource: '',
+  gpgpuScriptSeed: 0,
+  gpgpuScriptFormatVersion: 1,
+  gpgpuScriptOutputHash: '',
   // Shader seed (stage 2, B5): 0 = off (the opt-in of
   // STAGE2_DESIGN judgment 3). See lib/gpgpuRandom.ts.
   gpgpuShaderSeed: 0,
@@ -1160,6 +1202,9 @@ f 8 1 105`,
   gpgpuEmitterVelDirZ: 0,
   gpgpuEmitterVelSpeed: 2,
   gpgpuEmitterVelSpread: 0.5,
+  // Emitter list (Layer 1 WP4 phase D1): '' = no list — the
+  // single-emitter keys above rule (lib/gpgpuEmitterList.ts).
+  gpgpuEmitters: '',
   // 3D Light (Phase T): disabled by default — the draw path is
   // bit-identical to before until the user opts in (and intensity 0
   // stays an exact identity even when enabled).
@@ -1208,6 +1253,16 @@ f 8 1 105`,
   gpgpuLightVolumeAngle: 28,
   gpgpuLightVolumeSteps: 12,
   gpgpuLightVolumeSoftness: 0.5,
+  // Light volume depth intersection (Layer 1 WP7 Phase B):
+  // 0 = the stock fragment string and no capture for the
+  // volume's own sake; > 0 assembles the depth-intersection
+  // variant and mounts the scene depth capture.
+  gpgpuLightVolumeDepthIntersect: 0,
+  // Light volume particle density (Layer 1 WP7 Phase D):
+  // 0 = the non-density fragment string and no density supply
+  // bound for the volume's sake; > 0 assembles the density
+  // variant and attenuates the beam by the density field.
+  gpgpuLightVolumeDensity: 0,
   // Scene depth occlusion (Phase 16 stage 1): 0 = no depth capture.
   gpgpuDepthOcclusion: 0,
   gpgpuLightTrailEnabled: false,
@@ -1229,6 +1284,10 @@ f 8 1 105`,
   gpgpuShadowMapSoftness: 1,
   gpgpuShadowMapCastParticles: false,
   gpgpuShadowMapParticleSize: 1,
+  // Shadow-map light unit (Layer 1 WP7 Phase B): 0 = auto
+  // (first enabled unit, unit 1 while none is enabled — the
+  // legacy read); 1..4 names the capture's unit explicitly.
+  gpgpuShadowMapLightUnit: 0,
   // Color over Lifetime
   gpgpuAgeColorEnabled: false,
   gpgpuAgeColorYoung: '#00aaff',

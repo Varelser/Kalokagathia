@@ -17,6 +17,25 @@
  * softened by the `softness` key instead of a depth fade. That
  * limit is stated in the UI, the changelog and the audit.
  *
+ * Depth intersection (Layer 1 WP7 Phase B): behind the key
+ * gpgpuLightVolumeDepthIntersect (> 0) the volume material
+ * assembles a variant whose accumulated alpha is additionally
+ * scaled by the visible fraction of the fragment's view chord
+ * in front of the scene surface (the shared scene depth
+ * capture, lib/sceneDepth.ts) — see
+ * lightVolumeDepthIntersectFade below. The stock form (key 0,
+ * the default) keeps the Phase Y limit above verbatim: the
+ * builder returns the stock fragment string byte for byte.
+ *
+ * Particle density (Layer 1 WP7 Phase D): behind the key
+ * gpgpuLightVolumeDensity (> 0) the volume joins the particle
+ * density field (lib/particleDensity.ts) as a consumer: the
+ * accumulated alpha is scaled by the field's per-fragment
+ * attenuation (particleDensityAttenuation there). The two
+ * variants compose — the builder splices each independently
+ * and falls back per variant — and at both keys 0 the string
+ * is again the stock one byte for byte.
+ *
  * Everything here is a pure function of its inputs (no DOM, no
  * clock, no RNG): the same parameters give bit-identical values,
  * and the unit tests pin the GLSL twin to these formulas.
@@ -131,3 +150,100 @@ export function accumulateSphereVolume(chord: number, params: LightVolumeParams)
 export function lightVolumeDraws(params: LightVolumeParams & { enabled: boolean }): boolean {
   return params.enabled && params.intensity > 0 && params.length > 0;
 }
+
+// ── Depth intersection (Layer 1 WP7 Phase B) ─────────────────
+
+/**
+ * Resolved depth-intersection strength: a finite number
+ * clamped to [0, 1]; anything else resolves to 0 (off). At 0
+ * the volume material is the stock string byte for byte and
+ * no depth supply is bound for the volume's own sake.
+ */
+export function clampVolumeDepthIntersect(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+/** The variant predicate: the depth-intersection form stands
+ *  only while the resolved strength is positive. */
+export function volumeDepthIntersectOn(cfg: { gpgpuLightVolumeDepthIntersect?: number }): boolean {
+  return clampVolumeDepthIntersect(cfg.gpgpuLightVolumeDepthIntersect) > 0;
+}
+
+// ── Particle density attenuation (Layer 1 WP7 Phase D) ──────
+
+/**
+ * Resolved particle-density strength for the volume: a finite
+ * number clamped to [0, 1]; anything else resolves to 0 (off).
+ * At 0 the volume material carries no density code (the
+ * builder returns the non-density string) and no density
+ * supply is bound for the volume's sake.
+ */
+export function clampVolumeDensity(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+/** The variant predicate: the density form stands only while
+ *  the resolved strength is positive. */
+export function volumeDensityOn(cfg: { gpgpuLightVolumeDensity?: number }): boolean {
+  return clampVolumeDensity(cfg.gpgpuLightVolumeDensity) > 0;
+}
+
+/**
+ * World length of the view chord through the volume at a
+ * fragment whose chord factor (|dot(N, V)| in [0, 1]) is
+ * `chord`: exact for the sphere (2R * chord, R = length) and
+ * the recorded scale approximation for the cone (length *
+ * chord — the cone's axial extent stands in for its chord
+ * scale). Non-positive / non-finite length gives 0.
+ */
+export function lightVolumeChordLength(shape: 'cone' | 'sphere', length: number, chord: number): number {
+  const len = Number.isFinite(length) ? Math.max(0, length) : 0;
+  const cc = Math.max(0, Math.min(1, chord));
+  return (shape === 'sphere' ? 2 * len : len) * cc;
+}
+
+/**
+ * Depth-intersection fade: the fraction of the view chord
+ * that lies in front of the scene surface, in [0, 1]. The
+ * fragment sits on the volume's shell at view depth
+ * `fragDepth`; the chord segment starts at the entry depth
+ * (the fragment itself for a front-facing shell fragment,
+ * `fragDepth - chordLength` for a back-facing one) and runs
+ * for `chordLength`. A scene surface at or before the entry
+ * hides the whole segment (0); at or beyond the exit the
+ * segment is fully visible (1). Under the chord approximation
+ * this visible fraction scales the accumulated alpha — for a
+ * uniform density it is the exact surviving fraction; under
+ * the cone's axial profile it is the recorded approximation
+ * (the profile weights the near end, so the fade is
+ * conservative). Degenerate inputs never hide a fragment:
+ * chordLength <= 0 (rim fragments) or non-finite depths
+ * degrade to 1, matching depthFadeFactor's rule in
+ * lib/sceneDepth.ts.
+ */
+export function lightVolumeDepthIntersectFade(
+  sceneDepth: number,
+  fragDepth: number,
+  chordLength: number,
+  frontFacing: boolean,
+): number {
+  if (!Number.isFinite(sceneDepth) || !Number.isFinite(fragDepth)) return 1;
+  if (!(chordLength > 0)) return 1;
+  const entry = frontFacing ? fragDepth : fragDepth - chordLength;
+  const f = (sceneDepth - entry) / chordLength;
+  return f <= 0 ? 0 : f >= 1 ? 1 : f;
+}
+
+/** GLSL twin of lightVolumeDepthIntersectFade (same formula,
+ *  same edge rules). Spliced only into the depth-intersection
+ *  variant of the volume fragment; the stock string never
+ *  contains it. */
+export const LIGHT_VOLUME_DEPTH_INTERSECT_GLSL = /* glsl */ `
+float kaloVolumeDepthIntersectFade(float sceneDepth, float fragDepth, float chordLength, bool frontFacing) {
+  if (chordLength <= 0.0) return 1.0;
+  float entry = frontFacing ? fragDepth : fragDepth - chordLength;
+  return clamp((sceneDepth - entry) / chordLength, 0.0, 1.0);
+}
+`;

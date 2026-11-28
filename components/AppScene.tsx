@@ -156,8 +156,12 @@ export const AppScene: React.FC<AppSceneProps> = React.memo(({
       <SceneEnvironmentSync config={effectiveConfig} />
       {/* Scene depth base (Phase 16 stage 1): mounted only while
           the depth occlusion strength is positive; at the default
-          0 nothing is captured and the render is unchanged. */}
-      {effectiveConfig.gpgpuDepthOcclusion > 0 && <SceneDepthCapture />}
+          0 nothing is captured and the render is unchanged.
+          Layer 1 WP7 Phase B: the LightVolume depth-intersection
+          strength mounts it too (same capture, same store); with
+          both strengths at their default 0 the mount set is
+          unchanged. */}
+      {(effectiveConfig.gpgpuDepthOcclusion > 0 || effectiveConfig.gpgpuLightVolumeDepthIntersect > 0) && <SceneDepthCapture />}
       {/* True shadow map (Phase 22 stage 4): mounted only while
           the shadow map strength is positive; at the default 0
           nothing is captured and the render is unchanged. */}

@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
 import { buildGpgpuInitialData } from '../lib/gpgpuInitialData';
 import { registerStateCacheInitialStateApplier } from '../lib/gpgpuInitialState';
+import { orientChannelActive } from '../lib/gpgpuOrient';
+import { requestPendingOrientSeed, type GpgpuOrientPass } from './gpgpuOrientPass';
 import { resolveGpgpuExecutionFoundation } from '../lib/gpgpuExecutionFoundation';
 import { resolvePingPongTargets } from './gpgpuExecutionRouting';
 import { clampEmitterVelSpeed, clampEmitterVelSpread, emitterTransformActive, emitterVelocityDirectedActive, resolveEmitterBaseDirection, resolveEmitterTransform } from '../lib/gpgpuEmitter';
@@ -11,6 +13,7 @@ import { resolveEmitLightPos } from '../lib/gpgpuLightUnits';
 import { fieldLayerSlotAttrActive } from '../lib/gpgpuFieldInstances';
 import { b3SlotAttrActive } from '../lib/gpgpuSpeedDragSpin';
 import { distributionActive, resolveDistributionOps } from '../lib/gpgpuDistribution';
+import { deformVariantActive, resolveConfigDeformOps } from '../lib/gpgpuDeformStack';
 import { buildSpawnDistanceValues, spawnDistanceMaxValue } from '../lib/gpgpuLifecycle';
 import { buildVellumBakeData, buildVellumVolumeGradientData, vellumStatePoolActive, vellumVolumeActive, vellumXpbdPoolActive, type VellumComponent } from '../lib/gpgpuVellum';
 import { buildGpgpuMorphTargetDataWithNormals } from '../lib/gpgpuMorphTargets';
@@ -661,6 +664,15 @@ type UseGpgpuRuntimeArgs = {
   gl: THREE.WebGLRenderer;
   texSize: number;
   config: ParticleConfig;
+  /**
+   * The scene's Orient pass, when it stands (bake A-2
+   * premise fix): the initial-state applier seeds restored
+   * posture through this getter. Optional — without it (or
+   * while the pass does not stand yet) a posture-carrying
+   * apply registers a pending seed the pass consumes on its
+   * first run instead (components/gpgpuOrientPass.ts).
+   */
+  getOrientPass?: () => GpgpuOrientPass | null;
 };
 
 /**
@@ -1004,7 +1016,7 @@ export function buildMorphBakeData(
   return baked;
 }
 
-export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): GpgpuRuntimeRefs {
+export function useGpgpuRuntime({ gl, texSize, config, getOrientPass }: UseGpgpuRuntimeArgs): GpgpuRuntimeRefs {
   const rtRef = useRef<{
     posA: THREE.WebGLRenderTarget;
     posB: THREE.WebGLRenderTarget;
@@ -1230,6 +1242,7 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
         // and the seeded arrays are the legacy ones byte for byte.
         config.gpgpuEmitShape === 'light' || emitterTransformActive(config) || emitterVelocityDirectedActive(config)
           || emitCloudData !== null || emitPathData !== null || emitMaskPredicate !== null || distributionActive(config)
+          || deformVariantActive(config)
           ? {
               lightPos: emitLightPos,
               transform: emitterTransformActive(config) ? resolveEmitterTransform(config) : null,
@@ -1254,6 +1267,10 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
               // Distribution layer (stage 2, B5): the resolved
               // operators over the shape law (null while off).
               distribution: distributionActive(config) ? resolveDistributionOps(config) : null,
+              // Deform stack (Layer 1 WP8, phases A + D): the
+              // resolved operators over the final placed
+              // point (null while the key is empty).
+              deform: deformVariantActive(config) ? resolveConfigDeformOps(config) : null,
             }
           : null,
       );
@@ -1593,12 +1610,46 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
   // The config object is a dep so the closure's foundation
   // resolution never goes stale; re-registering is cheap
   // and changes no sim state.
+  //
+  // Posture (bake A-2 premise fix): when the restored frame
+  // carries posture (initialData.orientData, from a v2
+  // cache), the applier also seeds the Orient pass — through
+  // the scene's getter while the pass stands, or as a
+  // pending seed (consumed on the pass's first run after
+  // construction) while it does not, which is the capture
+  // job's remount case. Every posture refusal is checked
+  // BEFORE any target is written, so a refused apply leaves
+  // the sim untouched, and posture is never dropped
+  // silently: no Orient channel, no apply.
   useEffect(() => registerStateCacheInitialStateApplier(({ texSize: dataTexSize, initialData }) => {
     if (dataTexSize !== texSize) {
       return {
         ok: false,
         error: `キャッシュの粒子数（texSize ${dataTexSize}）が現在のプール（texSize ${texSize}）と一致しないため、初期状態として適用できません。粒子数のリサンプルはしません。`,
       };
+    }
+    const { orientData } = initialData;
+    let orientPass: GpgpuOrientPass | null = null;
+    if (orientData !== undefined) {
+      if (orientData.length !== texSize * texSize * 4) {
+        return {
+          ok: false,
+          error: `姿勢データの長さ（${orientData.length}）が粒子数と一致しないため、初期状態として適用できません。`,
+        };
+      }
+      if (!orientChannelActive(config)) {
+        return {
+          ok: false,
+          error: 'このフレームには姿勢が含まれていますが、現在の設定では Orient チャンネルが無効なため、姿勢を復元できません。姿勢を黙って落とすことはしません。Orient を有効にしてから適用してください。',
+        };
+      }
+      orientPass = getOrientPass?.() ?? null;
+      if (orientPass && orientPass.texSize !== dataTexSize) {
+        return {
+          ok: false,
+          error: `姿勢チャンネルの粒子数（texSize ${orientPass.texSize}）が現在のプール（texSize ${texSize}）と一致しないため、初期状態として適用できません。`,
+        };
+      }
     }
     const foundation = resolveGpgpuExecutionFoundation(config, {
       webgpuAvailable: webgpuStateRef.current !== null,
@@ -1647,8 +1698,26 @@ export function useGpgpuRuntime({ gl, texSize, config }: UseGpgpuRuntimeArgs): G
     velTex.dispose();
     copyMat.dispose();
     copyGeo.dispose();
+    // Posture seeding (validated above, before any write):
+    // into the standing pass directly, or as a pending seed
+    // while the pass does not stand yet — the deterministic
+    // job's remount re-applies before the fresh scene's first
+    // frame constructs the pass, and the pass consumes the
+    // pending seed on that first run.
+    if (orientData !== undefined) {
+      if (orientPass) {
+        if (!orientPass.seedFromData(gl, orientData)) {
+          return {
+            ok: false,
+            error: '姿勢データの長さが姿勢チャンネルと一致しないため、姿勢を復元できませんでした。',
+          };
+        }
+      } else {
+        requestPendingOrientSeed(orientData, dataTexSize);
+      }
+    }
     return { ok: true };
-  }), [gl, texSize, config]);
+  }), [gl, texSize, config, getOrientPass]);
 
   // Aux chain pools (Phase W1): allocated only while the configured
   // chain depth reaches them — depth 1 (the default) allocates

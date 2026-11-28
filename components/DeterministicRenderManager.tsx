@@ -203,6 +203,17 @@ export const DeterministicRenderManager: React.FC = () => {
                 setTimeout(resolve, 50);
               });
             }
+            // Initial-state carry-over (bake A-2 premise fix):
+            // the remount above rebuilt every system from the
+            // config, discarding any state the live sim carried.
+            // A job that needs that state (the state-cache
+            // capture re-applying the last applied initial
+            // state) restores it here, into the fresh mount,
+            // before the clock reset — a throw aborts the job
+            // rather than photographing the wrong take.
+            if (job.onSceneReady) {
+              await job.onSceneReady();
+            }
             clock.elapsedTime = 0;
             clock.oldTime = 0;
             const dt = 1 / job.fps;

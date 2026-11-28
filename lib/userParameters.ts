@@ -285,3 +285,89 @@ export function findUserParameterByName(
     ?? declarations.find((declaration) => declaration.id === name)
     ?? null;
 }
+
+/* ---------------- named value resolution (Layer 1 WP10 phase A) -------- */
+
+/**
+ * A declaration's CURRENT value, read from the config through the
+ * declaration's aliased key and normalised to [0, 1] — the
+ * value01 discipline every modulation source speaks:
+ * - number: the validated (clamped / snapped) current value
+ *   mapped over the target's catalog range; a target without a
+ *   real range rests at the neutral 0.5.
+ * - boolean: false → 0, true → 1.
+ * - enum: the value's index over the declared value list
+ *   (first → 0, last → 1; a single-value list rests at 0.5).
+ * Returns null when the value cannot be resolved (the target is
+ * no longer declarable, or the config holds a value of the wrong
+ * shape) — callers degrade to neutral, never throw. Pure.
+ */
+export function resolveUserParameterValue01(
+  declaration: UserParameterDeclaration,
+  config: ParticleConfig,
+): number | null {
+  const target = resolveUserParameterTarget(declaration.key as string);
+  if (!target) return null;
+  const raw = (config as unknown as Record<string, unknown>)[declaration.key as string];
+  const validated = validateUserParameterValue(target, raw);
+  if (validated === null) return null;
+  if (target.kind === 'number') {
+    const min = target.min ?? 0;
+    const max = target.max ?? min;
+    if (!(max > min)) return 0.5;
+    const value = validated as number;
+    return Math.min(1, Math.max(0, (value - min) / (max - min)));
+  }
+  if (target.kind === 'boolean') {
+    return validated === true ? 1 : 0;
+  }
+  const values = target.values ?? [];
+  const index = values.indexOf(validated as string);
+  if (index < 0) return null;
+  if (values.length <= 1) return 0.5;
+  return index / (values.length - 1);
+}
+
+/**
+ * Resolve one public name to its normalised current value, or
+ * null when the name is undeclared or its value unresolvable.
+ * The name lookup is findUserParameterByName, unchanged.
+ */
+export function resolveNamedUserParameterValue01(
+  declarations: UserParameterDeclaration[],
+  config: ParticleConfig,
+  name: string,
+): number | null {
+  const declaration = findUserParameterByName(declarations, name);
+  if (!declaration) return null;
+  return resolveUserParameterValue01(declaration, config);
+}
+
+/**
+ * Build the name → value01 environment for a whole declaration
+ * set against one config (the environment applyModulation hands
+ * to the evaluator, the expression paramVars discipline). The
+ * winning declaration per name follows findUserParameterByName
+ * exactly: labels claim their name first (first declaration
+ * wins), then ids claim the names left over. Names whose winning
+ * declaration does not resolve are ABSENT from the environment,
+ * so consumers read them as neutral. Pure and deterministic.
+ */
+export function buildUserParameterValueEnv(
+  declarations: UserParameterDeclaration[],
+  config: ParticleConfig,
+): Record<string, number> {
+  const winners = new Map<string, UserParameterDeclaration>();
+  for (const declaration of declarations) {
+    if (!winners.has(declaration.label)) winners.set(declaration.label, declaration);
+  }
+  for (const declaration of declarations) {
+    if (!winners.has(declaration.id)) winners.set(declaration.id, declaration);
+  }
+  const env: Record<string, number> = {};
+  winners.forEach((declaration, name) => {
+    const value = resolveUserParameterValue01(declaration, config);
+    if (value !== null) env[name] = value;
+  });
+  return env;
+}

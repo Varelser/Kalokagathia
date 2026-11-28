@@ -92,18 +92,47 @@ export interface VelocityFragmentVariantOptions {
   // spliced in in the same manner — only while the absolute
   // rate key is set or the spawn envelope is enabled.
   spawnAlloc?: boolean;
+  // Layer 1 WP4 (phase C): the spawn event demand
+  // (preamble uniform set + the main-forces gate line's
+  // due-fraction term), spliced in in the same manner —
+  // only while an authored spawn event with a positive
+  // demand stands.
+  spawnEventDemand?: boolean;
   // Grammar 2.0 stage 2 (slice E2): the emitter's directed
   // initial velocity (preamble uniform set + the helpers
   // function + the main-forces activation segment), spliced
   // in in the same manner — only while the emitter velocity
   // mode is 'directed'.
   emitterVelocity?: boolean;
+  // Layer 1 WP4 (phase D3): the emitter list's directed
+  // initial velocity (preamble column + list uniform sets +
+  // the helpers list function + the list form of the
+  // activation segment), spliced in in the same manner —
+  // only while an authored emitter list stands. While it
+  // stands, the list form replaces the single-emitter form
+  // above (the D2 replacement discipline).
+  emitterList?: boolean;
   // Grammar 2.0 stage 2 (slice B1): field instances (preamble
   // column-data uniform set + the helpers force function +
   // the 'field-instances' force chunk), spliced in in the
   // same manner — only while at least one field instance
   // resolves.
   fieldInstances?: boolean;
+  // Layer 1 WP5 (phase D): the extended field grammar
+  // (preamble extension uniform set + the helpers' extended
+  // force function + the extended form of the
+  // 'field-instances' chunk), spliced in in the same manner
+  // — only while the extended grammar stands
+  // (lib/gpgpuFieldInstances.ts: fieldInstancesExtended).
+  // Implies fieldInstances.
+  fieldExt?: boolean;
+  // Layer 1 WP5 (phase D): the generic surface-tension
+  // chunk (the Akinci preamble uniform set, shared with the
+  // SPH form + the 'surface-tension' force chunk on its own
+  // neighbour scan), spliced in in the same manner — only
+  // while the generic placement stands
+  // (lib/gpgpuLifecycle.ts: genericSurfaceTensionActive).
+  surfaceTension?: boolean;
   // Grammar 2.0 stage 2 (slice B2): path assets (preamble
   // path uniform set over the same column texture + the
   // asset variant of the 'steer-seek' chunk), spliced in in
@@ -136,6 +165,14 @@ export interface VelocityFragmentVariantOptions {
   // additions: the term reuses the Particle Life meander
   // uniforms the stock preamble already declares.
   meanderStandalone?: boolean;
+  // Layer 1 WP9 (phase D): local time (preamble entry-table
+  // uniform set + the helpers factor function + the tail's
+  // capture-boundary scaling), spliced in in the same
+  // manner — only while gpgpuLocalTimeGroups resolves to
+  // effective entries (lib/gpgpuLocalTime.ts:
+  // localTimeVariantActive). The preamble set spends no
+  // sampler, so the texture-unit count is unchanged.
+  localTime?: boolean;
 }
 
 export const SIM_VEL_FRAG_PHASE19 =
@@ -214,7 +251,7 @@ export function buildVelocityFragment(customCode: string, forceOrder?: string, o
   // Phase 19 gate fix: a Phase 19 variant option rebuilds the
   // affected chunks in their variant form. With no variant on,
   // the historical paths above are untouched.
-  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci || !!options?.attractor2 || !!options?.attractor3 || !!options?.attractor4 || !!options?.grainsPileXsph || !!options?.crowd || !!options?.particleRules || !!options?.particleRulesLive || !!options?.spawnAlloc || !!options?.emitterVelocity || !!options?.fieldInstances || !!options?.pathAssets || !!options?.crowdPathAssets || !!options?.relDrag || !!options?.targetSpeed || !!options?.ageFreeVelocity || !!options?.ageFreeForce || !!options?.meanderStandalone || !!options?.rigidFree;
+  const hasVariant = !!options?.grainsFullScan || !!options?.flip3dCouple || !!options?.steeringSeek || !!options?.sphAkinci || !!options?.attractor2 || !!options?.attractor3 || !!options?.attractor4 || !!options?.grainsPileXsph || !!options?.crowd || !!options?.particleRules || !!options?.particleRulesLive || !!options?.spawnAlloc || !!options?.spawnEventDemand || !!options?.emitterVelocity || !!options?.emitterList || !!options?.fieldInstances || !!options?.fieldExt || !!options?.surfaceTension || !!options?.pathAssets || !!options?.crowdPathAssets || !!options?.relDrag || !!options?.targetSpeed || !!options?.ageFreeVelocity || !!options?.ageFreeForce || !!options?.meanderStandalone || !!options?.localTime || !!options?.rigidFree;
   const base = !hasVariant && (!forceOrder || isDefaultGpgpuForceOrder(forceOrder))
     ? SIM_VEL_FRAG
     : buildVelocityPreamble(options) + buildVelocityHelpers(options) + buildMainForcesFragment(forceOrder, options)

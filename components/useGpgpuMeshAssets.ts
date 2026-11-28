@@ -12,11 +12,14 @@ import {
   GEOM_CUSTOM_CHECK_VERTEX,
   buildGeomCustomFragmentHarness,
   buildGeomCustomVertexHarness,
+  resolveGeomCustomFragmentSnippet,
+  resolveGeomCustomVertexSnippet,
   setGeomCustomFragmentGlslStatus,
   setGeomCustomVertexGlslStatus,
   validateGeomCustomFragmentGlslCode,
   validateGeomCustomVertexGlslCode,
 } from "../lib/geomCustomGlsl";
+import { resolveGlslSharedSnippetDefs } from "../lib/glslSharedSnippets";
 import { useBakedSpeciesData } from "../lib/speciesAllocation";
 
 /**
@@ -104,7 +107,17 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
   const appliedGeomVertCodeRef = useRef<string | null>(null);
   const appliedGeomFragCodeRef = useRef<string | null>(null);
   useEffect(() => {
-    const code = config.gpgpuGeomCustomVertexEnabled ? config.gpgpuGeomCustomVertexCode : '';
+    const rawCode = config.gpgpuGeomCustomVertexEnabled ? config.gpgpuGeomCustomVertexCode : '';
+    // Layer 1 WP11 phase C: shared snippet definitions resolve
+    // before this point's validation / compile check; without
+    // authored definitions or directives the resolution is the
+    // identical string (byte-identical shaders).
+    const resolution = resolveGeomCustomVertexSnippet(rawCode, resolveGlslSharedSnippetDefs(config.glslSharedSnippets));
+    if (!resolution.ok) {
+      setGeomCustomVertexGlslStatus({ state: 'error', message: resolution.error ?? 'invalid code' });
+      return;
+    }
+    const code = resolution.code as string;
     const crack = vellumCrackVariantOn(config);
     const smap = shadowMapVariantOn(config);
     const spin = spinChannelVariantOn(config);
@@ -137,9 +150,19 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
     setGeomVertShader(buildGeomVert(code, { vellumCrack: crack, shadowMap: smap, spinChannel: spin, orientChannel: orient, ageFreeRotation }));
     appliedGeomVertCodeRef.current = appliedKey;
     setGeomCustomVertexGlslStatus({ state: 'active' });
-  }, [config.gpgpuGeomCustomVertexEnabled, config.gpgpuGeomCustomVertexCode, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuShadowMapStrength, config.gpgpuSpinEnabled, config.gpgpuOrientEnabled, config.gpgpuAgeCurveRotationEnabled, config.gpgpuAgeCurveRotationFreeEnabled, gl]);
+  }, [config.gpgpuGeomCustomVertexEnabled, config.gpgpuGeomCustomVertexCode, config.glslSharedSnippets, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuShadowMapStrength, config.gpgpuSpinEnabled, config.gpgpuOrientEnabled, config.gpgpuAgeCurveRotationEnabled, config.gpgpuAgeCurveRotationFreeEnabled, gl]);
   useEffect(() => {
-    const code = config.gpgpuGeomCustomFragmentEnabled ? config.gpgpuGeomCustomFragmentCode : '';
+    const rawCode = config.gpgpuGeomCustomFragmentEnabled ? config.gpgpuGeomCustomFragmentCode : '';
+    // Layer 1 WP11 phase C: shared snippet definitions resolve
+    // before this point's validation / compile check; without
+    // authored definitions or directives the resolution is the
+    // identical string (byte-identical shaders).
+    const resolution = resolveGeomCustomFragmentSnippet(rawCode, resolveGlslSharedSnippetDefs(config.glslSharedSnippets));
+    if (!resolution.ok) {
+      setGeomCustomFragmentGlslStatus({ state: 'error', message: resolution.error ?? 'invalid code' });
+      return;
+    }
+    const code = resolution.code as string;
     const crack = vellumCrackVariantOn(config);
     const smap = shadowMapVariantOn(config);
     const appliedKey = `${code}\n${crack ? 1 : 0}\n${smap ? 1 : 0}`;
@@ -169,7 +192,7 @@ export function useGpgpuMeshAssets(config: ParticleConfig, texSize: number) {
     setGeomFragShader(buildGeomFrag(code, { vellumCrack: crack, shadowMap: smap }));
     appliedGeomFragCodeRef.current = appliedKey;
     setGeomCustomFragmentGlslStatus({ state: 'active' });
-  }, [config.gpgpuGeomCustomFragmentEnabled, config.gpgpuGeomCustomFragmentCode, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuShadowMapStrength, gl]);
+  }, [config.gpgpuGeomCustomFragmentEnabled, config.gpgpuGeomCustomFragmentCode, config.glslSharedSnippets, config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuShadowMapStrength, gl]);
 
   const instGeo = useMemo(() => {
     if (config.gpgpuGeomMode === 'point') return null;

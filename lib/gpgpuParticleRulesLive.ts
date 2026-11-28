@@ -208,12 +208,44 @@
  *    (re)activated, supplied as uTime - uPredActivationTime
  *    (the wiring owns the activation timestamp). Appears
  *    only while a live condition reads it; no WGSL home.
+ *
+ * Layer 1 WP2 phase B1 additions (2026-11-28):
+ *  - `set-attr` action: a matched rule writes a value into a
+ *    named attribute channel (slots 0..3, resolved by name
+ *    through resolveAttrNameSlot — the Phase A / mapping
+ *    name-resolution rule). The consumer is NOT the REP: a
+ *    dedicated attribute-write pass (buildRuleAttrWrite-
+ *    Fragment below, run through GpgpuAttrDynPass by the
+ *    wiring) re-derives each rule's target / match from the
+ *    final attribute texture and applies the writes after
+ *    the REP, so the REP fragment and its output layout are
+ *    untouched. Classification follows the spawn precedent:
+ *    the baked grammar has no set-attr to approximate with,
+ *    so a set-attr rule that cannot go live resolves to
+ *    'never' with the reason behind the set-attr-live-only-
+ *    prefix; an unresolvable channel name and an ext-slot
+ *    (4..7, read-only) target carry their own reasons
+ *    (set-attr-unknown-channel / set-attr-ext-read-only).
+ *    The write pass binds only the dyn pass's extra
+ *    bindings (src / src2 / pos / vel / den), so condition
+ *    and value variables with no home there (state / sdf /
+ *    hit / hits / prey / pred / predhold / predage) make
+ *    the rule 'never' (set-attr-live-only-glsl-
+ *    unrepresentable). Semantics are snapshot-based, like
+ *    the state transitions: conditions AND value expressions
+ *    read the attribute values carried INTO the step, writes
+ *    apply in rule order (last finite write wins), and a
+ *    non-finite value keeps the slot's current value (the
+ *    dyn guard's discipline). WebGL only: the WGSL REP
+ *    ignores set-attr, as it has no WGSL consumer.
  */
 
 import {
   groupMembership,
   normalizeAttrNames,
   normalizeAttrNames2,
+  resolveAttrNameSlot,
+  ATTR_SLOT_COUNT,
   ATTR_SLOT_COUNT_TOTAL,
   type AttrGroupMode,
 } from './gpgpuAttributes';
@@ -241,6 +273,8 @@ import {
   simVarToGlsl,
   ATTR_DEN_MAIN_LINES,
   ATTR_DEN_UNIFORM_LINES,
+  ATTR_EXT_MAIN_LINES,
+  ATTR_EXT_UNIFORM_LINES,
   ATTR_SIM_MAIN_LINES,
   ATTR_SIM_UNIFORM_LINES,
 } from './expressionGlsl';
@@ -368,7 +402,15 @@ export type LiveParticleRuleAction =
   // Grammar connection (slice 1D-3): the rule only FIRES —
   // it carries no parameters; the spawn style is the Aux
   // side's keys (mode ruleSpawn, intensity, speed, life).
-  | { type: 'spawn' };
+  | { type: 'spawn' }
+  // Layer 1 WP2 phase B1: write a value into a named
+  // attribute channel. `slot` is the channel NAME (resolved
+  // to a writable slot 0..3 at classification time through
+  // resolveAttrNameSlot); `expr` is the value expression in
+  // the live condition variable set. Consumed by the
+  // attribute-write pass (buildRuleAttrWriteFragment), not
+  // by the REP itself.
+  | { type: 'set-attr'; slot: string; expr: string };
 
 /** Action kinds slice 1A consumes in the REP mask. */
 export const LIVE_RULE_CONSUMED_ACTIONS_1A: readonly string[] = ['force-gate', 'kill'];
@@ -380,12 +422,21 @@ export const LIVE_RULE_CONSUMED_ACTIONS_1B: readonly string[] = ['set-state', 's
 export const LIVE_RULE_CONSUMED_ACTIONS_1C: readonly string[] = ['true-kill', 'fracture', 'display'];
 /** Action kinds slice 1D-3 adds: spawn (mask bit 13, pulse). */
 export const LIVE_RULE_CONSUMED_ACTIONS_1D3: readonly string[] = ['spawn'];
+/** Action kinds layer 1 WP2 phase B1 adds: set-attr. Its
+ *  consumer is the attribute-write pass, not the REP — the
+ *  declaration lives here so every "does a consumed rule
+ *  exist" question (REP standing included) sees one list,
+ *  under the same group-constant discipline as the slices
+ *  above. (The group suffix is L1, not 1E: slice 1E is the
+ *  hierarchical rule sets.) */
+export const LIVE_RULE_CONSUMED_ACTIONS_L1: readonly string[] = ['set-attr'];
 /** Every action kind the REP consumes as of the current slice. */
 export const LIVE_RULE_CONSUMED_ACTIONS: readonly string[] = [
   ...LIVE_RULE_CONSUMED_ACTIONS_1A,
   ...LIVE_RULE_CONSUMED_ACTIONS_1B,
   ...LIVE_RULE_CONSUMED_ACTIONS_1C,
   ...LIVE_RULE_CONSUMED_ACTIONS_1D3,
+  ...LIVE_RULE_CONSUMED_ACTIONS_L1,
 ];
 
 /**
@@ -492,6 +543,11 @@ function parseAction(raw: unknown): LiveParticleRuleAction | null {
     case 'set-group': {
       if (typeof raw.id !== 'string' || raw.id.length === 0 || raw.id.length > 64) return null;
       return { type: 'set-group', id: raw.id };
+    }
+    case 'set-attr': {
+      if (typeof raw.slot !== 'string' || raw.slot.length === 0 || raw.slot.length > 64) return null;
+      if (typeof raw.expr !== 'string') return null;
+      return { type: 'set-attr', slot: raw.slot, expr: raw.expr };
     }
     default:
       return null;
@@ -951,6 +1007,16 @@ export interface LiveRuleClassification {
   reason: string;
   /** Compiled condition AST (null = always true, or never). */
   conditionAst: CompiledAst | null;
+  /**
+   * Layer 1 WP2 phase B1, set-attr rules only: the writable
+   * slot (0..3) the action's channel name resolved to, and
+   * the compiled value-expression AST. Both stay null for
+   * every other action kind and for set-attr rules whose
+   * action did not resolve (route 'never'). Consumed by the
+   * CPU twin and buildRuleAttrWriteFragment.
+   */
+  setAttrSlot?: number | null;
+  setAttrExprAst?: CompiledAst | null;
 }
 
 /**
@@ -983,6 +1049,11 @@ export function liveGroupTargetShaderResolvable(
  *    Exception (slice 1D-3): spawn rules never take this
  *    route — the baked grammar cannot spawn, so a spawn rule
  *    that cannot go live resolves to 'never' instead.
+ *    Exception (layer 1 WP2 phase B1): set-attr rules never
+ *    take this route either — the baked grammar cannot write
+ *    attributes — and they carry their own action checks
+ *    (channel resolution, value-expression compilation and
+ *    attribute-write-pass representability, below).
  *  - 'live': the REP evaluates it every evaluation frame.
  */
 export function classifyLiveRules(
@@ -1011,9 +1082,41 @@ export function classifyLiveRules(
     // would-be baked fallback resolves to 'never' (kept,
     // never matches) with the underlying reason preserved
     // behind the spawn-live-only- prefix.
+    // Layer 1 WP2 phase B1: a set-attr rule is LIVE-ONLY by
+    // the same argument — the baked grammar has no attribute
+    // write to approximate it with — so its would-be baked
+    // fallbacks resolve to 'never' behind the
+    // set-attr-live-only- prefix.
     const fallback = (reason: string): LiveRuleClassification => (rule.action.type === 'spawn'
       ? { rule, route: 'never', reason: `spawn-live-only-${reason}`, conditionAst: null }
-      : { rule, route: 'baked-fallback', reason, conditionAst });
+      : rule.action.type === 'set-attr'
+        ? { rule, route: 'never', reason: `set-attr-live-only-${reason}`, conditionAst: null }
+        : { rule, route: 'baked-fallback', reason, conditionAst });
+    // Layer 1 WP2 phase B1: resolve the set-attr action
+    // itself. The channel name resolves through the shared
+    // name rule (resolveAttrNameSlot — first match across
+    // both name sets, reserved names unresolvable); only the
+    // writable slots 0..3 may be written (the ext slots 4..7
+    // are read-only inputs everywhere in the grammar). The
+    // value expression compiles in the live condition
+    // variable set.
+    let setAttrSlot: number | null = null;
+    let setAttrExprAst: CompiledAst | null = null;
+    if (rule.action.type === 'set-attr') {
+      const resolved = resolveAttrNameSlot(rule.action.slot, options.names, options.names2);
+      if (resolved < 0) {
+        return { rule, route: 'never', reason: 'set-attr-unknown-channel', conditionAst: null };
+      }
+      if (resolved >= ATTR_SLOT_COUNT) {
+        return { rule, route: 'never', reason: 'set-attr-ext-read-only', conditionAst: null };
+      }
+      const compiledExpr = compileExpression(rule.action.expr, extraVars);
+      if (!compiledExpr.ok) {
+        return { rule, route: 'never', reason: 'set-attr-live-only-expr-uncompilable', conditionAst: null };
+      }
+      setAttrSlot = resolved;
+      setAttrExprAst = compiledExpr.ast;
+    }
     if (rule.target.type === 'group' && !liveGroupTargetShaderResolvable(groupDefs, rule.target.id)) {
       return fallback('group-not-shader-resolvable');
     }
@@ -1026,7 +1129,23 @@ export function classifyLiveRules(
         return fallback('glsl-unrepresentable');
       }
     }
-    return { rule, route: 'live' as const, reason: '', conditionAst };
+    if (rule.action.type === 'set-attr' && setAttrExprAst) {
+      // The attribute-write pass re-derives the match itself
+      // from the bindings it owns (src / src2 / pos / vel /
+      // den): the condition AND the value expression must
+      // have a GLSL form in THAT pass too — a variable with
+      // no home there (state / sdf / hit / hits / prey /
+      // pred / predhold / predage) makes the rule 'never',
+      // even though the REP could have evaluated the
+      // condition.
+      if (conditionAst && liveAttrWriteGlsl(conditionAst, 'tgt', options.names, options.names2) === null) {
+        return fallback('glsl-unrepresentable');
+      }
+      if (liveAttrWriteGlsl(setAttrExprAst, 'tgt', options.names, options.names2) === null) {
+        return fallback('glsl-unrepresentable');
+      }
+    }
+    return { rule, route: 'live' as const, reason: '', conditionAst, setAttrSlot, setAttrExprAst };
   });
 }
 
@@ -1125,6 +1244,48 @@ export function liveConditionGlsl(
     if (name === 'pred') return 'simPred';
     if (name === 'predhold') return 'simPredHold';
     if (name === 'predage') return 'simPredAge';
+    const sim = simVarToGlsl(name);
+    if (sim !== null) return sim;
+    if (/^slot[0-7]$/.test(name)) return slotLocal(Number(name.slice(4)));
+    const target = slotByName.get(name);
+    return target === undefined ? null : slotLocal(target);
+  });
+}
+
+/**
+ * Emit the GLSL for one compiled expression (a set-attr
+ * rule's condition or value expression) in the ATTRIBUTE-
+ * WRITE pass, or null when a variable has no home there.
+ * The write pass runs through GpgpuAttrDynPass, whose
+ * bindings are the final attribute texture (uSrc), the ext
+ * texture (uSrc2) and the extra bindings (pos / vel / den) —
+ * so slot values, the sim variables and `den` resolve
+ * exactly as in liveConditionGlsl, but the REP-supplied
+ * variables (state / sdf / hit / hits / prey / pred /
+ * predhold / predage) have no supply and make the
+ * expression unrepresentable here. `x` / `g` read the
+ * rule's own target membership, as in a condition.
+ */
+export function liveAttrWriteGlsl(
+  ast: CompiledAst,
+  targetLocal: string,
+  names: readonly string[],
+  names2: readonly string[],
+): string | null {
+  const lowerNames = [...normalizeAttrNames(names), ...normalizeAttrNames2(names2)]
+    .map((name) => name.toLowerCase());
+  const slotByName = new Map<string, number>();
+  for (let slot = 0; slot < ATTR_SLOT_COUNT_TOTAL; slot++) {
+    const key = lowerNames[slot];
+    if (!slotByName.has(key)) slotByName.set(key, slot);
+  }
+  return astToGlsl(ast, (name) => {
+    if (name === 'x' || name === 'g') return targetLocal;
+    if (name === 't') return 'uTime';
+    if (name === 'state' || name === 'sdf' || name === 'hit' || name === 'hits'
+      || name === 'prey' || name === 'pred' || name === 'predhold' || name === 'predage') {
+      return null;
+    }
     const sim = simVarToGlsl(name);
     if (sim !== null) return sim;
     if (/^slot[0-7]$/.test(name)) return slotLocal(Number(name.slice(4)));
@@ -1508,6 +1669,137 @@ export function buildRuleEvalFragment(
 }
 
 // ---------------------------------------------------------------------------
+// Attribute-write fragment builder (layer 1 WP2 phase B1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the attribute-write pass's fragment shader, or null
+ * when the pass must not exist: no effective rule classifies
+ * live with a set-attr action. The pass is the set-attr
+ * consumer (the wiring runs it through GpgpuAttrDynPass
+ * after the REP, against the final attribute texture): it
+ * re-derives every writer rule's target / match itself —
+ * the REP output texture is never read — and applies the
+ * writes to a copy of the attribute values.
+ *
+ * The fragment follows the dyn pass's shape and bindings
+ * (uSrc = the final attribute texture, uSrc2 / uPosTex /
+ * uVelTex / uDenTex supplied through the dyn pass's extra
+ * bindings, only while a writer's condition or value
+ * expression actually reads them — the same conditional-
+ * emission discipline as the REP and the dyn pass).
+ *
+ * Semantics, twin-identical with evaluateLiveRuleStep's
+ * attrWrites: the v0..v3 / w0..w3 locals are a SNAPSHOT of
+ * the incoming attribute values — every condition and every
+ * value expression reads them, never a written value — the
+ * writes land in the out0..out3 locals in rule order (last
+ * finite write wins), and a matched write whose value is
+ * non-finite (NaN / |v| >= 1e30) keeps the slot's current
+ * value, the dyn guard's discipline with the output local
+ * as the kept value.
+ */
+export function buildRuleAttrWriteFragment(
+  rulesInput: readonly LiveParticleRule[],
+  options: RuleEvalFragmentOptions,
+): string | null {
+  const classified = classifyLiveRules(rulesInput, options);
+  const writers = classified.filter(
+    (entry) => entry.route === 'live' && entry.rule.action.type === 'set-attr',
+  );
+  if (writers.length === 0) return null;
+
+  let usesSim = false;
+  let usesDen = false;
+  let usesExt = false;
+  const lowerNames = [...normalizeAttrNames(options.names), ...normalizeAttrNames2(options.names2)]
+    .map((name) => name.toLowerCase());
+  for (const entry of writers) {
+    for (const ast of [entry.conditionAst, entry.setAttrExprAst ?? null]) {
+      if (!ast) continue;
+      if (astUsesSimVar(ast)) usesSim = true;
+      if (astUsesDensityVar(ast)) usesDen = true;
+      for (let slot = 4; slot < ATTR_SLOT_COUNT_TOTAL; slot++) {
+        if (astReferencesVariable(ast, `slot${slot}`)) usesExt = true;
+        if (astReferencesVariable(ast, lowerNames[slot])) usesExt = true;
+      }
+    }
+  }
+
+  const blocks: string[] = [];
+  writers.forEach((entry, index) => {
+    const { rule } = entry;
+    if (rule.action.type !== 'set-attr') return; // filtered above; type narrow
+    const slot = entry.setAttrSlot ?? null;
+    const exprAst = entry.setAttrExprAst ?? null;
+    if (slot === null || !exprAst) return; // live set-attr always resolved; defensive
+    const tgt = `tgt${index}`;
+    const matched = `matched${index}`;
+    const lines: string[] = [];
+    lines.push(`  float ${tgt} = ${targetGlsl(rule.target, options.groupDefs ?? [])};`);
+    if (entry.conditionAst) {
+      const glsl = liveAttrWriteGlsl(entry.conditionAst, tgt, options.names, options.names2);
+      if (glsl === null) return; // classified live above; defensive
+      lines.push(`  float cond${index} = ${glsl};`);
+      lines.push(`  float ${matched} = (${tgt} > 0.5 && cond${index} == cond${index} && abs(cond${index}) < 1.0e30 && cond${index} != 0.0) ? 1.0 : 0.0;`);
+    } else {
+      lines.push(`  float ${matched} = (${tgt} > 0.5) ? 1.0 : 0.0;`);
+    }
+    const exprGlsl = liveAttrWriteGlsl(exprAst, tgt, options.names, options.names2);
+    if (exprGlsl === null) return; // classified live above; defensive
+    lines.push(`  float wval${index} = ${exprGlsl};`);
+    // The dyn guard, with the output local as the kept
+    // value: a matched finite write lands clamped, anything
+    // else (no match, NaN, |v| >= 1e30) keeps the slot's
+    // current output value — so an earlier rule's write
+    // survives a later rule's non-finite one.
+    lines.push(`  out${slot} = (${matched} > 0.5 && wval${index} == wval${index} && abs(wval${index}) < 1.0e30) ? clamp(wval${index}, 0.0, 1.0) : out${slot};`);
+    blocks.push(lines.join('\n'));
+  });
+  if (blocks.length === 0) return null;
+
+  return [
+    'precision highp float;',
+    'varying vec2 vUv;',
+    'uniform sampler2D uSrc;',
+    ...(usesExt ? ATTR_EXT_UNIFORM_LINES : []),
+    ...(usesSim ? ATTR_SIM_UNIFORM_LINES : []),
+    ...(usesDen ? ATTR_DEN_UNIFORM_LINES : []),
+    'uniform float uTime;',
+    'float kaloAttrChannel(vec4 a, int slot) {',
+    '  if (slot == 0) return a.r;',
+    '  if (slot == 1) return a.g;',
+    '  if (slot == 2) return a.b;',
+    '  return a.a;',
+    '}',
+    'float kaloGroupMembership(float av, int mode, float low, float high, bool invert) {',
+    '  float m;',
+    '  if (mode == 0) m = step(av, high);',
+    '  else if (mode == 1) m = step(low, av);',
+    '  else m = step(low, av) * step(av, high);',
+    '  return invert ? 1.0 - m : m;',
+    '}',
+    'void main() {',
+    '  vec4 attrData = texture2D(uSrc, vUv);',
+    '  float v0 = attrData.r;',
+    '  float v1 = attrData.g;',
+    '  float v2 = attrData.b;',
+    '  float v3 = attrData.a;',
+    ...(usesExt ? ATTR_EXT_MAIN_LINES : []),
+    ...(usesSim ? ATTR_SIM_MAIN_LINES : []),
+    ...(usesDen ? ATTR_DEN_MAIN_LINES : []),
+    '  float out0 = v0;',
+    '  float out1 = v1;',
+    '  float out2 = v2;',
+    '  float out3 = v3;',
+    ...blocks,
+    '  gl_FragColor = vec4(out0, out1, out2, out3);',
+    '}',
+    '',
+  ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // CPU twin of the REP aggregate (test / editor照合用)
 // ---------------------------------------------------------------------------
 
@@ -1561,12 +1853,22 @@ export interface LiveRuleParticleInput {
  * consecutive-hold count (its twin is predationHoldStep in
  * lib/gpgpuPredation.ts) and `vars.predage` the seconds
  * since the predation rule set was (re)activated.
+ * Layer 1 WP2 phase B1: the returned `attrWrites` is the
+ * twin of the attribute-write pass (buildRuleAttrWrite-
+ * Fragment): one entry per writable slot 0..3, null = no
+ * write lands on that slot this step. A matched set-attr
+ * rule evaluates its value expression against the SAME
+ * snapshot environment as its condition (the slot values
+ * carried in, never a written value); a finite result
+ * (|v| < 1e30) lands clamped to [0, 1] in rule order (last
+ * wins), a non-finite result keeps the slot's current value
+ * (an earlier write this step, or no write at all).
  */
 export function evaluateLiveRuleStep(
   classified: readonly LiveRuleClassification[],
   input: LiveRuleParticleInput,
   groupDefs: readonly GpgpuGroupDef[] = [],
-): { mask: number; state: number; matched: string[]; display: number } {
+): { mask: number; state: number; matched: string[]; display: number; attrWrites: (number | null)[] } {
   const live = classified.filter((entry) => entry.route === 'live');
   const restricted: Record<LiveRuleForceName, boolean> = {
     gravity: false, turbulence: false, curl: false, wind: false, morph: false,
@@ -1600,6 +1902,7 @@ export function evaluateLiveRuleStep(
   if (!restrictedCustom) mask |= LIVE_RULE_CUSTOM_FORCE_BIT;
   if (!restrictedMeander) mask |= LIVE_RULE_MEANDER_FORCE_BIT;
   let display = 0;
+  const attrWrites: (number | null)[] = [null, null, null, null];
   const matched: string[] = [];
   const vars: Record<string, number> = { ...input.vars };
   let state = typeof vars.state === 'number' && Number.isFinite(vars.state) ? vars.state : 0;
@@ -1650,6 +1953,27 @@ export function evaluateLiveRuleStep(
       state = rule.action.state;
     } else if (rule.action.type === 'set-group') {
       state = liveGroupStateValue(live.map((e) => e.rule), rule.action.id);
+    } else if (rule.action.type === 'set-attr') {
+      // Layer 1 WP2 phase B1: the value expression reads
+      // the same snapshot environment as the condition
+      // (slot values carried in — set up here exactly as
+      // the condition branch sets them, since a rule
+      // without a condition never entered that branch).
+      // The dyn guard's discipline: a finite result
+      // (|v| < 1e30) lands clamped, a non-finite one keeps
+      // the slot's current value (attrWrites stays as it
+      // was — an earlier write this step, or null).
+      const slot = entry.setAttrSlot ?? null;
+      const exprAst = entry.setAttrExprAst ?? null;
+      if (slot !== null && exprAst) {
+        for (let s = 0; s < ATTR_SLOT_COUNT_TOTAL; s++) vars[`slot${s}`] = input.slots[s] ?? 0;
+        vars.g = target;
+        vars.x = target;
+        const value = evaluateCompiledExpressionWithVars(exprAst, vars);
+        if (value === value && Math.abs(value) < 1.0e30) {
+          attrWrites[slot] = clamp01(value);
+        }
+      }
     }
   }
   // True-kill latch (slice 1C): a previous mask with bit 6
@@ -1658,7 +1982,7 @@ export function evaluateLiveRuleStep(
   if (typeof input.prevMask === 'number' && (input.prevMask & LIVE_RULE_TRUE_KILL_BIT) !== 0) {
     mask |= LIVE_RULE_TRUE_KILL_BIT;
   }
-  return { mask, state, matched, display };
+  return { mask, state, matched, display, attrWrites };
 }
 
 /**

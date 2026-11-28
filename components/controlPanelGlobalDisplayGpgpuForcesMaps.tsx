@@ -11,6 +11,16 @@ import { ParticleVertexGlslBlock } from './controlPanelGlobalDisplayParticleVert
 import { ParticleFragmentGlslBlock } from './controlPanelGlobalDisplayParticleFragmentCustom';
 import { VolumeFogGlslBlock } from './controlPanelGlobalDisplayVolumeFogCustom';
 import { GeomCustomFragmentGlslBlock, GeomCustomVertexGlslBlock } from './controlPanelGlobalDisplayGpgpuGeomCustom';
+import { GlslSharedSnippetsBlock } from './controlPanelGlobalDisplayGlslSharedSnippets';
+import { ScriptBakeBlock } from './controlPanelGlobalDisplayGpgpuScriptBake';
+
+/** Age free curve (Grammar 2.0 stage 2, B4): one target's
+ *  free-mode switch + the shared FreeCurveEditor (Phase AJ).
+ *  While the free mode is on, the target's evaluation source
+ *  is this free control-point asset instead of its 5 points;
+ *  the editor is the same component the emission gate and
+ *  the tube profiles use. Rendered only while the target
+ *  itself is enabled. */
 
 /** Age free curve (Grammar 2.0 stage 2, B4): one target's
  *  free-mode switch + the shared FreeCurveEditor (Phase AJ).
@@ -318,6 +328,9 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
       )}
     </div>
 
+    {/* GLSL shared snippet definitions (Layer 1 WP11 phase C, Scratch Pad) */}
+    <GlslSharedSnippetsBlock config={config} updateConfig={updateConfig} />
+
     {/* Custom GLSL Force */}
     <CustomForceBlock config={config} updateConfig={updateConfig} />
 
@@ -334,7 +347,10 @@ export const GlobalDisplayGpgpuForcesMapsSection: React.FC<GlobalDisplayEffectsS
     <GeomCustomVertexGlslBlock config={config} updateConfig={updateConfig} />
     <GeomCustomFragmentGlslBlock config={config} updateConfig={updateConfig} />
 
+    {/* Script Bake (Layer 1 WP11 phase C): the C1 authoring keys */}
+    <ScriptBakeBlock config={config} updateConfig={updateConfig} />
+
     {/* Simple LFO (B3, Kinetix-style single-target view of the modulation engine) */}
-    <SimpleLfoBlock />
+    <SimpleLfoBlock config={config} updateConfig={updateConfig} />
   </>
 );

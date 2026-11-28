@@ -15,6 +15,7 @@ const CONFIG_ARRAY_KEYS = [
   'gpgpuAgeCurveForceFreePoints',
   'gpgpuAgeCurveRotationFreePoints',
   'gpgpuFreeCurvePoints',
+  'pointCacheRetimerSpeedCurvePoints',
   'gpgpuSmoothTubeSectionProfile',
   'gpgpuSmoothTubeWidthProfile',
   'gpgpuSmoothTubeHeightProfile',
@@ -107,6 +108,84 @@ export function normalizeParticleContrast<T extends Pick<ParticleConfig, 'partic
   };
 }
 
+// ---------------------------------------------------------------------------
+// Colour master switch (Layer 1 WP7 Phase A)
+//
+// Layer 0 decision: colour is an on/off feature and the
+// default is OFF — with colour off, the draw must be
+// completely identical to the legacy monochrome rendering.
+// The colour features each carry their own opt-in key (all
+// default off):
+//
+//   velocity colour   gpgpuVelColorEnabled
+//   age colour        gpgpuAgeColorEnabled
+//   gradient          gpgpuGradEnabled
+//   attribute colour  gpgpuAttrColorEnabled
+//   group colour      gpgpuGroupColorEnabled
+//   cluster colour    gpgpuRigidClusterColorEnabled
+//   aux inherit mix   gpgpuAuxInheritColor (> 0 is active)
+//
+// The master key gpgpuColorMasterEnabled sits in front of
+// all of them HERE, in the config resolution layer — not
+// inside the shader builders — so a resolved config with
+// the master off is indistinguishable from a config that
+// never opted into colour: every downstream predicate,
+// resolver and uniform sync reads the feature keys off and
+// the generated draw strings stay the stock ones
+// byte-identically. The single-colour tints (gpgpuColor,
+// gpgpuAuxColor, gpgpuAux2Color) are NOT colour features
+// and are never touched by this resolution.
+
+/** The colour-feature keys the master switch gates. */
+export const COLOR_MASTER_FEATURE_KEYS = [
+  'gpgpuVelColorEnabled',
+  'gpgpuAgeColorEnabled',
+  'gpgpuGradEnabled',
+  'gpgpuAttrColorEnabled',
+  'gpgpuGroupColorEnabled',
+  'gpgpuRigidClusterColorEnabled',
+  'gpgpuAuxInheritColor',
+] as const satisfies readonly (keyof ParticleConfig)[];
+
+export function colorMasterEnabled(
+  config: Pick<ParticleConfig, 'gpgpuColorMasterEnabled'>,
+): boolean {
+  return config.gpgpuColorMasterEnabled === true;
+}
+
+/**
+ * Resolve the colour master switch: master ON returns the
+ * config untouched (every feature keeps its own key's
+ * meaning, exactly as before this switch existed); master
+ * OFF returns a config whose colour features are all off —
+ * the feature booleans false and the aux inheritance colour
+ * mix 0 — regardless of the individual keys' values. When
+ * every feature is already off the input is returned as-is,
+ * so the default configuration resolves to itself.
+ */
+export function resolveColorMaster(config: ParticleConfig): ParticleConfig {
+  if (colorMasterEnabled(config)) return config;
+  if (!config.gpgpuVelColorEnabled
+    && !config.gpgpuAgeColorEnabled
+    && !config.gpgpuGradEnabled
+    && !config.gpgpuAttrColorEnabled
+    && !config.gpgpuGroupColorEnabled
+    && !config.gpgpuRigidClusterColorEnabled
+    && !(config.gpgpuAuxInheritColor > 0)) {
+    return config;
+  }
+  return {
+    ...config,
+    gpgpuVelColorEnabled: false,
+    gpgpuAgeColorEnabled: false,
+    gpgpuGradEnabled: false,
+    gpgpuAttrColorEnabled: false,
+    gpgpuGroupColorEnabled: false,
+    gpgpuRigidClusterColorEnabled: false,
+    gpgpuAuxInheritColor: 0,
+  };
+}
+
 export function normalizeConfig(candidate: Partial<ParticleConfig> | null | undefined): ParticleConfig {
   const merged = { ...DEFAULT_CONFIG, ...(candidate ?? {}) } as ParticleConfig;
   const mergedArrayConfig = merged as unknown as Record<string, unknown>;
@@ -116,7 +195,7 @@ export function normalizeConfig(candidate: Partial<ParticleConfig> | null | unde
     mergedArrayConfig[key] = Array.isArray(value) ? [...value] : [...defaultArrayConfig[key]];
   }
   merged.synthPattern = normalizeSynthPattern(merged.synthPattern);
-  return normalizeParticleContrast(merged);
+  return normalizeParticleContrast(resolveColorMaster(merged));
 }
 
 export function normalizeSequenceTransitionEasing(value: unknown): SequenceTransitionEasing {

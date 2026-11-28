@@ -581,3 +581,448 @@ export function steeringForState(
   }
   return seekForce(pos, vel, target, opts.maxSpeed, maxForce);
 }
+
+// ---------------------------------------------------------------------------
+// Layer 1 WP6 B3 — declarative crowd state grammar + flow generation.
+//
+// The stage-1 crowd machine above (crowdStateFor) hard-codes its
+// three states and the P1-P5 priority table in code: a product
+// surface that wants a different state set (TP §4-19 / XP §4-19
+// style state transitions) or different transition conditions
+// has nowhere to declare them. This section adds that declaration
+// layer as pure functions, in the module's usual discipline:
+//
+// - A machine is DATA: named states, an ordered rule list, and a
+//   fallback state. Each rule is a conjunction of comparisons
+//   over a fixed signal vocabulary — the signals are exactly the
+//   read ports the stage-1 machine already consumes
+//   (CrowdStateInputs) plus neighbour density, which callers may
+//   supply when they have it (NaN = unknown, and a comparison
+//   against an unknown signal never holds).
+// - A condition bound is either a literal number or a named
+//   threshold ({ param }) resolved against a thresholds record,
+//   so derived lines like the AVOID exit range
+//   (avoidRange * (1 + hysteresis)) stay expressible without an
+//   expression language.
+// - Rules run in declaration order; the first whose conditions
+//   all hold wins. A rule may require the SDF collider
+//   (requiresSdf), mirroring the stage-1 guard.
+// - The stage-1 machine is re-expressed as the preset
+//   (crowdStateMachinePreset); crowdStateForDeclared evaluates
+//   the preset and is pinned to crowdStateFor by test, so the
+//   existing behaviour is the grammar's first citizen, unchanged.
+//
+// Nothing here is wired into the GPU passes: the twins keep
+// mirroring crowdStateFor, and a future variant can mirror the
+// declared machine instead. No config keys are added.
+
+/** Signals a transition condition may read. */
+export type CrowdSignalId =
+  | 'sd'
+  | 'velNormal'
+  | 'speed'
+  | 'distToTarget'
+  | 'towardTarget'
+  | 'density';
+
+export const CROWD_SIGNAL_IDS: readonly CrowdSignalId[] = [
+  'sd', 'velNormal', 'speed', 'distToTarget', 'towardTarget', 'density',
+];
+
+/** Comparison operators for a transition condition. */
+export type CrowdCompareOp = 'lt' | 'le' | 'gt' | 'ge';
+
+export const CROWD_COMPARE_OPS: readonly CrowdCompareOp[] = ['lt', 'le', 'gt', 'ge'];
+
+/** A condition bound: a literal, or a named threshold resolved
+ *  against the thresholds record at evaluation time. */
+export type CrowdConditionBound = number | { param: string };
+
+export interface CrowdCondition {
+  signal: CrowdSignalId;
+  op: CrowdCompareOp;
+  bound: CrowdConditionBound;
+}
+
+export interface CrowdStateRule {
+  /** State id (index into the machine's states) entered when
+   *  every condition holds. */
+  state: number;
+  /** When true the rule is skipped unless the SDF collider is
+   *  enabled (the stage-1 AVOID guard). */
+  requiresSdf?: boolean;
+  /** Conjunction: all conditions must hold. An empty list
+   *  always holds. */
+  conditions: readonly CrowdCondition[];
+}
+
+export interface CrowdStateMachineDecl {
+  /** State names by id. */
+  states: readonly string[];
+  /** Priority order: the first matching rule wins. */
+  rules: readonly CrowdStateRule[];
+  /** State id used when no rule matches. */
+  fallback: number;
+}
+
+/** The signal values one evaluation reads. density is NaN when
+ *  the caller has no neighbour-density read port. */
+export interface CrowdSignalValues {
+  sd: number;
+  velNormal: number;
+  speed: number;
+  distToTarget: number;
+  towardTarget: number;
+  density: number;
+}
+
+/** Build the signal record from the stage-1 inputs, with an
+ *  optional neighbour density (default NaN = unknown). */
+export function crowdSignalsFromInputs(input: CrowdStateInputs, density = NaN): CrowdSignalValues {
+  return {
+    sd: input.sd,
+    velNormal: input.velNormal,
+    speed: input.speed,
+    distToTarget: input.distToTarget,
+    towardTarget: input.towardTarget,
+    density: Number.isFinite(density) ? density : NaN,
+  };
+}
+
+/** Resolve a condition bound against the thresholds record.
+ *  A missing or non-finite threshold resolves to NaN, which
+ *  makes the comparison never hold (fail closed). */
+export function resolveCrowdBound(
+  bound: CrowdConditionBound,
+  thresholds: Readonly<Record<string, number>>,
+): number {
+  if (typeof bound === 'number') return Number.isFinite(bound) ? bound : NaN;
+  if (bound && typeof bound.param === 'string') {
+    const v = thresholds[bound.param];
+    return Number.isFinite(v) ? v : NaN;
+  }
+  return NaN;
+}
+
+/** One condition against the signal record. A non-finite signal
+ *  or bound never holds, so unknown inputs fail closed instead
+ *  of capturing a state. */
+export function crowdConditionHolds(
+  cond: CrowdCondition,
+  signals: CrowdSignalValues,
+  thresholds: Readonly<Record<string, number>>,
+): boolean {
+  const lhs = signals[cond.signal];
+  const rhs = resolveCrowdBound(cond.bound, thresholds);
+  if (!Number.isFinite(lhs) || !Number.isFinite(rhs)) return false;
+  switch (cond.op) {
+    case 'lt': return lhs < rhs;
+    case 'le': return lhs <= rhs;
+    case 'gt': return lhs > rhs;
+    case 'ge': return lhs >= rhs;
+    default: return false;
+  }
+}
+
+/**
+ * Evaluate a declared machine: rules in declaration order, the
+ * first whose conditions all hold wins; otherwise the fallback.
+ * Pure and memoryless, like crowdStateFor.
+ */
+export function evaluateCrowdStateMachine(
+  machine: CrowdStateMachineDecl,
+  sdfEnabled: boolean,
+  signals: CrowdSignalValues,
+  thresholds: Readonly<Record<string, number>>,
+): number {
+  for (const rule of machine.rules) {
+    if (rule.requiresSdf && !sdfEnabled) continue;
+    let holds = true;
+    for (const cond of rule.conditions) {
+      if (!crowdConditionHolds(cond, signals, thresholds)) { holds = false; break; }
+    }
+    if (holds) return rule.state;
+  }
+  return machine.fallback;
+}
+
+const CROWD_MACHINE_MAX_STATES = 16;
+const CROWD_MACHINE_MAX_RULES = 64;
+const CROWD_MACHINE_MAX_CONDITIONS = 8;
+
+function isCrowdCondition(raw: unknown): raw is CrowdCondition {
+  if (!raw || typeof raw !== 'object') return false;
+  const c = raw as CrowdCondition;
+  if (!CROWD_SIGNAL_IDS.includes(c.signal)) return false;
+  if (!CROWD_COMPARE_OPS.includes(c.op)) return false;
+  if (typeof c.bound === 'number') return Number.isFinite(c.bound);
+  return !!c.bound && typeof c.bound === 'object'
+    && typeof (c.bound as { param: unknown }).param === 'string'
+    && (c.bound as { param: string }).param.length > 0;
+}
+
+/**
+ * Sanitize an authored machine declaration (the parseSteeringPath
+ * discipline: tolerate malformed input, never invent behaviour).
+ * States keep only non-empty names (capped); rules with an
+ * out-of-range state or any malformed condition are dropped;
+ * the fallback is clamped into the state range (default 0).
+ * Returns null when no usable state name remains.
+ */
+export function normalizeCrowdStateMachine(
+  decl: CrowdStateMachineDecl | null | undefined,
+): CrowdStateMachineDecl | null {
+  if (!decl || !Array.isArray(decl.states)) return null;
+  const states = decl.states
+    .filter((s): s is string => typeof s === 'string' && s.length > 0)
+    .slice(0, CROWD_MACHINE_MAX_STATES);
+  if (states.length === 0) return null;
+  const rules: CrowdStateRule[] = [];
+  if (Array.isArray(decl.rules)) {
+    for (const raw of decl.rules) {
+      if (rules.length >= CROWD_MACHINE_MAX_RULES) break;
+      if (!raw || typeof raw !== 'object') continue;
+      const state = (raw as CrowdStateRule).state;
+      if (!Number.isInteger(state) || state < 0 || state >= states.length) continue;
+      const conds = (raw as CrowdStateRule).conditions;
+      if (!Array.isArray(conds) || conds.length > CROWD_MACHINE_MAX_CONDITIONS) continue;
+      if (!conds.every(isCrowdCondition)) continue;
+      rules.push({
+        state,
+        requiresSdf: !!(raw as CrowdStateRule).requiresSdf,
+        conditions: conds.map((c) => ({ signal: c.signal, op: c.op, bound: c.bound })),
+      });
+    }
+  }
+  const fb = decl.fallback;
+  const fallback = Number.isInteger(fb) && fb >= 0 && fb < states.length ? fb : 0;
+  return { states, rules, fallback };
+}
+
+/** State names of the stage-1 preset, by CROWD_STATE_IDS. */
+export const CROWD_STATE_MACHINE_STATES = ['idle', 'move', 'avoid'] as const;
+
+/**
+ * The stage-1 machine (crowdStateFor, P1-P5) re-expressed as a
+ * declaration plus its thresholds record. The rule order IS the
+ * priority order: AVOID entry, AVOID band persistence, IDLE
+ * entry, IDLE band persistence, fallback MOVE. The derived
+ * AVOID exit range is computed here, exactly as crowdStateFor
+ * computes it, and referenced by name from the rule.
+ */
+export function crowdStateMachinePreset(params: CrowdStateParams): {
+  machine: CrowdStateMachineDecl;
+  thresholds: Record<string, number>;
+} {
+  const thresholds: Record<string, number> = {
+    crowdAvoidRangeIn: params.avoidRange,
+    crowdAvoidRangeOut: params.avoidRange * (1 + params.avoidHysteresis),
+    crowdIdleRadius: params.idleRadius,
+    crowdIdleSpeed: params.idleSpeed,
+    crowdIdleSpeedOut: params.idleSpeedOut,
+  };
+  const machine: CrowdStateMachineDecl = {
+    states: [...CROWD_STATE_MACHINE_STATES],
+    rules: [
+      {
+        state: CROWD_STATE_IDS.avoid,
+        requiresSdf: true,
+        conditions: [{ signal: 'sd', op: 'lt', bound: { param: 'crowdAvoidRangeIn' } }],
+      },
+      {
+        state: CROWD_STATE_IDS.avoid,
+        requiresSdf: true,
+        conditions: [
+          { signal: 'sd', op: 'lt', bound: { param: 'crowdAvoidRangeOut' } },
+          { signal: 'velNormal', op: 'gt', bound: 0 },
+        ],
+      },
+      {
+        state: CROWD_STATE_IDS.idle,
+        conditions: [
+          { signal: 'distToTarget', op: 'lt', bound: { param: 'crowdIdleRadius' } },
+          { signal: 'speed', op: 'lt', bound: { param: 'crowdIdleSpeed' } },
+        ],
+      },
+      {
+        state: CROWD_STATE_IDS.idle,
+        conditions: [
+          { signal: 'distToTarget', op: 'lt', bound: { param: 'crowdIdleRadius' } },
+          { signal: 'speed', op: 'lt', bound: { param: 'crowdIdleSpeedOut' } },
+          { signal: 'towardTarget', op: 'le', bound: 0 },
+        ],
+      },
+    ],
+    fallback: CROWD_STATE_IDS.move,
+  };
+  return { machine, thresholds };
+}
+
+/**
+ * The declared-grammar evaluation of the stage-1 preset. Pinned
+ * to crowdStateFor by test over the full input grid: the two
+ * must agree on every input, so existing behaviour is exactly
+ * the preset's behaviour.
+ */
+export function crowdStateForDeclared(
+  input: CrowdStateInputs,
+  params: CrowdStateParams,
+  density = NaN,
+): number {
+  const { machine, thresholds } = crowdStateMachinePreset(params);
+  return evaluateCrowdStateMachine(
+    machine,
+    input.sdfEnabled,
+    crowdSignalsFromInputs(input, density),
+    thresholds,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Crowd flow generation (3ds Max Populate's grammar surface):
+// a flow is DECLARED as a path plus a standing density and an
+// inflow rate, and the twin evaluation answers the questions a
+// generator needs — how many agents the path holds, how often
+// one enters, and where agent k is at time t. Agents enter at
+// the path start (agent k at t = k / inflowRate, agent 0 at
+// t = 0), travel at the declared cruise speed, and stay at the
+// path end once they arrive. Pure functions only: no GPU wiring
+// in this layer, the same preparation discipline as the rest of
+// this module.
+
+export interface CrowdFlowDecl {
+  /** Route polyline (PathPt shape, z defaults to 0). */
+  path: readonly PathPointLike[];
+  /** Standing density: agents per unit of path arc length. */
+  density: number;
+  /** Inflow: agents entering at the path start per second. */
+  inflowRate: number;
+  /** Cruise speed along the path, arc length per second
+   *  (default 0: entered agents wait at the start). */
+  speed?: number;
+  /** Lanes the flow splits into, 1..4 (the crowdLaneIndex
+   *  range; default 1). */
+  laneCount?: number;
+}
+
+export interface CrowdFlowResolved {
+  path: Vec3Like[];
+  /** Total arc length of the path. */
+  length: number;
+  density: number;
+  inflowRate: number;
+  speed: number;
+  laneCount: number;
+  /** Standing population the density implies over the path:
+   *  round(density * length). */
+  capacity: number;
+  /** Seconds between successive entries (Infinity when the
+   *  inflow rate is 0). */
+  spawnInterval: number;
+  /** Density carried by each lane: density / laneCount. */
+  laneDensity: number;
+}
+
+/** Total arc length of a PathPt polyline (z defaults to 0). */
+export function pathArcLength(points: readonly PathPointLike[]): number {
+  let total = 0;
+  for (let i = 0; i + 1 < points.length; i += 1) {
+    total += Math.hypot(
+      points[i + 1].x - points[i].x,
+      points[i + 1].y - points[i].y,
+      (points[i + 1].z ?? 0) - (points[i].z ?? 0),
+    );
+  }
+  return total;
+}
+
+/**
+ * The point at arc length `arc` along a PathPt polyline,
+ * clamped to the path ends. An empty point list returns the
+ * origin (no path, no position); a single point returns it.
+ */
+export function pathPointAtArc(points: readonly PathPointLike[], arc: number): Vec3Like {
+  if (points.length === 0) return vec();
+  const pt = (p: PathPointLike): Vec3Like => vec(p.x, p.y, p.z ?? 0);
+  if (points.length === 1 || !(arc > 0)) return pt(points[0]);
+  let walked = 0;
+  for (let i = 0; i + 1 < points.length; i += 1) {
+    const a = pt(points[i]);
+    const b = pt(points[i + 1]);
+    const segLen = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    if (arc <= walked + segLen || i === points.length - 2) {
+      const t = segLen > 0 ? Math.max(0, Math.min(1, (arc - walked) / segLen)) : 0;
+      return vec(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
+    }
+    walked += segLen;
+  }
+  return pt(points[points.length - 1]);
+}
+
+/**
+ * The single resolution point for a flow declaration: points
+ * with non-finite coordinates are dropped, numbers are clamped
+ * (the resolveCrowd discipline), and the derived quantities
+ * (length / capacity / spawn interval / per-lane density) are
+ * computed once here so consumers can never drift.
+ */
+export function resolveCrowdFlow(decl: CrowdFlowDecl): CrowdFlowResolved {
+  const path = (decl.path ?? [])
+    .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z ?? 0))
+    .map((p) => vec(p.x, p.y, p.z ?? 0));
+  const length = pathArcLength(path);
+  const density = clampNum(decl.density, 0, 1e6, 0);
+  const inflowRate = clampNum(decl.inflowRate, 0, 1e6, 0);
+  const speed = clampNum(decl.speed ?? 0, 0, 1e6, 0);
+  const laneCount = Math.round(clampNum(decl.laneCount ?? 1, 1, 4, 1));
+  return {
+    path,
+    length,
+    density,
+    inflowRate,
+    speed,
+    laneCount,
+    capacity: Math.round(density * length),
+    spawnInterval: inflowRate > 0 ? 1 / inflowRate : Infinity,
+    laneDensity: density / laneCount,
+  };
+}
+
+/**
+ * How many agents have entered by `elapsed` seconds: agent 0
+ * enters at t = 0 and one more every spawn interval, capped at
+ * the path's capacity. Zero before t = 0, at zero inflow, or on
+ * a zero-capacity path.
+ */
+export function crowdFlowEnteredBy(flow: CrowdFlowResolved, elapsed: number): number {
+  if (!(elapsed >= 0) || flow.inflowRate <= 0 || flow.capacity <= 0) return 0;
+  return Math.min(flow.capacity, Math.floor(elapsed * flow.inflowRate) + 1);
+}
+
+/**
+ * Arc position of agent `agentIndex` at `elapsed` seconds, or
+ * -1 while the agent has not entered (or the index is invalid).
+ * The agent enters at agentIndex / inflowRate and travels at
+ * the cruise speed; past the path end it stays at the end.
+ */
+export function crowdFlowAgentArc(
+  flow: CrowdFlowResolved,
+  agentIndex: number,
+  elapsed: number,
+): number {
+  if (!Number.isInteger(agentIndex) || agentIndex < 0) return -1;
+  if (agentIndex >= crowdFlowEnteredBy(flow, elapsed)) return -1;
+  const enteredAt = agentIndex / flow.inflowRate;
+  return Math.min(flow.speed * (elapsed - enteredAt), flow.length);
+}
+
+/** Point of agent `agentIndex` at `elapsed` seconds along the
+ *  flow path, or null while the agent has not entered. */
+export function crowdFlowAgentPoint(
+  flow: CrowdFlowResolved,
+  agentIndex: number,
+  elapsed: number,
+): Vec3Like | null {
+  const arc = crowdFlowAgentArc(flow, agentIndex, elapsed);
+  return arc < 0 ? null : pathPointAtArc(flow.path, arc);
+}

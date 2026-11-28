@@ -17,6 +17,40 @@ export interface ParticleConfigGpgpu {
   gpgpuSize: number;
   gpgpuSpeed: number;
   gpgpuColor: string;
+  // Colour master switch (Layer 1 WP7 Phase A): while false
+  // (the default), every colour feature (velocity / age /
+  // gradient / attribute / group / rigid-cluster colour and
+  // the aux inheritance colour mix) resolves OFF in the
+  // config resolution layer regardless of its own key, so
+  // the draw stays the legacy monochrome one byte-identically.
+  // The single-colour tint (gpgpuColor above) is NOT a colour
+  // feature and is never gated by this switch.
+  gpgpuColorMasterEnabled: boolean;
+  // Gaussian splat draw (Layer 1 WP7 Phase C1): an independent
+  // instanced-quad primitive alongside the points draw —
+  // per-splat scale / rotation / opacity ride two dedicated
+  // parameter textures (lib/gpgpuSplat.ts), the centre is the
+  // pool position texture. The tint below is a single-colour
+  // tint like gpgpuColor, NOT a colour feature: the colour
+  // master does not gate it. Off (the default) the branch
+  // never mounts and no existing string changes.
+  gpgpuSplatEnabled: boolean;
+  // Global multiplier on the baked per-splat scale (also
+  // scales the projected ellipse's cutoff radii).
+  gpgpuSplatScale: number;
+  // Global multiplier on the baked per-splat opacity.
+  gpgpuSplatOpacity: number;
+  gpgpuSplatColor: string;
+  // Splat parameter supply (Layer 1 WP7 Phase C2): the name of
+  // the attribute slot whose baked values multiply each
+  // splat's scale (resolved via resolveAttrNameSlot, the WP2
+  // name resolution). '' = the uniform bake. The reserved
+  // value 'velocity' selects the velocity-stretch supply
+  // instead (quaternions aligned to the seeded velocity
+  // field, scale elongated along it — lib/gpgpuSplatSupply.ts).
+  gpgpuSplatScaleAttr: string;
+  // Same, for the per-splat opacity multiplier. '' = uniform.
+  gpgpuSplatOpacityAttr: string;
   gpgpuOpacity: number;
   gpgpuAudioReactive: boolean;
   gpgpuAudioBlast: number;
@@ -105,6 +139,12 @@ export interface ParticleConfigGpgpu {
   // Life/Age
   gpgpuAgeEnabled: boolean;
   gpgpuAgeMax: number;
+  // Per-particle lifetime spread (Layer 1 WP4 phase A,
+  // lib/gpgpuLifecycle.ts): each particle's effective age max
+  // is gpgpuAgeMax x a deterministic-hash multiplier uniform
+  // in [1 - j, 1 + j] (mean 1). 0 (default) = multiplier 1 for
+  // every particle — the legacy uniform lifetime, bit-identical.
+  gpgpuAgeMaxJitter: number;
   gpgpuAgeFadeIn: number;
   gpgpuAgeFadeOut: number;
   // Lifecycle grammar (Phase AB, lib/gpgpuLifecycle.ts): the spawn
@@ -254,6 +294,14 @@ export interface ParticleConfigGpgpu {
   // cadence with the stage-1 re-evaluation.
   gpgpuAttrChainEnabled: boolean;
   gpgpuAttrChainExprs: string[];
+  // Attribute channel mappings (Layer 1 WP2 phase B2): the
+  // channel-to-channel mapping table as one serialised JSON
+  // string (lib/gpgpuAttrMappings.ts; '' = no mappings = the
+  // mapping stage never exists). Each entry copies or
+  // transforms one named channel into another writable
+  // channel; there is no enable key — an empty table is the
+  // off state, the gpgpuGroupsData discipline.
+  gpgpuAttrMappings: string;
   gpgpuAttrSizeSlot: number;
   gpgpuAttrSizeAmount: number;
   gpgpuAttrBrightSlot: number;
@@ -1388,6 +1436,15 @@ export interface ParticleConfigGpgpu {
   /** Interpolation override: 'inherit' keeps the manifest's
    *  declared interpolation (the legacy behaviour). */
   pointCacheRetimerInterpolation: 'inherit' | 'linear' | 'nearest';
+  /** Speed curve (S2 follow-up): when on, the curve below
+   *  redistributes playback speed inside the retimed pass.
+   *  Off by default; an identity curve is also a no-op. */
+  pointCacheRetimerSpeedCurveEnabled: boolean;
+  /** Speed curve control points, flat [t, v, …] array
+   *  (lib/freeCurve.ts asset shape; t in [0, 1] is the
+   *  normalised playback position, v the speed multiplier
+   *  relative to the retimer rate). */
+  pointCacheRetimerSpeedCurvePoints: number[];
   // Skinning (stage 3 S6): parameters of the isosurface
   // export that turns a held state cache into a mesh
   // series (lib/stateCacheSkinning.ts). Export-action
@@ -1518,6 +1575,38 @@ export interface ParticleConfigGpgpu {
   // the bake and the respawn alike (lib/gpgpuDistribution.ts).
   // '' (default) = no layer — bit-identical legacy placement.
   gpgpuEmitDistribution: string;
+  // Deform stack (Layer 1 WP8, phases A + D): a JSON list of
+  // deformation operators (bend / twist / taper / noise /
+  // ffd) applied to the final placed point — the bake and
+  // the respawn alike (lib/gpgpuDeformStack.ts).
+  // '' (default) = no stack — bit-identical legacy placement.
+  gpgpuEmitDeform: string;
+  // Local time (Layer 1 WP9, phase D): JSON list of
+  // { group, factor } — a per-group time factor over the
+  // named groups in gpgpuGroupsData (lib/gpgpuLocalTime.ts).
+  // '' (default) = no local time — bit-identical legacy clock.
+  gpgpuLocalTimeGroups: string;
+  // Script bake (C1, Layer 1 WP11, phase B): the Pyodide
+  // script-bake receptacle's authoring keys
+  // (lib/gpgpuScriptBake.ts; design:
+  // pyodide-integration-design.md §3). Bake-stage computation
+  // only — never a real-time shader path. Enabled defaults to
+  // false, and OFF is bit-identical legacy behaviour.
+  gpgpuScriptEnabled: boolean;
+  // Where the script's output is consumed: the attribute
+  // bake, initial-state generation, or a field bake.
+  gpgpuScriptTarget: 'attrBake' | 'initialState' | 'fieldBake';
+  // Python source, capped at 32,000 characters and statically
+  // checked on intake (import whitelist + forbidden patterns).
+  gpgpuScriptSource: string;
+  // Determinism seed, saved as a pair with the source.
+  gpgpuScriptSeed: number;
+  // Save-format version; a different version is refused, not
+  // migrated (migration is unimplemented).
+  gpgpuScriptFormatVersion: number;
+  // SHA-256 (hex) of the most recent adopted bake output;
+  // '' until a bake succeeds.
+  gpgpuScriptOutputHash: string;
   // Shader seed (Grammar 2.0 stage 2, B5): the opt-in that
   // lets a seed reach the respawn hash draws (judgment 3 —
   // seeds reach shaders only through a new key's opt-in).
@@ -1579,6 +1668,15 @@ export interface ParticleConfigGpgpu {
   gpgpuEmitterVelDirZ: number;
   gpgpuEmitterVelSpeed: number;
   gpgpuEmitterVelSpread: number;
+  // Emitter list (Layer 1 WP4 phase D1): a JSON list of
+  // emitter definitions (lib/gpgpuEmitterList.ts). While it
+  // names at least one valid element it REPLACES the single
+  // emitter above: each particle is born from its assigned
+  // element's shape / transform / initial velocity, and the
+  // births are shared between elements by their weights.
+  // '' (default) = no list — the single-emitter keys rule
+  // and every output is bit-identical to the legacy bake.
+  gpgpuEmitters: string;
   // 3D Light (Phase T): a single monochrome point light / spotlight
   // that multiplies the DRAWN brightness of GPGPU points (see
   // lib/gpgpuLight.ts). It never touches the simulation — positions
@@ -1641,9 +1739,12 @@ export interface ParticleConfigGpgpu {
   // touch the simulation. Disabled by default and, for the volume,
   // intensity 0 is also an exact identity: with both off the scene
   // mounts nothing extra and the render is bit-identical to
-  // v1.29.0. Honest limit: the volume does NOT intersect scene
-  // depth (no occlusion / shadowing) — edges are softened by the
-  // softness key instead; the UI and the changelog say so.
+  // v1.29.0. Honest limit: in its stock form the volume does NOT
+  // intersect scene depth (no occlusion / shadowing) — edges are
+  // softened by the softness key instead; the UI and the
+  // changelog say so. The depth-intersection variant
+  // (gpgpuLightVolumeDepthIntersect, Layer 1 WP7 Phase B) lifts
+  // that limit behind its own key.
   gpgpuLightVolumeEnabled: boolean;
   gpgpuLightVolumeShape: 'cone' | 'sphere';
   /** Volume brightness; 0 draws nothing even when enabled. */
@@ -1656,6 +1757,25 @@ export interface ParticleConfigGpgpu {
   gpgpuLightVolumeSteps: number;
   /** Edge softness 0..1 (depth-fade substitute; no depth test). */
   gpgpuLightVolumeSoftness: number;
+  /** Depth intersection (Layer 1 WP7 Phase B): while > 0 the
+   *  volume material assembles its depth-intersection variant
+   *  and the accumulated beam is truncated by the visible
+   *  fraction of the view chord in front of the scene surface
+   *  (shared scene depth capture, lib/sceneDepth.ts; twins in
+   *  lib/lightVolume.ts). 0 (default) = the stock fragment
+   *  string byte for byte and no capture for the volume's own
+   *  sake. Resolved with clampVolumeDepthIntersect ([0, 1]). */
+  gpgpuLightVolumeDepthIntersect: number;
+  /** Particle density attenuation (Layer 1 WP7 Phase D): while
+   *  > 0 the volume material assembles its density variant and
+   *  the accumulated beam is scaled by the shared particle
+   *  density field (lib/particleDensity.ts) at each fragment's
+   *  screen position — the volume joins the LightFx Shine
+   *  march as a consumer of the field. 0 (default) = the
+   *  non-density fragment string and no density supply bound
+   *  for the volume's sake. Resolved with clampVolumeDensity
+   *  ([0, 1]) in lib/lightVolume.ts. */
+  gpgpuLightVolumeDensity: number;
   // Scene depth occlusion (Phase 16 stage 1): strength of the
   // depth-based fade applied to LightVolume and the Lux cone from
   // the shared scene depth capture (lib/sceneDepth.ts). 0 (default)
@@ -1715,6 +1835,17 @@ export interface ParticleConfigGpgpu {
    *  instances cast at their true instanced scale and ignore
    *  this). Resolved with a clamp in lib/lightShadowMap.ts. */
   gpgpuShadowMapParticleSize: number;
+  /** Shadow-map light unit (Layer 1 WP7 Phase B): which light
+   *  unit the single shadow map is captured from, resolved by
+   *  resolveShadowLightUnit (lib/gpgpuLightUnits.ts). 0
+   *  (default) = auto: the first enabled unit in list order,
+   *  falling back to unit 1 while no unit is enabled — which
+   *  reproduces the legacy unconditional unit-1 read at the
+   *  defaults. 1..4 names a unit explicitly (its position is
+   *  read as a pure reference, enabled or not — the emit
+   *  rule). Multiple shadow maps are deliberately not
+   *  provided (RT budget; see lib/lightShadowMap.ts). */
+  gpgpuShadowMapLightUnit: number;
   /** Fog / volumetric self-shadow strength; 0 = legacy fog. */
   gpgpuFogSelfShadow: number;
   /** Secondary march steps for the fog self-shadow (1..16). */

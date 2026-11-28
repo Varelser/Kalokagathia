@@ -5,6 +5,7 @@ import { buildPostFxStackPatch, getPostFxStackBundleById, POST_FX_STACK_BUNDLES,
 import { getOrderedActivePostFxStageIds } from '../lib/postFxStack';
 import { Slider, Toggle } from './controlPanelParts';
 import { CustomPostGlslBlock } from './controlPanelGlobalDisplayPostFxCustom';
+import { GlslSharedSnippetsBlock } from './controlPanelGlobalDisplayGlslSharedSnippets';
 import { PostFxStackGraph } from './controlPanelPostFxStackGraph';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
 
@@ -634,6 +635,7 @@ export const GlobalDisplayPostFxSection: React.FC<GlobalDisplayEffectsSharedProp
           </>
         )}
         <CustomPostGlslBlock config={config} updateConfig={updateConfig} />
+        <GlslSharedSnippetsBlock config={config} updateConfig={updateConfig} />
           </>
         )}
       </div>

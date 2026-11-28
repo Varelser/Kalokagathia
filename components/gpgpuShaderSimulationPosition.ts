@@ -2,6 +2,8 @@ import { EMIT_SHAPE_GLSL } from '../lib/gpgpuEmitShapes';
 import { NEIGHBOR_SELF_SKIP_GLSL, NEIGHBOR_SUV_GLSL } from '../lib/gpgpuNeighborLoop';
 import { DM_HASH11_GLSL_INDENTED } from '../lib/gpgpuRandom';
 import { DIST_GLSL, DIST_MAX_OPS } from '../lib/gpgpuDistribution';
+import { deformGlsl, DEFORM_UNIFORM_VEC4S } from '../lib/gpgpuDeformStack';
+import { localTimeFactorGlsl, localTimeUniformsGlsl } from '../lib/gpgpuLocalTime';
 import { EMIT_PATH_GLSL } from '../lib/gpgpuEmissionSource';
 import { EMIT_PATH_ASSET_GLSL } from '../lib/gpgpuPathAssets';
 
@@ -990,6 +992,36 @@ const POS_FRAG_DIST_SEGMENT = /* glsl */ `        // Distribution layer (stage 2
         // applyDistributionOps in lib/gpgpuDistribution.ts.
         pos = kaloDistApply(pos, uBounceRadius);
 `;
+// Deform stack (Layer 1 WP8, phase D): while the
+// gpgpuEmitDeform key resolves to effective operators, the
+// final placed point passes through the stack (the GLSL
+// twin of applyDeformOps in lib/gpgpuDeformStack.ts) —
+// spliced after every placement law, the distribution
+// layer, the emitter transform and the mask gate, the
+// pipeline position the bake applies it at. The operator
+// list rides the uDeformOps uniform array (the distribution
+// layer's supply discipline — no sampler is spent); while
+// the stack carries an FFD operator, its control points
+// ride the shared column texture's deformFfd section,
+// declared by the FFD sub-variant's uniforms below. Both
+// are variants: the default string contains neither.
+function posFragDeformUniforms(ffd: boolean): string {
+  return /* glsl */ `
+uniform vec4 uDeformOps[${DEFORM_UNIFORM_VEC4S}];
+uniform int uDeformOpCount;
+` + deformGlsl(ffd);
+}
+const POS_FRAG_DEFORM_COL_UNIFORMS = /* glsl */ `
+uniform sampler2D uDeformColTex;
+uniform float uDeformColWidth;
+uniform float uDeformColHeight;
+uniform float uDeformFfdBase;
+`;
+const POS_FRAG_DEFORM_SEGMENT = /* glsl */ `        // Deform stack (Layer 1 WP8, phase D): transform the
+        // final placed point — the bake twin is
+        // applyDeformOps in lib/gpgpuDeformStack.ts.
+        pos = kaloDeformApply(pos);
+`;
 const POS_FRAG_RESPAWN_PLACEMENT_SHAPE_SEED = /* glsl */ `        // Emitter shape law (stage 2, E1) with the shader
         // seed phase (stage 2, B5): the four hash draws are
         // shifted by the opt-in seed — the same law, a
@@ -1045,6 +1077,92 @@ const POS_FRAG_THR_NOW_LEGACY = /* glsl */ `      float thrNow = min(1.0, uSpawn
 const POS_FRAG_THR_NOW_ALLOC = /* glsl */ `      float thrNow = min(1.0, uSpawnBurst + uSpawnRateEff * spawnPulseTimeEx(uSpawnClockTime));`;
 const POS_FRAG_THR_PREV_LEGACY = /* glsl */ `      float thrPrev = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime - uDelta));`;
 const POS_FRAG_THR_PREV_ALLOC = /* glsl */ `      float thrPrev = min(1.0, uSpawnBurst + uSpawnRateEff * spawnPulseTimeEx(uSpawnClockPrev));`;
+// Spawn event demand (Layer 1 WP4, phase C): while an
+// authored spawn event with a positive demand stands, the
+// gate's two threshold expressions gain the cumulative
+// event demand due at that threshold's time — resolved
+// CPU-side as pool fractions (spawnEventDemandDueBy over
+// the authored list in lib/gpgpuSpawnAllocator.ts, uploaded
+// as uSpawnEventDueFrac for uSpawnTime and
+// uSpawnEventDuePrevFrac for uSpawnTime - uDelta, so the
+// activation test sees the step exactly on the firing
+// frame). A firing event therefore releases its demand of
+// parked slots in gate-value order — tier 1 of
+// planSpawnEventDemands — as main-pool event BIRTHS,
+// alongside the legacy cohort re-birth in the tail. The
+// demand composes with the allocator variant the same way
+// (its clock drives the rate term; the demand term is on
+// spawn time, like the event block itself). Floats only —
+// no sampler is spent. The stock lines above stay the
+// default string's verbatim text; this variant replaces
+// the expressions wholesale.
+const POS_FRAG_SPAWN_EVENT_DEMAND_UNIFORMS = /* glsl */ `
+uniform float uSpawnEventDueFrac;
+uniform float uSpawnEventDuePrevFrac;
+`;
+const POS_FRAG_THR_NOW_DEMAND = /* glsl */ `      float thrNow = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime) + uSpawnEventDueFrac);`;
+const POS_FRAG_THR_NOW_ALLOC_DEMAND = /* glsl */ `      float thrNow = min(1.0, uSpawnBurst + uSpawnRateEff * spawnPulseTimeEx(uSpawnClockTime) + uSpawnEventDueFrac);`;
+const POS_FRAG_THR_PREV_DEMAND = /* glsl */ `      float thrPrev = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime - uDelta) + uSpawnEventDuePrevFrac);`;
+const POS_FRAG_THR_PREV_ALLOC_DEMAND = /* glsl */ `      float thrPrev = min(1.0, uSpawnBurst + uSpawnRateEff * spawnPulseTimeEx(uSpawnClockPrev) + uSpawnEventDuePrevFrac);`;
+// Lifetime jitter (Layer 1 WP4, phase C): while the
+// gpgpuAgeMaxJitter key is above zero, the age test reads
+// the per-particle ceiling uAgeMax * lifetimeMultiplier —
+// the GLSL twins of ageJitterHashForUv /
+// lifetimeMultiplierFromHash in lib/gpgpuLifecycle.ts
+// (hash1(p) IS dmHash11 evaluated at (p.x * 127.1 +
+// p.y * 311.7), so the twin's (uv + (11.31, 4.77))
+// argument lands verbatim; the dedicated offset keeps the
+// lifetime draw decorrelated from the spawn / event
+// hashes). The helpers + uniform are spliced into the MID
+// right before main() only in this variant; the stock age
+// line stays the default string's verbatim text.
+const POS_FRAG_AGE_JITTER_SEGMENT = /* glsl */ `  // Lifetime jitter (Layer 1 WP4, phase C): the
+  // per-particle age ceiling multiplier — GLSL twins of
+  // ageJitterHashForUv / lifetimeMultiplierFromHash in
+  // lib/gpgpuLifecycle.ts (see the note above).
+  uniform float uAgeMaxJitter;
+  float ageJitterHash(vec2 uv) {
+    return hash1(uv + vec2(11.31, 4.77));
+  }
+  float lifetimeMultiplier(vec2 uv, float jitter) {
+    float j = clamp(jitter, 0.0, 1.0);
+    return 1.0 + (2.0 * ageJitterHash(uv) - 1.0) * j;
+  }
+
+`;
+const POS_FRAG_MAIN_ANCHOR = /* glsl */ `  void main() {
+    vec4 posData = texture2D(uPosTex, vUv);`;
+const POS_FRAG_AGE_TEST_LEGACY = /* glsl */ `      if (age > uAgeMax) ageRespawn = true;`;
+const POS_FRAG_AGE_TEST_JITTER = /* glsl */ `      if (age > uAgeMax * lifetimeMultiplier(vUv, uAgeMaxJitter)) ageRespawn = true;`;
+// Local time (Layer 1 WP9, phase D): while the
+// gpgpuLocalTimeGroups key resolves to effective entries
+// (lib/gpgpuLocalTime.ts: localTimeVariantActive), the age
+// advances run on the particle's local clock — the factor
+// segment lands right before the collision life cost (the
+// first age advance of the block) and both advance lines
+// multiply the delta by it. The factor is exactly 1 while
+// no listed group matches (or the passes hold the table
+// empty), so both lines stay numerically the legacy
+// statements; the stock lines below stay the default
+// string's verbatim text either way. The helpers +
+// uniforms follow the age-jitter splicing pattern (MID
+// right before main(), after kaloAttrChannel /
+// kaloGroupMembership; HEAD for the declarations). No
+// sampler is spent — the attribute texture is already
+// declared in the stock HEAD.
+const POS_FRAG_LOCAL_TIME_UNIFORMS = localTimeUniformsGlsl();
+const POS_FRAG_LOCAL_TIME_FN = localTimeFactorGlsl();
+const POS_FRAG_AGE_BLOCK_ANCHOR = /* glsl */ `    // Collision life cost (Phase 15): contact this step ages the`;
+const POS_FRAG_LOCAL_TIME_FACTOR_SEGMENT = /* glsl */ `    // Local time (Layer 1 WP9, phase D): this particle's
+    // group time factor — the age advances below (the
+    // collision life cost and the plain advance alike) run
+    // on the local clock.
+    float localTimeFactor = kaloLocalTimeFactor(texture2D(uAttrTex, vUv));
+`;
+const POS_FRAG_AGE_COLLISION_LINE = /* glsl */ `      age += uCollisionLifeLoss * uDelta;`;
+const POS_FRAG_AGE_COLLISION_LINE_LOCAL = /* glsl */ `      age += uCollisionLifeLoss * uDelta * localTimeFactor;`;
+const POS_FRAG_AGE_ADVANCE_LINE = /* glsl */ `      age += uDelta;`;
+const POS_FRAG_AGE_ADVANCE_LINE_LOCAL = /* glsl */ `      age += uDelta * localTimeFactor;`;
 // Rule spawn gate (Grammar 2.0 stage 2, E2): bit 13 of the
 // REP mask is the live rules' spawn pulse (slice 1D-3). While
 // the gate key is on, a matched particle re-births through
@@ -1112,6 +1230,131 @@ uniform int uEmitPathTexCount;
 const POS_FRAG_RESPAWN_PLACEMENT_PATH = /* glsl */ `        // Path emission (stage 2, E3): one hash draw is the
         // arc parameter over the steering path polyline.
         pos = kaloEmitPathPos(hash1(vUv + vec2(61.7)));
+`;
+// Emitter list (Layer 1 WP4, phase D2): while gpgpuEmitters
+// authors a list with at least one enabled element
+// (lib/gpgpuEmitterList.ts: emitterListActive), the list
+// REPLACES the single-emitter law for the analytic slot:
+// each particle belongs to one element, fixed by the
+// assignment hash over the authored weight bands, and the
+// placement is the single-emitter respawn generalised per
+// element — the element's record is fetched from the shared
+// column texture (the emitter layout of getColumnSupply:
+// 7 texels per element from uEmittersBase), an 'auto'
+// element takes the legacy ball inside its own frame
+// (around the element's light position for the 'light'
+// shape, the origin otherwise), a shaped element takes the
+// shared shape law with the element's own light position,
+// then the distribution layer (when it stands) and the
+// element's own transform close the placement — the bake's
+// composition order (lib/gpgpuInitialData.ts). While an
+// emission SOURCE (cloud / path) stands, the source
+// placement stays and only the transform generalises: the
+// per-element transform segment below replaces the
+// single-emitter one. The mask gate's composition with the
+// list is NOT part of this phase: while the mask stands,
+// the mask branch keeps its current single-law behaviour.
+const POS_FRAG_EMIT_COL_UNIFORMS = /* glsl */ `
+uniform sampler2D uEmitColTex;
+uniform float uEmitColWidth;
+uniform float uEmitColHeight;
+`;
+const POS_FRAG_EMITTER_LIST_UNIFORMS = /* glsl */ `
+uniform float uEmittersBase;
+uniform int uEmitterCount;
+`;
+const POS_FRAG_EMITTER_LIST_SEGMENT = /* glsl */ `  // Emitter list (Layer 1 WP4, phase D2): the column fetch
+  // for the emitter records (a private name — the path
+  // asset's kaloEmitColFetch exists only in that variant)
+  // and the assignment hash. SYNC: emitterAssignHash is the
+  // GLSL twin of emitterHashForUv in lib/gpgpuEmitterList.ts
+  // — hash1(p) IS dmHash11 at (p.x * 127.1 + p.y * 311.7),
+  // so the twin's argument (uv + (17.17, 9.43)) lands
+  // verbatim; keep the offset constants (17.17, 9.43) in
+  // sync with EMITTER_HASH_OFFSET_X / Y there.
+  vec4 kaloEmitterColFetch(float idx) {
+    float cx = mod(idx, uEmitColWidth);
+    float cy = floor(idx / uEmitColWidth);
+    return texture2D(uEmitColTex, vec2((cx + 0.5) / uEmitColWidth, (cy + 0.5) / uEmitColHeight));
+  }
+  float emitterAssignHash(vec2 uv) {
+    return hash1(uv + vec2(17.17, 9.43));
+  }
+
+`;
+function emitterListPlacement(dist: boolean, seed: boolean): string {
+  // Shader seed (stage 2, B5): while the opt-in stands,
+  // every placement draw carries the seed phase, exactly
+  // like the single-law seed forms.
+  const ph = seed ? ' + uShaderSeedPhase' : '';
+  const distLine = dist
+    ? /* glsl */ `        // Distribution layer (stage 2, B5): inside the
+        // element frame, before the element transform — the
+        // bake's order.
+        pos = kaloDistApply(pos, uBounceRadius);
+`
+    : '';
+  return /* glsl */ `        // Emitter list (Layer 1 WP4, phase D2): the
+        // assignment walk over the weight bands, then the
+        // element record (T0 pos + cumEnd / T1..T3 matrix
+        // columns + shape / velMode / lightUnit / T5
+        // respawn shape / T6 light position).
+        float emHash = emitterAssignHash(vUv);
+        int emIdx = 0;
+        for (int emK = 0; emK < 8; emK++) {
+          if (emK >= uEmitterCount) break;
+          emIdx = emK;
+          if (kaloEmitterColFetch(uEmittersBase + float(emK * 7)).w > emHash) break;
+        }
+        float emRec = uEmittersBase + float(emIdx * 7);
+        vec4 emT0 = kaloEmitterColFetch(emRec);
+        vec4 emT1 = kaloEmitterColFetch(emRec + 1.0);
+        vec4 emT2 = kaloEmitterColFetch(emRec + 2.0);
+        vec4 emT3 = kaloEmitterColFetch(emRec + 3.0);
+        vec4 emT5 = kaloEmitterColFetch(emRec + 5.0);
+        vec4 emT6 = kaloEmitterColFetch(emRec + 6.0);
+        if (emT5.z < -0.5) {
+          // Respawn shape 'auto': the legacy ball inside
+          // this element's frame — the element's light ball
+          // for the 'light' shape (id 6 in T1.w), the origin
+          // ball otherwise; the draws are the legacy ones.
+          float r   = uBounceRadius * (0.05 + hash1(vUv + vec2(age${ph})) * 0.9);
+          float th  = hash1(vUv + vec2(1.3${ph})) * 6.2832;
+          float phi = acos(2.0 * hash1(vUv + vec2(2.7${ph})) - 1.0);
+          if (emT1.w > 5.5) {
+            float jr = r * 0.05;
+            pos = emT6.xyz + vec3(jr * sin(phi) * cos(th), jr * sin(phi) * sin(th), jr * cos(phi));
+          } else {
+            pos = vec3(r * sin(phi) * cos(th), r * sin(phi) * sin(th), r * cos(phi));
+          }
+        } else {
+          // The shared shape law for this element, with the
+          // element's own light position.
+          pos = kaloEmitShapePos(int(emT5.z + 0.5), vec4(hash1(vUv + vec2(11.1${ph})), hash1(vUv + vec2(23.7${ph})), hash1(vUv + vec2(37.3${ph})), hash1(vUv + vec2(51.9${ph}))), uBounceRadius, emT6.xyz);
+        }
+` + distLine + /* glsl */ `        // The element transform closes the placement.
+        pos = emT0.xyz + mat3(emT1.xyz, emT2.xyz, emT3.xyz) * pos;
+`;
+}
+const POS_FRAG_EMITTER_LIST_TRANSFORM_SEGMENT = /* glsl */ `        // Emitter list transform (Layer 1 WP4, phase D2):
+        // a source placement (cloud / path) still lands in
+        // the particle's element frame — the assignment walk
+        // and record fetch of the list placement, then the
+        // element transform (the bake twin is
+        // applyEmitterTransform over the resolved element).
+        float emHashT = emitterAssignHash(vUv);
+        int emIdxT = 0;
+        for (int emKT = 0; emKT < 8; emKT++) {
+          if (emKT >= uEmitterCount) break;
+          emIdxT = emKT;
+          if (kaloEmitterColFetch(uEmittersBase + float(emKT * 7)).w > emHashT) break;
+        }
+        float emRecT = uEmittersBase + float(emIdxT * 7);
+        vec4 emT0T = kaloEmitterColFetch(emRecT);
+        vec3 emC0T = kaloEmitterColFetch(emRecT + 1.0).xyz;
+        vec3 emC1T = kaloEmitterColFetch(emRecT + 2.0).xyz;
+        vec3 emC2T = kaloEmitterColFetch(emRecT + 3.0).xyz;
+        pos = emT0T.xyz + mat3(emC0T, emC1T, emC2T) * pos;
 `;
 // Emission mask (stage 2, E3): while the mask gate is live,
 // the placement — whichever law produced it — is tested
@@ -1299,11 +1542,33 @@ export interface PositionFragmentVariantOptions {
   // spliced in only while the absolute rate key is set or
   // the spawn envelope is enabled.
   spawnAlloc?: boolean;
+  // Layer 1 WP4 (phase C): the spawn event demand term on
+  // the gate's threshold expressions, spliced in only
+  // while an authored spawn event with a positive demand
+  // stands (lib/gpgpuSpawnAllocator.ts:
+  // spawnEventDemandVariantActive).
+  spawnEventDemand?: boolean;
+  // Layer 1 WP4 (phase C): the per-particle lifetime
+  // multiplier at the age test, spliced in only while the
+  // gpgpuAgeMaxJitter key is above zero
+  // (lib/gpgpuLifecycle.ts: ageJitterVariantActive).
+  ageJitter?: boolean;
   // Grammar 2.0 stage 2 (slice E2): the rule spawn gate
   // segment (REP bit 13 → respawn), spliced in only while
   // the gate key is on and an effective LIVE rule list
   // exists (it shares the live variant's REP texture).
   spawnRuleGate?: boolean;
+  // Layer 1 WP4 (phase D2): the emitter list placement —
+  // per-element assignment, record fetch and transform over
+  // the shared column texture, spliced in only while
+  // gpgpuEmitters authors a list with an enabled element
+  // (lib/gpgpuEmitterList.ts: emitterListActive). Replaces
+  // the single-emitter analytic law (legacy / shape) in the
+  // placement slot; while a source (cloud / path) stands it
+  // replaces only the transform segment. While the mask
+  // stands, the mask branch keeps its single-law behaviour
+  // (composition deferred).
+  emitterList?: boolean;
   // Grammar 2.0 stage 2 (slice E3): respawn placement from
   // the emission cloud texture, spliced in only while the
   // emission source is 'morph' or 'bitmap'.
@@ -1332,6 +1597,25 @@ export interface PositionFragmentVariantOptions {
   // variant: to each shape-law candidate), before the
   // emitter transform.
   emitDistribution?: boolean;
+  // Layer 1 WP8 (phase D): the deform stack over the final
+  // placed point, spliced in only while gpgpuEmitDeform
+  // resolves to effective operators
+  // (lib/gpgpuDeformStack.ts: deformVariantActive). Applies
+  // after every placement law, the distribution layer, the
+  // emitter transform and the mask gate — the bake's
+  // position for the stack.
+  emitDeform?: boolean;
+  // Layer 1 WP8 (phase D): the deform stack's FFD
+  // sub-variant — the column uniforms for the deformFfd
+  // section, spliced in only while the stack carries an FFD
+  // operator (lib/gpgpuDeformStack.ts: deformColumnActive).
+  // Stands only alongside emitDeform.
+  emitDeformFfd?: boolean;
+  // Layer 1 WP9 (phase D): local time — the per-group time
+  // factor over the age advances, spliced in only while
+  // gpgpuLocalTimeGroups resolves to effective entries
+  // (lib/gpgpuLocalTime.ts: localTimeVariantActive).
+  localTime?: boolean;
   // Grammar 2.0 stage 2 (slice B5): the shader-seed opt-in,
   // spliced in only while gpgpuShaderSeed is non-zero. The
   // placement draws (legacy / shape / path, and the mask
@@ -1382,6 +1666,22 @@ export function buildPositionFragment(options?: PositionFragmentVariantOptions):
       POS_FRAG_RIGID_FREE_SEGMENT + POS_FRAG_FLOOR_CLAMP_OPEN,
     );
   }
+  // Lifetime jitter (Layer 1 WP4, phase C): the age test
+  // reads the per-particle ceiling. Only in this variant —
+  // the default TAIL is the shipped string.
+  if (options?.ageJitter) {
+    tail = tail.replace(POS_FRAG_AGE_TEST_LEGACY, POS_FRAG_AGE_TEST_JITTER);
+  }
+  // Local time (Layer 1 WP9, phase D): the factor segment
+  // lands before the first age advance and both advance
+  // lines take the factor. Only in this variant — the
+  // default TAIL is the shipped string.
+  if (options?.localTime) {
+    tail = tail
+      .replace(POS_FRAG_AGE_BLOCK_ANCHOR, POS_FRAG_LOCAL_TIME_FACTOR_SEGMENT + POS_FRAG_AGE_BLOCK_ANCHOR)
+      .replace(POS_FRAG_AGE_COLLISION_LINE, POS_FRAG_AGE_COLLISION_LINE_LOCAL)
+      .replace(POS_FRAG_AGE_ADVANCE_LINE, POS_FRAG_AGE_ADVANCE_LINE_LOCAL);
+  }
   // Emitter variants (stage 2, E0+E1): the shape law replaces
   // the legacy placement wholesale; the transform statement
   // goes right after whichever placement ran. Neither fires
@@ -1401,6 +1701,12 @@ export function buildPositionFragment(options?: PositionFragmentVariantOptions):
       : options?.emitterShape
         ? 'shape'
         : 'legacy';
+  // Emitter list (Layer 1 WP4, phase D2): the list stands
+  // in the analytic slot whenever no mask and no source
+  // stands; the distribution layer and the element
+  // transform are inside its block, so the standalone
+  // splices below must not fire for it.
+  const emitterListStands = !!options?.emitterList && !options?.emitterMask && !options?.emitterCloud && !options?.emitterPath && !options?.emitterPathAsset;
   if (options?.emitterMask) {
     tail = tail.replace(
       POS_FRAG_RESPAWN_PLACEMENT_LEGACY,
@@ -1410,19 +1716,33 @@ export function buildPositionFragment(options?: PositionFragmentVariantOptions):
     tail = tail.replace(POS_FRAG_RESPAWN_PLACEMENT_LEGACY, POS_FRAG_RESPAWN_PLACEMENT_CLOUD);
   } else if (options?.emitterPath || options?.emitterPathAsset) {
     tail = tail.replace(POS_FRAG_RESPAWN_PLACEMENT_LEGACY, options?.shaderSeed ? POS_FRAG_RESPAWN_PLACEMENT_PATH_SEED : POS_FRAG_RESPAWN_PLACEMENT_PATH);
+  } else if (emitterListStands) {
+    tail = tail.replace(
+      POS_FRAG_RESPAWN_PLACEMENT_LEGACY,
+      emitterListPlacement(!!options?.emitDistribution, !!options?.shaderSeed),
+    );
   } else if (options?.emitterShape) {
     tail = tail.replace(POS_FRAG_RESPAWN_PLACEMENT_LEGACY, options?.shaderSeed ? POS_FRAG_RESPAWN_PLACEMENT_SHAPE_SEED : POS_FRAG_RESPAWN_PLACEMENT_SHAPE);
   } else if (options?.shaderSeed) {
     // The legacy placement with seed-shifted draws.
     tail = tail.replace(POS_FRAG_RESPAWN_PLACEMENT_LEGACY, POS_FRAG_RESPAWN_PLACEMENT_LEGACY_SEED);
   }
-  if (options?.emitterTransform && !options?.emitterMask) {
+  if (!options?.emitterMask && options?.emitterList && (options?.emitterCloud || options?.emitterPath || options?.emitterPathAsset)) {
+    // A source placement still lands in the particle's
+    // element frame: the per-element transform segment
+    // replaces the single-emitter one (which is suppressed
+    // whenever the list stands).
+    tail = tail.replace(
+      POS_FRAG_RESPAWN_AGE_ANCHOR,
+      POS_FRAG_EMITTER_LIST_TRANSFORM_SEGMENT + POS_FRAG_RESPAWN_AGE_ANCHOR,
+    );
+  } else if (options?.emitterTransform && !options?.emitterMask && !options?.emitterList) {
     tail = tail.replace(
       POS_FRAG_RESPAWN_AGE_ANCHOR,
       POS_FRAG_EMITTER_TRANSFORM_SEGMENT + POS_FRAG_RESPAWN_AGE_ANCHOR,
     );
   }
-  if (options?.emitDistribution && !options?.emitterMask && (emitLaw === 'legacy' || emitLaw === 'shape')) {
+  if (options?.emitDistribution && !options?.emitterMask && !emitterListStands && (emitLaw === 'legacy' || emitLaw === 'shape')) {
     // Distribution layer (stage 2, B5): right after the
     // placement, BEFORE the emitter transform segment (the
     // bake's order). Cloud / path placements are source
@@ -1435,6 +1755,20 @@ export function buildPositionFragment(options?: PositionFragmentVariantOptions):
       ? POS_FRAG_EMITTER_TRANSFORM_SEGMENT + POS_FRAG_RESPAWN_AGE_ANCHOR
       : POS_FRAG_RESPAWN_AGE_ANCHOR;
     tail = tail.replace(anchorCombo, POS_FRAG_DIST_SEGMENT + anchorCombo);
+  }
+  if (options?.emitDeform) {
+    // Deform stack (Layer 1 WP8, phase D): the final placed
+    // point, after whichever placement law / distribution /
+    // transform / mask composition stands — every one of
+    // those segments is spliced immediately in front of the
+    // respawn age anchor, so inserting right before the
+    // anchor lands the deform last, exactly like the bake.
+    // Only in this variant — the default TAIL is the
+    // shipped string.
+    tail = tail.replace(
+      POS_FRAG_RESPAWN_AGE_ANCHOR,
+      POS_FRAG_DEFORM_SEGMENT + POS_FRAG_RESPAWN_AGE_ANCHOR,
+    );
   }
   let mid = POS_FRAG_MID;
   // Coupling stage 2: while rigidFree stands, the MID's
@@ -1472,19 +1806,59 @@ export function buildPositionFragment(options?: PositionFragmentVariantOptions):
       .replace(POS_FRAG_THR_NOW_LEGACY, POS_FRAG_THR_NOW_ALLOC)
       .replace(POS_FRAG_THR_PREV_LEGACY, POS_FRAG_THR_PREV_ALLOC);
   }
+  // Spawn event demand (Layer 1 WP4, phase C): the gate's
+  // two threshold expressions gain the cumulative event
+  // demand due at their time, on top of whichever rate form
+  // stands (stock or allocator). Only in this variant.
+  if (options?.spawnEventDemand) {
+    mid = mid
+      .replace(
+        options?.spawnAlloc ? POS_FRAG_THR_NOW_ALLOC : POS_FRAG_THR_NOW_LEGACY,
+        options?.spawnAlloc ? POS_FRAG_THR_NOW_ALLOC_DEMAND : POS_FRAG_THR_NOW_DEMAND,
+      )
+      .replace(
+        options?.spawnAlloc ? POS_FRAG_THR_PREV_ALLOC : POS_FRAG_THR_PREV_LEGACY,
+        options?.spawnAlloc ? POS_FRAG_THR_PREV_ALLOC_DEMAND : POS_FRAG_THR_PREV_DEMAND,
+      );
+  }
+  // Lifetime jitter (Layer 1 WP4, phase C): the multiplier
+  // helpers + uniform land right before main(), after every
+  // stock helper they rely on (hash1). Only in this variant.
+  if (options?.ageJitter) {
+    mid = mid.replace(POS_FRAG_MAIN_ANCHOR, POS_FRAG_AGE_JITTER_SEGMENT + POS_FRAG_MAIN_ANCHOR);
+  }
+  // Local time (Layer 1 WP9, phase D): the factor helper
+  // lands right before main(), after kaloAttrChannel /
+  // kaloGroupMembership. Only in this variant.
+  if (options?.localTime) {
+    mid = mid.replace(POS_FRAG_MAIN_ANCHOR, POS_FRAG_LOCAL_TIME_FN + POS_FRAG_MAIN_ANCHOR);
+  }
+  // Emitter list (Layer 1 WP4, phase D2): the fetch +
+  // assignment-hash helpers land right before main(), after
+  // hash1. Only in this variant.
+  if (options?.emitterList) {
+    mid = mid.replace(POS_FRAG_MAIN_ANCHOR, POS_FRAG_EMITTER_LIST_SEGMENT + POS_FRAG_MAIN_ANCHOR);
+  }
   return POS_FRAG_HEAD
     + (options?.particleRules ? POS_FRAG_PARTICLE_RULES_UNIFORMS : '')
     + (options?.rigidFree ? POS_FRAG_RIGID_FREE_UNIFORMS : '')
     + (options?.particleRulesLive || options?.spawnRuleGate ? (options?.particleRulesLiveMerged ? POS_FRAG_PARTICLE_RULES_LIVE_UNIFORMS_MERGED : POS_FRAG_PARTICLE_RULES_LIVE_UNIFORMS) : '')
     + (options?.spawnAlloc ? POS_FRAG_SPAWN_ALLOC_UNIFORMS : '')
+    + (options?.spawnEventDemand ? POS_FRAG_SPAWN_EVENT_DEMAND_UNIFORMS : '')
     + (options?.spawnRuleGate ? POS_FRAG_SPAWN_RULE_GATE_UNIFORMS : '')
-    + (options?.emitterShape ? POS_FRAG_EMITTER_SHAPE_UNIFORMS + EMIT_SHAPE_GLSL : '')
+    + (options?.emitterShape ? POS_FRAG_EMITTER_SHAPE_UNIFORMS : '')
+    + (options?.emitterShape || options?.emitterList ? EMIT_SHAPE_GLSL : '')
     + (options?.emitterTransform ? POS_FRAG_EMITTER_TRANSFORM_UNIFORMS : '')
     + (options?.emitterCloud ? POS_FRAG_EMITTER_CLOUD_UNIFORMS : '')
     + (options?.emitterPath ? POS_FRAG_EMITTER_PATH_UNIFORMS : '')
     + (options?.emitterPathAsset ? POS_FRAG_EMITTER_PATH_ASSET_UNIFORMS : '')
+    + (options?.emitterList && !options?.emitterPathAsset ? POS_FRAG_EMIT_COL_UNIFORMS : '')
+    + (options?.emitterList ? POS_FRAG_EMITTER_LIST_UNIFORMS : '')
     + (options?.emitterMask ? POS_FRAG_EMITTER_MASK_UNIFORMS : '')
     + (options?.emitDistribution ? POS_FRAG_DIST_UNIFORMS : '')
+    + (options?.emitDeform && options?.emitDeformFfd ? POS_FRAG_DEFORM_COL_UNIFORMS : '')
+    + (options?.emitDeform ? posFragDeformUniforms(!!options?.emitDeformFfd) : '')
+    + (options?.localTime ? POS_FRAG_LOCAL_TIME_UNIFORMS : '')
     + (options?.shaderSeed ? POS_FRAG_SEED_UNIFORMS : '')
     + (projection ? POS_FRAG_PROJECTION_UNIFORMS : '')
     + (cell ? POS_FRAG_PROJECTION_CELL : '')

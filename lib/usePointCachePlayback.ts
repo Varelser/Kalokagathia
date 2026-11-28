@@ -59,6 +59,8 @@ export function usePointCachePlayback(args: {
   const retimerEndFrame = retimer.pointCacheRetimerEndFrame;
   const retimerReverse = retimer.pointCacheRetimerReverse;
   const retimerInterpolation = retimer.pointCacheRetimerInterpolation;
+  const retimerSpeedCurveEnabled = retimer.pointCacheRetimerSpeedCurveEnabled;
+  const retimerSpeedCurvePoints = retimer.pointCacheRetimerSpeedCurvePoints;
   const storeCache = usePointCache();
   const bundledCache = useMemo(
     () => (bundledSample && !storeCache ? buildBundledSamplePointCache() : null),
@@ -97,6 +99,8 @@ export function usePointCachePlayback(args: {
       pointCacheRetimerEndFrame: retimerEndFrame,
       pointCacheRetimerReverse: retimerReverse,
       pointCacheRetimerInterpolation: retimerInterpolation,
+      pointCacheRetimerSpeedCurveEnabled: retimerSpeedCurveEnabled,
+      pointCacheRetimerSpeedCurvePoints: retimerSpeedCurvePoints,
     }, source.manifest.frameCount);
     const resolvedRetimer: ResolvedCacheRetimer | null = retimerResolution.ok ? retimerResolution.resolved : null;
 
@@ -155,5 +159,5 @@ export function usePointCachePlayback(args: {
       cancelAnimationFrame(raf);
       setPointCachePlaybackState({ frameFloat: 0, running: false, suspended: false });
     };
-  }, [enabled, loop, source, retimerEnabled, retimerRate, retimerStartFrame, retimerEndFrame, retimerReverse, retimerInterpolation]);
+  }, [enabled, loop, source, retimerEnabled, retimerRate, retimerStartFrame, retimerEndFrame, retimerReverse, retimerInterpolation, retimerSpeedCurveEnabled, retimerSpeedCurvePoints]);
 }

@@ -7,6 +7,10 @@ import {
   buildDesignerBlockModelFromConfig,
   createDesignerBlockRecord,
   defaultDesignerBlocksStorage,
+  designerBlockModelDeformOps,
+  designerBlockModelEmitters,
+  designerBlockModelHasDeformOps,
+  designerBlockModelHasEmitters,
   designerBlockModelToConfigUpdates,
   layoutDesignerBlockModel,
   loadDesignerBlockRecords,
@@ -39,6 +43,16 @@ import {
  * the entities' own serializers — the same write-back the
  * rule editor performs — so nothing else in the config, the
  * render path or the preset library is touched.
+ *
+ * Layer 1 WP10 phase C wires the phase-B extension through
+ * this section: the live model is now built from all four
+ * keys, so a composition saved while the config carries an
+ * emitter configuration (gpgpuEmitters) or an emission
+ * deform stack (gpgpuEmitDeform) carries them on its source
+ * node, and applying writes those two keys back too — only
+ * when the composition speaks for them. With both keys at
+ * their '' defaults the model, the saved form and the
+ * write-back are exactly the pre-WP10 behaviour.
  */
 
 const KIND_LABEL: Record<DesignerBlockModel['nodes'][number]['kind'], string> = {
@@ -118,11 +132,15 @@ export const DesignerSection: React.FC<{
     () => buildDesignerBlockModelFromConfig({
       gpgpuParticleRules: config.gpgpuParticleRules,
       gpgpuGroupsData: config.gpgpuGroupsData,
+      gpgpuEmitters: config.gpgpuEmitters,
+      gpgpuEmitDeform: config.gpgpuEmitDeform,
     }),
-    [config.gpgpuParticleRules, config.gpgpuGroupsData],
+    [config.gpgpuParticleRules, config.gpgpuGroupsData, config.gpgpuEmitters, config.gpgpuEmitDeform],
   );
   const ruleCount = model.nodes.filter((node) => node.kind === 'rule').length;
   const groupCount = model.nodes.filter((node) => node.kind === 'group' && !node.dangling).length;
+  const emitterCount = designerBlockModelEmitters(model).length;
+  const deformCount = designerBlockModelDeformOps(model).length;
 
   const persist = (next: DesignerBlockRecord[]): boolean => {
     const storage = defaultDesignerBlocksStorage();
@@ -147,7 +165,11 @@ export const DesignerSection: React.FC<{
     const record = createDesignerBlockRecord({ name: name || 'Designer Blocks', model });
     if (persist([record, ...records])) {
       setName('');
-      setStatus(`現在の構成を「${record.name}」として保存しました（ルール ${ruleCount} 件・グループ ${groupCount} 件）。`);
+      const attachments = [
+        designerBlockModelHasEmitters(record.model) ? `エミッタ ${emitterCount} 件` : null,
+        designerBlockModelHasDeformOps(record.model) ? `変形 ${deformCount} 件` : null,
+      ].filter(Boolean).join('・');
+      setStatus(`現在の構成を「${record.name}」として保存しました（ルール ${ruleCount} 件・グループ ${groupCount} 件${attachments ? `・${attachments}` : ''}）。`);
     }
   };
 
@@ -159,7 +181,24 @@ export const DesignerSection: React.FC<{
     }
     write('gpgpuParticleRules', updates.gpgpuParticleRules);
     write('gpgpuGroupsData', updates.gpgpuGroupsData);
-    setStatus(`「${record.name}」を適用しました。ルールとグループだけが書き戻され、他の設定には触れていません。`);
+    // WP10 phase C: the emitter / deform keys are written back
+    // ONLY when the composition carries them (the lib omits
+    // both fields otherwise) — a composition that does not
+    // speak for them leaves both keys exactly as they are.
+    const wrote: string[] = [];
+    if (updates.gpgpuEmitters !== undefined) {
+      write('gpgpuEmitters', updates.gpgpuEmitters);
+      wrote.push('エミッタ構成');
+    }
+    if (updates.gpgpuEmitDeform !== undefined) {
+      write('gpgpuEmitDeform', updates.gpgpuEmitDeform);
+      wrote.push('変形スタック');
+    }
+    setStatus(
+      wrote.length > 0
+        ? `「${record.name}」を適用しました。ルールとグループに加え、構成が持つ${wrote.join('と')}も書き戻されました。他の設定には触れていません。`
+        : `「${record.name}」を適用しました。ルールとグループだけが書き戻され、他の設定には触れていません。`,
+    );
   };
 
   const handleDelete = (record: DesignerBlockRecord) => {
@@ -172,12 +211,12 @@ export const DesignerSection: React.FC<{
     <section>
       <SectionTitle icon={<Workflow size={12} />}>Designer · ブロック構成</SectionTitle>
       <p className="text-[11px] leading-relaxed text-white/45 mb-4">
-        現在のルールとグループを「ブロック構成」として眺める面です（第4段・案3ハイブリッドの第1弾）。下の図は読み取り専用で、左が粒子プール、中央がグループ、右がルール（上から評価順）です。組み立て自体は従来のルール編集・グループ編集で行い、図はその変更にそのまま追随します。構成に名前を付けて保存でき、保存物はルールとグループだけを持つ独立の保存領域に置かれます（プリセットとは混ざりません）。適用するとルールとグループだけが書き戻され、他の設定・描画には触れません。保存形式（designer-blocks-v1）は第5段の配線キャンバスと互換なグラフ形式（ノード／エッジ）で、第5段でそのまま編集可能なキャンバスへ育てる前提です。
+        現在のルールとグループを「ブロック構成」として眺める面です（第4段・案3ハイブリッドの第1弾）。下の図は読み取り専用で、左が粒子プール、中央がグループ、右がルール（上から評価順）です。組み立て自体は従来のルール編集・グループ編集で行い、図はその変更にそのまま追随します。構成に名前を付けて保存でき、保存物はルールとグループだけを持つ独立の保存領域に置かれます（プリセットとは混ざりません）。適用するとルールとグループだけが書き戻され、他の設定・描画には触れません。現在の設定にエミッタ構成や放出変形スタックがある場合は、それらも構成の一部として一緒に保存され、適用時に書き戻されます（構成が持たない場合は両方のキーに触れません）。保存形式（designer-blocks-v1）は第5段の配線キャンバスと互換なグラフ形式（ノード／エッジ）で、第5段でそのまま編集可能なキャンバスへ育てる前提です。
       </p>
       <div className="mb-3">
         <FlowDiagram model={model} />
         <p className="text-[10px] text-white/35 mt-1">
-          ルール {ruleCount} 件・グループ {groupCount} 件。破線は参照（ルール→グループ／合成グループの構成元）、実線はデータの流れと評価順です。無効なルールと未定義のグループ参照は薄く表示されます。
+          ルール {ruleCount} 件・グループ {groupCount} 件{emitterCount > 0 ? `・エミッタ ${emitterCount} 件` : ''}{deformCount > 0 ? `・変形 ${deformCount} 件` : ''}。破線は参照（ルール→グループ／合成グループの構成元）、実線はデータの流れと評価順です。無効なルールと未定義のグループ参照は薄く表示されます。
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -202,11 +241,13 @@ export const DesignerSection: React.FC<{
           {records.map((record) => {
             const rules = record.model.nodes.filter((node) => node.kind === 'rule').length;
             const groups = record.model.nodes.filter((node) => node.kind === 'group' && !node.dangling).length;
+            const emitters = designerBlockModelHasEmitters(record.model) ? designerBlockModelEmitters(record.model).length : 0;
+            const deformOps = designerBlockModelHasDeformOps(record.model) ? designerBlockModelDeformOps(record.model).length : 0;
             return (
               <div key={record.id} className="flex flex-wrap items-center gap-2 rounded border border-white/10 px-2 py-1.5">
                 <span className="text-[11px] text-white/85">{record.name}</span>
                 <span className="text-[10px] text-white/40">
-                  {record.kind === 'template' ? '雛形' : '構成'} · ルール {rules} · グループ {groups} · {new Date(record.createdAt).toLocaleDateString()}
+                  {record.kind === 'template' ? '雛形' : '構成'} · ルール {rules} · グループ {groups}{emitters > 0 ? ` · エミッタ ${emitters}` : ''}{deformOps > 0 ? ` · 変形 ${deformOps}` : ''} · {new Date(record.createdAt).toLocaleDateString()}
                 </span>
                 <span className="flex-1" />
                 <button

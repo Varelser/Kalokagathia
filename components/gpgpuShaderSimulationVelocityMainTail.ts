@@ -492,6 +492,12 @@ export interface VelocityTailVariantOptions {
   // byte-identical.
   ageFreeVelocity?: boolean;
   ageFreeForce?: boolean;
+  // Layer 1 WP9 (phase D): local time — the built-in force
+  // delta captured above (velAfterForces − velForceBase) is
+  // scaled by the particle's group time factor, spliced in
+  // right before the Phase AC force block. Only in this
+  // variant; the stock tail string is byte-identical.
+  localTime?: boolean;
 }
 
 const VEL_FRAG_TAIL_FINAL_WRITE = '    gl_FragColor = vec4(vel, phaseState);';
@@ -502,6 +508,28 @@ const VEL_FRAG_TAIL_AGE_CURVE5_VELOCITY_CALL = /* glsl */ `kaloEvalCurve5(ageNor
 const VEL_FRAG_TAIL_AGE_FREE_VELOCITY_CALL = /* glsl */ `kaloEvalAgeFreeVelocity(ageNorm)`;
 
 const VEL_FRAG_TAIL_OUTPUT_LINE = /* glsl */ `    gl_FragColor = vec4(vel, phaseState);`;
+
+const VEL_FRAG_TAIL_FORCE_OVER_LIFETIME_ANCHOR = /* glsl */ `    // Force over Lifetime (Phase AC): scale only the built-in
+`;
+const VEL_FRAG_TAIL_LOCAL_TIME_BLOCK = /* glsl */ `    // Local time (Layer 1 WP9, phase D): the built-in force
+    // delta captured above is scaled by this particle's
+    // group time factor — the Phase AC capture discipline
+    // (a factor of exactly 1 reconstructs vel bit-for-bit),
+    // applied BEFORE the force-over-lifetime curve below so
+    // the curve scales the local-time delta like every
+    // other built-in force. velAfterForces is re-captured
+    // so the curve reads the scaled delta. The passes hold
+    // uLocalTimeCount at 0 while the attribute texture is
+    // missing, which skips the block outright. TS twin:
+    // localTimeScaleForceDelta in lib/gpgpuLocalTime.ts.
+    if (uLocalTimeCount > 0) {
+      float ltFactor = kaloLocalTimeFactor(attrData);
+      vec3 ltDelta = velAfterForces - velForceBase;
+      vel = velForceBase + ltDelta * ltFactor + (vel - velAfterForces);
+      velAfterForces = velForceBase + ltDelta * ltFactor;
+    }
+
+`;
 const VEL_FRAG_TAIL_TARGET_SPEED_BLOCK = /* glsl */ `    // Target speed (Grammar 2.0 stage 2, B3): the tail's
     // final magnitude setting — the pool previously had only
     // upper clamps (the hard 350 ceiling and gpgpuMaxSpeed).
@@ -560,6 +588,12 @@ export function buildVelocityTail(options?: VelocityTailVariantOptions): string 
   }
   if (options?.ageFreeVelocity) {
     rest = rest.replace(VEL_FRAG_TAIL_AGE_CURVE5_VELOCITY_CALL, VEL_FRAG_TAIL_AGE_FREE_VELOCITY_CALL);
+  }
+  if (options?.localTime) {
+    rest = rest.replace(
+      VEL_FRAG_TAIL_FORCE_OVER_LIFETIME_ANCHOR,
+      VEL_FRAG_TAIL_LOCAL_TIME_BLOCK + VEL_FRAG_TAIL_FORCE_OVER_LIFETIME_ANCHOR,
+    );
   }
   return VEL_FRAG_TAIL_HEAD
     + (options?.flip3dCouple ? VEL_FRAG_TAIL_FLIP3D_COUPLE : '')

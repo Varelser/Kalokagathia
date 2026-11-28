@@ -1,6 +1,7 @@
 import type { ParticleConfig } from '../types';
 import { configUsesEdgeSupply } from './mapSourceSupply';
 import { validateCustomPostGlslCode } from './customPostGlsl';
+import { validatePostGlslReplacementCode } from './glslReplacementPoints';
 import { motionBlurOn } from './motionBlur';
 
 export type PostFxStageId =
@@ -155,10 +156,18 @@ export function getActivePostFxStageIds(config: ParticleConfig): PostFxStageId[]
   // failure is handled in the composer component, which keeps
   // the previously working fragment (the custom-force fallback
   // rule), so this gate stays a pure function of the config.
+  // Layer 1 WP11 phase C: the stage also exists while the
+  // full-fragment replacement form (phase D2's slot) is the
+  // authored one — enabled with a non-empty, statically valid
+  // replacement code. Either form alone inserts the one stage;
+  // the composer component decides which form renders.
   if (
     config.postCustomGlslEnabled
-    && config.postCustomGlslCode.trim().length > 0
-    && validateCustomPostGlslCode(config.postCustomGlslCode).ok
+    && ((config.postCustomGlslCode.trim().length > 0
+      && validateCustomPostGlslCode(config.postCustomGlslCode).ok)
+    || (config.postCustomGlslReplacementEnabled
+      && config.postCustomGlslReplacementCode.trim().length > 0
+      && validatePostGlslReplacementCode(config.postCustomGlslReplacementCode).ok))
   ) {
     active.add('custom-glsl-post');
   }

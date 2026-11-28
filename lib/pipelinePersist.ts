@@ -67,13 +67,38 @@
  * gate draft). A graph with nodes that compiles to no rules
  * is NOT empty: its graph key is kept verbatim.
  *
- * Slot assignments (slice S2) are surfaced in the graph
- * save result but NOT written to config here: there is no
- * gpgpuAttrDynExprs key — the dyn channel re-evaluates
- * gpgpuAttrExprs, and writing those expressions plus
- * enabling the dyn pass is execution wiring, which is a
- * later slice's scope. This module never touches the
- * attribute keys.
+ * Slot assignments (slice S2) are APPLIED by the graph
+ * save (layer 1 WP2 phase A — the wiring slice the S2/S3
+ * headers deferred to): there is no gpgpuAttrDynExprs
+ * key — the dyn channel re-evaluates gpgpuAttrExprs — so
+ * a claimed slot is written through the EXISTING keys
+ * gpgpuAttrNames / gpgpuAttrExprs, in the same patch as
+ * the three owned keys. The discipline:
+ *   - Only the graph save applies slots. A row-list core
+ *     contains no expression / channel-write output
+ *     requests, so the row-list save never produces an
+ *     attribute patch.
+ *   - No assignments -> no attribute keys in the patch
+ *     at all: a graph that writes no channels saves
+ *     exactly as before this slice, bit for bit.
+ *   - A claimed slot is the graph's: its name and (when
+ *     the node carries one) its expression win — the
+ *     last-save-wins discipline above, scoped to the
+ *     claimed slots. An assignment with an EMPTY
+ *     expression claims the name but does not erase a
+ *     hand-written expression already on that slot: an
+ *     empty expression carries no value, and clearing
+ *     would be silent data loss.
+ *   - Unclaimed slots are preserved from the current
+ *     config untouched (names and expressions alike).
+ *   - Rejections apply nothing and stay surfaced on the
+ *     save result (slots.rejections, carrying the
+ *     compiler's reason codes) — never silently dropped.
+ *   - A save never flips the dyn / feedback enable keys:
+ *     applying writes names + expressions; whether the
+ *     dyn channel runs stays the existing
+ *     gpgpuAttrDynEnabled / gpgpuAttrFeedbackEnabled
+ *     settings, owned by the attribute surface.
  */
 
 import {
@@ -98,20 +123,35 @@ import {
   isDefaultGpgpuForceOrder,
   serializeGpgpuForceOrder,
 } from './gpgpuForceOrder';
+import { normalizeAttrExprs } from './gpgpuAttributes';
 
 // ---------------------------------------------------------------------------
 // Config shape
 // ---------------------------------------------------------------------------
 
-/** The config keys this slice owns. All default ''. */
+/** The config keys this slice reads and writes. The first
+ *  three are owned (all default ''); the attribute pair is
+ *  not owned — it is read as the current slot state and
+ *  written only when a graph save applies slot claims. */
 export interface PipelineConfigSlice {
   gpgpuPipelineGraph?: string;
   gpgpuParticleRulesLive?: string;
   gpgpuForceOrder?: string;
+  gpgpuAttrNames?: string[];
+  gpgpuAttrExprs?: string[];
 }
 
-/** A complete save: all three keys, always written together. */
-export type PipelineConfigPatch = Required<PipelineConfigSlice>;
+/** A complete save: the three owned keys, always written
+ *  together. The attribute keys are present ONLY when the
+ *  saved graph claimed attribute slots (see the header's
+ *  slot discipline); their absence means "untouched". */
+export type PipelineConfigPatch = {
+  gpgpuPipelineGraph: string;
+  gpgpuParticleRulesLive: string;
+  gpgpuForceOrder: string;
+  gpgpuAttrNames?: string[];
+  gpgpuAttrExprs?: string[];
+};
 
 const UNSET_PATCH: PipelineConfigPatch = {
   gpgpuPipelineGraph: '',
@@ -179,8 +219,34 @@ export interface PipelineGraphSaveResult {
   patch: PipelineConfigPatch | null;
   issues: PipelineCompileIssue[];
   opaqueNodeIds: string[];
-  /** Slot assignment for the wiring slice; not applied here. */
+  /** Slot assignment; when it claims slots, the same
+   *  assignment is also applied into the patch's
+   *  attribute keys. */
   slots: PipelineSlotAssignmentResult | null;
+}
+
+/**
+ * The config form of a slot assignment: the proposed
+ * slot names, and the current expressions with each
+ * claimed slot's expression written over them (an empty
+ * assignment expression leaves the slot's existing
+ * expression in place — see the header). Returns null
+ * when the assignment claimed nothing: no attribute
+ * keys enter the patch in that case.
+ */
+export function pipelineSlotAssignmentAttrPatch(
+  slots: PipelineSlotAssignmentResult | null,
+  currentExprs?: readonly string[] | unknown,
+): { gpgpuAttrNames: string[]; gpgpuAttrExprs: string[] } | null {
+  if (slots === null || slots.assignments.length === 0) return null;
+  const exprs = normalizeAttrExprs(currentExprs);
+  for (const assignment of slots.assignments) {
+    if (assignment.expr.trim().length > 0) exprs[assignment.slot] = assignment.expr;
+  }
+  return {
+    gpgpuAttrNames: [...slots.names],
+    gpgpuAttrExprs: normalizeAttrExprs(exprs),
+  };
 }
 
 /**
@@ -195,6 +261,7 @@ export function savePipelineGraphToConfig(
   current?: {
     attrNames?: readonly string[] | unknown;
     attrNames2?: readonly string[] | unknown;
+    attrExprs?: readonly string[] | unknown;
   },
 ): PipelineGraphSaveResult {
   const validated = validatePipelineGraph(graph);
@@ -219,13 +286,19 @@ export function savePipelineGraphToConfig(
     };
   }
   const compiled = compilePipelineGraph(valid, current);
+  const patch: PipelineConfigPatch = {
+    gpgpuPipelineGraph: serializePipelineGraph(valid),
+    gpgpuParticleRulesLive: serializeLiveParticleRules(compiled.rules),
+    gpgpuForceOrder: compiled.forceOrderKey,
+  };
+  const attrPatch = pipelineSlotAssignmentAttrPatch(compiled.slots, current?.attrExprs);
+  if (attrPatch !== null) {
+    patch.gpgpuAttrNames = attrPatch.gpgpuAttrNames;
+    patch.gpgpuAttrExprs = attrPatch.gpgpuAttrExprs;
+  }
   return {
     ok: true,
-    patch: {
-      gpgpuPipelineGraph: serializePipelineGraph(valid),
-      gpgpuParticleRulesLive: serializeLiveParticleRules(compiled.rules),
-      gpgpuForceOrder: compiled.forceOrderKey,
-    },
+    patch,
     issues: compiled.issues,
     opaqueNodeIds: compiled.opaqueNodeIds,
     slots: compiled.slots,

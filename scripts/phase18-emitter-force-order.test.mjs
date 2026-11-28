@@ -79,13 +79,16 @@ const pos = [{ x: 1, y: 2, z: 3 }, { x: 10, y: 0, z: 0 }, { x: 0, y: 5, z: 0 }, 
   // Grammar 2.0 stage 2 (B1): 'field-instances' joined identically (24 names).
   // Grammar 2.0 stage 2 (B3): 'rel-drag' joined identically (25 names).
   // Grammar 2.0 stage 2 (B7): 'meander' joined identically (26 names).
-  check('default order names count 26', GPGPU_FORCE_CHUNK_NAMES.length === 26);
+  // Layer 1 WP5 phase D (2026-11-28): 'surface-tension' joined
+  // identically (27 names) — variant-gated like the B1/B3/B7
+  // chunks, so every variant-off expectation below is unchanged.
+  check('default order names count 27', GPGPU_FORCE_CHUNK_NAMES.length === 27);
   check('normalize empty == default', JSON.stringify(normalizeGpgpuForceOrder('')) === JSON.stringify([...GPGPU_FORCE_CHUNK_NAMES]));
   check('isDefault empty/undefined/full', isDefaultGpgpuForceOrder('') && isDefaultGpgpuForceOrder(undefined) && isDefaultGpgpuForceOrder(GPGPU_FORCE_CHUNK_NAMES.join(',')));
   const partial = normalizeGpgpuForceOrder('wind,curl');
-  check('partial keeps head, appends missing in default order', partial[0] === 'wind' && partial[1] === 'curl' && partial.length === 26 && partial[2] === 'pyro-buoyancy', partial.join(','));
+  check('partial keeps head, appends missing in default order', partial[0] === 'wind' && partial[1] === 'curl' && partial.length === 27 && partial[2] === 'pyro-buoyancy', partial.join(','));
   const messy = normalizeGpgpuForceOrder('bogus,wind,wind,, curl ,nope');
-  check('unknown/duplicate dropped', messy.filter((n) => n === 'wind').length === 1 && !messy.includes('bogus') && messy.length === 26, messy.join(','));
+  check('unknown/duplicate dropped', messy.filter((n) => n === 'wind').length === 1 && !messy.includes('bogus') && messy.length === 27, messy.join(','));
   check('serialize default == empty string', serializeGpgpuForceOrder('') === '' && serializeGpgpuForceOrder('wind,curl').startsWith('wind,curl,'));
   check('non-default detected', !isDefaultGpgpuForceOrder('wind,curl'));
 }
@@ -98,7 +101,7 @@ const pos = [{ x: 1, y: 2, z: 3 }, { x: 10, y: 0, z: 0 }, { x: 0, y: 5, z: 0 }, 
   // Phase 20 stage 2: 'steer-seek' is variant-gated — the
   // variant-off assembly (VEL_FRAG_MAIN_FORCES) concatenates
   // every chunk EXCEPT it, so the manual concat excludes it.
-  const manualConcat = VEL_FRAG_MAIN_FORCES_HEAD + GPGPU_FORCE_CHUNK_NAMES.filter((n) => n !== 'steer-seek' && n !== 'attractor-2' && n !== 'attractor-3' && n !== 'attractor-4' && n !== 'field-instances' && n !== 'rel-drag' && n !== 'meander').map((n) => VEL_FRAG_FORCE_CHUNKS[n]).join('');
+  const manualConcat = VEL_FRAG_MAIN_FORCES_HEAD + GPGPU_FORCE_CHUNK_NAMES.filter((n) => n !== 'steer-seek' && n !== 'attractor-2' && n !== 'attractor-3' && n !== 'attractor-4' && n !== 'field-instances' && n !== 'rel-drag' && n !== 'meander' && n !== 'surface-tension').map((n) => VEL_FRAG_FORCE_CHUNKS[n]).join('');
   check('head + default chunks (variant-gated chunks out) == VEL_FRAG_MAIN_FORCES', manualConcat === VEL_FRAG_MAIN_FORCES);
   check('steer-seek chunk absent from variant-off assembly', !VEL_FRAG_MAIN_FORCES.includes(VEL_FRAG_FORCE_CHUNKS['steer-seek']));
   check('every chunk non-empty and registry complete', GPGPU_FORCE_CHUNK_NAMES.every((n) => typeof VEL_FRAG_FORCE_CHUNKS[n] === 'string' && VEL_FRAG_FORCE_CHUNKS[n].length > 0));
@@ -115,10 +118,10 @@ const pos = [{ x: 1, y: 2, z: 3 }, { x: 10, y: 0, z: 0 }, { x: 0, y: 5, z: 0 }, 
     // 'steer-seek' and 'attractor-2' are variant-gated: absent
     // without their variants, even when the order names them
     // (checked just below).
-    if (name === 'steer-seek' || name === 'attractor-2' || name === 'attractor-3' || name === 'attractor-4' || name === 'field-instances' || name === 'rel-drag' || name === 'meander') continue;
+    if (name === 'steer-seek' || name === 'attractor-2' || name === 'attractor-3' || name === 'attractor-4' || name === 'field-instances' || name === 'rel-drag' || name === 'meander' || name === 'surface-tension') continue;
     if (!frag.includes(VEL_FRAG_FORCE_CHUNKS[name])) { check(`chunk ${name} present in reversed fragment`, false); }
   }
-  check('all chunks present in reversed fragment', GPGPU_FORCE_CHUNK_NAMES.every((n) => n === 'steer-seek' || n === 'attractor-2' || n === 'attractor-3' || n === 'attractor-4' || n === 'field-instances' || n === 'rel-drag' || n === 'meander' || frag.includes(VEL_FRAG_FORCE_CHUNKS[n])));
+  check('all chunks present in reversed fragment', GPGPU_FORCE_CHUNK_NAMES.every((n) => n === 'steer-seek' || n === 'attractor-2' || n === 'attractor-3' || n === 'attractor-4' || n === 'field-instances' || n === 'rel-drag' || n === 'meander' || n === 'surface-tension' || frag.includes(VEL_FRAG_FORCE_CHUNKS[n])));
   check('steer-seek chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['steer-seek']));
   check('attractor-2 chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['attractor-2']));
   check('attractor-3 chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['attractor-3']));
@@ -126,6 +129,7 @@ const pos = [{ x: 1, y: 2, z: 3 }, { x: 10, y: 0, z: 0 }, { x: 0, y: 5, z: 0 }, 
   check('field-instances chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['field-instances']));
   check('rel-drag chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['rel-drag']));
   check('meander chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['meander']));
+  check('surface-tension chunk absent from reversed fragment without the variant', !frag.includes(VEL_FRAG_FORCE_CHUNKS['surface-tension']));
   const windAt = frag.indexOf(VEL_FRAG_FORCE_CHUNKS['wind']);
   const curlAt = frag.indexOf(VEL_FRAG_FORCE_CHUNKS['curl']);
   const defWindAt = SIM_VEL_FRAG.indexOf(VEL_FRAG_FORCE_CHUNKS['wind']);

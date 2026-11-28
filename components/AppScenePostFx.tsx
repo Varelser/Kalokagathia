@@ -8,11 +8,19 @@ import { getOrderedActivePostFxStageIds } from '../lib/postFxStack';
 import { SAFE_MODE_HEAVY_POST_STAGES, useSafeMode } from '../lib/safeMode';
 import { compileCheckShader } from '../lib/glslInjection';
 import {
-  buildCustomPostGlslHarness,
+  buildCustomPostStageHarness,
+  customPostStageLabel,
+  resolveCustomPostGlslStages,
   setCustomPostGlslStatus,
   validateCustomPostGlslCode,
   CUSTOM_POST_GLSL_CHECK_VERTEX,
 } from '../lib/customPostGlsl';
+import {
+  POST_GLSL_REPLACEMENT_CONTRACT,
+  setPostGlslReplacementStatus,
+  validatePostGlslReplacementCode,
+} from '../lib/glslReplacementPoints';
+import { resolveGlslSharedSnippetDefs } from '../lib/glslSharedSnippets';
 import { FeedbackPass } from './feedbackPass';
 import { KaleidoscopePass } from './kaleidoscopePass';
 import { SlitScanPass } from './slitScanPass';
@@ -269,6 +277,41 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
   const gl = useThree((state) => state.gl);
   const appliedPostCodeRef = React.useRef<string | null>(null);
   React.useEffect(() => {
+    // Full-fragment replacement form (Layer 1 WP11 phases
+    // D2/C): while the replacement is enabled with non-empty
+    // code, the user code IS the whole post fragment — the
+    // same validate + compile-check + swap discipline,
+    // reported through the slot's own status store. The
+    // uLumaLock uniform is still supplied (honouring it is
+    // the code's own choice, per the slot's contract). With
+    // the replacement disabled or empty, the snippet flow
+    // below runs exactly as before.
+    const replaceCode = config.postCustomGlslReplacementEnabled ? config.postCustomGlslReplacementCode : '';
+    if (replaceCode.trim()) {
+      const replaceKey = `replace|${replaceCode}`;
+      if (appliedPostCodeRef.current !== replaceKey) {
+        const validation = validatePostGlslReplacementCode(replaceCode);
+        if (!validation.ok) {
+          setPostGlslReplacementStatus({ state: 'error', message: validation.error ?? 'invalid code' });
+          return;
+        }
+        const check = compileCheckShader(
+          gl.getContext() as WebGL2RenderingContext,
+          CUSTOM_POST_GLSL_CHECK_VERTEX,
+          POST_GLSL_REPLACEMENT_CONTRACT.buildHarness(replaceCode),
+        );
+        if (!check.ok) {
+          setPostGlslReplacementStatus({ state: 'error', message: check.error ?? 'compile failed' });
+          return;
+        }
+        customGlslPostPass.setUserFragment(POST_GLSL_REPLACEMENT_CONTRACT.buildFragment(replaceCode));
+        appliedPostCodeRef.current = replaceKey;
+        setPostGlslReplacementStatus({ state: 'active' });
+      }
+      setCustomPostGlslStatus({ state: 'inactive' });
+      return;
+    }
+    setPostGlslReplacementStatus({ state: 'inactive' });
     const code = config.postCustomGlslEnabled ? config.postCustomGlslCode : '';
     if (!code.trim()) {
       if (appliedPostCodeRef.current !== null) {
@@ -278,25 +321,44 @@ export const AppScenePostFx: React.FC<{ config: ParticleConfig }> = ({ config })
       setCustomPostGlslStatus({ state: 'inactive' });
       return;
     }
-    if (appliedPostCodeRef.current === code) return;
+    const applyKey = `snippet|${code}|${config.glslSharedSnippets}`;
+    if (appliedPostCodeRef.current === applyKey) return;
     const validation = validateCustomPostGlslCode(code);
     if (!validation.ok) {
       setCustomPostGlslStatus({ state: 'error', message: validation.error ?? 'invalid code' });
       return;
     }
-    const check = compileCheckShader(
-      gl.getContext() as WebGL2RenderingContext,
-      CUSTOM_POST_GLSL_CHECK_VERTEX,
-      buildCustomPostGlslHarness(code),
-    );
-    if (!check.ok) {
-      setCustomPostGlslStatus({ state: 'error', message: check.error ?? 'compile failed' });
+    // WP11 phase D1: a document may author several stages.
+    // WP11 phase C: every stage first resolves the shared
+    // snippet definitions under its own contract kind, then
+    // is harness-compiled; a failure in any stage keeps the
+    // whole previously working stage set active. A document
+    // that uses no definitions resolves byte-identically.
+    const resolved = resolveCustomPostGlslStages(code, resolveGlslSharedSnippetDefs(config.glslSharedSnippets));
+    if (!resolved.ok || !resolved.stages || resolved.stages.length === 0) {
+      setCustomPostGlslStatus({ state: 'error', message: resolved.error ?? 'invalid code' });
       return;
     }
-    customGlslPostPass.setUserCode(code);
-    appliedPostCodeRef.current = code;
+    for (const stage of resolved.stages) {
+      const check = compileCheckShader(
+        gl.getContext() as WebGL2RenderingContext,
+        CUSTOM_POST_GLSL_CHECK_VERTEX,
+        buildCustomPostStageHarness(stage),
+      );
+      if (!check.ok) {
+        setCustomPostGlslStatus({
+          state: 'error',
+          message: resolved.stages.length > 1 || stage.name !== null
+            ? `${customPostStageLabel(stage)}: ${check.error ?? 'compile failed'}`
+            : (check.error ?? 'compile failed'),
+        });
+        return;
+      }
+    }
+    customGlslPostPass.setUserStages(resolved.stages);
+    appliedPostCodeRef.current = applyKey;
     setCustomPostGlslStatus({ state: 'active' });
-  }, [config.postCustomGlslEnabled, config.postCustomGlslCode, gl, customGlslPostPass]);
+  }, [config.postCustomGlslEnabled, config.postCustomGlslCode, config.postCustomGlslReplacementEnabled, config.postCustomGlslReplacementCode, config.glslSharedSnippets, gl, customGlslPostPass]);
 
   if (orderedPostFxStages.length === 0) {
     return null;

@@ -85,6 +85,52 @@ export const DIAGNOSTIC_PASSES: readonly DiagnosticPassDefinition[] = [
     semantics:
       'Neighbourhood density around each particle. Needs a GPU accumulation/grid pass; not stored in any current target.',
   },
+  // Whole-system conserved quantities (Layer 1 WP12, phase A).
+  // These are reductions over the whole particle set, not
+  // per-particle fields, so this encoder refuses them (deferred:
+  // the in-app route needs a GPU reduction step). The CPU
+  // reference lives in lib/conservationDiagnostics.ts, whose
+  // registry mirrors these ids.
+  {
+    id: 'kinetic-energy',
+    label: 'Kinetic energy (total)',
+    kind: 'scalar',
+    source: 'derived',
+    availability: 'deferred',
+    semantics: 'Whole-system Σ ½·m·|v|². CPU reference: lib/conservationDiagnostics.ts.',
+  },
+  {
+    id: 'potential-energy',
+    label: 'Potential energy (gravity, total)',
+    kind: 'scalar',
+    source: 'derived',
+    availability: 'deferred',
+    semantics: 'Whole-system Σ -m·(g · (p - ref)) for a uniform gravity field. CPU reference: lib/conservationDiagnostics.ts.',
+  },
+  {
+    id: 'total-energy',
+    label: 'Total energy',
+    kind: 'scalar',
+    source: 'derived',
+    availability: 'deferred',
+    semantics: 'Kinetic + gravity potential energy, whole-system. CPU reference: lib/conservationDiagnostics.ts.',
+  },
+  {
+    id: 'momentum',
+    label: 'Momentum (total)',
+    kind: 'vector3',
+    source: 'derived',
+    availability: 'deferred',
+    semantics: 'Whole-system Σ m·v. CPU reference: lib/conservationDiagnostics.ts.',
+  },
+  {
+    id: 'angular-momentum',
+    label: 'Angular momentum (total)',
+    kind: 'vector3',
+    source: 'derived',
+    availability: 'deferred',
+    semantics: 'Whole-system Σ m·((p - ref) × v) about the reference point. CPU reference: lib/conservationDiagnostics.ts.',
+  },
 ];
 
 const PASS_BY_ID = new Map(DIAGNOSTIC_PASSES.map((pass) => [pass.id, pass]));

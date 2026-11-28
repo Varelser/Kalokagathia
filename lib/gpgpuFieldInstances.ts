@@ -20,13 +20,43 @@
  * malformed data resolves to "no instances", never a throw):
  *
  *   gpgpuFieldInstances: JSON array of
- *     { kind: 'vortex' | 'well' | 'wind',
+ *     { kind: 'vortex' | 'well' | 'wind' | 'drag' | 'crown',
  *       pos: [x, y, z], radius, strength,
  *       tilt (vortex), dir: [x, y, z] (wind),
- *       softening, orbit (well) }
+ *       softening, orbit (well),
+ *       target: [x, y, z] (drag), height, width (crown),
+ *       falloff? (WP5 phase A: a FalloffShape id from
+ *         lib/gpgpuWindVolume.ts; omitted = the default shape),
+ *       group? (WP5 phase A: a group ref — the id of a named
+ *         group in gpgpuGroupsData, the gpgpuGroupRef
+ *         convention; omitted = no group gate) }
  *   gpgpuFieldLayers: JSON array of
  *     { name?, weight, slot (-1 = none, else 0..3),
- *       members: [1-based instance indices] }
+ *       members: [1-based instance indices],
+ *       group? (same group ref as above, for the whole layer) }
+ *
+ * The WP5 phase A additions started as lib-only foundations:
+ * the falloff shape is honoured by the CPU twins below, and a
+ * group ref resolves through resolveFieldGroupGate (the
+ * resolveGroupGate form — predicate or baked — plus an explicit
+ * 'unresolved' outcome for a dangling ref). WP5 phase D wires
+ * both into the shader: two daemon kinds join the instance
+ * grammar ('drag' and 'crown', from lib/gpgpuDaemonFields.ts),
+ * and an APPEND-ONLY extension pack (the 'fieldExt' /
+ * 'layerExt' column sections) carries the falloff shape ids,
+ * the normalised group gates and the daemon parameters, so the
+ * legacy records above never change shape. A list authored
+ * before WP5 — legacy kinds, default falloff, no gates —
+ * resolves exactly as before and never stands the extension
+ * up (fieldInstancesExtended stays false), which keeps the
+ * pre-Phase-D shader string byte-identical for such configs.
+ * One residency limit rides with the baked gate form: a baked
+ * field gate reads attribute slot 3, which the runtime bake
+ * fills with the ONE global gpgpuGroupRef group's membership —
+ * a baked field gate is therefore honoured exactly when its
+ * group is that baked group; several distinct baked groups
+ * cannot be resident at once (the same ruling resolveGroupGate
+ * itself documents for the global gate).
  *
  * An instance belongs to at most one layer: the FIRST layer
  * (in list order) that names it wins. Instances in no layer
@@ -54,15 +84,39 @@
  */
 import * as THREE from 'three';
 import type { ParticleConfig } from '../types';
-import { windVolumeFalloff } from './gpgpuWindVolume';
+import {
+  falloffShapeValue,
+  resolveFalloffShape,
+  windVolumeFalloff,
+  type FalloffShape,
+} from './gpgpuWindVolume';
+import {
+  evaluateGpgpuGroup,
+  findGpgpuGroup,
+  parseGpgpuGroups,
+  resolveGroupGate,
+  GPGPU_GROUP_BAKED_SLOT,
+  type GpgpuGroupDef,
+  type GpgpuGroupPredicate,
+} from './gpgpuGroups';
+import {
+  clampDaemonDragRate,
+  daemonCrownRingProfile,
+  DAEMON_CROWN_GAIN,
+  DAEMON_CROWN_UP_BIAS,
+} from './gpgpuDaemonFields';
 
-export type FieldInstanceKind = 'vortex' | 'well' | 'wind';
+export type FieldInstanceKind = 'vortex' | 'well' | 'wind' | 'drag' | 'crown';
 
-/** GLSL kind ids (texel C.x of an instance record). */
+/** GLSL kind ids (texel C.x of an instance record). The WP5
+ *  phase D daemon kinds append after the B1 three — the ids of
+ *  the legacy kinds never move. */
 export const FIELD_INSTANCE_KIND_IDS: Record<FieldInstanceKind, number> = {
   vortex: 0,
   well: 1,
   wind: 2,
+  drag: 3,
+  crown: 4,
 };
 
 export const FIELD_INSTANCE_MAX = 16;
@@ -85,16 +139,45 @@ export interface FieldInstanceDef {
   softening: number;
   /** Well only: orbit gain (legacy default 0.5 when omitted). */
   orbit: number;
+  /** WP5 phase A: the falloff curve this instance localises
+   *  with (a FalloffShape id). Absent = the default shape, so
+   *  pre-WP5 data keeps the legacy curve bit for bit. An
+   *  unrecognised authored value is dropped at parse time. */
+  falloff?: FalloffShape;
+  /** WP5 phase A: group ref — the id of a named group in
+   *  gpgpuGroupsData (the gpgpuGroupRef convention; a group's
+   *  `name` is a display label, refs carry the id). Absent =
+   *  no group gate. Resolution: resolveFieldGroupGate. */
+  group?: string;
+  /** WP5 phase D, drag only: the velocity the placed drag
+   *  daemon relaxes toward (the DaemonDragDef target). Absent
+   *  = the zero vector (a stilling volume). */
+  target?: [number, number, number];
+  /** WP5 phase D, crown only: the column height the crown's
+   *  vertical envelope decays over. Absent = the radius. */
+  height?: number;
+  /** WP5 phase D, crown only: the Gaussian ring width around
+   *  the radius. Absent = radius / 2 (the daemonCrownRingProfile
+   *  fallback). */
+  width?: number;
 }
 
 export interface ResolvedFieldInstance extends FieldInstanceDef {
   kindId: number;
   /** Unit vector the shader reads: the vortex axis (from tilt,
    *  the legacy formula) or the normalised wind direction.
-   *  Unused for wells (0, 1, 0 placeholder). */
+   *  Unused for wells and the daemon kinds (0, 1, 0
+   *  placeholder — their parameters ride the extension pack,
+   *  never this record). */
   vec: [number, number, number];
   /** Index into the resolved layer list, or -1 for no layer. */
   layerIndex: number;
+  /** Drag target with the default applied (zero vector). */
+  target: [number, number, number];
+  /** Crown column height with the default applied (radius). */
+  height: number;
+  /** Crown ring width with the default applied (radius / 2). */
+  width: number;
 }
 
 export interface FieldLayerDef {
@@ -105,6 +188,9 @@ export interface FieldLayerDef {
   slot: number;
   /** 1-based instance indices (the authoring order). */
   members: number[];
+  /** WP5 phase A: group ref for the whole layer (same form
+   *  as FieldInstanceDef.group). Absent = no group gate. */
+  group?: string;
 }
 
 export interface FieldInstancesResolution {
@@ -139,6 +225,25 @@ function parseJsonArray(data: string | undefined): unknown[] {
   return Array.isArray(raw) ? raw : [];
 }
 
+/** The authored falloff field: a recognised shape id, or
+ *  undefined (field absent — the default shape applies). An
+ *  unrecognised value is dropped, never resolved silently
+ *  here, so a serialised def only ever carries a valid id. */
+function parseFalloffField(value: unknown): FalloffShape | undefined {
+  return value === 'smooth' || value === 'linear' || value === 'smoothstep'
+    ? value
+    : undefined;
+}
+
+/** The authored group ref: a non-empty string (group ids cap
+ *  at 64 chars in lib/gpgpuGroups.ts), or undefined (field
+ *  absent — no gate). Whether the ref names an existing group
+ *  is a resolution question (resolveFieldGroupGate), not a
+ *  parse question, so any non-empty string is kept. */
+function parseGroupField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value.slice(0, 64) : undefined;
+}
+
 /** Tolerant parse of the instance key (groups discipline:
  *  unknown kinds and non-objects are skipped, bad numbers fall
  *  back per field, the list is capped). */
@@ -148,8 +253,9 @@ export function parseFieldInstances(data: string | undefined): FieldInstanceDef[
     if (out.length >= FIELD_INSTANCE_MAX) break;
     if (!item || typeof item !== 'object') continue;
     const d = item as Record<string, unknown>;
-    if (d.kind !== 'vortex' && d.kind !== 'well' && d.kind !== 'wind') continue;
-    out.push({
+    if (d.kind !== 'vortex' && d.kind !== 'well' && d.kind !== 'wind'
+      && d.kind !== 'drag' && d.kind !== 'crown') continue;
+    const def: FieldInstanceDef = {
       kind: d.kind,
       pos: vec3Or(d.pos, [0, 0, 0]),
       radius: Math.max(0, finiteOr(d.radius, 60)),
@@ -158,7 +264,21 @@ export function parseFieldInstances(data: string | undefined): FieldInstanceDef[
       dir: vec3Or(d.dir, [1, 0, 0]),
       softening: Math.max(0, finiteOr(d.softening, 10)),
       orbit: finiteOr(d.orbit, 0.5),
-    });
+    };
+    const falloff = parseFalloffField(d.falloff);
+    if (falloff !== undefined) def.falloff = falloff;
+    const group = parseGroupField(d.group);
+    if (group !== undefined) def.group = group;
+    // WP5 phase D daemon parameters (drag target / crown
+    // height + ring width), parsed tolerantly like the rest:
+    // they ride the def only when authored, the resolve step
+    // applies the defaults.
+    if (d.kind === 'drag' && Array.isArray(d.target)) def.target = vec3Or(d.target, [0, 0, 0]);
+    if (d.kind === 'crown') {
+      if (typeof d.height === 'number' && Number.isFinite(d.height)) def.height = Math.max(0, d.height);
+      if (typeof d.width === 'number' && Number.isFinite(d.width)) def.width = Math.max(0, d.width);
+    }
+    out.push(def);
   }
   return out;
 }
@@ -179,14 +299,113 @@ export function parseFieldLayers(data: string | undefined): FieldLayerDef[] {
         if (idx >= 1 && idx <= FIELD_INSTANCE_MAX && !members.includes(idx)) members.push(idx);
       }
     }
-    out.push({
+    const layer: FieldLayerDef = {
       name: typeof d.name === 'string' && d.name.length > 0 ? d.name.slice(0, 80) : '',
       weight: finiteOr(d.weight, 1),
       slot: slotRaw >= 0 && slotRaw <= 3 ? slotRaw : -1,
       members,
-    });
+    };
+    const group = parseGroupField(d.group);
+    if (group !== undefined) layer.group = group;
+    out.push(layer);
   }
   return out;
+}
+
+/** Serialise instance definitions back into the config key
+ *  ('' when empty — the serializeGpgpuGroups precedent). The
+ *  optional WP5 fields ride along only when present on a def,
+ *  so a list authored before WP5 serialises without them. */
+export function serializeFieldInstances(defs: ReadonlyArray<FieldInstanceDef>): string {
+  if (defs.length === 0) return '';
+  return JSON.stringify(defs);
+}
+
+/** Serialise layer definitions back into the config key
+ *  ('' when empty). Same discipline as serializeFieldInstances. */
+export function serializeFieldLayers(defs: ReadonlyArray<FieldLayerDef>): string {
+  if (defs.length === 0) return '';
+  return JSON.stringify(defs);
+}
+
+// ── Group gates (WP5 phase A) ────────────────────────────────
+//
+// A field instance or layer may name a group (its `group`
+// field — a group id, the gpgpuGroupRef convention). The gate
+// resolves in the resolveGroupGate form, because the shader
+// side inherits that function's texture-budget ruling: a
+// predicate group compiles down to a predicate the shader
+// evaluates itself, and a snapshot / composite group is read
+// from the attribute bake's spare slot. Two outcomes are added
+// on top of that form:
+//   'none'       — no ref authored: no gate, the field
+//                  applies to every particle (today's behaviour);
+//   'unresolved' — a ref was authored but names no group in
+//                  the library. The field is treated as having
+//                  NO gate (a dangling ref must never silently
+//                  gate everything off), and the reason is
+//                  surfaced on the result instead of being
+//                  swallowed — the WP2 rejection-code discipline.
+
+export type FieldGroupGateRejectionReason = 'group-not-found';
+
+export type FieldGroupGateResolution =
+  | { kind: 'none' }
+  | { kind: 'predicate'; groupId: string; predicate: GpgpuGroupPredicate }
+  | { kind: 'baked'; groupId: string; slot: number }
+  | { kind: 'unresolved'; ref: string; reason: FieldGroupGateRejectionReason };
+
+/**
+ * Resolve one authored group ref against the group library.
+ * `defs` is the parsed gpgpuGroupsData library (parseGpgpuGroups).
+ */
+export function resolveFieldGroupGate(
+  defs: ReadonlyArray<GpgpuGroupDef>,
+  ref: string | undefined,
+): FieldGroupGateResolution {
+  if (!ref) return { kind: 'none' };
+  const def = findGpgpuGroup(defs, ref);
+  if (!def) return { kind: 'unresolved', ref, reason: 'group-not-found' };
+  const gate = resolveGroupGate(defs, ref);
+  if (gate.kind === 'predicate') return { kind: 'predicate', groupId: def.id, predicate: gate.predicate };
+  if (gate.kind === 'baked') return { kind: 'baked', groupId: def.id, slot: gate.slot };
+  // Unreachable: a found def never resolves to the legacy path.
+  return { kind: 'none' };
+}
+
+/** The group gate of one field instance definition. */
+export function resolveFieldInstanceGroupGate(
+  defs: ReadonlyArray<GpgpuGroupDef>,
+  inst: Pick<FieldInstanceDef, 'group'>,
+): FieldGroupGateResolution {
+  return resolveFieldGroupGate(defs, inst.group);
+}
+
+/** The group gate of one field layer definition. */
+export function resolveFieldLayerGroupGate(
+  defs: ReadonlyArray<GpgpuGroupDef>,
+  layer: Pick<FieldLayerDef, 'group'>,
+): FieldGroupGateResolution {
+  return resolveFieldGroupGate(defs, layer.group);
+}
+
+/**
+ * Evaluate the membership a group ref gates on, over the
+ * attribute bake (the evaluateGpgpuGroup contract: interleaved
+ * RGBA, channel = slot, `count` particle slots). Returns null
+ * when there is nothing to gate on — no ref, an unresolved
+ * ref, or a group that itself fails to evaluate (unknown /
+ * cyclic composite) — so callers treat null as "no gate".
+ */
+export function evaluateFieldGroupMembership(
+  defs: ReadonlyArray<GpgpuGroupDef>,
+  ref: string | undefined,
+  attrData: Float32Array,
+  count: number,
+): Uint8Array | null {
+  const gate = resolveFieldGroupGate(defs, ref);
+  if (gate.kind !== 'predicate' && gate.kind !== 'baked') return null;
+  return evaluateGpgpuGroup(defs, gate.groupId, attrData, count);
 }
 
 /** The vortex axis from a tilt value — the legacy chunk's
@@ -229,6 +448,9 @@ export function resolveFieldInstances(config: FieldConfigSlice): FieldInstancesR
           ? normaliseDir(def.dir)
           : [0, 1, 0] as [number, number, number],
       layerIndex,
+      target: def.target ? [...def.target] as [number, number, number] : [0, 0, 0],
+      height: def.height !== undefined ? def.height : def.radius,
+      width: def.width !== undefined ? def.width : def.radius / 2,
     };
   });
   return { instances, layers, active: instances.length > 0 };
@@ -359,6 +581,163 @@ export function packFieldColumnData(
   };
 }
 
+// ── Extension pack (WP5 phase D) ─────────────────────────────
+//
+// The B1 records above are frozen: they carry no falloff
+// shape, no group gate and no daemon parameters. Phase D
+// appends two sections AFTER every existing one (the
+// append-only discipline — the allocator in
+// lib/gpgpuPathAssets.ts registers them last):
+//
+//   fieldExt (FIELD_INSTANCE_MAX × 3 texels, per instance):
+//     E0 = (falloffShapeId, gateKind, gateSlot, gateMode)
+//     E1 = (gateLow, gateHigh, gateInvert, 0)
+//     E2 = drag:  (target.x, target.y, target.z, 0)
+//          crown: (height, width, 0, 0)
+//          else:  (0, 0, 0, 0)
+//   layerExt (FIELD_LAYER_MAX × 2 texels, per layer):
+//     L0 = (gateKind, gateSlot, gateMode, gateLow)
+//     L1 = (gateHigh, gateInvert, 0, 0)
+//
+// A gate is normalised into the form the shader evaluates:
+// kind 0 = no gate (authored none, or an UNRESOLVED ref — a
+// dangling ref never gates, the phase A ruling); kind 1 = a
+// predicate (slot, mode, low, high, invert). A baked gate
+// normalises to the predicate the passes themselves use for
+// the global baked gate — slot GPGPU_GROUP_BAKED_SLOT, mode
+// 'above', low 0.5, high 1, no invert — because the shader
+// reads the baked membership from that slot either way (see
+// the residency note in the header).
+
+/** Texels per instance in the fieldExt section. */
+export const FIELD_EXT_TEXELS_PER_INSTANCE = 3;
+/** Texels per layer in the layerExt section. */
+export const FIELD_LAYER_EXT_TEXELS = 2;
+
+/** Falloff shape ids for the extension pack (E0.x). */
+export const FALLOFF_SHAPE_IDS: Record<FalloffShape, number> = {
+  smooth: 0,
+  linear: 1,
+  smoothstep: 2,
+};
+
+const GROUP_MODE_IDS: Record<GpgpuGroupPredicate['mode'], number> = {
+  below: 0,
+  above: 1,
+  band: 2,
+};
+
+/** A group gate in the packed, shader-evaluable form. */
+export interface PackedFieldGate {
+  kind: 0 | 1;
+  slot: number;
+  mode: number;
+  low: number;
+  high: number;
+  invert: number;
+}
+
+const NO_FIELD_GATE: PackedFieldGate = { kind: 0, slot: 0, mode: 0, low: 0, high: 0, invert: 0 };
+
+/** Normalise one resolved gate for the extension pack. */
+export function packFieldGate(resolution: FieldGroupGateResolution): PackedFieldGate {
+  if (resolution.kind === 'predicate') {
+    const p = resolution.predicate;
+    return {
+      kind: 1,
+      slot: p.slot,
+      mode: GROUP_MODE_IDS[p.mode] ?? 1,
+      low: p.low,
+      high: p.high,
+      invert: p.invert ? 1 : 0,
+    };
+  }
+  if (resolution.kind === 'baked') {
+    return { kind: 1, slot: GPGPU_GROUP_BAKED_SLOT, mode: 1, low: 0.5, high: 1, invert: 0 };
+  }
+  return { ...NO_FIELD_GATE };
+}
+
+export interface FieldExtConfigSlice extends FieldConfigSlice {
+  gpgpuGroupsData?: string;
+}
+
+function fieldGatesForConfig(config: FieldExtConfigSlice): {
+  instanceGates: PackedFieldGate[];
+  layerGates: PackedFieldGate[];
+  anyGate: boolean;
+} {
+  const defs = parseGpgpuGroups(config.gpgpuGroupsData ?? '');
+  const res = resolveFieldInstances(config);
+  const instanceGates = res.instances.map((inst) => packFieldGate(resolveFieldInstanceGroupGate(defs, inst)));
+  const layerGates = res.layers.map((layer) => packFieldGate(resolveFieldLayerGroupGate(defs, layer)));
+  return {
+    instanceGates,
+    layerGates,
+    anyGate: instanceGates.some((g) => g.kind === 1) || layerGates.some((g) => g.kind === 1),
+  };
+}
+
+/**
+ * Whether the extension pack must stand for this config: any
+ * daemon-kind instance, any non-default falloff shape, or any
+ * instance / layer group gate that resolves to a real gate.
+ * False for every pre-Phase-D config, which is what keeps
+ * their shader strings byte-identical.
+ */
+export function fieldInstancesExtended(config: FieldExtConfigSlice): boolean {
+  const res = resolveFieldInstances(config);
+  if (!res.active) return false;
+  if (res.instances.some((inst) => inst.kind === 'drag' || inst.kind === 'crown')) return true;
+  if (res.instances.some((inst) => inst.falloff !== undefined && inst.falloff !== 'smooth')) return true;
+  return fieldGatesForConfig(config).anyGate;
+}
+
+/** Whether any field group gate resolves to a real gate —
+ *  the passes read this to keep the attribute texture bound
+ *  (the gate evaluation reads attribute slots). */
+export function fieldGroupGateActive(config: FieldExtConfigSlice): boolean {
+  return fieldGatesForConfig(config).anyGate;
+}
+
+/**
+ * Write the extension sections into an already-allocated
+ * column data array (the packFieldColumnData composition
+ * pattern: the caller owns the array, sized by `layout`).
+ * Returns the section bases (0 when the layout carries no
+ * such section).
+ */
+export function packFieldExtColumnData(
+  data: Float32Array,
+  layout: ColumnLayout,
+  config: FieldExtConfigSlice,
+): { fieldExtBase: number; layerExtBase: number } {
+  if (!layout.sections.some((s) => s.id === 'fieldExt')) return { fieldExtBase: 0, layerExtBase: 0 };
+  const fieldExtBase = columnSectionOffset(layout, 'fieldExt');
+  const layerExtBase = columnSectionOffset(layout, 'layerExt');
+  const res = resolveFieldInstances(config);
+  const { instanceGates, layerGates } = fieldGatesForConfig(config);
+  res.instances.forEach((inst, i) => {
+    const gate = instanceGates[i] ?? NO_FIELD_GATE;
+    const a = (fieldExtBase + i * FIELD_EXT_TEXELS_PER_INSTANCE) * 4;
+    data[a] = FALLOFF_SHAPE_IDS[inst.falloff ?? 'smooth'] ?? 0;
+    data[a + 1] = gate.kind; data[a + 2] = gate.slot; data[a + 3] = gate.mode;
+    data[a + 4] = gate.low; data[a + 5] = gate.high; data[a + 6] = gate.invert; data[a + 7] = 0;
+    if (inst.kind === 'drag') {
+      data[a + 8] = inst.target[0]; data[a + 9] = inst.target[1]; data[a + 10] = inst.target[2]; data[a + 11] = 0;
+    } else if (inst.kind === 'crown') {
+      data[a + 8] = inst.height; data[a + 9] = inst.width; data[a + 10] = 0; data[a + 11] = 0;
+    }
+  });
+  res.layers.forEach((_layer, j) => {
+    const gate = layerGates[j] ?? NO_FIELD_GATE;
+    const a = (layerExtBase + j * FIELD_LAYER_EXT_TEXELS) * 4;
+    data[a] = gate.kind; data[a + 1] = gate.slot; data[a + 2] = gate.mode; data[a + 3] = gate.low;
+    data[a + 4] = gate.high; data[a + 5] = gate.invert; data[a + 6] = 0; data[a + 7] = 0;
+  });
+  return { fieldExtBase, layerExtBase };
+}
+
 // ── CPU twins of the instance force laws ─────────────────────
 //
 // The GLSL twin is kaloFieldForce in the velocity helpers.
@@ -368,9 +747,15 @@ export function packFieldColumnData(
 // NOT applied here — the shader multiplies them per kind, the
 // caller here does the same.
 
-/** The localising falloff: the wind volume's (1-(d/R)^2)^2. */
-export function fieldInstanceFalloff(distance: number, radius: number): number {
-  return windVolumeFalloff(distance, radius);
+/** The localising falloff: the wind volume's (1-(d/R)^2)^2
+ *  under the default shape. A shape argument (an instance's
+ *  authored `falloff` field) selects another curve from
+ *  lib/gpgpuWindVolume.ts; omitting it — or passing an
+ *  unrecognised value — keeps the legacy values bit for bit. */
+export function fieldInstanceFalloff(distance: number, radius: number, shape?: FalloffShape): number {
+  return shape === undefined
+    ? windVolumeFalloff(distance, radius)
+    : falloffShapeValue(resolveFalloffShape(shape), distance, radius);
 }
 
 /**
@@ -378,7 +763,10 @@ export function fieldInstanceFalloff(distance: number, radius: number): number {
  * force-gate multiplier). `layerWeight` is the resolved layer
  * weight INCLUDING any per-particle slot modulation (1 for an
  * unlayered instance). Outside the radius the contribution is
- * exactly zero.
+ * exactly zero. `vel` is the particle's current velocity —
+ * only the drag daemon reads it (its law is a relaxation
+ * toward a target velocity); every other kind ignores it, so
+ * existing callers keep their meaning.
  */
 export function fieldInstanceForce(
   inst: ResolvedFieldInstance,
@@ -386,12 +774,50 @@ export function fieldInstanceForce(
   pos: [number, number, number],
   delta: number,
   gust: [number, number, number] = [0, 0, 0],
+  vel: [number, number, number] = [0, 0, 0],
 ): [number, number, number] {
   const rel: [number, number, number] = [pos[0] - inst.pos[0], pos[1] - inst.pos[1], pos[2] - inst.pos[2]];
+  if (inst.kind === 'crown') {
+    // The crown's envelope is CYLINDRICAL (a ring in the XZ
+    // plane, decaying with height), not the spherical falloff
+    // below — it is daemonCrownForce with the height decay
+    // read through the instance's falloff shape and the layer
+    // weight folded in. Below the base or at / above the
+    // column height the contribution is exactly zero.
+    const cy = rel[1];
+    if (!(inst.radius > 0) || !(inst.height > 0) || cy < 0 || cy >= inst.height) return [0, 0, 0];
+    const rho = Math.hypot(rel[0], rel[2]);
+    const ring = daemonCrownRingProfile(rho, inst.radius, inst.width);
+    const env = fieldInstanceFalloff(cy, inst.height, inst.falloff);
+    const wgt = ring * env * layerWeight;
+    if (wgt <= 0) return [0, 0, 0];
+    let dx = 0;
+    let dz = 0;
+    if (rho > 1e-9) { dx = rel[0] / rho; dz = rel[2] / rho; }
+    const len = Math.hypot(dx, DAEMON_CROWN_UP_BIAS, dz) || 1;
+    const s = (inst.strength * wgt * Math.max(delta, 0) * DAEMON_CROWN_GAIN) / len;
+    return [dx * s, DAEMON_CROWN_UP_BIAS * s, dz * s];
+  }
   const dist = Math.hypot(rel[0], rel[1], rel[2]);
-  const fall = fieldInstanceFalloff(dist, inst.radius);
+  const fall = fieldInstanceFalloff(dist, inst.radius, inst.falloff);
   if (fall <= 0) return [0, 0, 0];
   const w = fall * layerWeight;
+  if (inst.kind === 'drag') {
+    // The placed drag daemon (daemonDragDeltaV): an
+    // exponential relaxation toward the target velocity,
+    // localised by the same falloff — at the default shape
+    // and layer weight 1 this IS daemonDragDeltaV term for
+    // term (its weight is daemonDragWeight = the volume
+    // falloff).
+    const rate = clampDaemonDragRate(inst.strength);
+    const k = 1 - Math.exp(-rate * fall * Math.max(delta, 0));
+    const s = k * layerWeight;
+    return [
+      (inst.target[0] - vel[0]) * s,
+      (inst.target[1] - vel[1]) * s,
+      (inst.target[2] - vel[2]) * s,
+    ];
+  }
   if (inst.kind === 'vortex') {
     // tangent = axis × rel, normalised, at the legacy gain 80.
     const t: [number, number, number] = [

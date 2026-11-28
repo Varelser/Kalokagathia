@@ -46,6 +46,10 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
     aux3DrawMat,
     wwDrawGeo,
     wwDrawMat,
+    splatGeo,
+    splatMat,
+    splatColumnsGeo,
+    splatColumnsForm,
   } = assets;
   const plan = getGpgpuRenderOutputPlan(config);
   const chainLevels = resolveAuxChainLevels(config);
@@ -102,6 +106,22 @@ export const GpgpuRenderOutputs: FC<GpgpuRenderOutputsProps> = React.memo(({ con
       )}
       {plan.volumetric && volumetricMeshObj && (
         <primitive object={volumetricMeshObj} />
+      )}
+      {/* Gaussian splat draw (Layer 1 WP7 Phase C1): an
+          independent instanced-quad primitive mounted
+          alongside the other outputs — it replaces nothing;
+          the branch exists only while gpgpuSplatEnabled is
+          on (plan.splats), so the default mount set is
+          unchanged. Phase C3: while the input form is the
+          independent column data, the same material mounts
+          the columns geometry (its own instance count /
+          aTexCoord grid) instead of the pool geometry. */}
+      {plan.splats && splatGeo && splatMat && (
+        <mesh
+          geometry={splatColumnsForm === 'columns' && splatColumnsGeo ? splatColumnsGeo : splatGeo}
+          material={splatMat}
+          frustumCulled={false}
+        />
       )}
     </>
   );

@@ -83,6 +83,10 @@ function mergedSignature(config: MergedSupplyConfigSlice, texSize: number): stri
     config.gpgpuSteerSeekPaths ?? '',
     config.gpgpuSteerSeekPathSvg ?? '',
     String(config.gpgpuSteerSeekPathSvgScale ?? ''),
+    // The emitter list extends the column supply's layout
+    // (Layer 1 WP4, phase D2), so the strip height derived
+    // from it changes with the list too.
+    config.gpgpuEmitters ?? '',
     texSize,
   ].join('\n');
 }

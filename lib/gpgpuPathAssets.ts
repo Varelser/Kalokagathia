@@ -67,18 +67,49 @@ import { parseSvgPathGeometry, pointAtArcLength } from './pathGeometry';
 import {
   buildColumnLayout,
   columnSectionOffset,
+  fieldGroupGateActive,
+  fieldInstancesExtended,
   packFieldColumnData,
+  packFieldExtColumnData,
   resolveFieldInstances,
   COLUMN_TEX_WIDTH,
   FIELD_COLUMN_LAYOUT,
-  FIELD_COLUMN_REQUESTS,
+  FIELD_EXT_TEXELS_PER_INSTANCE,
+  FIELD_INSTANCE_MAX,
+  FIELD_LAYER_EXT_TEXELS,
+  FIELD_LAYER_MAX,
   type ColumnLayout,
   type ColumnSectionRequest,
   type FieldInstancesResolution,
 } from './gpgpuFieldInstances';
+import {
+  PATH_ASSET_MAX_PATHS,
+  PATH_ASSET_MAX_POINTS,
+  PATH_ASSET_COLUMN_LAYOUT,
+} from './gpgpuColumnLayout';
+import {
+  emitterListActive,
+  packEmitterColumnData,
+  resolveEmitterList,
+  EMITTER_COLUMN_LAYOUT,
+  EMITTER_COLUMN_REQUESTS,
+  type EmitterListConfigSlice,
+} from './gpgpuEmitterList';
+import {
+  deformColumnActive,
+  packDeformFfdPoints,
+  resolveConfigDeformOps,
+  DEFORM_FFD_MAX_TEXELS,
+  type DeformConfig,
+} from './gpgpuDeformStack';
 
-export const PATH_ASSET_MAX_PATHS = 8;
-export const PATH_ASSET_MAX_POINTS = 64;
+export {
+  PATH_ASSET_MAX_PATHS,
+  PATH_ASSET_MAX_POINTS,
+  PATH_ASSET_COLUMN_LAYOUT,
+  PATH_COLUMN_REQUESTS,
+} from './gpgpuColumnLayout';
+
 /** Arc-length samples taken from each SVG subpath. */
 export const PATH_ASSET_SVG_SAMPLES = 32;
 
@@ -108,7 +139,8 @@ export type PathAssetConfigSlice = Pick<ParticleConfig,
   | 'gpgpuSteerSeekPathSvgScale' | 'gpgpuSteerSeekPathSlot'>;
 
 type FieldConfigSlice = Pick<ParticleConfig, 'gpgpuFieldInstances' | 'gpgpuFieldLayers'>;
-export type ColumnConfigSlice = PathAssetConfigSlice & FieldConfigSlice;
+export type ColumnConfigSlice = PathAssetConfigSlice & FieldConfigSlice & EmitterListConfigSlice
+  & { gpgpuGroupsData?: string } & DeformConfig;
 
 const clampNum = (v: number, lo: number, hi: number, fallback: number): number =>
   (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback);
@@ -432,29 +464,13 @@ export const EMIT_PATH_ASSET_GLSL = /* glsl */ `
   }
 `;
 
-// ── Column-data supply (design decision 2, shared with B1) ──
-//
-// The extended layout appends the two path sections after
-// B1's fields / layers (append-only: their offsets never
-// move). Header record (1 texel per path):
-//   (pointCount, closed ? 1 : 0, pointsOffset, 0)
-// Point record (1 texel per point):
-//   (x, y, z, cum)   cum = the open polyline's cumulative
-//                    arc length at this point (the emission
-//                    walk reads it; the follow walk recomputes
-//                    segment lengths like the legacy chunk).
-
-export const PATH_COLUMN_REQUESTS: readonly ColumnSectionRequest[] = [
-  ...FIELD_COLUMN_REQUESTS,
-  // Row-padded like B1's sections (only PATH_ASSET_MAX_PATHS
-  // texels are written; the rest of the row stays zero), so
-  // every section starts on a row boundary: fields 0, layers
-  // 256, pathHeaders 512, pathPoints 768.
-  { id: 'pathHeaders', texels: COLUMN_TEX_WIDTH },
-  { id: 'pathPoints', texels: PATH_ASSET_MAX_PATHS * PATH_ASSET_MAX_POINTS },
-];
-
-export const PATH_ASSET_COLUMN_LAYOUT: ColumnLayout = buildColumnLayout(PATH_COLUMN_REQUESTS);
+// The layout constants (PATH_COLUMN_REQUESTS /
+// PATH_ASSET_COLUMN_LAYOUT / PATH_ASSET_MAX_*) live in the
+// leaf module lib/gpgpuColumnLayout.ts — the emitter list
+// appends to the same requests, and the combined supply
+// below consumes the emitter list, so neither module may
+// sit above the other. They are re-exported here so
+// existing import paths keep working.
 
 export interface PathColumnPack {
   headersBase: number;
@@ -496,11 +512,17 @@ export function packPathColumnData(
 
 // ── Combined THREE supply ────────────────────────────────────
 //
-// ONE texture serves fields and paths: while no path
-// resolves, the supply IS B1's (the B1 layout, byte-identical
-// pack); while paths resolve, the extended layout packs both
-// into the taller texture. The passes resolve through this
-// getter only. Null while neither side has content.
+// ONE texture serves fields, paths and the emitter list
+// (Layer 1 WP4, phase D2): while no path resolves and no
+// emitter list stands, the supply IS B1's (the B1 layout,
+// byte-identical pack); while paths resolve, the extended
+// layout packs both into the taller texture; while an
+// emitter list stands (gpgpuEmitters authored with at least
+// one enabled element), the emitter layout APPENDS the
+// emitters section after the path sections — every existing
+// section offset is unchanged — and packs all three into the
+// tallest texture. The passes resolve through this getter
+// only. Null while no side has content.
 
 export interface ColumnSupply {
   texture: THREE.DataTexture;
@@ -514,25 +536,211 @@ export interface ColumnSupply {
   pointsBase: number;
   pathCount: number;
   pathPointOffsets: number[];
+  /** Texel offset of the emitters section (1280 while a list
+   *  stands, 0 otherwise — the position shader reads it only
+   *  in the emitterList variant). */
+  emittersBase: number;
+  /** Number of enabled emitter elements packed (0 = no list). */
+  emitterCount: number;
+  /** Texel offset of the fieldExt section (WP5 phase D;
+   *  1536 while the extension stands, 0 otherwise — the
+   *  velocity shader reads it only in the fieldExt variant). */
+  fieldExtBase: number;
+  /** Texel offset of the layerExt section (1792 while the
+   *  extension stands, 0 otherwise). */
+  layerExtBase: number;
+  /** Texel offset of the deformFfd section (Layer 1 WP8
+   *  phase D; 2048 while a deform stack with an FFD operator
+   *  stands, 0 otherwise — the position shader reads it only
+   *  in the deform FFD sub-variant). */
+  deformFfdBase: number;
 }
+
+// The WP5 phase D extension layout: the emitter layout with
+// the two field-grammar extension sections appended after the
+// emitters (append-only — fields 0, layers 256, pathHeaders
+// 512, pathPoints 768, emitters 1280, fieldExt 1536, layerExt
+// 1792). The layout stands only while fieldInstancesExtended
+// resolves; every other config keeps its existing layout and
+// supply bytes.
+export const FIELD_EXT_COLUMN_REQUESTS: readonly ColumnSectionRequest[] = [
+  ...EMITTER_COLUMN_REQUESTS,
+  { id: 'fieldExt', texels: FIELD_INSTANCE_MAX * FIELD_EXT_TEXELS_PER_INSTANCE },
+  { id: 'layerExt', texels: FIELD_LAYER_MAX * FIELD_LAYER_EXT_TEXELS },
+];
+
+export const FIELD_EXT_COLUMN_LAYOUT: ColumnLayout = buildColumnLayout(FIELD_EXT_COLUMN_REQUESTS);
+
+// The Layer 1 WP8 phase D extension layout: the fieldExt
+// layout with the deform stack's FFD section appended after
+// layerExt (append-only — fields 0, layers 256, pathHeaders
+// 512, pathPoints 768, emitters 1280, fieldExt 1536,
+// layerExt 1792, deformFfd 2048). The layout stands only
+// while deformColumnActive resolves (the authored deform
+// stack carries an FFD operator); every other config keeps
+// its existing layout and supply bytes. The section holds
+// the FFD control points of packDeformFfdPoints
+// (lib/gpgpuDeformStack.ts), read by the position pass's
+// deform variant through the packed per-operator offsets.
+export const DEFORM_COLUMN_REQUESTS: readonly ColumnSectionRequest[] = [
+  ...FIELD_EXT_COLUMN_REQUESTS,
+  { id: 'deformFfd', texels: DEFORM_FFD_MAX_TEXELS },
+];
+
+export const DEFORM_COLUMN_LAYOUT: ColumnLayout = buildColumnLayout(DEFORM_COLUMN_REQUESTS);
+
+/**
+ * Write the deform stack's FFD payload into the column
+ * data at the layout's deformFfd section. Returns the
+ * section's base texel offset (0 while the layout carries
+ * no deformFfd section).
+ */
+export function packDeformColumnData(
+  data: Float32Array,
+  layout: ColumnLayout,
+  config: DeformConfig,
+): { deformFfdBase: number } {
+  if (!layout.sections.some((s) => s.id === 'deformFfd')) return { deformFfdBase: 0 };
+  const deformFfdBase = columnSectionOffset(layout, 'deformFfd');
+  const payload = packDeformFfdPoints(resolveConfigDeformOps(config));
+  data.set(payload, deformFfdBase * 4);
+  return { deformFfdBase };
+}
+
+export { fieldGroupGateActive, fieldInstancesExtended };
 
 let columnSupplyCache: { signature: string; supply: ColumnSupply } | null = null;
 
 export function getColumnSupply(config: ColumnConfigSlice): ColumnSupply | null {
   const fieldRes: FieldInstancesResolution = resolveFieldInstances(config);
   const pathRes = resolvePathAsset(config);
-  if (!fieldRes.active && pathRes.paths.length === 0) return null;
+  const listActive = emitterListActive(config);
+  const defActive = deformColumnActive(config);
+  if (!fieldRes.active && pathRes.paths.length === 0 && !listActive && !defActive) return null;
+  const extActive = fieldInstancesExtended(config);
   const signature = [
     config.gpgpuFieldInstances ?? '',
     config.gpgpuFieldLayers ?? '',
+    // WP5 phase D: the extension pack normalises group gates
+    // out of the group library, so the cache turns over when
+    // the library changes.
+    config.gpgpuGroupsData ?? '',
     config.gpgpuSteerSeekPath ?? '',
     config.gpgpuSteerSeekPaths ?? '',
     config.gpgpuSteerSeekPathSvg ?? '',
     String(config.gpgpuSteerSeekPathSvgScale ?? ''),
+    // The emitter pack derives per-element light weights and
+    // positions from the light unit keys, so the cache must
+    // turn over when any of them (or the list, or the chosen
+    // light unit) changes.
+    config.gpgpuEmitters ?? '',
+    // WP8 phase D: the deform pack derives from the authored
+    // deform stack, so the cache turns over when it changes.
+    config.gpgpuEmitDeform ?? '',
+    config.gpgpuEmitLightUnit ?? '',
+    String(config.gpgpuLightEnabled ?? ''),
+    String(config.gpgpuLightPosX ?? ''),
+    String(config.gpgpuLightPosY ?? ''),
+    String(config.gpgpuLightPosZ ?? ''),
+    String(config.gpgpuLightIntensity ?? ''),
+    String(config.gpgpuLight2Enabled ?? ''),
+    String(config.gpgpuLight2PosX ?? ''),
+    String(config.gpgpuLight2PosY ?? ''),
+    String(config.gpgpuLight2PosZ ?? ''),
+    String(config.gpgpuLight2Intensity ?? ''),
+    String(config.gpgpuLight3Enabled ?? ''),
+    String(config.gpgpuLight3PosX ?? ''),
+    String(config.gpgpuLight3PosY ?? ''),
+    String(config.gpgpuLight3PosZ ?? ''),
+    String(config.gpgpuLight3Intensity ?? ''),
+    String(config.gpgpuLight4Enabled ?? ''),
+    String(config.gpgpuLight4PosX ?? ''),
+    String(config.gpgpuLight4PosY ?? ''),
+    String(config.gpgpuLight4PosZ ?? ''),
+    String(config.gpgpuLight4Intensity ?? ''),
   ].join('\n');
   if (columnSupplyCache && columnSupplyCache.signature === signature) return columnSupplyCache.supply;
   let supply: ColumnSupply;
-  if (pathRes.paths.length === 0) {
+  if (extActive || defActive) {
+    // WP5 phase D: the extension layout — every earlier
+    // section at its existing offset, the fieldExt / layerExt
+    // sections appended after the emitters. This branch
+    // subsumes the emitter and path compositions below (the
+    // same packs write into the same array).
+    // WP8 phase D: while a deform stack with an FFD operator
+    // stands, the layout grows the deformFfd section after
+    // layerExt (same composition, one more appended pack).
+    const layout = defActive ? DEFORM_COLUMN_LAYOUT : FIELD_EXT_COLUMN_LAYOUT;
+    const fieldPack = packFieldColumnData(fieldRes, layout);
+    const pathPack = pathRes.paths.length > 0
+      ? packPathColumnData(fieldPack.data, layout, pathRes)
+      : { headersBase: 0, pointsBase: 0, pathCount: 0, pathPointOffsets: [] as number[] };
+    const emitterPack = listActive
+      ? packEmitterColumnData(fieldPack.data, layout, resolveEmitterList(config))
+      : { emittersBase: 0, emitterCount: 0 };
+    const extPack = packFieldExtColumnData(fieldPack.data, layout, config);
+    const deformPack = defActive
+      ? packDeformColumnData(fieldPack.data, layout, config)
+      : { deformFfdBase: 0 };
+    const texture = new THREE.DataTexture(fieldPack.data, layout.width, layout.height, THREE.RGBAFormat, THREE.FloatType);
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.needsUpdate = true;
+    supply = {
+      texture,
+      width: layout.width,
+      height: layout.height,
+      fieldsBase: fieldPack.fieldsBase,
+      layersBase: fieldPack.layersBase,
+      instanceCount: fieldPack.instanceCount,
+      layerCount: fieldPack.layerCount,
+      headersBase: pathPack.headersBase,
+      pointsBase: pathPack.pointsBase,
+      pathCount: pathPack.pathCount,
+      pathPointOffsets: pathPack.pathPointOffsets,
+      emittersBase: emitterPack.emittersBase,
+      emitterCount: emitterPack.emitterCount,
+      fieldExtBase: extPack.fieldExtBase,
+      layerExtBase: extPack.layerExtBase,
+      deformFfdBase: deformPack.deformFfdBase,
+    };
+  } else if (listActive) {
+    // The emitter layout: fields / layers / pathHeaders /
+    // pathPoints keep their path-layout offsets; the
+    // emitters section is appended after them.
+    const layout = EMITTER_COLUMN_LAYOUT;
+    const fieldPack = packFieldColumnData(fieldRes, layout);
+    const pathPack = pathRes.paths.length > 0
+      ? packPathColumnData(fieldPack.data, layout, pathRes)
+      : { headersBase: 0, pointsBase: 0, pathCount: 0, pathPointOffsets: [] as number[] };
+    const emitterPack = packEmitterColumnData(fieldPack.data, layout, resolveEmitterList(config));
+    const texture = new THREE.DataTexture(fieldPack.data, layout.width, layout.height, THREE.RGBAFormat, THREE.FloatType);
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.needsUpdate = true;
+    supply = {
+      texture,
+      width: layout.width,
+      height: layout.height,
+      fieldsBase: fieldPack.fieldsBase,
+      layersBase: fieldPack.layersBase,
+      instanceCount: fieldPack.instanceCount,
+      layerCount: fieldPack.layerCount,
+      headersBase: pathPack.headersBase,
+      pointsBase: pathPack.pointsBase,
+      pathCount: pathPack.pathCount,
+      pathPointOffsets: pathPack.pathPointOffsets,
+      emittersBase: emitterPack.emittersBase,
+      emitterCount: emitterPack.emitterCount,
+      fieldExtBase: 0,
+      layerExtBase: 0,
+      deformFfdBase: 0,
+    };
+  } else if (pathRes.paths.length === 0) {
     // B1's supply, byte for byte.
     const pack = packFieldColumnData(fieldRes);
     const texture = new THREE.DataTexture(pack.data, pack.width, pack.height, THREE.RGBAFormat, THREE.FloatType);
@@ -553,6 +761,11 @@ export function getColumnSupply(config: ColumnConfigSlice): ColumnSupply | null 
       pointsBase: 0,
       pathCount: 0,
       pathPointOffsets: [],
+      emittersBase: 0,
+      emitterCount: 0,
+      fieldExtBase: 0,
+      layerExtBase: 0,
+      deformFfdBase: 0,
     };
   } else {
     const layout = PATH_ASSET_COLUMN_LAYOUT;
@@ -576,6 +789,11 @@ export function getColumnSupply(config: ColumnConfigSlice): ColumnSupply | null 
       pointsBase: pathPack.pointsBase,
       pathCount: pathPack.pathCount,
       pathPointOffsets: pathPack.pathPointOffsets,
+      emittersBase: 0,
+      emitterCount: 0,
+      fieldExtBase: 0,
+      layerExtBase: 0,
+      deformFfdBase: 0,
     };
   }
   if (columnSupplyCache) columnSupplyCache.supply.texture.dispose();

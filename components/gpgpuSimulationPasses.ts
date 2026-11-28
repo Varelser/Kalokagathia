@@ -8,7 +8,8 @@ import {
 import { particleLifeUniformArray } from '../lib/gpgpuParticleLife';
 import { EMIT_SHAPE_IDS } from '../lib/gpgpuEmitShapes';
 import { clampEmitterVelSpeed, clampEmitterVelSpread, emitterRotScaleElements, resolveEmitterBaseDirection, resolveEmitterTransform } from '../lib/gpgpuEmitter';
-import { resolveSpawnRateEff } from '../lib/gpgpuSpawnAllocator';
+import { resolveSpawnRateEff, spawnEventDemandFracAt } from '../lib/gpgpuSpawnAllocator';
+import { clampAgeMaxJitter } from '../lib/gpgpuLifecycle';
 import { resolveVellum } from '../lib/gpgpuVellum';
 import { XPBD_JACOBI_RELAXATION } from '../lib/xpbdConstraints';
 import { effectiveGrainsFriction, grainsCellGrid, grainsDemConfigEpochValue, grainsNeighborhoodMode, grainsProjectionActive, resolveGrainsDemGrid, resolveGrainsDemPlan, resolveGrainsPilePlan, resolveGrainsProjection, GRAINS_VELOCITY_DENSE_DAMP, GRAINS_VELOCITY_DENSE_HI, GRAINS_VELOCITY_DENSE_LO, type GrainsCellGrid } from '../lib/gpgpuGrains';
@@ -18,10 +19,12 @@ import { resolveRigid } from '../lib/rigidBodies';
 import { crowdAvoidStrength, packSteeringPath, resolveCrowd, resolveSteeringSeek } from '../lib/steering';
 import { packEmissionPathCum, resolveEmissionPath } from '../lib/gpgpuEmissionSource';
 import { packDistributionOps, resolveDistributionOps } from '../lib/gpgpuDistribution';
+import { packDeformOps, resolveConfigDeformOps } from '../lib/gpgpuDeformStack';
+import { packLocalTimeEntries, resolveLocalTime } from '../lib/gpgpuLocalTime';
 import { resolveShaderSeedPhase } from '../lib/gpgpuRandom';
 import { resolveEmitLightPos } from '../lib/gpgpuLightUnits';
 import { meanderStandaloneActive } from '../lib/gpgpuMeander';
-import { COLUMN_TEX_WIDTH, FIELD_COLUMN_LAYOUT, fieldLayerSlotAttrActive } from '../lib/gpgpuFieldInstances';
+import { COLUMN_TEX_WIDTH, FIELD_COLUMN_LAYOUT, fieldGroupGateActive, fieldInstancesExtended, fieldLayerSlotAttrActive } from '../lib/gpgpuFieldInstances';
 import { b3SlotAttrActive, resolveRelDrag, resolveTargetSpeed } from '../lib/gpgpuSpeedDragSpin';
 import { getColumnSupply, resolvePathAsset } from '../lib/gpgpuPathAssets';
 import { resolveMergedSupplyPlan } from '../lib/gpgpuMergedSupply';
@@ -1214,6 +1217,17 @@ export function runSimulationPasses(args: {
   if (velSimMat.uniforms.uSpawnEventEnabled) velSimMat.uniforms.uSpawnEventEnabled.value = !!config.gpgpuSpawnEventEnabled && !vellum.active && !rigidActive;
   if (velSimMat.uniforms.uSpawnEventTime) velSimMat.uniforms.uSpawnEventTime.value = Math.max(0, Math.min(600, config.gpgpuSpawnEventTime ?? 0));
   if (velSimMat.uniforms.uSpawnEventCount) velSimMat.uniforms.uSpawnEventCount.value = Math.max(0, Math.min(1, config.gpgpuSpawnEventCount ?? 0));
+  // Spawn event demand (Layer 1 WP4, phase C): the gate
+  // threshold gains the cumulative authored-event demand
+  // (spawnEventDemandDueBy over the authored list, as pool
+  // fractions — lib/gpgpuSpawnAllocator.ts), resolved under
+  // the same suppression as the event itself. The
+  // previous-frame value rides along so the position pass's
+  // activation test sees the step exactly on the firing
+  // frame. Read only by the event-demand variant strings.
+  const spawnEventDueOn = !!config.gpgpuSpawnEventEnabled && !vellum.active && !rigidActive;
+  if (velSimMat.uniforms.uSpawnEventDueFrac) velSimMat.uniforms.uSpawnEventDueFrac.value = spawnEventDueOn ? spawnEventDemandFracAt(config, texSize, args.spawnTime ?? time) : 0;
+  if (velSimMat.uniforms.uSpawnEventDuePrevFrac) velSimMat.uniforms.uSpawnEventDuePrevFrac.value = spawnEventDueOn ? spawnEventDemandFracAt(config, texSize, (args.spawnTime ?? time) - dt) : 0;
   if (velSimMat.uniforms.uSpawnEventSpeed) velSimMat.uniforms.uSpawnEventSpeed.value = Math.max(0, Math.min(50, config.gpgpuSpawnEventSpeed ?? 0));
   if (velSimMat.uniforms.uSpawnEventSpread) velSimMat.uniforms.uSpawnEventSpread.value = Math.max(0, Math.min(1, config.gpgpuSpawnEventSpread ?? 0));
   if (velSimMat.uniforms.uDragRate) velSimMat.uniforms.uDragRate.value = Math.max(0, Math.min(10, config.gpgpuDrag ?? 1.1));
@@ -1311,6 +1325,19 @@ export function runSimulationPasses(args: {
     if (fu.uColPathHeadersBase) fu.uColPathHeadersBase.value = fieldSupply ? fieldSupply.headersBase : 0;
     if (fu.uPathAssetCount) fu.uPathAssetCount.value = fieldSupply ? fieldSupply.pathCount : 0;
     if (fu.uPathAssetSlot) fu.uPathAssetSlot.value = resolvePathAsset(config).slot;
+    // Emitter list (Layer 1 WP4, phase D3): the emitters
+    // section of the same supply, read only by the list
+    // variant of the emitter-velocity activation.
+    if (fu.uEmittersBase) fu.uEmittersBase.value = fieldSupply ? fieldSupply.emittersBase : 0;
+    if (fu.uEmitterCount) fu.uEmitterCount.value = fieldSupply ? fieldSupply.emitterCount : 0;
+    // Field extension (Layer 1 WP5, phase D): the extension
+    // sections of the same supply, read only by the fieldExt
+    // variant. The gates' attribute discipline mirrors the
+    // layer slot's: the gates evaluate only while the
+    // attribute texture is present.
+    if (fu.uColFieldExtBase) fu.uColFieldExtBase.value = fieldSupply ? fieldSupply.fieldExtBase : 0;
+    if (fu.uColLayerExtBase) fu.uColLayerExtBase.value = fieldSupply ? fieldSupply.layerExtBase : 0;
+    if (fu.uFieldExtAttrEnabled) fu.uFieldExtAttrEnabled.value = !!args.attrTex && fieldInstancesExtended(config);
     // Speed / relative drag (Grammar 2.0 stage 2, B3): the
     // resolved values from lib/gpgpuSpeedDragSpin. The
     // uniforms exist only in their variant strings; the
@@ -1393,6 +1420,11 @@ export function runSimulationPasses(args: {
   {
     const attrConsumers = resolveAttrConsumers(config);
     const attrTex = args.attrTex ?? null;
+    // Local time (Layer 1 WP9, phase D): the resolved
+    // per-group time table (lib/gpgpuLocalTime.ts). The
+    // velocity variant reads it in the tail; the resolution
+    // is an attribute consumer like the group gate below.
+    const localTime = resolveLocalTime(config);
     if (velSimMat.uniforms.uAttrTex) velSimMat.uniforms.uAttrTex.value = attrTex;
     // Particle rules (G10 stage 1): an effective rule list is
     // itself an attribute consumer (its mask rides slot 3 of
@@ -1406,7 +1438,7 @@ export function runSimulationPasses(args: {
     // segment ANDs into the same grp* gates (design section 7).
     if (velSimMat.uniforms.uRuleLiveTex) velSimMat.uniforms.uRuleLiveTex.value = args.ruleLiveTex ?? null;
     if (velSimMat.uniforms.uRuleLiveEnabled) velSimMat.uniforms.uRuleLiveEnabled.value = !!args.ruleLiveTex && (liveRulesHaveConsumedAction(config.gpgpuParticleRulesLive ?? '') || predationActive(config));
-    if (velSimMat.uniforms.uAttrEnabled) velSimMat.uniforms.uAttrEnabled.value = !!attrTex && (attrConsumers.forceActive || attrConsumers.groupActive || attrConsumers.steerStateActive || particleRulesActive || fieldLayerSlotAttrActive(config) || b3SlotAttrActive(config));
+    if (velSimMat.uniforms.uAttrEnabled) velSimMat.uniforms.uAttrEnabled.value = !!attrTex && (attrConsumers.forceActive || attrConsumers.groupActive || attrConsumers.steerStateActive || particleRulesActive || fieldLayerSlotAttrActive(config) || b3SlotAttrActive(config) || fieldGroupGateActive(config) || localTime.active);
     if (velSimMat.uniforms.uAttrForceEnabled) velSimMat.uniforms.uAttrForceEnabled.value = !!attrTex && attrConsumers.forceActive;
     if (velSimMat.uniforms.uAttrForceSlot) velSimMat.uniforms.uAttrForceSlot.value = normalizeAttrSlot(config.gpgpuAttrForceSlot);
     if (velSimMat.uniforms.uAttrForceAmount) velSimMat.uniforms.uAttrForceAmount.value = Math.max(0, Math.min(1, config.gpgpuAttrForceAmount ?? 1));
@@ -1429,6 +1461,16 @@ export function runSimulationPasses(args: {
     if (velSimMat.uniforms.uGroupHigh) velSimMat.uniforms.uGroupHigh.value = gatePredicate ? gatePredicate.high : Math.max(0, Math.min(1, config.gpgpuGroupHigh ?? 0.75));
     if (velSimMat.uniforms.uGroupTarget) velSimMat.uniforms.uGroupTarget.value = { all: 0, gravity: 1, turbulence: 2, curl: 3, wind: 4, morph: 5 }[config.gpgpuGroupTarget] ?? 0;
     if (velSimMat.uniforms.uGroupInvert) velSimMat.uniforms.uGroupInvert.value = gatePredicate ? gatePredicate.invert : !!config.gpgpuGroupInvert;
+    // Local time (Layer 1 WP9, phase D): the packed entry
+    // table; the count is held at 0 while the attribute
+    // texture is missing, so the tail's block skips and the
+    // pass keeps the legacy clock exactly.
+    if (velSimMat.uniforms.uLocalTimeEntries) {
+      const packed = packLocalTimeEntries(localTime.entries);
+      const arr = velSimMat.uniforms.uLocalTimeEntries.value as THREE.Vector4[];
+      for (let i = 0; i < arr.length; i++) arr[i].set(packed[i * 4], packed[i * 4 + 1], packed[i * 4 + 2], packed[i * 4 + 3]);
+    }
+    if (velSimMat.uniforms.uLocalTimeCount) velSimMat.uniforms.uLocalTimeCount.value = attrTex ? localTime.entries.length : 0;
   }
   velSimMat.uniforms.uWellEnabled.value = config.gpgpuWellEnabled;
   velSimMat.uniforms.uWellStrength.value = config.gpgpuWellStrength;
@@ -1653,6 +1695,10 @@ export function runSimulationPasses(args: {
     posSimMat.uniforms.uRigidBodyCount.value = args.rigidBodyCount ?? 0;
   }
   posSimMat.uniforms.uAgeMax.value = config.gpgpuAgeMax;
+  // Lifetime jitter (Layer 1 WP4, phase C): read only by
+  // the age-jitter variant of the position fragment; the
+  // clamp mirrors lib/gpgpuLifecycle.ts.
+  if (posSimMat.uniforms.uAgeMaxJitter) posSimMat.uniforms.uAgeMaxJitter.value = clampAgeMaxJitter(config.gpgpuAgeMaxJitter ?? 0);
   // Replica age phase (Phase M): gated exactly like the initial
   // data — morph on, more than one copy, step > 0 — else 0, which
   // restarts respawned particles at age 0 as before.
@@ -1765,6 +1811,18 @@ export function runSimulationPasses(args: {
   if (posSimMat.uniforms.uShaderSeedPhase) {
     posSimMat.uniforms.uShaderSeedPhase.value = resolveShaderSeedPhase(config);
   }
+  // Deform stack (Layer 1 WP8, phase D): read only by the
+  // deform variant of the position fragment. The packed
+  // operator list follows lib/gpgpuDeformStack.ts
+  // (packDeformOps); the column-texture uniforms for the FFD
+  // sub-variant are supplied with the column block below.
+  if (posSimMat.uniforms.uDeformOps) {
+    const deformOps = resolveConfigDeformOps(config);
+    const packed = packDeformOps(deformOps);
+    const arr = posSimMat.uniforms.uDeformOps.value as THREE.Vector4[];
+    for (let i = 0; i < arr.length; i++) arr[i].set(packed[i * 4], packed[i * 4 + 1], packed[i * 4 + 2], packed[i * 4 + 3]);
+    if (posSimMat.uniforms.uDeformOpCount) posSimMat.uniforms.uDeformOpCount.value = deformOps.length;
+  }
   // Emission sources (stage 2, E3): read only by the emission
   // variants of the position fragment. The cloud texture is
   // the runtime's published emission cloud. The path arrays
@@ -1797,6 +1855,20 @@ export function runSimulationPasses(args: {
     if (posSimMat.uniforms.uEmitColHeight) posSimMat.uniforms.uEmitColHeight.value = colSupply ? colSupply.height : FIELD_COLUMN_LAYOUT.height;
     if (posSimMat.uniforms.uEmitPathBase) posSimMat.uniforms.uEmitPathBase.value = colSupply && colSupply.pathCount > 0 ? colSupply.pointsBase + (colSupply.pathPointOffsets[0] ?? 0) : 0;
     if (posSimMat.uniforms.uEmitPathTexCount) posSimMat.uniforms.uEmitPathTexCount.value = emitPath ? emitPath.points.length : 0;
+    // Emitter list (Layer 1 WP4, phase D2): the emitterList
+    // variant of the position fragment walks the emitters
+    // section of the same supply — its base texel offset and
+    // the packed element count (both 0 while no list stands).
+    if (posSimMat.uniforms.uEmittersBase) posSimMat.uniforms.uEmittersBase.value = colSupply ? colSupply.emittersBase : 0;
+    if (posSimMat.uniforms.uEmitterCount) posSimMat.uniforms.uEmitterCount.value = colSupply ? colSupply.emitterCount : 0;
+    // Deform FFD column (Layer 1 WP8, phase D): the same
+    // supply's texture and dimensions, plus the deformFfd
+    // section's base — read only by the deform FFD
+    // sub-variant of the position fragment.
+    if (posSimMat.uniforms.uDeformColTex) posSimMat.uniforms.uDeformColTex.value = colSupply ? colSupply.texture : null;
+    if (posSimMat.uniforms.uDeformColWidth) posSimMat.uniforms.uDeformColWidth.value = colSupply ? colSupply.width : COLUMN_TEX_WIDTH;
+    if (posSimMat.uniforms.uDeformColHeight) posSimMat.uniforms.uDeformColHeight.value = colSupply ? colSupply.height : FIELD_COLUMN_LAYOUT.height;
+    if (posSimMat.uniforms.uDeformFfdBase) posSimMat.uniforms.uDeformFfdBase.value = colSupply ? colSupply.deformFfdBase : 0;
   }
   if (posSimMat.uniforms.uEmitMaskEnabled) posSimMat.uniforms.uEmitMaskEnabled.value = !!config.gpgpuEmitMaskEnabled && !!args.killMaskTex && !vellum.active && !rigidActive;
   // Lifecycle grammar (Phase AB): spawn gate + kill conditions.
@@ -1829,6 +1901,11 @@ export function runSimulationPasses(args: {
   if (posSimMat.uniforms.uSpawnEventEnabled) posSimMat.uniforms.uSpawnEventEnabled.value = !!config.gpgpuSpawnEventEnabled && !vellum.active && !rigidActive;
   if (posSimMat.uniforms.uSpawnEventTime) posSimMat.uniforms.uSpawnEventTime.value = Math.max(0, Math.min(600, config.gpgpuSpawnEventTime ?? 0));
   if (posSimMat.uniforms.uSpawnEventCount) posSimMat.uniforms.uSpawnEventCount.value = Math.max(0, Math.min(1, config.gpgpuSpawnEventCount ?? 0));
+  // Spawn event demand (Layer 1 WP4, phase C): same
+  // resolution as the velocity pass — the gate threshold's
+  // due fractions for this frame and the previous one.
+  if (posSimMat.uniforms.uSpawnEventDueFrac) posSimMat.uniforms.uSpawnEventDueFrac.value = spawnEventDueOn ? spawnEventDemandFracAt(config, texSize, args.spawnTime ?? time) : 0;
+  if (posSimMat.uniforms.uSpawnEventDuePrevFrac) posSimMat.uniforms.uSpawnEventDuePrevFrac.value = spawnEventDueOn ? spawnEventDemandFracAt(config, texSize, (args.spawnTime ?? time) - dt) : 0;
   // Emission curve (Phase AJ): resolved like the age curves —
   // disabled OR an identity curve keeps the legacy respawn path.
   // The knot arrays are padded to FREE_CURVE_MAX_POINTS by
@@ -1923,6 +2000,22 @@ export function runSimulationPasses(args: {
       if (posSimMat.uniforms.uGroupLow) posSimMat.uniforms.uGroupLow.value = gatePredicate.low;
       if (posSimMat.uniforms.uGroupHigh) posSimMat.uniforms.uGroupHigh.value = gatePredicate.high;
       if (posSimMat.uniforms.uGroupInvert) posSimMat.uniforms.uGroupInvert.value = gatePredicate.invert;
+    }
+    // Local time (Layer 1 WP9, phase D): the packed entry
+    // table for the age advances (lib/gpgpuLocalTime.ts).
+    // The count is held at 0 while the attribute texture is
+    // missing and in replica stacks (args.suppressGroupKill
+    // — vUv is stack-local there while the bake is global,
+    // the group kill's suppression), so the variant then
+    // evaluates to exactly 1 and the advances stay legacy.
+    {
+      const localTime = resolveLocalTime(config);
+      if (posSimMat.uniforms.uLocalTimeEntries) {
+        const packed = packLocalTimeEntries(localTime.entries);
+        const arr = posSimMat.uniforms.uLocalTimeEntries.value as THREE.Vector4[];
+        for (let i = 0; i < arr.length; i++) arr[i].set(packed[i * 4], packed[i * 4 + 1], packed[i * 4 + 2], packed[i * 4 + 3]);
+      }
+      if (posSimMat.uniforms.uLocalTimeCount) posSimMat.uniforms.uLocalTimeCount.value = !!args.attrTex && !args.suppressGroupKill ? localTime.entries.length : 0;
     }
   }
   // Contact pass (Grammar 2.0 stage 1, the slice-1B

@@ -18,15 +18,23 @@ import { compileCheckShader } from '../lib/glslInjection';
 import {
   buildParticlePointsVertexHarness,
   PARTICLE_POINTS_VERTEX_CHECK_FRAGMENT,
+  resolveParticlePointsVertexSnippet,
   setParticlePointsVertexGlslStatus,
   validateParticlePointsVertexGlslCode,
 } from '../lib/particlePointsVertexGlsl';
 import {
   buildParticlePointsFragmentHarness,
   PARTICLE_POINTS_FRAGMENT_CHECK_VERTEX,
+  resolveParticlePointsFragmentSnippet,
   setParticlePointsFragmentGlslStatus,
   validateParticlePointsFragmentGlslCode,
 } from '../lib/particlePointsFragmentGlsl';
+import {
+  PARTICLE_POINTS_FRAGMENT_REPLACEMENT_CONTRACT,
+  setParticlePointsFragmentReplacementStatus,
+  validateParticlePointsFragmentReplacementCode,
+} from '../lib/glslReplacementPoints';
+import { resolveGlslSharedSnippetDefs } from '../lib/glslSharedSnippets';
 
 export const ParticleSystem: React.FC<{
   config: ParticleConfig;
@@ -101,7 +109,17 @@ export const ParticleSystem: React.FC<{
   const [vertexShader, setVertexShader] = useState(PARTICLE_VERTEX_SHADER);
   const appliedVertexCodeRef = useRef<string | null>(null);
   useEffect(() => {
-    const code = config.particlePointsVertexGlslEnabled ? config.particlePointsVertexGlslCode : '';
+    const rawCode = config.particlePointsVertexGlslEnabled ? config.particlePointsVertexGlslCode : '';
+    // Layer 1 WP11 phase C: shared snippet definitions resolve
+    // before this point's validation / compile check; without
+    // authored definitions or directives the resolution is the
+    // identical string (byte-identical shaders).
+    const resolution = resolveParticlePointsVertexSnippet(rawCode, resolveGlslSharedSnippetDefs(config.glslSharedSnippets));
+    if (!resolution.ok) {
+      setParticlePointsVertexGlslStatus({ state: 'error', message: resolution.error ?? 'invalid code' });
+      return;
+    }
+    const code = resolution.code as string;
     const applyKey = `${iblActive ? 'ibl' : 'stock'}${shadowActive ? '+smap' : ''}|${code}`;
     if (!code.trim() && !iblActive && !shadowActive) {
       if (appliedVertexCodeRef.current !== null) {
@@ -135,7 +153,7 @@ export const ParticleSystem: React.FC<{
     setVertexShader(buildParticleVertexShader(code, iblActive, shadowActive));
     appliedVertexCodeRef.current = applyKey;
     setParticlePointsVertexGlslStatus({ state: 'active' });
-  }, [config.particlePointsVertexGlslEnabled, config.particlePointsVertexGlslCode, gl, iblActive, shadowActive]);
+  }, [config.particlePointsVertexGlslEnabled, config.particlePointsVertexGlslCode, config.glslSharedSnippets, gl, iblActive, shadowActive]);
 
   // Particle points fragment GLSL (Phase CE): the same
   // validate + compile-check + swap flow as the vertex point
@@ -147,7 +165,53 @@ export const ParticleSystem: React.FC<{
   const [fragmentShader, setFragmentShader] = useState(FRAGMENT_SHADER);
   const appliedFragmentCodeRef = useRef<string | null>(null);
   useEffect(() => {
-    const code = config.particlePointsFragmentGlslEnabled ? config.particlePointsFragmentGlslCode : '';
+    // Full-fragment replacement form (Layer 1 WP11 phases
+    // D2/C): while the replacement is enabled with non-empty
+    // code, the user code IS the whole fragment — the same
+    // validate + compile-check + swap discipline, reported
+    // through the slot's own status store. The vertex shader
+    // and its varyings are unchanged. With the replacement
+    // disabled or empty, the snippet flow below runs exactly
+    // as before.
+    const replaceCode = config.particlePointsFragmentGlslReplacementEnabled
+      ? config.particlePointsFragmentGlslReplacementCode
+      : '';
+    if (replaceCode.trim()) {
+      const replaceKey = `replace|${replaceCode}`;
+      if (appliedFragmentCodeRef.current !== replaceKey) {
+        const validation = validateParticlePointsFragmentReplacementCode(replaceCode);
+        if (!validation.ok) {
+          setParticlePointsFragmentReplacementStatus({ state: 'error', message: validation.error ?? 'invalid code' });
+          return;
+        }
+        const check = compileCheckShader(
+          gl.getContext() as WebGL2RenderingContext,
+          PARTICLE_POINTS_FRAGMENT_CHECK_VERTEX,
+          PARTICLE_POINTS_FRAGMENT_REPLACEMENT_CONTRACT.buildHarness(replaceCode),
+        );
+        if (!check.ok) {
+          setParticlePointsFragmentReplacementStatus({ state: 'error', message: check.error ?? 'compile failed' });
+          return;
+        }
+        setFragmentShader(PARTICLE_POINTS_FRAGMENT_REPLACEMENT_CONTRACT.buildFragment(replaceCode));
+        appliedFragmentCodeRef.current = replaceKey;
+        setParticlePointsFragmentReplacementStatus({ state: 'active' });
+      }
+      setParticlePointsFragmentGlslStatus({ state: 'inactive' });
+      return;
+    }
+    setParticlePointsFragmentReplacementStatus({ state: 'inactive' });
+    const rawCode = config.particlePointsFragmentGlslEnabled ? config.particlePointsFragmentGlslCode : '';
+    // Layer 1 WP11 phase C: shared snippet definitions resolve
+    // before this point's validation / compile check; without
+    // authored definitions or directives the resolution is the
+    // identical string (byte-identical shaders).
+    const resolution = resolveParticlePointsFragmentSnippet(rawCode, resolveGlslSharedSnippetDefs(config.glslSharedSnippets));
+    if (!resolution.ok) {
+      setParticlePointsFragmentGlslStatus({ state: 'error', message: resolution.error ?? 'invalid code' });
+      return;
+    }
+    const code = resolution.code as string;
     const applyKey = `${iblActive ? 'ibl' : 'stock'}${shadowActive ? '+smap' : ''}|${code}`;
     if (!code.trim() && !iblActive && !shadowActive) {
       if (appliedFragmentCodeRef.current !== null) {
@@ -181,7 +245,7 @@ export const ParticleSystem: React.FC<{
     setFragmentShader(buildParticleFragmentShader(code, iblActive, shadowActive));
     appliedFragmentCodeRef.current = applyKey;
     setParticlePointsFragmentGlslStatus({ state: 'active' });
-  }, [config.particlePointsFragmentGlslEnabled, config.particlePointsFragmentGlslCode, gl, iblActive, shadowActive]);
+  }, [config.particlePointsFragmentGlslEnabled, config.particlePointsFragmentGlslCode, config.particlePointsFragmentGlslReplacementEnabled, config.particlePointsFragmentGlslReplacementCode, config.glslSharedSnippets, gl, iblActive, shadowActive]);
 
   const maxGhost = 8;
   const ghostMats = useMemo(

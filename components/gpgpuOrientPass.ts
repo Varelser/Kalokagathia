@@ -149,6 +149,43 @@ export function getActiveOrientPass(): GpgpuOrientPass | null {
   return activeOrientPass;
 }
 
+/**
+ * Pending orientation seed (bake A-2 premise fix): posture
+ * restored from a state-cache frame while NO orient pass
+ * stands yet — the deterministic capture job's remount is
+ * the case that matters: the initial state is re-applied
+ * into the fresh mount before the scene's first frame has
+ * constructed the pass. The seed waits here, one-shot, and
+ * the next pass constructed at this texSize consumes it on
+ * its first run() (see GpgpuOrientPass.run). A newer
+ * request replaces an unconsumed one (each apply supersedes
+ * the last, like the initial-state record it mirrors).
+ * Registration never feeds back into rendering on its own:
+ * with no request pending, construction and stepping are
+ * exactly the legacy behaviour.
+ */
+let pendingOrientSeed: { texSize: number; data: Float32Array } | null = null;
+
+export function requestPendingOrientSeed(data: Float32Array, texSize: number): void {
+  pendingOrientSeed = { texSize, data };
+}
+
+export function takePendingOrientSeed(texSize: number): Float32Array | null {
+  if (!pendingOrientSeed || pendingOrientSeed.texSize !== texSize) return null;
+  const data = pendingOrientSeed.data;
+  pendingOrientSeed = null;
+  return data;
+}
+
+export function clearPendingOrientSeed(): void {
+  pendingOrientSeed = null;
+}
+
+/** Whether a seed is waiting (diag / tests). */
+export function hasPendingOrientSeed(): boolean {
+  return pendingOrientSeed !== null;
+}
+
 /** Literal JS translation of lookRot in
  *  components/gpgpuShaderVolumes.ts: the rotation whose
  *  columns are (r, u, dir), applied to v as r·x + u·y + dir·z. */
@@ -284,12 +321,16 @@ export class GpgpuOrientPass {
   private scene = new THREE.Scene();
   private cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private geo: THREE.PlaneGeometry;
+  private mesh: THREE.Mesh;
   private hasState = false;
   /** Seconds accumulated over run() calls; the damping clock
    *  while the age system is off (the CPU twin's elapsed). */
   private elapsed = 0;
+  /** Pool size this pass was built for (seed validation). */
+  readonly texSize: number;
 
   constructor(texSize: number) {
+    this.texSize = texSize;
     const makeRt = () => new THREE.WebGLRenderTarget(texSize, texSize, {
       type: THREE.FloatType,
       format: THREE.RGBAFormat,
@@ -324,8 +365,53 @@ export class GpgpuOrientPass {
     this.geo = new THREE.PlaneGeometry(2, 2);
     const mesh = new THREE.Mesh(this.geo, this.mat);
     mesh.frustumCulled = false;
+    this.mesh = mesh;
     this.scene.add(mesh);
     activeOrientPass = this;
+  }
+
+  /**
+   * Seed the posture state from restored data (bake A-2
+   * premise fix): copy the count x 4 quaternion buffer into
+   * BOTH ping-pong targets through a DataTexture passthrough
+   * (NoBlending, the bake copy's discipline), so the next
+   * step composes its increment onto the restored posture
+   * instead of resetting to identity, and mark the state as
+   * started. Returns false — and changes nothing — when the
+   * buffer does not match this pass's pool size; the caller
+   * (the initial-state applier) turns that into its refusal.
+   * The elapsed clock is NOT seeded: the state-cache format
+   * carries no pass clock. While the age system is on (the
+   * restored frame's own age lane drives the step law's
+   * tState) this does not enter the resumed evolution; while
+   * ages are off, the damping clock restarts with the mount
+   * — a format boundary, stated here rather than papered
+   * over with an invented value.
+   */
+  seedFromData(gl: THREE.WebGLRenderer, data: Float32Array): boolean {
+    if (data.length !== this.texSize * this.texSize * 4) return false;
+    const tex = new THREE.DataTexture(
+      data.slice(), this.texSize, this.texSize, THREE.RGBAFormat, THREE.FloatType,
+    );
+    tex.needsUpdate = true;
+    const copyMat = new THREE.MeshBasicMaterial({ map: tex });
+    copyMat.blending = THREE.NoBlending;
+    const prevMaterial = this.mesh.material;
+    const prevTarget = gl.getRenderTarget();
+    this.mesh.material = copyMat;
+    try {
+      for (const rt of this.rts) {
+        gl.setRenderTarget(rt);
+        gl.render(this.scene, this.cam);
+      }
+    } finally {
+      gl.setRenderTarget(prevTarget);
+      this.mesh.material = prevMaterial;
+      copyMat.dispose();
+      tex.dispose();
+    }
+    this.hasState = true;
+    return true;
   }
 
   /**
@@ -335,6 +421,14 @@ export class GpgpuOrientPass {
    * (uResetAll), so no clear / copy pass is needed.
    */
   run(gl: THREE.WebGLRenderer, args: GpgpuOrientPassRunArgs): THREE.Texture {
+    // Pending seed (bake A-2 premise fix): posture restored
+    // while no pass stood yet (the capture job's remount)
+    // is consumed here, on the first run after construction,
+    // before the step below reads the read side — so the
+    // first stepped frame already evolves the restored
+    // posture. No pending seed = the exact legacy run.
+    const pendingSeed = takePendingOrientSeed(this.texSize);
+    if (pendingSeed) this.seedFromData(gl, pendingSeed);
     const writeIdx = this.readIdx === 0 ? 1 : 0;
     const u = this.mat.uniforms;
     u.uPrevTex.value = this.hasState ? this.rts[this.readIdx].texture : null;

@@ -1,14 +1,20 @@
 import React from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
-import { SCENE_DEPTH_GLSL, getSceneDepthSource, useSceneDepthSource } from '../lib/sceneDepth';
+import { getSceneDepthSource, useSceneDepthSource } from '../lib/sceneDepth';
+import { getParticleDensitySource } from '../lib/particleDensity';
 import type { ParticleConfig } from '../types';
 import { normalizeLightDir } from '../lib/gpgpuLight';
 import {
   clampVolumeSteps,
   clampVolumeSoftness,
+  clampVolumeDepthIntersect,
+  clampVolumeDensity,
   lightVolumeDraws,
+  volumeDepthIntersectOn,
+  volumeDensityOn,
 } from '../lib/lightVolume';
+import { VOLUME_VERTEX, buildLightVolumeFragment } from './lightVolumeShader';
 import {
   appendTrailPoint,
   buildLightTrailRibbon,
@@ -21,10 +27,20 @@ import { bakeShadowOcclusionMap, bakeTunnelShadowOcclusionMap, buildShadowScene 
 // Volume: a dedicated cone / sphere mesh at the Phase T light's
 // position, shaded by a raymarch-style accumulation over axial
 // samples of an analytic density (lib/lightVolume.ts is the pure
-// reference; the GLSL below is its twin). It is draw-only and
-// does NOT intersect scene depth — no occlusion — so edges are
-// softened by the softness key instead. That limit is stated in
-// the UI next to the controls.
+// reference; the shader strings live in
+// components/lightVolumeShader.ts). In its stock form it is
+// draw-only and does NOT intersect scene depth — no occlusion —
+// so edges are softened by the softness key instead; that limit
+// is stated in the UI next to the controls. The depth-
+// intersection variant (Layer 1 WP7 Phase B, behind
+// gpgpuLightVolumeDepthIntersect > 0) lifts the limit: the
+// accumulated beam is truncated by the visible fraction of the
+// view chord in front of the scene surface, from the shared
+// scene depth capture (lib/sceneDepth.ts). The density
+// variant (Layer 1 WP7 Phase D, behind
+// gpgpuLightVolumeDensity > 0) additionally attenuates the
+// beam by the shared particle density field
+// (lib/particleDensity.ts) at each fragment's screen position.
 //
 // Trail: the light's per-frame position history (sampled in
 // useFrame, in frame order, never from the wall clock) turned
@@ -38,142 +54,6 @@ import { bakeShadowOcclusionMap, bakeTunnelShadowOcclusionMap, buildShadowScene 
 // AppSceneLayerContent), so its coordinates are the light's own
 // local coordinates, rotation included.
 
-const VOLUME_VERTEX = /* glsl */ `
-  varying vec3 vLocal;
-  varying vec3 vWorld;
-  varying vec3 vNormal;
-  varying vec3 vScene;
-  uniform vec3 uSceneOrigin;
-  uniform vec4 uSceneQuat;
-  uniform vec3 uMeshOffset;
-  uniform float uMeshFlip;
-  vec3 quatRotate(vec4 q, vec3 v) {
-    return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-  }
-  void main() {
-    vLocal = position;
-    vec4 wp = modelMatrix * vec4(position, 1.0);
-    vWorld = wp.xyz;
-    vNormal = normalize(mat3(modelMatrix) * normal);
-    // Scene-local position (the frame the shadow bake lives in):
-    // mesh flip/offset first, then the light group's quaternion,
-    // then the light position. vWorld includes the scene group's
-    // own rotation and cannot be used for the bake sample.
-    vec3 lp = position;
-    if (uMeshFlip > 0.5) lp = vec3(lp.x, -lp.y, -lp.z);
-    lp += uMeshOffset;
-    vScene = uSceneOrigin + quatRotate(uSceneQuat, lp);
-    gl_Position = projectionMatrix * viewMatrix * wp;
-  }
-`;
-
-const VOLUME_FRAGMENT = /* glsl */ `
-  precision highp float;
-  varying vec3 vLocal;
-  varying vec3 vWorld;
-  varying vec3 vNormal;
-  uniform float uIntensity;
-  uniform float uSteps;
-  uniform float uSoftness;
-  uniform float uLength;
-  uniform float uRadius;
-  uniform float uShape; // 0 = cone, 1 = sphere
-  // Occlusion-map shadow (Phase Z): the volume dims where the
-  // baked occlusion says the light is blocked.
-  uniform sampler2D uShadowMap;
-  uniform float uShadowReady;
-  uniform float uShadowExtent;
-  uniform float uShadowStrength;
-  // Tunnel occlusion bake (Round 83/84 gap 7): while the
-  // terrain is a tunnel, fragments inside the tube region read
-  // the tunnel bake by the (theta, z) inverse transform
-  // instead of the plane bake by world XZ.
-  uniform sampler2D uShadowTunnelMap;
-  uniform float uShadowTunnelReady;
-  uniform float uShadowHeightScale;
-  varying vec3 vScene;
-  // Scene depth occlusion (Phase 16 stage 1): the shared scene
-  // depth capture (lib/sceneDepth.ts). uDepthReady 0 (no texture
-  // bound — always the case while gpgpuDepthOcclusion is 0, when
-  // the capture never mounts) skips this block entirely and the
-  // accumulation below is the legacy formula verbatim.
-  uniform sampler2D uSceneDepth;
-  uniform float uDepthReady;
-  uniform float uDepthOcclusion;
-  uniform float uCamNear;
-  uniform float uCamFar;
-  uniform vec2 uResolution;
-  ${SCENE_DEPTH_GLSL}
-
-  float edgeExp() { return mix(0.8, 2.2, uSoftness); }
-
-  void main() {
-    // View chord through the volume, approximated by the
-    // surface normal vs view direction: 1 through the middle of
-    // the silhouette, 0 at its rim. (A radial density evaluated
-    // ON the mesh surface would be identically zero, so the
-    // chord carries the cross-beam falloff — see lib/lightVolume.ts.)
-    vec3 viewDir = normalize(cameraPosition - vWorld);
-    float chord = abs(dot(normalize(vNormal), viewDir));
-    float acc = 0.0;
-    float n = uSteps;
-    if (uShape < 0.5) {
-      // Cone: local geometry space has the apex at +length/2 and
-      // the base at -length/2 (ConeGeometry), so the axial
-      // fraction is u = 0.5 - y / length.
-      float u = clamp(0.5 - vLocal.y / uLength, 0.0, 1.0);
-      for (int i = 0; i < 32; i++) {
-        if (float(i) >= n) break;
-        float s = u * (float(i) / n);
-        acc += pow(1.0 - s, 1.3);
-      }
-      acc /= n;
-      acc *= pow(chord, edgeExp());
-    } else {
-      for (int i = 0; i < 32; i++) {
-        if (float(i) >= n) break;
-        float f = float(i) / n;
-        acc += 1.0 - f * f;
-      }
-      acc /= n;
-      acc *= pow(chord, edgeExp()) * 1.4;
-    }
-    float a = clamp(uIntensity * acc, 0.0, 1.0);
-    if (uShadowReady > 0.5 && uShadowStrength > 0.0) {
-      float occ = 0.0;
-      bool tunnelSampled = false;
-      if (uShadowTunnelReady > 0.5) {
-        // Inside the tube region the tunnel bake applies; the
-        // region test matches bakedTunnelShadowMultiplier.
-        float rho = length(vScene.xy);
-        if (rho <= uShadowExtent + uShadowHeightScale * 0.5 && abs(vScene.z) <= uShadowExtent) {
-          float tu = fract(atan(vScene.y, vScene.x) / 6.28318530718);
-          float tv = clamp(vScene.z / (2.0 * uShadowExtent) + 0.5, 0.0, 1.0);
-          occ = texture2D(uShadowTunnelMap, vec2(tu, tv)).r;
-          tunnelSampled = true;
-        }
-      }
-      if (!tunnelSampled) {
-        vec2 suv = clamp(vScene.xz / (2.0 * uShadowExtent) + 0.5, 0.0, 1.0);
-        occ = texture2D(uShadowMap, suv).r;
-      }
-      a *= 1.0 - uShadowStrength * occ * 0.8;
-    }
-    if (uDepthReady > 0.5 && uDepthOcclusion > 0.0) {
-      // Cut / fade the volume where an opaque surface sits in
-      // front of this fragment: the scene depth at this pixel vs
-      // this fragment's own view depth, softened over 5% of the
-      // fragment depth (min 1 world unit).
-      vec2 duv = gl_FragCoord.xy / max(uResolution, vec2(1.0));
-      float sceneDepth = kaloViewDepthFromBuffer(texture2D(uSceneDepth, duv).x, uCamNear, uCamFar);
-      float fragDepth = -(viewMatrix * vec4(vWorld, 1.0)).z;
-      float fade = kaloDepthFadeFactor(sceneDepth, fragDepth, max(fragDepth * 0.05, 1.0));
-      a *= mix(1.0, fade, clamp(uDepthOcclusion, 0.0, 1.0));
-    }
-    if (a <= 0.001) discard;
-    gl_FragColor = vec4(vec3(1.0), a);
-  }
-`;
 
 export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) => {
   const volumeParams = {
@@ -186,6 +66,20 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
     softness: clampVolumeSoftness(config.gpgpuLightVolumeSoftness),
   };
   const volumeDraws = lightVolumeDraws(volumeParams);
+  // Depth intersection (Layer 1 WP7 Phase B): resolved once
+  // here; the material assembles the extended fragment variant
+  // only while the strength is positive, and the per-frame sync
+  // below binds the depth supply for the volume's own sake as
+  // well as for the global occlusion strength.
+  const depthIntersectStrength = clampVolumeDepthIntersect(config.gpgpuLightVolumeDepthIntersect);
+  const depthIntersectOn = volumeDepthIntersectOn(config);
+  // Particle density attenuation (Layer 1 WP7 Phase D): the
+  // volume joins the shared density field as a consumer while
+  // the strength is positive; the material assembles the
+  // density variant and the per-frame sync below binds the
+  // field published by the GPGPU system's splat.
+  const densityStrength = clampVolumeDensity(config.gpgpuLightVolumeDensity);
+  const densityOn = volumeDensityOn(config);
   const trailEnabled = config.gpgpuLightTrailEnabled && config.gpgpuLightTrailWidth > 0;
 
   const lightPos = React.useMemo<TrailVec3>(
@@ -290,7 +184,7 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
     const isCone = volumeParams.shape === 'cone';
     return new THREE.ShaderMaterial({
       vertexShader: VOLUME_VERTEX,
-      fragmentShader: VOLUME_FRAGMENT,
+      fragmentShader: buildLightVolumeFragment(depthIntersectOn, densityOn),
       uniforms: {
         uIntensity: { value: volumeParams.intensity },
         uSteps: { value: volumeParams.steps },
@@ -315,6 +209,17 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
         uSceneDepth: { value: null },
         uDepthReady: { value: 0 },
         uDepthOcclusion: { value: 0 },
+        // Depth intersection (Layer 1 WP7 Phase B): declared in
+        // the fragment only in the extended variant; the sync
+        // below drives it from the resolved strength.
+        uDepthIntersect: { value: 0 },
+        // Particle density (Layer 1 WP7 Phase D): declared in
+        // the fragment only in the density variant; inert
+        // defaults, bound per frame while the strength is
+        // positive and the splat has published a field.
+        uParticleDensity: { value: null },
+        uVolumeDensity: { value: 0 },
+        uVolumeDensityReady: { value: 0 },
         uCamNear: { value: 0.1 },
         uCamFar: { value: 10000 },
         uResolution: { value: new THREE.Vector2(1, 1) },
@@ -324,7 +229,7 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-  }, [volumeDraws, volumeParams.intensity, volumeParams.steps, volumeParams.softness, volumeParams.length, volumeParams.angleDeg, volumeParams.shape, shadowBake, config.gpgpuShadowStrength, config.gpgpuLightDirX, config.gpgpuLightDirY, config.gpgpuLightDirZ, lightPos]);
+  }, [volumeDraws, volumeParams.intensity, volumeParams.steps, volumeParams.softness, volumeParams.length, volumeParams.angleDeg, volumeParams.shape, shadowBake, config.gpgpuShadowStrength, config.gpgpuLightDirX, config.gpgpuLightDirY, config.gpgpuLightDirZ, lightPos, depthIntersectOn, densityOn]);
 
   React.useEffect(() => {
     return () => {
@@ -337,18 +242,22 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
   // the uniforms are (re)bound per frame from the live store so a
   // camera near/far change or a capture resize is followed. While
   // the strength is 0 the binding is explicitly cleared, keeping
-  // uDepthReady at 0 and the fragment on its legacy path.
+  // uDepthReady at 0 and the fragment on its legacy path. The
+  // binding also stands for the volume's own depth-intersection
+  // strength (Layer 1 WP7 Phase B): AppScene mounts the capture
+  // while either strength is positive.
   const depthSource = useSceneDepthSource();
   const gl = useThree((state) => state.gl);
   const depthOcclusion = config.gpgpuDepthOcclusion;
   useFrame(() => {
     if (!volumeMaterial) return;
     const u = volumeMaterial.uniforms;
-    const source = depthOcclusion > 0 ? (depthSource ?? getSceneDepthSource()) : null;
+    const source = depthOcclusion > 0 || depthIntersectOn ? (depthSource ?? getSceneDepthSource()) : null;
     if (source) {
       u.uSceneDepth.value = source.texture;
       u.uDepthReady.value = 1;
       u.uDepthOcclusion.value = Math.min(1, Math.max(0, depthOcclusion));
+      u.uDepthIntersect.value = depthIntersectStrength;
       u.uCamNear.value = source.near;
       u.uCamFar.value = source.far;
       const size = gl.getDrawingBufferSize(new THREE.Vector2());
@@ -357,6 +266,25 @@ export const LightVolume: React.FC<{ config: ParticleConfig }> = ({ config }) =>
       u.uSceneDepth.value = null;
       u.uDepthReady.value = 0;
       u.uDepthOcclusion.value = 0;
+      u.uDepthIntersect.value = 0;
+    }
+    // Particle density binding (Layer 1 WP7 Phase D): read the
+    // shared density store per frame (the LightFx precedent —
+    // the store has no subscription, consumers poll it in
+    // their frame step). While the strength is 0 the binding
+    // is explicitly cleared, keeping uVolumeDensityReady at 0
+    // and the fragment on its non-density path; with no field
+    // published yet the same holds, so the beam is unattenuated
+    // until the splat first runs.
+    const densitySource = densityOn ? getParticleDensitySource() : null;
+    if (densitySource) {
+      u.uParticleDensity.value = densitySource.texture;
+      u.uVolumeDensity.value = densityStrength;
+      u.uVolumeDensityReady.value = 1;
+    } else {
+      u.uParticleDensity.value = null;
+      u.uVolumeDensity.value = 0;
+      u.uVolumeDensityReady.value = 0;
     }
   });
 

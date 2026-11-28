@@ -52,13 +52,16 @@
 import {
   createGlslInjectionStatusStore,
   registerGlslInjection,
+  resolveGlslSnippet,
   validateGlslSnippet,
   GLSL_SNIPPET_MAX_LENGTH,
   type GlslForbiddenToken,
   type GlslInjectionContract,
   type GlslInjectionStatus,
+  type GlslSnippetResolution,
   type GlslSnippetValidation,
 } from './glslInjection';
+import type { GlslSharedSnippetSet } from './glslSharedSnippets';
 
 export const VOLUME_FOG_GLSL_MAX_LENGTH = GLSL_SNIPPET_MAX_LENGTH;
 
@@ -79,6 +82,20 @@ export type VolumeFogGlslValidation = GlslSnippetValidation;
 
 export function validateVolumeFogGlslCode(code: string): VolumeFogGlslValidation {
   return validateGlslSnippet(code, FORBIDDEN_TOKENS, VOLUME_FOG_GLSL_MAX_LENGTH);
+}
+
+/**
+ * Resolve the stored snippet against the shared definition
+ * set (Layer 1 WP11 phase C wiring): `// @use` directives
+ * expand under this point's own forbidden-token list and
+ * length cap. A snippet without directives resolves to the
+ * identical string.
+ */
+export function resolveVolumeFogSnippet(
+  code: string,
+  defs: GlslSharedSnippetSet,
+): GlslSnippetResolution {
+  return resolveGlslSnippet(code, defs, FORBIDDEN_TOKENS, VOLUME_FOG_GLSL_MAX_LENGTH);
 }
 
 // The example is the brief's known fragment: a per-slice phase-

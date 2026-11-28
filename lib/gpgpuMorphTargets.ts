@@ -67,6 +67,7 @@ import {
   rotateAroundAxis,
   type FormDeformationOptions,
 } from './formDeformation';
+import { applyDeformOps, type DeformOp } from './gpgpuDeformStack';
 import {
   clampStampSize,
   placeStampPoint,
@@ -395,6 +396,18 @@ export interface GpgpuMorphTargetBuildOptions {
    * the legacy bake exactly (the branch is skipped entirely).
    */
   form?: FormDeformationOptions | null;
+  /**
+   * Deform operator stack (Layer 1 WP8 phase A,
+   * lib/gpgpuDeformStack.ts): the general operator grammar over
+   * the baked base point, applied at the same position as the
+   * form deformation (after placement and mask clip, before the
+   * replica grammar, in normalised space). Absent / null /
+   * empty = the legacy bake exactly (the branch is skipped
+   * entirely). Normals are left as-is (the same documented
+   * approximation as the form grammar's disperse / fractal
+   * terms).
+   */
+  deform?: readonly DeformOp[] | null;
   /**
    * Voronoi fracture (Phase AG, lib/voronoiFracture.ts): a
    * post-pass over the finished bake — the cloud is partitioned
@@ -1907,6 +1920,10 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
 } {
   const { texSize, target, worldScale, jitter, seed, mediaMap, svgPoints, objPoints, objNormals, replica, terrain, dataPoints, pathGeometry, path, mask, form, textOnPath, fracture, rigidFracture, fragmentRestore, scatter, contourGeometry, polygonSides, pathJitter } = options;
   const formActive = isFormDeformationActive(form);
+  // Deform stack (Layer 1 WP8 phase A): resolved once; null
+  // unless a non-empty stack was supplied, so the legacy bake
+  // stays bit-identical while unconfigured.
+  const deformOps = options.deform && options.deform.length > 0 ? options.deform : null;
   // Raster mask (Phase X): resolved once; null unless the mode is
   // on and the map is usable, in which case the placement branches
   // below consult it. Null keeps the legacy bake bit-identical.
@@ -2730,6 +2747,18 @@ export function buildGpgpuMorphTargetDataWithNormals(options: GpgpuMorphTargetBu
         nny = rn.y;
         nnz = rn.z;
       }
+    }
+
+    // Deform operator stack (Layer 1 WP8 phase A): the general
+    // grammar over the base point, at the same position as the
+    // form deformation above (normalised space, before the
+    // replica grammar, so every copy inherits the deformed
+    // form). Skipped entirely while unconfigured.
+    if (deformOps) {
+      const deformed = applyDeformOps(deformOps, tx, ty, tz);
+      tx = deformed[0];
+      ty = deformed[1];
+      tz = deformed[2];
     }
 
     // Replica grammar (Phase K): contiguous blocks of the particle

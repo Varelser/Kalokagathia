@@ -57,6 +57,18 @@
 // accumulator is the identity and the passes consume the
 // plain spawn time. This mirrors the pulse grammar, whose
 // "live time" is the same kind of accumulated clock.
+//
+// Event list (Layer 1 WP4 phase B): the single authored
+// event generalises to a time-ordered list. Each event's
+// fraction demand resolves to the exact absolute count the
+// historical hash selection re-birthed (the cohort size), and
+// the firing events' demands are allocated against the pool
+// in time order through the same fixed reuse order — the
+// main pool gains event BIRTHS, not just event re-births,
+// without extending the REP output (stage-2 decision 1).
+// The shader realisation (phase C) adds a firing event's
+// demand to the gate threshold; SpawnEventDemand is the
+// typed currency it consumes.
 
 import type { ParticleConfig } from '../types';
 import {
@@ -67,7 +79,10 @@ import {
 } from './freeCurve';
 import {
   clampSpawnBurst,
+  clampSpawnEventCount,
+  clampSpawnEventTime,
   clampSpawnRate,
+  spawnEventFiresAt,
   spawnEventHashForIndex,
   spawnEventSelects,
   spawnGateValueForIndex,
@@ -260,6 +275,236 @@ export function planSpawnEventCohort(texSize: number, count: number): number[] {
     if (spawnEventSelects(spawnEventHashForIndex(i, size), count)) out.push(i);
   }
   return out;
+}
+
+// ── Event list + main-pool event demand ───────────────────────
+
+/**
+ * One authored spawn event in list form (Layer 1 WP4
+ * phase B): at `time` seconds into the spawn epoch, the
+ * fraction `count` of the pool is demanded as births. This
+ * is the historical single event (Phase AX, the
+ * gpgpuSpawnEventTime / gpgpuSpawnEventCount keys) generalised
+ * to a list — a list of length 1 IS the historical event.
+ * The authored currency stays the fraction (the existing
+ * key's semantics); the allocator's currency is the absolute
+ * count, resolved by resolveSpawnEventDemand.
+ */
+export interface SpawnEventSpec {
+  /** Seconds into the spawn epoch (clampSpawnEventTime range). */
+  time: number;
+  /** Fraction of the pool demanded, in [0, 1] once clamped. */
+  count: number;
+}
+
+/**
+ * One event's demand in the allocator's currency: an
+ * absolute number of births due at `time`. This is the form
+ * the phase-C shader realisation consumes — at the event's
+ * frame the gate threshold gains `count` more releases,
+ * taken in the fixed reuse order by planSpawnEventDemands.
+ */
+export interface SpawnEventDemand {
+  /** Seconds into the spawn epoch. */
+  time: number;
+  /** Births demanded by this event (a non-negative integer). */
+  count: number;
+}
+
+/**
+ * The authored list, normalised: times and counts clamped
+ * to the event grammar's ranges, sorted by time (events at
+ * the same time keep their authored order — the sort is
+ * stable by construction). Pure and deterministic.
+ */
+export function normalizeSpawnEventSpecs(
+  events: readonly SpawnEventSpec[],
+): SpawnEventSpec[] {
+  const tagged = events.map((e, order) => ({
+    time: clampSpawnEventTime(e.time),
+    count: clampSpawnEventCount(e.count),
+    order,
+  }));
+  tagged.sort((a, b) => (a.time - b.time) || (a.order - b.order));
+  return tagged.map(({ time, count }) => ({ time, count }));
+}
+
+/**
+ * One event's absolute demand: the number of births the
+ * historical event re-birthed at this fraction — the exact
+ * size of the hash-selected cohort (planSpawnEventCohort),
+ * so a single event's demand is identical in size to the
+ * legacy behaviour, by the existing hash selection.
+ */
+export function resolveSpawnEventDemand(
+  spec: SpawnEventSpec,
+  texSize: number,
+): SpawnEventDemand {
+  return {
+    time: clampSpawnEventTime(spec.time),
+    count: planSpawnEventCohort(texSize, spec.count).length,
+  };
+}
+
+/** The whole authored list resolved to absolute demands,
+ *  in time order. */
+export function resolveSpawnEventDemands(
+  events: readonly SpawnEventSpec[],
+  texSize: number,
+): SpawnEventDemand[] {
+  return normalizeSpawnEventSpecs(events).map((s) => resolveSpawnEventDemand(s, texSize));
+}
+
+/**
+ * The demands firing on the frame step (time - dt, time]:
+ * an event fires on the single frame whose step crosses its
+ * time — the legacy spawnEventFiresAt rule, per event. The
+ * input is expected in time order (resolveSpawnEventDemands'
+ * output is); the result preserves that order.
+ */
+export function spawnEventDemandsFiringAt(
+  demands: readonly SpawnEventDemand[],
+  time: number,
+  dt: number,
+): SpawnEventDemand[] {
+  return demands.filter((d) => spawnEventFiresAt(time, dt, d.time));
+}
+
+/**
+ * The cumulative demand due at spawn-time `time`: the sum
+ * of the counts of every event whose time has been reached.
+ * This is the threshold-facing form — a gate threshold that
+ * adds event demand releases exactly this many extra births
+ * by `time`.
+ */
+export function spawnEventDemandDueBy(
+  demands: readonly SpawnEventDemand[],
+  time: number,
+): number {
+  const t = Number.isFinite(time) ? time : 0;
+  let total = 0;
+  for (const d of demands) {
+    if (t >= clampSpawnEventTime(d.time)) {
+      total += Math.max(0, Math.floor(Number.isFinite(d.count) ? d.count : 0));
+    }
+  }
+  return total;
+}
+
+/** One firing event's allocation: the demand and the slots
+ *  it claimed, in the fixed reuse order. */
+export interface SpawnEventAllocation {
+  demand: SpawnEventDemand;
+  indices: number[];
+}
+
+/**
+ * The main-pool event plan for one frame step: every event
+ * firing on this step is processed IN TIME ORDER, and each
+ * event's demand is allocated from the slots the earlier
+ * events did not claim, in the fixed reuse order (parked
+ * first by ascending gate value, then the oldest live —
+ * planSpawnAllocation). An event whose demand exceeds the
+ * remaining supply is truncated to what remains (the
+ * allocator's exhaustion rule already steals the oldest
+ * live slots; past the pool size there is nothing left to
+ * steal). Pure and deterministic: the same slots, demands
+ * and step always plan the same allocations.
+ */
+export function planSpawnEventDemands(
+  slots: readonly SpawnAllocSlot[],
+  demands: readonly SpawnEventDemand[],
+  time: number,
+  dt: number,
+): SpawnEventAllocation[] {
+  const firing = spawnEventDemandsFiringAt(demands, time, dt);
+  const used = new Set<number>();
+  return firing.map((demand) => {
+    const remaining = slots.filter((s) => !used.has(s.index));
+    const want = Math.max(0, Math.floor(Number.isFinite(demand.count) ? demand.count : 0));
+    const indices = planSpawnAllocation(remaining, want);
+    for (const i of indices) used.add(i);
+    return { demand, indices };
+  });
+}
+
+// ── Event demand wiring (Layer 1 WP4 phase C) ─────────────
+
+/** The config keys that author the spawn event. */
+export type SpawnEventDemandConfig = Pick<ParticleConfig,
+  | 'gpgpuSpawnEventEnabled' | 'gpgpuSpawnEventTime' | 'gpgpuSpawnEventCount'>;
+
+/**
+ * The event list the config authors: the single authored
+ * event (the Phase AX keys) in phase B's list form — a list
+ * of length 1 IS the historical event. Empty while the
+ * event key is off, so every consumer below collapses to
+ * the legacy behaviour.
+ */
+export function authoredSpawnEventSpecs(
+  config: SpawnEventDemandConfig,
+): SpawnEventSpec[] {
+  if (!config.gpgpuSpawnEventEnabled) return [];
+  return [{
+    time: config.gpgpuSpawnEventTime ?? 0,
+    count: config.gpgpuSpawnEventCount ?? 0,
+  }];
+}
+
+let authoredDemandsMemo: { key: string; demands: SpawnEventDemand[] } | null = null;
+
+/**
+ * The authored list resolved to absolute demands. The
+ * resolution counts the event cohort over the whole pool,
+ * so it is memoised on the (texSize, event keys) triple —
+ * the passes and the variant resolver ask every frame /
+ * render and must stay O(1) amortised. Pure: the memo only
+ * ever returns the deterministic resolution of its key.
+ */
+export function authoredSpawnEventDemands(
+  config: SpawnEventDemandConfig,
+  texSize: number,
+): SpawnEventDemand[] {
+  const size = Math.max(1, Math.floor(texSize));
+  const key = `${size}|${config.gpgpuSpawnEventEnabled ? 1 : 0}|${config.gpgpuSpawnEventTime ?? 0}|${config.gpgpuSpawnEventCount ?? 0}`;
+  if (authoredDemandsMemo && authoredDemandsMemo.key === key) return authoredDemandsMemo.demands;
+  const demands = resolveSpawnEventDemands(authoredSpawnEventSpecs(config), size);
+  authoredDemandsMemo = { key, demands };
+  return demands;
+}
+
+/**
+ * True while an authored event with a positive demand
+ * stands: the sim passes then build the event-demand gate
+ * variant strings. At the defaults (event off, or a zero
+ * count) this is false and every string is the shipped one.
+ */
+export function spawnEventDemandVariantActive(
+  config: SpawnEventDemandConfig,
+  texSize: number,
+): boolean {
+  return authoredSpawnEventDemands(config, texSize).some((d) => d.count > 0);
+}
+
+/**
+ * The gate threshold's event-demand term at spawn-time
+ * `time`: the cumulative demand due by then
+ * (spawnEventDemandDueBy over the authored list) as a
+ * fraction of the pool. The passes upload this for the
+ * current frame (uSpawnEventDueFrac) and for the previous
+ * frame (uSpawnEventDuePrevFrac, at time - dt), so the
+ * gate's activation test sees the step exactly on the
+ * firing frame. 0 while no event is authored.
+ */
+export function spawnEventDemandFracAt(
+  config: SpawnEventDemandConfig,
+  texSize: number,
+  time: number,
+): number {
+  const demands = authoredSpawnEventDemands(config, texSize);
+  if (demands.length === 0) return 0;
+  const size = Math.max(1, Math.floor(texSize));
+  return spawnEventDemandDueBy(demands, time) / (size * size);
 }
 
 // ── Envelope ──────────────────────────────────────────────────

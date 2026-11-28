@@ -335,6 +335,8 @@ const AppBody: React.FC = () => {
       pointCacheRetimerEndFrame: config.pointCacheRetimerEndFrame,
       pointCacheRetimerReverse: config.pointCacheRetimerReverse,
       pointCacheRetimerInterpolation: config.pointCacheRetimerInterpolation,
+      pointCacheRetimerSpeedCurveEnabled: config.pointCacheRetimerSpeedCurveEnabled,
+      pointCacheRetimerSpeedCurvePoints: config.pointCacheRetimerSpeedCurvePoints,
     },
   });
 

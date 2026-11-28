@@ -38,6 +38,7 @@ export const GlobalSequenceSection: React.FC<ControlPanelContentProps> = ({
   sequenceLoopEnabled,
   sequenceSinglePassDuration,
   sequenceStepProgress,
+  updateConfig,
 }) => (
   <div className="mt-4 rounded border border-white/10 bg-white/5 p-3">
     <div className="flex items-center justify-between gap-3 mb-3">
@@ -90,6 +91,7 @@ export const GlobalSequenceSection: React.FC<ControlPanelContentProps> = ({
     {presetSequence.length > 0 && (
       <SequenceTracksSection
         config={config}
+        updateConfig={updateConfig}
         isPublicLibrary={isPublicLibrary}
         isSequencePlaying={isSequencePlaying}
         presetSequence={presetSequence}

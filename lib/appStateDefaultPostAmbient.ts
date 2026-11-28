@@ -117,6 +117,10 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postCustomGlslEnabled: false,
   postCustomGlslCode: '',
   postCustomGlslLumaLock: false,
+  // Full-fragment replacement (Layer 1 WP11 Phases D2/C):
+  // disabled / empty — the snippet form above is used unchanged.
+  postCustomGlslReplacementEnabled: false,
+  postCustomGlslReplacementCode: '',
   // LightFX (Phase D): all sub-effects OFF by default — the stage is
   // not inserted and the output is unchanged. Light position is the
   // frame centre; the Lux cone defaults to pointing down-screen
@@ -129,6 +133,7 @@ export const APP_STATE_DEFAULT_POST_AMBIENT: Partial<ParticleConfig> = {
   postShineLength: 0.5,
   postShineThreshold: 0.6,
   postShineDensity: 0,
+  postShineDensityLayers: 'main',
   postStarglowEnabled: false,
   postStarglowIntensity: 1.0,
   postStarglowLength: 0.35,

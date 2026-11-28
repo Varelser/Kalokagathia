@@ -21,9 +21,13 @@ import type { GpgpuEmitShape } from './gpgpuEmitShapes';
 import { sampleEmitShape } from './gpgpuEmitShapes';
 import type { GpgpuEmitterTransform } from './gpgpuEmitter';
 import { applyEmitterTransform, emitterRotScaleElements, emitterTransformIsIdentity } from './gpgpuEmitter';
+import type { ResolvedEmitter } from './gpgpuEmitterList';
+import { emitterIndexForIndex } from './gpgpuEmitterList';
 import { samplePathAt } from './gpgpuEmissionSource';
 import type { DistOp } from './gpgpuDistribution';
 import { applyDistributionOps } from './gpgpuDistribution';
+import type { DeformOp } from './gpgpuDeformStack';
+import { applyDeformOps } from './gpgpuDeformStack';
 import type { EmissionPathResolved } from './gpgpuEmissionSource';
 export type { GpgpuEmitShape };
 
@@ -37,6 +41,20 @@ export { createSeededRng };
 export interface GpgpuInitialData {
   posData: Float32Array;
   velData: Float32Array;
+  /**
+   * Orientation seed (bake A-2 premise fix): per-particle
+   * accumulated posture, count x 4 quaternions (x, y, z, w —
+   * the Orient render target's shape verbatim). Present only
+   * when the state was restored from a frame that carried
+   * posture (a v2 state cache frame); the seeded bake never
+   * produces it — a fresh pool's posture starts at identity
+   * inside the Orient pass itself, exactly as before. The
+   * applier (components/useGpgpuRuntime.ts) is the only
+   * consumer: it seeds the Orient pass from this lane and
+   * refuses an apply whose posture it cannot place, rather
+   * than dropping the lane silently.
+   */
+  orientData?: Float32Array;
 }
 
 export interface GpgpuAgePhaseOptions {
@@ -86,7 +104,34 @@ export interface GpgpuEmitOptions {
    *  bit-identical; only shape placements move. Null / absent
    *  / empty = the legacy placement, bit-identical. */
   distribution?: readonly DistOp[] | null;
+  /** Deform operator stack (Layer 1 WP8 phase A,
+   *  lib/gpgpuDeformStack.ts): the resolved operators, applied
+   *  to the final placed point — after the placement sources
+   *  (shape / cloud / path), the emitter transform and the
+   *  mask gate — mirroring the morph bake's post-clip position
+   *  for its form deformation, so every source's placement is
+   *  deformed. The stack consumes NO draws, so ages and
+   *  velocities stay bit-identical; only placements move.
+   *  Null / absent / empty = the legacy placement,
+   *  bit-identical. */
+  deform?: readonly DeformOp[] | null;
   cloud?: Float32Array | null;
+  /** Emitter list (Layer 1 WP4 phase D1): the resolved list
+   *  of lib/gpgpuEmitterList.ts (resolveEmitterList). While
+   *  present and non-empty, particle i is placed by ITS
+   *  emitter's law — the element emitterIndexForIndex assigns
+   *  to it (a pure hash of the index; no RNG draws) supplies
+   *  the shape, the light position, the transform and the
+   *  initial velocity, superseding the single-emitter inputs
+   *  above (the emitShape argument, lightPos, transform,
+   *  initialVelocity) per particle. The emission sources
+   *  (cloud / path / mask / distribution) stay pool-wide,
+   *  exactly as the list design fixes them. Null / absent /
+   *  empty = the legacy single-emitter bake, bit-identical;
+   *  a list resolved from an unauthored config carries
+   *  exactly the legacy emitter, so routing it here also
+   *  reproduces the legacy arrays bit for bit. */
+  emitterList?: readonly ResolvedEmitter[] | null;
   /** Path emission (stage 2, E3): the resolved steering-path
    *  asset (lib/gpgpuEmissionSource.ts resolveEmissionPath).
    *  While present, each particle is placed on the polyline
@@ -147,10 +192,27 @@ export function buildGpgpuInitialData(
   const emitDistribution = emitOptions?.distribution && emitOptions.distribution.length > 0
     ? emitOptions.distribution
     : null;
+  const emitDeform = emitOptions?.deform && emitOptions.deform.length > 0
+    ? emitOptions.deform
+    : null;
   const emitCloud = emitOptions?.cloud ?? null;
   const emitPath = emitOptions?.path ?? null;
   const emitMaskAccept = emitOptions?.maskAccept ?? null;
+  // Emitter list (Layer 1 WP4 phase D1): resolved once. With
+  // no list the per-particle values below ARE the legacy
+  // single-emitter ones, so the loop body evaluates the
+  // legacy expressions verbatim.
+  const emitList = emitOptions?.emitterList && emitOptions.emitterList.length > 0
+    ? emitOptions.emitterList
+    : null;
   for (let i = 0; i < count; i++) {
+    // The particle's own emitter (list route only): its law
+    // supersedes the single-emitter inputs for this particle.
+    const ek = emitList ? emitList[emitterIndexForIndex(emitList, i, texSize)] : null;
+    const pShape = ek ? ek.def.shape : shape;
+    const pLightPos = ek ? ek.lightPos : emitOptions?.lightPos;
+    const pTransform = ek ? ek.def.transform : transform;
+    const pTransformActive = ek ? !emitterTransformIsIdentity(ek.def.transform) : transformActive;
     // Shape sampling (stage 2, E1): the shared law in
     // lib/gpgpuEmitShapes.ts consumes the draws in the legacy
     // order and counts and evaluates the legacy expressions
@@ -176,7 +238,7 @@ export function buildGpgpuInitialData(
     let cloudForParticle = emitCloud;
     const attempts = emitMaskAccept ? 12 : 1;
     for (let attempt = 0; attempt < attempts; attempt++) {
-      let [cx, cy, cz] = sampleEmitShape(shape, random, r, emitOptions?.lightPos);
+      let [cx, cy, cz] = sampleEmitShape(pShape, random, r, pLightPos);
       // Distribution layer (stage 2, B5): transforms the shape
       // sample in emitter space; consumes no draws.
       if (emitDistribution) {
@@ -194,10 +256,10 @@ export function buildGpgpuInitialData(
         cy = cloudForParticle[i * 4 + 1];
         cz = cloudForParticle[i * 4 + 2];
       }
-      if (transformActive && transform) {
-        [cx, cy, cz] = applyEmitterTransform(transform, cx, cy, cz);
+      if (pTransformActive && pTransform) {
+        [cx, cy, cz] = applyEmitterTransform(pTransform, cx, cy, cz);
         if (tangent) {
-          const e = emitterRotScaleElements(transform);
+          const e = emitterRotScaleElements(pTransform);
           tangent = [
             e[0] * tangent[0] + e[3] * tangent[1] + e[6] * tangent[2],
             e[1] * tangent[0] + e[4] * tangent[1] + e[7] * tangent[2],
@@ -214,6 +276,13 @@ export function buildGpgpuInitialData(
       // Rejected: a cloud point cannot be re-drawn, so the
       // remaining attempts fall back to shape samples.
       cloudForParticle = null;
+    }
+    // Deform stack (Layer 1 WP8 phase A): transforms the final
+    // placed point, whatever source produced it; consumes no
+    // draws. Skipped entirely while unconfigured, so the
+    // legacy arrays stay bit-identical.
+    if (emitDeform) {
+      [px, py, pz] = applyDeformOps(emitDeform, px, py, pz);
     }
     posData[i * 4] = px;
     posData[i * 4 + 1] = py;
@@ -236,7 +305,7 @@ export function buildGpgpuInitialData(
     const drawX = (random() - 0.5) * 4;
     const drawY = (random() - 0.5) * 4;
     const drawZ = (random() - 0.5) * 4;
-    const directed = emitOptions?.initialVelocity ?? null;
+    const directed = ek ? ek.velocity : (emitOptions?.initialVelocity ?? null);
     if (directed) {
       const u = ((i % texSize) + 0.5) / texSize;
       const v = (Math.floor(i / texSize) + 0.5) / texSize;
@@ -278,9 +347,12 @@ export function buildGpgpuInitialData(
  * state-cache format stores velocities as triplets (the
  * phase is not in the format), and 0 is exactly the phase
  * the bake seeds, so a restored pool starts phase-coherent
- * just like a fresh bake. Returns null when any input
- * length disagrees with count (the caller refuses with the
- * reason; nothing is padded or decimated here either).
+ * just like a fresh bake. A v2 frame's orientation channel
+ * (bake A-2 premise fix) rides along as the optional
+ * orientData lane when supplied. Returns null when any
+ * input length disagrees with count (the caller refuses
+ * with the reason; nothing is padded or decimated here
+ * either).
  */
 export function buildGpgpuInitialDataFromStateFrame(args: {
   count: number;
@@ -290,10 +362,21 @@ export function buildGpgpuInitialDataFromStateFrame(args: {
   velocities: Float32Array;
   /** Per-particle age, count wide (the cache's 'age' column). */
   ages: Float32Array;
+  /** Per-particle accumulated posture, count x 4 quaternions
+   *  (x, y, z, w), from a v2 cache frame's orientation
+   *  channel. Optional: a v1 frame (or a v2 frame without
+   *  the channel) has no posture to restore, and the result
+   *  then carries no orientData — the pre-existing contract.
+   *  A present-but-mis-sized buffer refuses the whole
+   *  conversion (null), like every other lane here. */
+  orientations?: Float32Array;
 }): GpgpuInitialData | null {
-  const { count, positions, velocities, ages } = args;
+  const { count, positions, velocities, ages, orientations } = args;
   if (!Number.isInteger(count) || count <= 0) return null;
   if (positions.length !== count * 3 || velocities.length !== count * 3 || ages.length !== count) {
+    return null;
+  }
+  if (orientations !== undefined && orientations.length !== count * 4) {
     return null;
   }
   const posData = new Float32Array(count * 4);
@@ -309,5 +392,9 @@ export function buildGpgpuInitialDataFromStateFrame(args: {
     // velData w (Kuramoto phase) stays 0 — the bake's seed
     // value, see the header note.
   }
-  return { posData, velData };
+  if (orientations === undefined) return { posData, velData };
+  // Posture lane: copied verbatim (the stored shape IS the
+  // Orient target's shape, so no interleave is needed). The
+  // copy detaches the seed from the cache's frame buffer.
+  return { posData, velData, orientData: new Float32Array(orientations) };
 }

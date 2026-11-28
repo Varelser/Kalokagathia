@@ -17,17 +17,37 @@ import {
 } from '../lib/pointCache';
 import { stateCacheExportAllowed, stateCacheToPointCacheData } from '../lib/gpgpuStateCache';
 import {
+  buildStateCacheCaptureProvenance,
   buildStateCacheFiles,
+  buildStateCacheFilesV2,
+  detectStateCacheFormat,
   loadStateCacheFromFiles,
+  loadStateCacheFromFilesV2,
   runStateCacheCaptureJob,
+  runStateCacheCaptureJobV2,
   stateCacheEditionForPublicLibrary,
 } from '../lib/gpgpuStateCacheCapture';
+import { stateCacheV2ToPointCacheData } from '../lib/gpgpuStateCacheV2';
+import { orientChannelActive } from '../lib/gpgpuOrient';
+import { KALOKAGATHIA_APP_VERSION } from './controlPanelPlayTabRender';
 import {
   applyHeldStateCacheFrameAsInitialState,
+  applyHeldStateCacheFrameV2AsInitialState,
   getHeldStateCache,
+  getHeldStateCacheV2,
   setHeldStateCache,
+  setHeldStateCacheV2,
   type HeldStateCache,
+  type HeldStateCacheV2,
 } from '../lib/gpgpuInitialState';
+import {
+  getStateCachePlayback,
+  setStateCachePlaybackCache,
+  setStateCachePlaybackFrameIndex,
+  startStateCachePlayback,
+  stopStateCachePlayback,
+} from '../lib/gpgpuStateCachePlayback';
+import { getTexSize } from './useGpgpuRuntime';
 import { buildPrtFileForFrame, decodePrtFiles } from '../lib/stateCachePrt';
 import { buildAlembicFile } from '../lib/stateCacheAlembic';
 import { buildStateCacheMeshSeriesZip, type MeshSeriesFormat } from '../lib/stateCacheMeshSeries';
@@ -43,6 +63,8 @@ import {
 } from '../lib/stateCacheTrailGeometry';
 import { Slider, Toggle } from './controlPanelParts';
 import { resolveCacheRetimerFromConfig } from '../lib/cacheRetimer';
+import { flattenFreeCurvePoints, normalizeFreeCurvePoints } from '../lib/freeCurve';
+import { FreeCurveEditor } from './controlPanelGlobalDisplayGpgpuForcesCore';
 import { TEXTURE_DEFINITIONS, TEXTURE_MAP_SIZE, generateTextureMap, getTextureDefinition, type NoiseTextureKind } from '../lib/texturePack';
 import type { ControlPanelContentProps } from './controlPanelTabsShared';
 import { SectionTitle, TAB_SHORT_LABELS } from './controlPanelPlayTabShared';
@@ -504,7 +526,7 @@ export const PointCacheSection: React.FC<{
         onChange={(v) => write('pointCacheRetimerEnabled', v)}
       />
       <p className="text-[11px] leading-relaxed text-white/45 mb-4 -mt-2">
-        リタイマーは再生側だけのフレーム写像です（倍率・区間・逆再生・補間の上書き）。この下の状態キャッシュの再生にも同じ設定が効きます（再生路が共通のため）。シミュレーション自体の timeScale とは別物で、sim には触れません。Off（既定）では従来どおりの再生です。
+        リタイマーは再生側だけのフレーム写像です（倍率・区間・逆再生・補間の上書き・速度カーブ）。この下の状態キャッシュの再生にも同じ設定が効きます（再生路が共通のため）。シミュレーション自体の timeScale とは別物で、sim には触れません。Off（既定）では従来どおりの再生です。
       </p>
       {config.pointCacheRetimerEnabled && (
         <>
@@ -546,6 +568,24 @@ export const PointCacheSection: React.FC<{
             ]}
             onChange={(v) => write('pointCacheRetimerInterpolation', v)}
           />
+          <Toggle
+            label="Speed Curve （速度カーブ）"
+            value={config.pointCacheRetimerSpeedCurveEnabled}
+            options={[{ label: 'On', val: true }, { label: 'Off', val: false }]}
+            onChange={(v) => write('pointCacheRetimerSpeedCurveEnabled', v)}
+          />
+          {config.pointCacheRetimerSpeedCurveEnabled && (
+            <>
+              <div className="mb-1 mt-2 text-[9px] uppercase tracking-widest opacity-60">Speed Curve （自由制御点カーブ — 再生位置ごとの速度倍率）</div>
+              <FreeCurveEditor
+                points={normalizeFreeCurvePoints(config.pointCacheRetimerSpeedCurvePoints)}
+                onChange={(points) => write('pointCacheRetimerSpeedCurvePoints', flattenFreeCurvePoints(points))}
+              />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                横軸は区間の再生の進み具合（0〜1）、値はその位置での瞬時速度の倍率（再生倍率に掛かります）。カーブ全体の積分で正規化するため、区間の総再生時間は再生倍率が決めたまま変わらず、カーブは速さの配分だけを変えます。値 0 の区間はその間フレームが止まります。全点 1（Flat）は有効でも従来同一です。
+              </div>
+            </>
+          )}
           {frameTotal > 0 && !retimerCheck.ok && (
             <p className="text-[11px] text-red-300/90 mb-3">
               リタイマーを適用できません: {retimerCheck.error}（この間はリタイマーなしで再生します）
@@ -619,6 +659,21 @@ export const PointCacheSection: React.FC<{
 // consumer). Capture / save are full-edition features: the
 // edition gate is resolved in exactly one place
 // (stateCacheEditionForPublicLibrary + stateCacheExportAllowed).
+// Bake v2 wiring (on top of S0): while the Orient channel is
+// enabled, the capture branch in handleCapture assembles and
+// saves the v2 format (posture channel + provenance) through
+// runStateCacheCaptureJobV2.
+// Panel v2 wiring (on top of that): a v2 take is also held
+// in the v2 held store (lib/gpgpuInitialState.ts), a v2 file
+// pair loads through the v2 loader into the same store
+// (handleFiles dispatches on the manifest format), and the
+// Initial State (v2) block below applies one of its frames
+// WITH its posture through the v2 driver — the call that
+// keeps the driver inside the app bundle. Playback of a v2
+// load goes through the v2→point-cache conversion (posture
+// does not ride the playback path). The v1 paths (capture
+// with Orient off, load, held store, initial state) and
+// every derived exporter stay on the v1 shape, unchanged.
 // The Initial State block at the bottom is slice S1: the
 // captured / loaded cache is also held as StateCacheData
 // (lib/gpgpuInitialState.ts) and one of its frames can be
@@ -683,6 +738,25 @@ export const StateCacheSection: React.FC<{
   const [held, setHeld] = React.useState<HeldStateCache | null>(() => getHeldStateCache());
   const [initFrame, setInitFrame] = React.useState(0);
   const [initStatus, setInitStatus] = React.useState('');
+  // Panel v2 wiring: a v2 cache (captured with the Orient
+  // channel on, or loaded from a v2 file pair) is held in
+  // the v2 held store (lib/gpgpuInitialState.ts) so one of
+  // its frames can be applied WITH its posture through the
+  // v2 driver. Mirrors the v1 held state above; the two
+  // stores are independent and written by their own flows.
+  const [heldV2, setHeldV2] = React.useState<HeldStateCacheV2 | null>(() => getHeldStateCacheV2());
+  const [initFrameV2, setInitFrameV2] = React.useState(0);
+  const [initStatusV2, setInitStatusV2] = React.useState('');
+  // State-cache dedicated playback path (bake gate A-4
+  // premise fix): the held v2 cache is also pointed at the
+  // playback store (lib/gpgpuStateCachePlayback.ts) so one
+  // of its frames can be PRESENTED — positions + posture —
+  // on the geometry draw. Mirrors the playback store; the
+  // store is (re)pointed in holdCacheV2 below, and this
+  // block's controls write frame position / start / stop.
+  const [playbackFrame, setPlaybackFrame] = React.useState(0);
+  const [playbackActive, setPlaybackActive] = React.useState(false);
+  const [playbackStatus, setPlaybackStatus] = React.useState('');
   // PRT (stage 3, slice S3): one PRT file holds one frame,
   // so export names a single frame of the held cache.
   const [prtFrame, setPrtFrame] = React.useState(0);
@@ -734,6 +808,58 @@ export const StateCacheSection: React.FC<{
     return next;
   };
 
+  const holdCacheV2 = (cache: Parameters<typeof setHeldStateCacheV2>[0], sourceName: string) => {
+    setHeldStateCacheV2(cache, sourceName);
+    const next = getHeldStateCacheV2();
+    setHeldV2(next);
+    // Same resume-point convention as the v1 hold.
+    setInitFrameV2(cache.manifest.frameCount - 1);
+    setInitStatusV2('');
+    // The dedicated playback path presents this same held
+    // cache: (re)point its store. Pointing stops any active
+    // presentation and resets the frame position (the
+    // store's own discipline), mirrored here.
+    setStateCachePlaybackCache(cache, sourceName);
+    setPlaybackFrame(0);
+    setPlaybackActive(false);
+    setPlaybackStatus('');
+    return next;
+  };
+
+  const handlePlaybackFrameChange = (frameIndex: number) => {
+    setPlaybackFrame(frameIndex);
+    const result = setStateCachePlaybackFrameIndex(frameIndex);
+    if (!result.ok) {
+      setPlaybackStatus(`フレームを指定できませんでした: ${result.error}`);
+      return;
+    }
+    if (getStateCachePlayback()?.active) {
+      setPlaybackStatus(`フレーム ${result.frameIndex} を表示しています（姿勢つき専用再生路）。`);
+    }
+  };
+
+  const handleStartPlayback = () => {
+    const result = startStateCachePlayback({
+      frameIndex: playbackFrame,
+      targetTexSize: getTexSize(config.gpgpuCount),
+    });
+    if (!result.ok) {
+      setPlaybackActive(false);
+      setPlaybackStatus(`再生できませんでした: ${result.error}`);
+      return;
+    }
+    setPlaybackActive(true);
+    setPlaybackStatus(
+      `フレーム ${result.frameIndex} を専用再生路で表示しています。位置と姿勢はキャッシュのフレームそのもので、ライブのシミュレーションは裏で動き続けています（停止するとライブの描画に戻ります）。`,
+    );
+  };
+
+  const handleStopPlayback = () => {
+    stopStateCachePlayback();
+    setPlaybackActive(false);
+    setPlaybackStatus('専用再生を停止しました。描画はライブのシミュレーションに戻っています。');
+  };
+
   const handleApplyInitialState = () => {
     const result = applyHeldStateCacheFrameAsInitialState({ frameIndex: initFrame });
     if (!result.ok) {
@@ -742,6 +868,17 @@ export const StateCacheSection: React.FC<{
     }
     setInitStatus(
       `フレーム ${result.frameIndex} を初期状態として適用しました。この状態からシミュレーションが解き直されます（プールの再ベイクではありません。設定を変えると通常どおりベイクから再シードされます）。`,
+    );
+  };
+
+  const handleApplyInitialStateV2 = () => {
+    const result = applyHeldStateCacheFrameV2AsInitialState({ frameIndex: initFrameV2 });
+    if (!result.ok) {
+      setInitStatusV2(`適用できませんでした: ${result.error}`);
+      return;
+    }
+    setInitStatusV2(
+      `フレーム ${result.frameIndex} を初期状態として適用しました（姿勢つき）。この状態からシミュレーションが解き直されます（プールの再ベイクではありません。設定を変えると通常どおりベイクから再シードされます）。`,
     );
   };
 
@@ -885,6 +1022,58 @@ export const StateCacheSection: React.FC<{
     setBusy(true);
     setProgress('');
     setStatus('決定性レンダー（固定ステップ）で撮影しています…');
+    // Bake v2 wiring: while the Orient channel is enabled,
+    // the capture assembles and saves as v2 (posture channel
+    // + provenance, lib/gpgpuStateCacheV2.ts) instead of v1.
+    // Panel v2 wiring: the take is also held in the v2 held
+    // store, so it can be applied back WITH its posture
+    // through the Initial State (v2) block below; the v1
+    // held store and every derived exporter keep consuming
+    // the v1 shape and are not touched by a v2 take. If
+    // Orient was enabled but no posture reached the
+    // snapshots, the take is refused rather than saved as a
+    // file silently missing the channel. With Orient off,
+    // the v1 flow below runs verbatim.
+    if (orientChannelActive(config)) {
+      const provenance = buildStateCacheCaptureProvenance({
+        settingsSnapshot: config,
+        seed: config.gpgpuSeed,
+        generatorVersion: KALOKAGATHIA_APP_VERSION,
+      });
+      // A-5 thinning: the v2 file stores only the scene's
+      // valid particles — the authored count clamped to the
+      // pool, the same number applyLodPolicy draws — instead
+      // of the whole texSize pool. When the authored count
+      // fills the pool the assembly omits the declaration
+      // and the file is the legacy shape.
+      const captureTexSize = getTexSize(config.gpgpuCount);
+      const captureValidCount = Math.min(
+        Math.max(1, Math.floor(config.gpgpuCount)),
+        captureTexSize * captureTexSize,
+      );
+      const resultV2 = await runStateCacheCaptureJobV2(
+        { fps, frames, warmupFrames, edition, provenance, validCount: captureValidCount },
+        (done, total) => setProgress(`${done} / ${total}`),
+      );
+      setBusy(false);
+      setProgress('');
+      if (!resultV2.ok) {
+        setStatus(`撮影できませんでした: ${resultV2.error}`);
+        return;
+      }
+      if (!resultV2.cache.manifest.orientation) {
+        setStatus('姿勢（Orient）が有効ですが、撮影に姿勢チャンネルが収録されなかったため保存しませんでした。');
+        return;
+      }
+      holdCacheV2(resultV2.cache, '撮影した状態キャッシュ（v2）');
+      const filesV2 = buildStateCacheFilesV2(resultV2.cache);
+      download(filesV2.manifestFileName, new Blob([filesV2.manifestText], { type: 'application/json' }));
+      download(filesV2.framesFileName, new Blob([filesV2.framesBuffer], { type: 'application/octet-stream' }));
+      setStatus(
+        `${resultV2.cache.manifest.count.toLocaleString()} 点 × ${resultV2.cache.manifest.frameCount} フレームを v2 形式（姿勢つき）で保存しました（マニフェスト .json ＋ バイナリ .bin の2ファイル）。${resultV2.cache.manifest.validCount !== undefined ? `ファイルには有効粒子 ${resultV2.cache.manifest.validCount.toLocaleString()} 点分だけを保存しています（プール全体ではなく有効分のみの間引き保存）。` : ''}この撮影は v2 として保持され、下の「初期状態として再開（v2・姿勢つき）」から姿勢ごと適用できます。派生書き出し（PRT・Alembic 等）は v1 の保持ストアが対象のため、この撮影では更新されません（派生書き出しには Orient を切って v1 で撮影してください）。`,
+      );
+      return;
+    }
     const result = await runStateCacheCaptureJob(
       { fps, frames, warmupFrames, edition },
       (done, total) => setProgress(`${done} / ${total}`),
@@ -909,6 +1098,33 @@ export const StateCacheSection: React.FC<{
     const files = new Map<string, ArrayBuffer>();
     for (const file of Array.from(fileList)) {
       files.set(file.name, await file.arrayBuffer());
+    }
+    // Panel v2 wiring: a v2 pair goes through the v2 loader
+    // into the v2 held store (posture intact) and onto the
+    // playback path through the v2→point-cache conversion.
+    // Everything else — v1 pairs and anything unrecognised —
+    // runs the v1 flow below verbatim (the v1 loader keeps
+    // producing the refusal reasons for those).
+    if (detectStateCacheFormat(files) === 'v2') {
+      const loadedV2 = loadStateCacheFromFilesV2(files);
+      if (!loadedV2.ok) {
+        setStatus(`読み込めませんでした: ${loadedV2.error}`);
+        return;
+      }
+      // Held for the v2 initial-state path even when the
+      // playback conversion below refuses (the same hold
+      // discipline as the v1 flow below).
+      holdCacheV2(loadedV2.cache, '読み込んだ状態キャッシュ（v2）');
+      const convertedV2 = stateCacheV2ToPointCacheData(loadedV2.cache);
+      if (!convertedV2.ok) {
+        setStatus(`読み込みましたが再生できません: ${convertedV2.error}`);
+        return;
+      }
+      setPointCache(convertedV2.data, '状態キャッシュ（v2）');
+      setStatus(
+        `状態キャッシュ（v2）を読み込みました（${loadedV2.cache.manifest.count.toLocaleString()} 点 × ${loadedV2.cache.manifest.frameCount} フレーム / ${loadedV2.cache.manifest.fps} fps）。上の Point Cache セクションで再生を On にすると再生します。${convertedV2.note} 姿勢つきの初期状態適用は下の「初期状態として再開（v2・姿勢つき）」から行えます。`,
+      );
+      return;
     }
     const loaded = loadStateCacheFromFiles(files);
     if (!loaded.ok) {
@@ -936,7 +1152,7 @@ export const StateCacheSection: React.FC<{
     <section>
       <SectionTitle icon={<Camera size={12} />}>State Cache · 状態キャッシュ</SectionTitle>
       <p className="text-[11px] leading-relaxed text-white/45 mb-4">
-        自分のシミュレーション結果（位置・速度・年齢）を、決定性レンダーの固定ステップでフレームごとに撮影してファイルに保存します。保存はマニフェスト（.json）＋バイナリ（.bin）の2ファイルで、読み込むと上の Point Cache と同じ再生路に乗ります（再シミュレーションなしの再生＝展示・ライブ用途）。撮影中は内部で PNG 連番レンダーも走りますが、その画像は破棄され、残るのはキャッシュの2ファイルだけです。形式の上限は 65,536 点 × 3,600 フレーム、再生側の上限は Point Cache と同じ 8,192 点 × 240 フレームで、超えるものは理由を表示して扱いません（間引きはしません）。撮影・保存は完全版の機能です。
+        自分のシミュレーション結果（位置・速度・年齢）を、決定性レンダーの固定ステップでフレームごとに撮影してファイルに保存します。保存はマニフェスト（.json）＋バイナリ（.bin）の2ファイルで、読み込むと上の Point Cache と同じ再生路に乗ります（再シミュレーションなしの再生＝展示・ライブ用途）。姿勢（Orient）が有効な間は、姿勢チャンネルを含む v2 形式で保存します。v2 保存ではプール全体ではなく有効粒子（粒子数で指定した分）だけをファイルに保存し、読み込み時にプール幅へ戻します（戻した尾部は停止粒子の位置に置かれます）。v2 ファイルは読み込みもでき、v2 として保持されて下の「初期状態として再開（v2・姿勢つき）」から姿勢ごと適用できます（Point Cache 変換経由の再生では姿勢は載りません。姿勢つきで表示するには下の「状態キャッシュ専用再生（v2・姿勢つき）」を使ってください）。派生書き出し（初期状態以外の保持の消費先）は v1 の経路のままです。撮影中は内部で PNG 連番レンダーも走りますが、その画像は破棄され、残るのはキャッシュの2ファイルだけです。形式の上限は 65,536 点 × 3,600 フレーム、再生側の上限は Point Cache と同じ 8,192 点 × 240 フレームで、超えるものは理由を表示して扱いません（間引きはしません）。撮影・保存は完全版の機能です。
       </p>
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <label className="flex items-center gap-1 text-[10px] text-white/50">
@@ -1012,6 +1228,76 @@ export const StateCacheSection: React.FC<{
           <p className="text-[11px] text-white/35 mb-3">保持中の状態キャッシュはありません。上の「撮影して保存」か「状態キャッシュを読む」で用意してください。</p>
         )}
         {initStatus && <p className="text-[11px] text-white/55">{initStatus}</p>}
+      </div>
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <p className="text-[11px] font-bold text-white/70 mb-2">Initial State (v2) · 初期状態として再開（v2・姿勢つき）</p>
+        <p className="text-[11px] leading-relaxed text-white/45 mb-3">
+          姿勢（Orient）有効で撮影した v2 形式のキャッシュ、または読み込んだ v2 ファイルはこちらに保持されます。任意フレームを、位置・速度・年齢に加えて姿勢ごと初期状態として適用し、Orient パスへ姿勢をシードします。適用はこのボタンを押したときだけです。キャッシュの粒子数（texSize）が現在のプールと一致しないもの、年齢（age）属性の無いもの、姿勢チャンネルを宣言しながら姿勢データの無いものは、理由を表示して適用しません（姿勢を黙って落として適用することはしません）。姿勢チャンネルの無い v2 は、姿勢なしで v1 と同じく適用されます。上の v1 の保持ストアとは独立で、派生書き出し（PRT・Alembic 等）は引き続き v1 側が対象です。
+        </p>
+        {heldV2 ? (
+          <>
+            <p className="text-[11px] text-white/55 mb-3">
+              保持中: {heldV2.sourceName}（{heldV2.cache.manifest.count.toLocaleString()} 点 × {heldV2.cache.manifest.frameCount} フレーム / {heldV2.cache.manifest.fps} fps / texSize {heldV2.cache.manifest.texSize} / 姿勢チャンネル {heldV2.cache.manifest.orientation ? 'あり' : 'なし'}）
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <label className="flex items-center gap-1 text-[10px] text-white/50">
+                フレーム
+                <input type="number" min={0} max={heldV2.cache.manifest.frameCount - 1} step={1} value={initFrameV2} disabled={busy}
+                  onChange={(event) => setInitFrameV2(Number(event.target.value))} className={numberInputClass} />
+              </label>
+              <button
+                onClick={handleApplyInitialStateV2}
+                disabled={busy || isPublicLibrary}
+                className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 hover:bg-gray-200 transition-colors"
+              >
+                このフレームを初期状態として適用（姿勢つき）
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="text-[11px] text-white/35 mb-3">保持中の v2 状態キャッシュはありません。姿勢（Orient）を有効にして「撮影して保存」するか、v2 形式の状態キャッシュ（.json＋.bin）を上のボタンで読んでください。</p>
+        )}
+        {initStatusV2 && <p className="text-[11px] text-white/55">{initStatusV2}</p>}
+      </div>
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <p className="text-[11px] font-bold text-white/70 mb-2">State Cache Playback (v2) · 状態キャッシュ専用再生（v2・姿勢つき）</p>
+        <p className="text-[11px] leading-relaxed text-white/45 mb-3">
+          保持中の v2 キャッシュの指定フレームを、位置と姿勢のままジオメトリ描画に表示します。キャッシュのフレームから位置テクスチャと姿勢テクスチャを作り、描画の姿勢入力（uOrientTex）へ姿勢を供給する専用再生路です。Point Cache 変換経由の再生（姿勢は載りません）とは別の経路で、そちらは従来どおりです。再生中もライブのシミュレーションは裏で動き続け、描画へ渡す位置・姿勢テクスチャだけをキャッシュのものに差し替えます（停止するとライブの描画に戻ります）。姿勢を実際に画面で回すには、設定側の姿勢（Orient）チャンネルが有効でジオメトリ描画が姿勢入力を持つことが必要です（ライブ供給と同じ条件）。姿勢チャンネルの無いキャッシュ、年齢（age）属性の無いキャッシュ、粒子数（texSize）が現在のプールと一致しないキャッシュは、理由を表示して再生しません（姿勢を黙って落として再生することはしません）。
+        </p>
+        {heldV2 ? (
+          <>
+            <p className="text-[11px] text-white/55 mb-3">
+              保持中: {heldV2.sourceName}（{heldV2.cache.manifest.count.toLocaleString()} 点 × {heldV2.cache.manifest.frameCount} フレーム / {heldV2.cache.manifest.fps} fps / texSize {heldV2.cache.manifest.texSize} / 姿勢チャンネル {heldV2.cache.manifest.orientation ? 'あり' : 'なし'}）{playbackActive ? ' / 専用再生路で表示中' : ''}
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <label className="flex items-center gap-1 text-[10px] text-white/50">
+                フレーム
+                <input type="number" min={0} max={heldV2.cache.manifest.frameCount - 1} step={1} value={playbackFrame} disabled={busy}
+                  onChange={(event) => handlePlaybackFrameChange(Number(event.target.value))} className={numberInputClass} />
+              </label>
+              {playbackActive ? (
+                <button
+                  onClick={handleStopPlayback}
+                  disabled={busy}
+                  className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 hover:bg-gray-200 transition-colors"
+                >
+                  専用再生を停止
+                </button>
+              ) : (
+                <button
+                  onClick={handleStartPlayback}
+                  disabled={busy || isPublicLibrary}
+                  className="px-4 py-2 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 hover:bg-gray-200 transition-colors"
+                >
+                  このフレームを専用再生路で表示（姿勢つき）
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-[11px] text-white/35 mb-3">保持中の v2 状態キャッシュはありません。姿勢（Orient）を有効にして「撮影して保存」するか、v2 形式の状態キャッシュ（.json＋.bin）を上のボタンで読んでください。</p>
+        )}
+        {playbackStatus && <p className="text-[11px] text-white/55">{playbackStatus}</p>}
       </div>
       <div className="mt-5 border-t border-white/10 pt-4">
         <p className="text-[11px] font-bold text-white/70 mb-2">PRT · 粒子フォーマット入出力</p>

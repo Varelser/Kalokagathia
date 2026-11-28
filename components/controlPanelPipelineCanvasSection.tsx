@@ -85,6 +85,25 @@ const KIND_BADGE: Record<string, string> = Object.fromEntries(
   Object.values(PIPELINE_NODE_DEFINITIONS).map((def) => [def.kind, def.label]),
 );
 
+/** Display-only summary of a save's slot assignment:
+ *  which attribute channels were written, and which
+ *  output requests were refused (with the compiler's
+ *  reason codes). Editing stays on the graph itself. */
+const slotStatusNote = (slots: {
+  assignments: readonly { name: string; slot: number }[];
+  rejections: readonly { name: string; reason: string }[];
+} | null): string => {
+  if (!slots) return '';
+  const parts: string[] = [];
+  if (slots.assignments.length > 0) {
+    parts.push(`属性出力 ${slots.assignments.map((a) => `${a.name}→${a.slot}`).join('、')}`);
+  }
+  if (slots.rejections.length > 0) {
+    parts.push(`書込不可 ${slots.rejections.map((r) => `${r.name}（${r.reason}）`).join('、')}`);
+  }
+  return parts.length > 0 ? `（${parts.join(' / ')}）` : '';
+};
+
 export const PipelineCanvasSection: React.FC<{
   config: ParticleConfig;
   updateConfig: ControlPanelContentProps['updateConfig'];
@@ -154,6 +173,7 @@ export const PipelineCanvasSection: React.FC<{
     const result = savePipelineGraphToConfig(next, {
       attrNames: config.gpgpuAttrNames,
       attrNames2: config.gpgpuAttrNames2,
+      attrExprs: config.gpgpuAttrExprs,
     });
     if (!result.ok || !result.patch) {
       setStatus(`保存できませんでした（${result.reason ?? 'invalid-graph'}）。`);
@@ -168,7 +188,13 @@ export const PipelineCanvasSection: React.FC<{
     write('gpgpuPipelineGraph', result.patch.gpgpuPipelineGraph);
     write('gpgpuParticleRulesLive', result.patch.gpgpuParticleRulesLive);
     write('gpgpuForceOrder', result.patch.gpgpuForceOrder);
-    setStatus(message);
+    // Slot claims ride the same save (pipelinePersist's
+    // slot discipline): the attribute keys are written
+    // only when the patch carries them — a graph without
+    // channel writes never touches the attribute surface.
+    if (result.patch.gpgpuAttrNames) write('gpgpuAttrNames', result.patch.gpgpuAttrNames);
+    if (result.patch.gpgpuAttrExprs) write('gpgpuAttrExprs', result.patch.gpgpuAttrExprs);
+    setStatus(message + slotStatusNote(result.slots));
   };
 
   const projection = React.useMemo(

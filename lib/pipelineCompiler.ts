@@ -68,9 +68,19 @@
  *     the per-slot dyn expressions, so a later slice can
  *     apply the assignment through the existing keys
  *     (gpgpuAttrNames / gpgpuAttrDynExprs) unchanged.
+ *
+ * Cluster grammar (layer 1 WP10 phase D2): every compile
+ * entry point inlines cluster nodes first
+ * (expandPipelineGraphClusters in lib/pipelineGraph.ts),
+ * so a graph that encapsulates part of itself in a
+ * cluster compiles exactly as its hand-expanded
+ * equivalent — rules, force order and slot assignments
+ * alike. Cluster-free graphs are untouched by the
+ * expansion (it returns them as the same object).
  */
 
 import {
+  expandPipelineGraphClusters,
   lowerLogicNodeToExpression,
   pipelineForceChunkName,
   validatePipelineGraph,
@@ -431,6 +441,11 @@ function compileOpaqueNode(node: PipelineGraphNode, issues: PipelineCompileIssue
  * is lost; this function never invents or drops silently.
  */
 export function compilePipelineGraphToLiveRules(graph: PipelineGraph): PipelineRuleCompileResult {
+  // Cluster grammar (WP10 D2): clusters are inlined
+  // before anything is compiled, so the rules below are
+  // the expansion's rules — a cluster graph and its
+  // hand-expanded equivalent compile identically.
+  graph = expandPipelineGraphClusters(graph);
   const rules: LiveParticleRule[] = [];
   const opaqueNodeIds: string[] = [];
   const issues: PipelineCompileIssue[] = [];
@@ -555,6 +570,7 @@ export function liveRulesToPipelineGraph(rules: readonly LiveParticleRule[]): Pi
  * chain denotes the default order or there is no chain.
  */
 export function pipelineGraphToForceOrderKey(graph: PipelineGraph): string {
+  graph = expandPipelineGraphClusters(graph);
   const names: string[] = [];
   for (const node of graph.nodes) {
     if (node.kind !== 'force-chunk' || !node.enabled) continue;
@@ -645,6 +661,7 @@ export function assignPipelineExpressionSlots(
   namesInput?: readonly string[] | unknown,
   names2Input?: readonly string[] | unknown,
 ): PipelineSlotAssignmentResult {
+  graph = expandPipelineGraphClusters(graph);
   const names = normalizeAttrNames(namesInput ?? undefined);
   const names2 = normalizeAttrNames2(names2Input ?? undefined);
   const assignments: PipelineSlotAssignment[] = [];

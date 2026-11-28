@@ -18,14 +18,21 @@ import {
   type AfMapSourceKind,
 } from '../lib/mapSourceSupply';
 import {
+  GENERALIZED_DERIVED_KINDS,
+  GENERALIZED_DERIVED_SOURCES,
   HAND_DRAWN_MASK_SOURCE,
   TERRAIN_DERIVED_KINDS,
+  generalizedDerivedSource,
+  getGeneralizedDerivedMapCanvas,
   getTerrainDerivedMapCanvas,
   handDrawnMaskBytes,
+  isGeneralizedDerivedSource,
   isTerrainDerivedSource,
+  parseGeneralizedDerivedSource,
   parseTerrainDerivedSource,
   terrainDerivedSource,
   terrainOptionsFromConfig,
+  type GeneralizedDerivedSourceId,
   type TerrainDerivedMapKind,
 } from '../lib/terrainDerivedMaps';
 import { combineLumaMaps, normalizeMaskBoolOp } from '../lib/shapeBoolean';
@@ -160,6 +167,14 @@ const DERIVED_KIND_LABELS: Record<TerrainDerivedMapKind, string> = {
   moisture: '湿り気',
 };
 
+/** Generalized derived sources (Layer 1 WP7 phase E): the
+ *  differential kinds off non-terrain height material. */
+const GENERALIZED_SOURCE_LABELS: Record<GeneralizedDerivedSourceId, string> = {
+  noise: 'ノイズ場',
+  drawn: '手描きグリッド',
+  image: '画像グリッド',
+};
+
 const AF_SOURCE_KIND_LABELS: Record<AfMapSourceKind, string> = {
   text: '文字',
   path: 'パス',
@@ -229,30 +244,56 @@ const DerivedSourceButtons: React.FC<{
   source: string;
   onPick: (kind: TerrainDerivedMapKind) => void;
   onPickHandDrawn?: () => void;
-}> = ({ source, onPick, onPickHandDrawn }) => (
-  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-    <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">地形派生</span>
-    {TERRAIN_DERIVED_KINDS.map((kind) => {
-      const active = parseTerrainDerivedSource(source) === kind;
-      return (
+  onPickGeneralized?: (source: GeneralizedDerivedSourceId, kind: TerrainDerivedMapKind) => void;
+}> = ({ source, onPick, onPickHandDrawn, onPickGeneralized }) => (
+  <>
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">地形派生</span>
+      {TERRAIN_DERIVED_KINDS.map((kind) => {
+        const active = parseTerrainDerivedSource(source) === kind;
+        return (
+          <button
+            key={kind}
+            onClick={() => onPick(kind)}
+            className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest transition-colors ${active ? 'border-white/70 bg-white/20 text-white' : 'border-white/15 text-white/60 hover:bg-white/10'}`}
+          >
+            {DERIVED_KIND_LABELS[kind]}
+          </button>
+        );
+      })}
+      {onPickHandDrawn && (
         <button
-          key={kind}
-          onClick={() => onPick(kind)}
-          className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest transition-colors ${active ? 'border-white/70 bg-white/20 text-white' : 'border-white/15 text-white/60 hover:bg-white/10'}`}
+          onClick={onPickHandDrawn}
+          className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest transition-colors ${source === HAND_DRAWN_MASK_SOURCE ? 'border-white/70 bg-white/20 text-white' : 'border-white/15 text-white/60 hover:bg-white/10'}`}
         >
-          {DERIVED_KIND_LABELS[kind]}
+          手描きマスク
         </button>
-      );
-    })}
-    {onPickHandDrawn && (
-      <button
-        onClick={onPickHandDrawn}
-        className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest transition-colors ${source === HAND_DRAWN_MASK_SOURCE ? 'border-white/70 bg-white/20 text-white' : 'border-white/15 text-white/60 hover:bg-white/10'}`}
-      >
-        手描きマスク
-      </button>
+      )}
+    </div>
+    {onPickGeneralized && (
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">派生（汎用）</span>
+        {GENERALIZED_DERIVED_SOURCES.map((sourceId) => (
+          <span key={sourceId} className="flex items-center gap-1">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">{GENERALIZED_SOURCE_LABELS[sourceId]}</span>
+            {GENERALIZED_DERIVED_KINDS.map((kind) => {
+              const parsed = parseGeneralizedDerivedSource(source);
+              const active = parsed !== null && parsed.source === sourceId && parsed.kind === kind;
+              return (
+                <button
+                  key={kind}
+                  onClick={() => onPickGeneralized(sourceId, kind)}
+                  className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest transition-colors ${active ? 'border-white/70 bg-white/20 text-white' : 'border-white/15 text-white/60 hover:bg-white/10'}`}
+                >
+                  {DERIVED_KIND_LABELS[kind]}
+                </button>
+              );
+            })}
+          </span>
+        ))}
+      </div>
     )}
-  </div>
+  </>
 );
 
 /**
@@ -357,7 +398,7 @@ export const MapSourceBlock: React.FC<{
         </label>
         {source && (
           <>
-            {!isTerrainDerivedSource(source) && !isAfMapSource(source) && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
+            {!isTerrainDerivedSource(source) && !isAfMapSource(source) && !isGeneralizedDerivedSource(source) && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
             <button
               onClick={() => onSource('')}
               className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
@@ -367,7 +408,7 @@ export const MapSourceBlock: React.FC<{
           </>
         )}
       </div>
-      <DerivedSourceButtons source={source} onPick={(kind) => onSource(terrainDerivedSource(kind))} onPickHandDrawn={() => onSource(HAND_DRAWN_MASK_SOURCE)} />
+      <DerivedSourceButtons source={source} onPick={(kind) => onSource(terrainDerivedSource(kind))} onPickHandDrawn={() => onSource(HAND_DRAWN_MASK_SOURCE)} onPickGeneralized={(sourceId, kind) => onSource(generalizedDerivedSource(sourceId, kind))} />
       <AfSourceButtons
         source={source}
         onPick={(kind) => onSource(afMapSource(kind))}
@@ -379,6 +420,8 @@ export const MapSourceBlock: React.FC<{
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         {isTerrainDerivedSource(source)
           ? `地形派生マップ（${DERIVED_KIND_LABELS[parseTerrainDerivedSource(source) ?? 'slope']}）を設定済み: 地形パラメータに追随する内部供給です。`
+          : isGeneralizedDerivedSource(source)
+          ? `派生マップ（汎用・${GENERALIZED_SOURCE_LABELS[parseGeneralizedDerivedSource(source)?.source ?? 'noise']}の${DERIVED_KIND_LABELS[parseGeneralizedDerivedSource(source)?.kind ?? 'slope']}）を設定済み: 元の素材に追随する内部供給です。浸食系（流量／堆積／侵食量／湿り気）は地形ソース専用です。`
           : isAfMapSource(source)
           ? parseAfMapSource(source) === 'text'
             ? '文字ラスタを設定済み: 現在のテキスト設定（レイヤー2 TextMap）に追随する内部供給です。'
@@ -442,6 +485,16 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
   const applyDerived = (kind: TerrainDerivedMapKind) => {
     const canvas = getTerrainDerivedMapCanvas(kind, terrainOptionsFromConfig(config), config.gpgpuSeed);
     updateConfig('gpgpuMaskSource', terrainDerivedSource(kind));
+    if (canvas) {
+      const map = extractLumaMap(canvas, 128, 128);
+      updateConfig('gpgpuMaskMap', map);
+      updateConfig('gpgpuMaskMapWidth', 128);
+      updateConfig('gpgpuMaskMapHeight', 128);
+    }
+  };
+  const applyGeneralized = (sourceId: GeneralizedDerivedSourceId, kind: TerrainDerivedMapKind) => {
+    const canvas = getGeneralizedDerivedMapCanvas(sourceId, kind, config);
+    updateConfig('gpgpuMaskSource', generalizedDerivedSource(sourceId, kind));
     if (canvas) {
       const map = extractLumaMap(canvas, 128, 128);
       updateConfig('gpgpuMaskMap', map);
@@ -685,7 +738,7 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
         </label>
         {(source || config.gpgpuMaskMap.length > 0) && (
           <>
-            {source && !isTerrainDerivedSource(source) && !isAfMapSource(source) && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
+            {source && !isTerrainDerivedSource(source) && !isAfMapSource(source) && !isGeneralizedDerivedSource(source) && <img src={source} alt="" className="h-8 w-8 rounded border border-white/20 object-cover" />}
             <button
               onClick={clear}
               className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10"
@@ -695,7 +748,7 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
           </>
         )}
       </div>
-      <DerivedSourceButtons source={source} onPick={applyDerived} onPickHandDrawn={applyHandDrawn} />
+      <DerivedSourceButtons source={source} onPick={applyDerived} onPickHandDrawn={applyHandDrawn} onPickGeneralized={applyGeneralized} />
       <AfSourceButtons source={source} onPick={applyAf} onPickFill={applyAfFill} />
       {parseAfMapSource(source) === 'path' && (
         <Slider label="Path Stroke Width （パスの線幅）" value={config.gpgpuPathRasterStrokeWidth} min={0.005} max={0.2} step={0.005} onChange={(v) => updateConfig('gpgpuPathRasterStrokeWidth', v)} />
@@ -703,6 +756,8 @@ export const MaskSourceBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ con
       <div className="mt-1 text-[9px] leading-relaxed text-white/40">
         {isTerrainDerivedSource(source)
           ? `地形派生マップ（${DERIVED_KIND_LABELS[parseTerrainDerivedSource(source) ?? 'slope']}）をマスクに供給中: 描画 clip と Kill は地形パラメータに追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点の地形から抽出済みです。`
+          : isGeneralizedDerivedSource(source)
+          ? `派生マップ（汎用・${GENERALIZED_SOURCE_LABELS[parseGeneralizedDerivedSource(source)?.source ?? 'noise']}の${DERIVED_KIND_LABELS[parseGeneralizedDerivedSource(source)?.kind ?? 'slope']}）をマスクに供給中: 描画 clip と Kill は元の素材に追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点の素材から抽出済みです。素材を変えたら選び直してください。浸食系は地形ソース専用です。`
           : isAfMapSource(source)
           ? parseAfMapSource(source) === 'text'
             ? `文字ラスタをマスクに供給中: 描画 clip と Kill は現在のテキスト設定に追随し、輝度マップ（${config.gpgpuMaskMapWidth}×${config.gpgpuMaskMapHeight}）はベイク用に選択時点の文字から抽出済みです。文字を変えたら選び直してください。`

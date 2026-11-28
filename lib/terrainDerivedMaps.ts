@@ -63,7 +63,13 @@ import {
 } from './gpgpuMorphTargets';
 import { TERRAIN_MESH_EXTENT, TERRAIN_MESH_RESOLUTION } from './terrainMesh';
 import { getMapImageTexture, type MapImageTextureState } from './mapImageTexture';
-import { resolveAfMapSourceTexture } from './mapSourceSupply';
+import {
+  buildNoiseFieldLuma,
+  noiseFieldCacheKey,
+  noiseFieldSettingsFromConfig,
+  resolveAfMapSourceTexture,
+  resolveNoiseFieldDomainRadius,
+} from './mapSourceSupply';
 import type { ParticleConfig } from '../types';
 
 export type TerrainDerivedMapKind = 'normal' | 'slope' | 'curvature' | 'flow' | 'deposit' | 'erosion' | 'moisture';
@@ -575,6 +581,11 @@ export function resolveMapSourceTexture(source: string, config: ParticleConfig):
   // lib/mapSourceSupply.ts; everything else is an image source.
   const af = resolveAfMapSourceTexture(source, config);
   if (af) return af;
+  // Layer 1 WP7 phase E: generalized derived maps (derived:*)
+  // resolve in the section at the bottom of this file — the
+  // differential engine off the terrain, with its own cache.
+  const generalized = parseGeneralizedDerivedSource(source);
+  if (generalized) return getGeneralizedDerivedTexture(generalized.source, generalized.kind, config);
   return getMapImageTexture(source);
 }
 
@@ -667,6 +678,246 @@ export function getTerrainDerivedMapCanvas(
 ): HTMLCanvasElement | null {
   if (typeof document === 'undefined') return null;
   const maps = buildTerrainDerivedMaps(terrain, seed);
+  const n = maps.size;
+  const bytes = terrainDerivedMapBytes(maps, kind);
+  const canvas = document.createElement('canvas');
+  canvas.width = n;
+  canvas.height = n;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const imageData = ctx.createImageData(n, n);
+  const rowBytes = n * 4;
+  for (let y = 0; y < n; y++) {
+    const srcRow = n - 1 - y; // canvas top = fz = +extent
+    imageData.data.set(bytes.subarray(srcRow * rowBytes, (srcRow + 1) * rowBytes), y * rowBytes);
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+// ---------------------------------------------------------------------------
+// Generalized derived maps (Layer 1 WP7 phase E): the derived-map
+// engine off the terrain.
+//
+// The differential core above (deriveMapsFromHeightGrid) was
+// always grid-generic; what tied the maps to the terrain was
+// everything around it — the height grid could only be built
+// from the morph terrain options, on the terrain mesh's grid,
+// behind the terrain parameter cache. This section adds the
+// Phase AF-style supply for OTHER height sources the app already
+// authors, following the same conventions as every supply:
+//
+//  - A sentinel string in the EXISTING source keys, resolved by
+//    the single point above (`resolveMapSourceTexture` delegates
+//    here after the AF sentinels). No new config keys.
+//  - Grammar: `derived:<source>:<kind>` — the source is named in
+//    the string (the AF suffix precedent), so one source key can
+//    ask for any (source, kind) pair.
+//  - Sources: 'noise' (the noise field's static slice, the same
+//    raster lib/mapSourceSupply.ts supplies as `noise-field`,
+//    read as heights over its world box), 'drawn' (the
+//    hand-drawn grid stored in the config) and 'image' (the
+//    stored image grid). Stored grids keep their own resolution
+//    and are read as heights over the normalised [-1, 1]^2 box,
+//    in stored order (row 0 = the v = 0 side, the direct-copy
+//    convention of handDrawnMaskBytes).
+//  - Kinds: only the differential kinds (normal / slope /
+//    curvature) generalise. The erosion-measurement kinds (flow /
+//    deposit / erosion / moisture) are by-products of the terrain
+//    erosion sim and are TERRAIN-ONLY in the grammar —
+//    parseGeneralizedDerivedSource rejects them, so they stay
+//    available only as `terrain-derived:*`.
+//  - Cache: this section keeps its OWN cache, one entry per
+//    source, keyed by the source material's identity (the noise
+//    field definition key / the stored grid's content hash). The
+//    terrain cache and texture entry above are never read,
+//    cleared or disposed from here, so a terrain bake and the
+//    generalized bakes coexist in the same frame.
+//  - The shader-facing bakes (gradient / collider) stay terrain
+//    supplies: they encode the terrain field's own scales for
+//    the slope force and the collider, which have no meaning for
+//    an arbitrary source.
+
+export type GeneralizedDerivedSourceId = 'noise' | 'drawn' | 'image';
+
+export const GENERALIZED_DERIVED_SOURCES: readonly GeneralizedDerivedSourceId[] = ['noise', 'drawn', 'image'];
+
+/** The kinds any height source can differentiate: the pure
+ *  differential bakes of the height grid itself. */
+export const GENERALIZED_DERIVED_KINDS: readonly TerrainDerivedMapKind[] = ['normal', 'slope', 'curvature'];
+
+/** The erosion-measurement kinds: by-products of the terrain
+ *  erosion sim, TERRAIN-ONLY in the sentinel grammar (see the
+ *  section doc above). */
+export const TERRAIN_ONLY_DERIVED_KINDS: readonly TerrainDerivedMapKind[] = ['flow', 'deposit', 'erosion', 'moisture'];
+
+export const GENERALIZED_DERIVED_SOURCE_PREFIX = 'derived:';
+
+/** Bake side length of the generalized noise slice: the terrain
+ *  bakes' own resolution. Stored grids keep their own side. */
+export const GENERALIZED_DERIVED_SIZE = TERRAIN_DERIVED_SIZE;
+
+export function generalizedDerivedSource(source: GeneralizedDerivedSourceId, kind: TerrainDerivedMapKind): string {
+  return `${GENERALIZED_DERIVED_SOURCE_PREFIX}${source}:${kind}`;
+}
+
+export interface GeneralizedDerivedRef {
+  source: GeneralizedDerivedSourceId;
+  kind: TerrainDerivedMapKind;
+}
+
+export function parseGeneralizedDerivedSource(source: string): GeneralizedDerivedRef | null {
+  if (!source || !source.startsWith(GENERALIZED_DERIVED_SOURCE_PREFIX)) return null;
+  const rest = source.slice(GENERALIZED_DERIVED_SOURCE_PREFIX.length);
+  const sep = rest.indexOf(':');
+  if (sep < 0) return null;
+  const sourceId = rest.slice(0, sep);
+  const kind = rest.slice(sep + 1);
+  if (!(GENERALIZED_DERIVED_SOURCES as readonly string[]).includes(sourceId)) return null;
+  // Terrain-only kinds are rejected here, in the grammar: a
+  // generalized source has no erosion measurement to bake from.
+  if (!(GENERALIZED_DERIVED_KINDS as readonly string[]).includes(kind)) return null;
+  return { source: sourceId as GeneralizedDerivedSourceId, kind: kind as TerrainDerivedMapKind };
+}
+
+export function isGeneralizedDerivedSource(source: string): boolean {
+  return parseGeneralizedDerivedSource(source) !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Generalized height grids (pure)
+
+/** A stored config grid (the hand-drawn grid / the image grid)
+ *  read as heights: values clamped to [0, 1], non-finite cells 0,
+ *  at the grid's own side length. Null for an absent / invalid
+ *  grid — the source then resolves to not-ready, like an image
+ *  that has not loaded. */
+function storedGridHeights(
+  grid: readonly number[] | null | undefined,
+): { heights: Float32Array; size: number } | null {
+  if (!Array.isArray(grid) || grid.length < 4) return null;
+  const side = Math.round(Math.sqrt(grid.length));
+  if (side * side !== grid.length) return null;
+  const heights = new Float32Array(grid.length);
+  for (let i = 0; i < grid.length; i++) {
+    const v = grid[i];
+    heights[i] = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+  }
+  return { heights, size: side };
+}
+
+export function buildGeneralizedHeightGrid(
+  source: GeneralizedDerivedSourceId,
+  config: ParticleConfig,
+): TerrainHeightGrid | null {
+  if (source === 'noise') {
+    const settings = noiseFieldSettingsFromConfig(config);
+    const n = GENERALIZED_DERIVED_SIZE;
+    const luma = buildNoiseFieldLuma(settings, n);
+    // buildNoiseFieldLuma is image order (row 0 = top, y up);
+    // the derived convention is row 0 = fz = -extent — flip, so
+    // the bake differentiates the field as the consumers see it.
+    const heights = new Float32Array(n * n);
+    for (let j = 0; j < n; j++) {
+      const srcRow = n - 1 - j;
+      for (let i = 0; i < n; i++) heights[j * n + i] = luma[srcRow * n + i];
+    }
+    const extent = resolveNoiseFieldDomainRadius(settings.domainRadius);
+    return { size: n, heights, extent, step: (extent * 2) / (n - 1), erosionMeasure: null };
+  }
+  const stored = storedGridHeights(source === 'drawn'
+    ? config.gpgpuMorphTerrainErosionMaskDrawnGrid
+    : config.gpgpuMorphTerrainErosionMaskImageGrid);
+  if (!stored) return null;
+  const extent = 1;
+  return {
+    size: stored.size,
+    heights: stored.heights,
+    extent,
+    step: (extent * 2) / Math.max(1, stored.size - 1),
+    erosionMeasure: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Generalized cache + textures (own cache — the terrain cache
+// above is never touched from here)
+
+function generalizedCacheIdentity(source: GeneralizedDerivedSourceId, config: ParticleConfig): string | null {
+  if (source === 'noise') return noiseFieldCacheKey(noiseFieldSettingsFromConfig(config));
+  const grid = source === 'drawn'
+    ? config.gpgpuMorphTerrainErosionMaskDrawnGrid
+    : config.gpgpuMorphTerrainErosionMaskImageGrid;
+  if (!Array.isArray(grid) || grid.length < 4) return null;
+  return erosionMaskImageGridHash(grid);
+}
+
+interface GeneralizedDerivedEntry {
+  identity: string;
+  maps: TerrainDerivedMaps;
+  byKind: Map<TerrainDerivedMapKind, THREE.DataTexture>;
+}
+
+const generalizedEntries = new Map<GeneralizedDerivedSourceId, GeneralizedDerivedEntry>();
+
+export function getGeneralizedDerivedMaps(
+  source: GeneralizedDerivedSourceId,
+  config: ParticleConfig,
+): TerrainDerivedMaps | null {
+  const identity = generalizedCacheIdentity(source, config);
+  const existing = generalizedEntries.get(source);
+  if (identity === null) {
+    // The source material is gone: drop this source's entry
+    // (and only this source's) so nothing stale is served.
+    if (existing) {
+      existing.byKind.forEach((t) => t.dispose());
+      generalizedEntries.delete(source);
+    }
+    return null;
+  }
+  if (existing && existing.identity === identity) return existing.maps;
+  const grid = buildGeneralizedHeightGrid(source, config);
+  if (!grid) return null;
+  const maps = deriveMapsFromHeightGrid(grid.heights, grid.size, grid.step, null);
+  if (existing) {
+    existing.byKind.forEach((t) => t.dispose());
+    existing.byKind.clear();
+    existing.identity = identity;
+    existing.maps = maps;
+    return maps;
+  }
+  generalizedEntries.set(source, { identity, maps, byKind: new Map() });
+  return maps;
+}
+
+export function getGeneralizedDerivedTexture(
+  source: GeneralizedDerivedSourceId,
+  kind: TerrainDerivedMapKind,
+  config: ParticleConfig,
+): MapImageTextureState {
+  const maps = getGeneralizedDerivedMaps(source, config);
+  if (!maps) return { texture: null, ready: false };
+  const entry = generalizedEntries.get(source);
+  if (!entry) return { texture: null, ready: false };
+  let tex = entry.byKind.get(kind);
+  if (!tex) {
+    tex = makeDerivedDataTexture(terrainDerivedMapBytes(maps, kind), maps.size);
+    entry.byKind.set(kind, tex);
+  }
+  return { texture: tex, ready: true };
+}
+
+/** Canvas of one generalized bake (browser side; the same
+ *  row flip as getTerrainDerivedMapCanvas — canvas top reads as
+ *  the map's north). Null without a DOM or without material. */
+export function getGeneralizedDerivedMapCanvas(
+  source: GeneralizedDerivedSourceId,
+  kind: TerrainDerivedMapKind,
+  config: ParticleConfig,
+): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const maps = getGeneralizedDerivedMaps(source, config);
+  if (!maps) return null;
   const n = maps.size;
   const bytes = terrainDerivedMapBytes(maps, kind);
   const canvas = document.createElement('canvas');

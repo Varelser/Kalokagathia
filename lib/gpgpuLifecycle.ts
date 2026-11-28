@@ -1,4 +1,5 @@
 import { dmHash11 } from './gpgpuRandom';
+import type { ParticleConfig } from '../types';
 /**
  * GPGPU lifecycle grammar (Phase AB: Spawn / Kill / global Drag &
  * Max Speed / SPH surface tension).
@@ -821,4 +822,141 @@ export function sphSurfaceTensionAkinciForce(
     out.z *= s;
   }
   return out;
+}
+
+/**
+ * The generic surface-tension placement (Layer 1 WP5 phase C
+ * judgment, wired in phase D): the Akinci law above also
+ * stands as a general force-order chunk ('surface-tension')
+ * that runs its OWN neighbour scan, so a pool without the SPH
+ * solver can still carry the law. The mutual-exclusion
+ * discipline is resolved here, on the CPU side, exactly once:
+ * the SPH accumulation only runs inside `if (uSphEnabled)`,
+ * so while the SPH solver stands, the SPH form applies the
+ * law and the generic chunk stays out of the string; while
+ * SPH is off, the generic chunk applies it. Either way the
+ * law applies exactly once for a given strength key
+ * (gpgpuSphSurfaceTensionAkinci, shared by both placements —
+ * the strength is a property of the law, not of the solver).
+ */
+export function genericSurfaceTensionActive(
+  config: Pick<ParticleConfig, 'gpgpuSphEnabled' | 'gpgpuSphSurfaceTensionAkinci'>,
+): boolean {
+  return (config.gpgpuSphSurfaceTensionAkinci || 0) > 0 && !config.gpgpuSphEnabled;
+}
+
+// ── Lifetime jitter (Layer 1 WP4, phase A) ──────────────────────
+// Until this phase the age ceiling was one number for the whole
+// pool: every particle wrapped at exactly gpgpuAgeMax, so a
+// cohort born together also died together (the missing grammar
+// behind TP §2-10, the lifetime part of tyFlow §2-06 and the
+// lifetime part of RealFlow §2 emission control). The jitter
+// spreads the ceiling per particle: each particle's effective
+// age max is gpgpuAgeMax × m, where m is a deterministic-hash
+// multiplier uniform in [1 - j, 1 + j] (mean exactly 1, so the
+// pool-average lifetime is unchanged). j is the config key
+// gpgpuAgeMaxJitter; at its default 0 every multiplier is
+// exactly 1 and the lifecycle is the legacy one, bit for bit.
+//
+// This phase ships the pure functions and their key only; the
+// position pass applies the multiplier in phase C. (Phase C
+// has since landed: while ageJitterVariantActive stands, the
+// position pass builds the age-jitter variant string —
+// components/gpgpuShaderSimulationPosition.ts — and the age
+// test reads uAgeMax * lifetimeMultiplier(vUv, uAgeMaxJitter),
+// with uAgeMaxJitter supplied per frame by the passes.) The draw is
+// a dedicated dmHash11 offset — NOT the spawn hash and NOT the
+// event hash — so lifetime is decorrelated from release order
+// and event cohorts, and the same value is available in the
+// position pass, the velocity pass and here, so the three can
+// never disagree about when a particle dies.
+//
+// GLSL transcription (phase C, position pass; the hash body is
+// the shared dmHash11 twin, cf. auxHash in gpgpuShaderAux.ts):
+//   float ageJitterHash(vec2 uv) {
+//     float n = (uv.x + 11.31) * 127.1 + (uv.y + 4.77) * 311.7;
+//     vec3 p3 = fract(vec3(n) * vec3(0.1031, 0.1030, 0.0973));
+//     p3 += dot(p3, p3.yxz + 33.33);
+//     return fract((p3.x + p3.y) * p3.z);
+//   }
+//   float lifetimeMultiplier(vec2 uv, float jitter) {
+//     float j = clamp(jitter, 0.0, 1.0);
+//     return 1.0 + (2.0 * ageJitterHash(uv) - 1.0) * j;
+//   }
+//   // the age test at gpgpuShaderSimulationPosition.ts:604
+//   // becomes, with the uAgeMaxJitter uniform supplied:
+//   if (age > uAgeMax * lifetimeMultiplier(vUv, uAgeMaxJitter)) ageRespawn = true;
+
+/** Lifetime jitter amount: 0 = uniform lifetime (default). */
+export function clampAgeMaxJitter(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * Lifetime hash in [0, 1): dmHash11 of the texel UV with the
+ * dedicated lifetime offset (11.31, 4.77). GLSL twin:
+ * `ageJitterHash` above; keep the constants in sync.
+ */
+export function ageJitterHashForUv(u: number, v: number): number {
+  return dmHash11((u + 11.31) * 127.1 + (v + 4.77) * 311.7);
+}
+
+export function ageJitterHashForIndex(index: number, texSize: number): number {
+  const size = Math.max(1, Math.floor(texSize));
+  const idx = Math.max(0, Math.floor(index));
+  const u = ((idx % size) + 0.5) / size;
+  const v = (Math.floor(idx / size) + 0.5) / size;
+  return ageJitterHashForUv(u, v);
+}
+
+/**
+ * The lifetime multiplier for one hash draw: uniform in
+ * [1 - j, 1 + j], exactly 1 at j = 0 (and for a non-finite
+ * hash, so a bad draw can never kill or immortalise a
+ * particle). The hash is clamped into [0, 1] defensively;
+ * dmHash11 draws already land in [0, 1).
+ */
+export function lifetimeMultiplierFromHash(hash: number, jitter: number): number {
+  const j = clampAgeMaxJitter(jitter);
+  if (j <= 0) return 1;
+  if (!Number.isFinite(hash)) return 1;
+  const h = Math.min(1, Math.max(0, hash));
+  return 1 + (2 * h - 1) * j;
+}
+
+/** A particle's lifetime multiplier from its texel UV. */
+export function lifetimeMultiplierForUv(u: number, v: number, jitter: number): number {
+  return lifetimeMultiplierFromHash(ageJitterHashForUv(u, v), jitter);
+}
+
+/** A particle's lifetime multiplier from its pool index. */
+export function lifetimeMultiplierForIndex(index: number, texSize: number, jitter: number): number {
+  return lifetimeMultiplierFromHash(ageJitterHashForIndex(index, texSize), jitter);
+}
+
+/**
+ * A particle's effective age ceiling: gpgpuAgeMax spread by
+ * its lifetime multiplier. This is the value phase C's age
+ * test compares against (age > particleAgeMax(...)).
+ */
+export function particleAgeMax(
+  ageMax: number,
+  index: number,
+  texSize: number,
+  jitter: number,
+): number {
+  return ageMax * lifetimeMultiplierForIndex(index, texSize, jitter);
+}
+
+/**
+ * True while the jitter key is above zero: the position
+ * pass then builds the age-jitter variant string (phase
+ * C). At the default 0 every multiplier is exactly 1, the
+ * variant never stands and the shipped string is used.
+ */
+export function ageJitterVariantActive(
+  config: { gpgpuAgeMaxJitter?: number | null },
+): boolean {
+  return clampAgeMaxJitter(config.gpgpuAgeMaxJitter ?? 0) > 0;
 }

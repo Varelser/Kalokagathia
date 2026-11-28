@@ -341,7 +341,7 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
                 onChange={(v) => updateConfig('gpgpuLightVolumeEnabled', v)}
               />
               <div className="mt-1 text-[9px] leading-relaxed text-white/40">
-                ライトの位置に体積光を描きます（描画のみ）。深度との交差・遮蔽はしないため、輪郭は Softness でぼかします。PostFx の Lux とは別物です。
+                ライトの位置に体積光を描きます（描画のみ）。既定では深度との交差・遮蔽はしないため、輪郭は Softness でぼかします（下の Depth Intersect を上げると交差します）。PostFx の Lux とは別物です。
               </div>
               {config.gpgpuLightVolumeEnabled && (
                 <>
@@ -363,6 +363,10 @@ export const GlobalDisplayGpgpuSection: React.FC<GlobalDisplayEffectsSharedProps
               <Slider label="Depth Occlusion （深度遮蔽・Phase 16）" value={config.gpgpuDepthOcclusion} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuDepthOcclusion', v)} />
               <div className="mt-1 text-[9px] leading-relaxed text-white/40">
                 シーン深度で体積光と PostFx の Lux コーンを減衰させます（深度を書く不透明メッシュの背後に漏れません）。0 では深度キャプチャ自体を行わず従来と同一です。深度を書かない描画（粒子・加算パス等）は遮蔽しません。
+              </div>
+              <Slider label="Volume Depth Intersect （体積光の深度交差・WP7相B）" value={config.gpgpuLightVolumeDepthIntersect} min={0} max={1} step={0.01} onChange={(v) => updateConfig('gpgpuLightVolumeDepthIntersect', v)} />
+              <div className="mt-1 text-[9px] leading-relaxed text-white/40">
+                体積光のビームがシーン幾何と交差する分だけ減衰させます（視線コードの見える割合で蓄積を切り取ります）。0 では従来のフラグメント文字列のまま同一です。このキーだけでも深度キャプチャは行われます。
               </div>
               <Toggle
                 label="Light Trail (ライト軌跡リボン)"

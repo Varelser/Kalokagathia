@@ -4,7 +4,7 @@ import { Slider, Toggle } from './controlPanelParts';
 import { CUSTOM_FORCE_CTRL_EXAMPLE, CUSTOM_FORCE_EXAMPLE, useCustomForceStatus } from '../lib/gpgpuCustomForce';
 import { extractCustomForceControls, resolveCtrlValues } from '../lib/gpgpuCustomForceControls';
 import { VEX_PRESETS } from '../lib/gpgpuVexPresets';
-import { setModulationSetup, useModulationSetup } from '../lib/modulation';
+import { serializeModulationSetup, useResolvedModulationSetup } from '../lib/modulation';
 import type { ParticleConfig } from '../types';
 import type { GlobalDisplayEffectsSharedProps } from './controlPanelGlobalDisplayEffectsShared';
 
@@ -125,8 +125,11 @@ const SIMPLE_LFO_TARGETS: { value: keyof ParticleConfig; label: string }[] = [
   { value: 'gpgpuWellStrength', label: 'Attractor (Well Strength)' },
 ];
 
-export const SimpleLfoBlock: React.FC = () => {
-  const setup = useModulationSetup();
+export const SimpleLfoBlock: React.FC<GlobalDisplayEffectsSharedProps> = ({ config, updateConfig }) => {
+  // WP9 Phase C: resolved setup (config key `modulationSetup`
+  // when authored, the localStorage store otherwise); edits
+  // write into the config key like the Play tab editor.
+  const setup = useResolvedModulationSetup(config.modulationSetup);
   const route = setup.routes.find((r) => r.id === SIMPLE_LFO_ROUTE_ID);
   const lfo = setup.lfos[0] ?? { waveform: 'sine' as const, rate: 0.5 };
   const enabled = !!route;
@@ -144,7 +147,7 @@ export const SimpleLfoBlock: React.FC = () => {
     const lfos = setup.lfos.slice();
     while (lfos.length < 4) lfos.push({ waveform: 'sine', rate: 0.5 });
     lfos[0] = { waveform: 'sine', rate: next.rate ?? lfo.rate };
-    setModulationSetup({ ...setup, enabled: on ? true : setup.enabled, lfos, routes });
+    updateConfig('modulationSetup', serializeModulationSetup({ ...setup, enabled: on ? true : setup.enabled, lfos, routes }));
   };
   return (
     <div className="mt-4 border-t border-white/10 pt-4">

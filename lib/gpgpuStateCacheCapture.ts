@@ -17,6 +17,24 @@ import {
   type StateCacheFrameInput,
   type StateCacheResult,
 } from './gpgpuStateCache';
+import {
+  assembleStateCacheV2,
+  decodeStateCacheFramesV2,
+  encodeStateCacheFramesV2,
+  parseStateCacheManifestV2,
+  serializeStateCacheManifestV2,
+  STATE_CACHE_FORMAT_V2,
+  STATE_CACHE_V1_FORMAT,
+  type StateCacheAttributeDecl,
+  type StateCacheDataV2,
+  type StateCacheProvenance,
+  type StateCacheResultV2,
+} from './gpgpuStateCacheV2';
+import {
+  getLastAppliedInitialState,
+  getStateCacheInitialStateApplier,
+  reapplyLastAppliedInitialState,
+} from './gpgpuInitialState';
 
 /**
  * Simulation state cache — the CAPTURE wiring (Grammar 2.0
@@ -50,10 +68,45 @@ import {
  *   the manager also produces is discarded part by part
  *   through onPart; it is the price of reusing the stepped
  *   render, and the UI says so.
+ * - The v2 save wiring (bake layer v2): when the provider
+ *   snapshots carry the Orient pass's accumulated posture
+ *   (snapshot.orientations, read from the pass's published
+ *   current target — the same target the diag hook's
+ *   captureOrientStats reads), the session collects the
+ *   channel whole and finishStateCacheCaptureV2 assembles
+ *   the v2 format (lib/gpgpuStateCacheV2.ts) with declared
+ *   attribute sources and provenance. The v1 path above is
+ *   unchanged: a capture whose snapshots carry no posture
+ *   assembles and saves exactly as before, and the panel
+ *   chooses the v2 job only while the Orient channel is
+ *   enabled in the config. A channel that appears or
+ *   vanishes mid-capture is refused — the v2 format accepts
+ *   an orientation channel only whole, and nothing is
+ *   filled in here either.
+ * - The v2 valid-count thinning (A-5 follow-up b): the job
+ *   args may carry validCount — the scene's authored particle
+ *   count (the panel passes min(gpgpuCount, texSize^2), the
+ *   applyLodPolicy draw count) — which the session hands to
+ *   the v2 assembly so the saved file stores only the valid
+ *   leading particles per channel. The v1 finish ignores it:
+ *   the v1 format has no thinning and its path is unchanged.
+ * - The initial-state carry-over (bake A-2 premise fix):
+ *   when an initial state was applied to the live sim
+ *   before the job (lib/gpgpuInitialState.ts records it),
+ *   the job re-applies it into its own fresh mount via the
+ *   job's onSceneReady hook, so a resume capture starts
+ *   from the applied state instead of the config-seed bake
+ *   the remount produced. Without a record the job is the
+ *   exact legacy take.
  * - The file pair: manifest JSON + one binary blob, named
  *   after this module's constants, loadable through
  *   loadStateCacheFromFiles with the format's refusal
- *   discipline (nothing is filled in or decimated).
+ *   discipline (nothing is filled in or decimated). The
+ *   v2 pair loads through loadStateCacheFromFilesV2; the
+ *   panel dispatches on detectStateCacheFormat so each
+ *   format reaches its own loader (the v1 loader still
+ *   refuses a v2 pair itself — no forward compatibility
+ *   inside either loader).
  * - The edition gate, in ONE place (杉 decision,
  *   STAGE3_DESIGN §4.5-3): the panel's isPublicLibrary flag
  *   (LIBRARY_SCOPE, lib/appStateLibrary.ts) maps to the
@@ -73,6 +126,12 @@ export interface StateCacheFrameSnapshot {
   /** count x 4 readback buffer (xyz + phase in w). */
   velocities: Float32Array;
   attributes?: Record<string, Float32Array>;
+  /** count x 4 accumulated posture (quaternion x, y, z, w —
+   *  the Orient render target's shape verbatim, the order
+   *  the v2 format stores). Present only while the Orient
+   *  channel stands; the v1 finish ignores it, the v2
+   *  finish requires it on EVERY frame or on none. */
+  orientations?: Float32Array;
 }
 
 export type StateCacheFrameProvider = () =>
@@ -156,6 +215,19 @@ export interface StateCacheCaptureSession {
   /** texSize of the first pushed frame; 0 until then. */
   texSize: number;
   frames: StateCacheFrameInput[];
+  /** Per-frame posture buffers (count x 4), parallel to
+   *  frames; filled only while orientationChannel is true. */
+  orientations: Float32Array[];
+  /** null until the first pushed frame decides the take's
+   *  shape: true = every frame carries posture, false =
+   *  none does. A change mid-capture is refused in push —
+   *  the v2 format takes the channel whole or not at all. */
+  orientationChannel: boolean | null;
+  /** Valid-count thinning for the v2 finish (A-5 b): store
+   *  only this many leading particles per channel. Undefined
+   *  = store the whole pool. Validated by the v2 assembly
+   *  against the take's texSize; the v1 finish ignores it. */
+  validCount?: number;
 }
 
 export function createStateCacheCaptureSession(args: {
@@ -163,6 +235,7 @@ export function createStateCacheCaptureSession(args: {
   attributeNames?: string[];
   loop?: boolean;
   interpolation?: 'linear' | 'nearest';
+  validCount?: number;
 }): StateCacheCaptureSession {
   return {
     fps: args.fps,
@@ -174,6 +247,9 @@ export function createStateCacheCaptureSession(args: {
     interpolation: args.interpolation ?? 'linear',
     texSize: 0,
     frames: [],
+    orientations: [],
+    orientationChannel: null,
+    validCount: args.validCount,
   };
 }
 
@@ -215,11 +291,35 @@ export function pushStateCacheCaptureFrame(
       return { ok: false, error: `フレーム ${frameIndex} に属性 "${name}" がありません。` };
     }
   }
+  // Orientation channel (bake v2 wiring): the channel's
+  // presence is fixed by the first frame of the take. A
+  // posture buffer of the wrong length, a channel appearing
+  // after an un-oriented start, or a channel vanishing
+  // mid-take all refuse the frame with the reason — the
+  // v2 assembly accepts posture only as a whole channel,
+  // and a partial channel is never padded into one here.
+  let orientation: Float32Array | null = null;
+  if (snapshot.orientations !== undefined && snapshot.orientations !== null) {
+    if (snapshot.orientations.length !== count * 4) {
+      return { ok: false, error: `フレーム ${frameIndex} の姿勢バッファ長が粒子数と一致しません（${snapshot.orientations.length}、期待 ${count * 4}）。` };
+    }
+    if (session.orientationChannel === false) {
+      return { ok: false, error: `フレーム ${frameIndex} で姿勢チャンネルが現れました（撮影開始時は無し）。チャンネルの有無は撮影を通して固定です。` };
+    }
+    session.orientationChannel = true;
+    orientation = new Float32Array(snapshot.orientations);
+  } else {
+    if (session.orientationChannel === true) {
+      return { ok: false, error: `フレーム ${frameIndex} で姿勢チャンネルが消えました。姿勢は全フレーム分が揃って初めてチャンネルとして保存できます（補完はしません）。` };
+    }
+    session.orientationChannel = false;
+  }
   session.frames.push({
     positions: new Float32Array(snapshot.positions),
     velocities: new Float32Array(snapshot.velocities),
     attributes,
   });
+  if (orientation) session.orientations.push(orientation);
   return { ok: true };
 }
 
@@ -237,6 +337,99 @@ export function finishStateCacheCapture(session: StateCacheCaptureSession): Stat
   });
 }
 
+/**
+ * The v2 finish: assemble the SAME collected session as a
+ * v2 cache (assembleStateCacheV2). Attribute declarations
+ * are derived from the session's attribute names with their
+ * capture-side origins: 'age' is the sim's age lane
+ * ('sim-age', the v2 test vocabulary), any other declared
+ * attribute is a column the provider read back from the
+ * sim ('sim-attribute'). The posture channel is passed
+ * only when the take carried it whole; a take without
+ * posture assembles as a v2 file that declares no
+ * orientation channel. Provenance is mandatory in v2, so
+ * the caller supplies it (buildStateCacheCaptureProvenance
+ * is the panel-side builder). The session's validCount (when
+ * the job carried one) is handed to the assembly for the
+ * A-5 thinning; the assembly validates it against the
+ * take's pool size and refuses with the reason.
+ */
+export function finishStateCacheCaptureV2(
+  session: StateCacheCaptureSession,
+  provenance: StateCacheProvenance,
+): StateCacheResultV2 {
+  if (session.frames.length === 0 || session.texSize === 0) {
+    return { ok: false, error: 'キャッシュするフレームがありません。' };
+  }
+  const attributeDecls: StateCacheAttributeDecl[] = session.attributeNames.map((name) => ({
+    name,
+    components: 1,
+    source: name.trim().toLowerCase() === 'age' ? 'sim-age' : 'sim-attribute',
+  }));
+  return assembleStateCacheV2({
+    fps: session.fps,
+    texSize: session.texSize,
+    frames: session.frames,
+    attributeDecls,
+    orientations: session.orientationChannel ? session.orientations : null,
+    provenance,
+    loop: session.loop,
+    interpolation: session.interpolation,
+    validCount: session.validCount,
+  });
+}
+
+/* ---------------- provenance (v2 save) ---------------- */
+
+/** JSON with recursively sorted object keys, so two equal
+ *  settings snapshots hash identically regardless of key
+ *  insertion order. Arrays keep their order (it is data). */
+function stableStringifyForHash(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    const s = JSON.stringify(value);
+    return s === undefined ? 'null' : s;
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => stableStringifyForHash(v)).join(',')}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringifyForHash(v)}`).join(',')}}`;
+}
+
+function fnv1aHex(text: string): string {
+  let h = 0x811c9dc5;
+  const bytes = new TextEncoder().encode(text);
+  for (let i = 0; i < bytes.length; i++) {
+    h ^= bytes[i];
+    h = Math.imul(h, 0x01000193);
+  }
+  return ('0000000' + (h >>> 0).toString(16)).slice(-8);
+}
+
+/**
+ * Build the provenance a v2 capture is stamped with. The
+ * settings hash is FNV-1a over the stable serialization
+ * of the settings snapshot the panel hands in (its config
+ * object at capture time): any settings change changes
+ * the hash, which is exactly what the bake-job merge
+ * compares across split parts. The seed is the scene seed
+ * the same snapshot carries; the generator is this app.
+ */
+export function buildStateCacheCaptureProvenance(args: {
+  settingsSnapshot: unknown;
+  seed: number;
+  generatorVersion: string;
+}): StateCacheProvenance {
+  return {
+    settingsHash: fnv1aHex(stableStringifyForHash(args.settingsSnapshot)),
+    seed: args.seed,
+    generator: 'monosphere',
+    generatorVersion: args.generatorVersion,
+  };
+}
+
 /* ---------------- capture job driver ---------------- */
 
 export interface StateCacheCaptureJobArgs {
@@ -248,6 +441,10 @@ export interface StateCacheCaptureJobArgs {
   attributeNames?: string[];
   loop?: boolean;
   interpolation?: 'linear' | 'nearest';
+  /** Valid-count thinning for the v2 driver (A-5 b): the
+   *  scene's authored particle count, stored as the v2
+   *  manifest's validCount. The v1 driver ignores it. */
+  validCount?: number;
 }
 
 export interface StateCacheCaptureDeps {
@@ -255,19 +452,25 @@ export interface StateCacheCaptureDeps {
   getProvider?: () => StateCacheFrameProvider | null;
 }
 
+type CaptureSessionRun =
+  | { ok: true; session: StateCacheCaptureSession }
+  | { ok: false; error: string };
+
 /**
- * Run one capture: a deterministic render job whose
+ * The shared take: a deterministic render job whose
  * per-step hook snapshots the sim state once per captured
- * frame. Refusals (bad plan, public edition, no provider,
- * a provider error mid-job, a short take) all return
- * { ok: false, error } with the reason — the job never
- * silently delivers a partial cache.
+ * frame into a session. Refusals (bad plan, public
+ * edition, no provider, a provider error mid-job, a short
+ * take) all return { ok: false, error } with the reason —
+ * the job never silently delivers a partial cache. The
+ * two public drivers below differ only in how the
+ * finished session is assembled (v1 / v2).
  */
-export async function runStateCacheCaptureJob(
+async function runCaptureSession(
   args: StateCacheCaptureJobArgs,
   onProgress?: DeterministicRenderProgress,
   deps?: StateCacheCaptureDeps,
-): Promise<StateCacheResult> {
+): Promise<CaptureSessionRun> {
   if (!stateCacheExportAllowed(args.edition)) {
     return { ok: false, error: '公開版では状態キャッシュの撮影・保存はできません（完全版の機能です）。' };
   }
@@ -292,11 +495,31 @@ export async function runStateCacheCaptureJob(
     attributeNames: args.attributeNames,
     loop: args.loop,
     interpolation: args.interpolation,
+    validCount: args.validCount,
   });
   const job: DeterministicRenderJob = {
     fps: plan.fps,
     frames: plan.frames,
     warmupFrames: plan.warmupFrames,
+    // Initial-state carry-over (bake A-2 premise fix): when
+    // an initial state was applied to the live sim before
+    // this job, the job's remount discards it (fresh runtime,
+    // pool re-baked from the config seed). Re-apply the
+    // recorded state into the fresh mount — through the
+    // CURRENT applier, resolved here after the remount, the
+    // same discipline as the per-frame provider below — so
+    // the capture actually starts from the applied state.
+    // A failed re-apply aborts the job with the reason
+    // (runCaptureSession's catch turns it into the refusal);
+    // the job never silently photographs a fresh run and
+    // calls it a resume. No record = no hook effect at all.
+    onSceneReady: async () => {
+      if (!getLastAppliedInitialState()) return;
+      const reapplied = reapplyLastAppliedInitialState(getStateCacheInitialStateApplier());
+      if (!reapplied.ok) {
+        throw new Error(`適用済み初期状態の撮影ジョブへの引き継ぎに失敗しました: ${reapplied.error}`);
+      }
+    },
     onSimFrame: async ({ index }) => {
       const currentProvider = getProvider();
       if (!currentProvider) {
@@ -325,7 +548,35 @@ export async function runStateCacheCaptureJob(
   if (session.frames.length !== plan.frames) {
     return { ok: false, error: `撮影フレーム数が一致しません（${session.frames.length} フレーム、期待 ${plan.frames} フレーム）。` };
   }
-  return finishStateCacheCapture(session);
+  return { ok: true, session };
+}
+
+/** Run one capture and assemble it as a v1 cache — the
+ *  original driver, behaviour unchanged (a posture channel
+ *  in the snapshots is collected by the session but not
+ *  part of the v1 format, exactly as before this wiring). */
+export async function runStateCacheCaptureJob(
+  args: StateCacheCaptureJobArgs,
+  onProgress?: DeterministicRenderProgress,
+  deps?: StateCacheCaptureDeps,
+): Promise<StateCacheResult> {
+  const run = await runCaptureSession(args, onProgress, deps);
+  if (!run.ok) return run;
+  return finishStateCacheCapture(run.session);
+}
+
+/** Run one capture and assemble it as a v2 cache
+ *  (assembleStateCacheV2): posture channel when the take
+ *  carried it whole, declared attribute sources, and the
+ *  caller-supplied provenance the v2 format mandates. */
+export async function runStateCacheCaptureJobV2(
+  args: StateCacheCaptureJobArgs & { provenance: StateCacheProvenance },
+  onProgress?: DeterministicRenderProgress,
+  deps?: StateCacheCaptureDeps,
+): Promise<StateCacheResultV2> {
+  const run = await runCaptureSession(args, onProgress, deps);
+  if (!run.ok) return run;
+  return finishStateCacheCaptureV2(run.session, args.provenance);
 }
 
 /* ---------------- file pair (save / load) ---------------- */
@@ -346,6 +597,22 @@ export function buildStateCacheFiles(cache: StateCacheData): StateCacheFiles {
     manifestText: serializeStateCacheManifest(cache),
     framesFileName: STATE_CACHE_FRAMES_FILENAME,
     framesBuffer: encodeStateCacheFrames(cache),
+  };
+}
+
+/** The v2 file pair: same file names as v1 (the manifest's
+ *  format field is what distinguishes them), serialized
+ *  through the v2 writer. The v1 loader refuses a v2 pair
+ *  with its format-mismatch reason — the format's designed
+ *  no-forward-compatibility, unchanged by this wiring; the
+ *  panel dispatches on detectStateCacheFormat below so a
+ *  v2 pair reaches loadStateCacheFromFilesV2 instead. */
+export function buildStateCacheFilesV2(cache: StateCacheDataV2): StateCacheFiles {
+  return {
+    manifestFileName: STATE_CACHE_MANIFEST_FILENAME,
+    manifestText: serializeStateCacheManifestV2(cache),
+    framesFileName: STATE_CACHE_FRAMES_FILENAME,
+    framesBuffer: encodeStateCacheFramesV2(cache),
   };
 }
 
@@ -382,4 +649,79 @@ export function loadStateCacheFromFiles(files: Map<string, ArrayBuffer>): StateC
     }
   }
   return decodeStateCacheFrames(parsed.manifest, files.get(framesFile)!);
+}
+
+/* ---------------- v2 load (panel v2 wiring) ---------------- */
+
+/**
+ * Which format a file set carries, read from the manifest's
+ * format field alone (no full parse, no validation): the
+ * panel dispatches on this so a v2 pair reaches the v2
+ * loader and everything else reaches the v1 loader, whose
+ * refusal reasons for a missing / unreadable / unknown
+ * manifest are unchanged. Returns null when there is no
+ * .json entry, it is not a JSON object, or its format is
+ * neither known value.
+ */
+export function detectStateCacheFormat(
+  files: Map<string, ArrayBuffer>,
+): 'v1' | 'v2' | null {
+  const names = [...files.keys()];
+  const manifestFile = names.find((n) => n.toLowerCase().endsWith('.json'));
+  if (!manifestFile) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(files.get(manifestFile)!));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const format = (parsed as Record<string, unknown>).format;
+  if (format === STATE_CACHE_FORMAT_V2) return 'v2';
+  if (format === STATE_CACHE_V1_FORMAT) return 'v1';
+  return null;
+}
+
+/**
+ * Load a v2 state cache from an in-memory file set — the
+ * v1 loader's twin for the posture-carrying format (panel
+ * v2 wiring). The file disambiguation mirrors
+ * loadStateCacheFromFiles exactly; parsing and decoding go
+ * through the v2 reader (parseStateCacheManifestV2 +
+ * decodeStateCacheFramesV2, the latter re-verifying every
+ * frame hash). A v1 pair is refused here with the reason —
+ * the v2 parser would upgrade it, but each loader owns
+ * exactly one format, so the panel's dispatch stays the
+ * only place the two meet.
+ */
+export function loadStateCacheFromFilesV2(files: Map<string, ArrayBuffer>): StateCacheResultV2 {
+  const names = [...files.keys()];
+  const manifestFile = names.find((n) => n.toLowerCase().endsWith('.json'));
+  if (!manifestFile) {
+    return { ok: false, error: 'マニフェスト（.json）が選択に含まれていません。バイナリ（.bin）と一緒に選んでください。' };
+  }
+  const parsed = parseStateCacheManifestV2(new TextDecoder().decode(files.get(manifestFile)!));
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  if (parsed.manifest.format !== STATE_CACHE_FORMAT_V2) {
+    return {
+      ok: false,
+      error: `マニフェストの format が "${STATE_CACHE_FORMAT_V2}" ではありません（"${parsed.manifest.format}"）。v1 形式は通常の状態キャッシュ読み込みで扱ってください。`,
+    };
+  }
+  const others = names.filter((n) => n !== manifestFile);
+  if (others.length === 0) {
+    return { ok: false, error: 'フレームデータ（.bin）が選択に含まれていません。マニフェストと一緒に選んでください。' };
+  }
+  let framesFile: string | undefined;
+  if (others.length === 1) {
+    framesFile = others[0];
+  } else {
+    framesFile = others.find(
+      (n) => (n.split(/[\\/]/).pop() ?? n) === STATE_CACHE_FRAMES_FILENAME,
+    );
+    if (!framesFile) {
+      return { ok: false, error: 'フレームデータ（.bin）の候補が複数あり、どれか特定できません。マニフェストと .bin の2ファイルだけを選んでください。' };
+    }
+  }
+  return decodeStateCacheFramesV2(parsed.manifest, files.get(framesFile)!);
 }

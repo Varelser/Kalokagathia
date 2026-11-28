@@ -17,6 +17,11 @@ import {
 } from './expression';
 import { EXPRESSION_PARAM_REF_NAMES, buildExpressionParamVars } from './expressionParamRefs';
 import { getDataTable, sampleDataColumn } from './dataTable';
+import {
+  MAX_USER_PARAMETER_LABEL_LENGTH,
+  buildUserParameterValueEnv,
+  getUserParameters,
+} from './userParameters';
 
 export { NOISE_SOURCE_OPTIONS };
 export type { NoiseSourceId };
@@ -71,7 +76,16 @@ export type ModulationSource =
   // Data column (Phase AJ): a named column of the registered data
   // table (lib/dataTable.ts) read as a time series — row index is
   // floor(time × rate), values normalised by the column's range.
-  | { kind: 'data'; column: string; rate: number };
+  | { kind: 'data'; column: string; rate: number }
+  // User parameter (Layer 1 WP10 phase A): a declared public
+  // parameter (lib/userParameters.ts) read by its declared name.
+  // The value is the aliased key's CURRENT value in the base
+  // config, normalised by the declaration target's range and
+  // resolved through an environment applyModulation builds (the
+  // paramVars discipline). Undeclared / unresolvable names
+  // sample neutral, so the route is inert until the declaration
+  // exists — the data column's discipline.
+  | { kind: 'uparam'; name: string };
 
 /**
  * One stage of a route's CHOP-style signal chain (Phase AJ).
@@ -425,6 +439,11 @@ export function evaluateSource(
   // expression sources, built from the BASE config by
   // applyModulation. Absent = the pre-15 expression path.
   paramVars?: Record<string, number>,
+  // Layer 1 WP10 phase A: declared-parameter environment (name →
+  // value01) for user-parameter sources, built from the BASE
+  // config and the current declarations by applyModulation.
+  // Absent = every user-parameter source samples neutral.
+  uparamVars?: Record<string, number>,
 ): SignalValue {
   if (source.kind === 'lfo') {
     const settings = setup.lfos[source.index];
@@ -466,11 +485,21 @@ export function evaluateSource(
     const index = rowCount > 0 ? ((rawIndex % rowCount) + rowCount) % rowCount : 0;
     return { value01: sampleDataColumn(table, source.column, index), center: 0.5 };
   }
+  if (source.kind === 'uparam') {
+    // User parameter (Layer 1 WP10 phase A): the environment
+    // carries the declared name's normalised current value. No
+    // environment / unknown name / unresolvable value samples
+    // neutral (0.5 at center 0.5), so the route contributes
+    // nothing — it never throws and never guesses.
+    const value = uparamVars ? uparamVars[source.name] : undefined;
+    if (typeof value !== 'number' || !Number.isFinite(value)) return { value01: 0.5, center: 0.5 };
+    return { value01: Math.min(1, Math.max(0, value)), center: 0.5 };
+  }
   if (source.kind === 'expr') {
     // Expression (Phase AJ): the wrapped source supplies x; the
     // expression shapes it. Invalid expressions and non-finite
     // results fall back to the raw input value.
-    const inner = evaluateSource(source.input, setup, time, audio, routeId, paramVars);
+    const inner = evaluateSource(source.input, setup, time, audio, routeId, paramVars, uparamVars);
     if (paramVars) {
       // Phase 15: with a parameter-reference environment the
       // expression may also read other parameters (p_<key>) —
@@ -511,8 +540,19 @@ export function describeModulationSource(source: ModulationSource): string {
   }
   if (source.kind === 'expr') return `式 [${source.text}]`;
   if (source.kind === 'data') return `データ列 ${source.column}`;
+  if (source.kind === 'uparam') return `ユーザーパラメータ ${source.name}`;
   const band = AUDIO_BAND_OPTIONS.find((option) => option.value === source.band);
   return band ? band.label : `Audio · ${source.band}`;
+}
+
+/**
+ * Whether a source tree reads a declared user parameter. Only
+ * the 'expr' kind wraps another source, so the walk is a chain.
+ */
+function sourceTreeHasUserParam(source: ModulationSource): boolean {
+  if (source.kind === 'uparam') return true;
+  if (source.kind === 'expr') return sourceTreeHasUserParam(source.input);
+  return false;
 }
 
 /**
@@ -549,12 +589,22 @@ export function applyModulation(
   const paramVars = setup.routes.some((route) => route.source.kind === 'expr')
     ? buildExpressionParamVars(config)
     : undefined;
+  // Layer 1 WP10 phase A: same one-shot discipline for declared
+  // user parameters — the environment is built once, from the
+  // BASE config and the current declarations (the store the
+  // public surface itself reads, session overlay included), and
+  // only when some route's source tree reads one. Values are
+  // base-config values, so routes cannot form cycles through a
+  // declaration either.
+  const uparamVars = setup.routes.some((route) => sourceTreeHasUserParam(route.source))
+    ? buildUserParameterValueEnv(getUserParameters(), config)
+    : undefined;
   for (const route of setup.routes) {
     const entry = PARAMETER_CATALOG.find((candidate) => candidate.key === route.target);
     if (!entry) continue;
     const base = config[route.target];
     if (typeof base !== 'number') continue;
-    const evaluated = evaluateSource(route.source, setup, time, audio, route.id, paramVars);
+    const evaluated = evaluateSource(route.source, setup, time, audio, route.id, paramVars, uparamVars);
     let { value01 } = evaluated;
     const { center } = evaluated;
     // CHOP chain (Phase AJ): stages apply in order between the
@@ -649,6 +699,15 @@ function sanitizeSource(rawSource: unknown, allowExpr: boolean): ModulationSourc
         kind: 'data',
         column: typeof source.column === 'string' && source.column.length > 0 ? source.column.slice(0, 64) : 'col1',
         rate: clampNumber(source.rate, 0.05, 60, 2),
+      };
+    case 'uparam':
+      // The name is kept verbatim (trimmed, label-length capped)
+      // even when nothing declares it yet: declarations are
+      // runtime state, and an undeclared name simply samples
+      // neutral at evaluation time — the data column's shape.
+      return {
+        kind: 'uparam',
+        name: typeof source.name === 'string' ? source.name.trim().slice(0, MAX_USER_PARAMETER_LABEL_LENGTH) : '',
       };
     case 'expr': {
       if (!allowExpr) return null;
@@ -771,8 +830,8 @@ export function serializeModulationSetup(setup: ModulationSetup): string {
 }
 
 /** The setup that applies for a config: a carried one wins. */
-export function resolveModulationSetup(carriedJson: string, local: ModulationSetup): ModulationSetup {
-  return parseModulationSetupJson(carriedJson) ?? local;
+export function resolveModulationSetup(carriedJson: unknown, local: ModulationSetup): ModulationSetup {
+  return (typeof carriedJson === 'string' ? parseModulationSetupJson(carriedJson) : null) ?? local;
 }
 
 /* ---------------- shared store (editor <-> scene) ---------------- */
@@ -806,4 +865,43 @@ export function subscribeModulation(listener: () => void): () => void {
 
 export function useModulationSetup(): ModulationSetup {
   return React.useSyncExternalStore(subscribeModulation, getModulationSetup, getModulationSetup);
+}
+
+/* ---------------- config bridge (Layer 1 WP9 Phase C) ---------------- */
+
+/**
+ * The modulation setup can also be authored into the work itself
+ * via the `modulationSetup` config key (a JSON string in exactly
+ * the localStorage format above), so it travels with
+ * presets/projects. Same resolution discipline as the sequence
+ * tracks bridge (option (c) + sentinel, decided):
+ * - '' (or a non-string) means "not authored": the localStorage
+ *   performance state applies, exactly as before this bridge.
+ * - Any non-empty string is authoritative — including '{}', whose
+ *   sanitized form (disabled, default LFOs, no routes) is the
+ *   empty authored setup and blocks the local set from reviving.
+ * - Broken JSON degrades through sanitizeSetup to the default
+ *   setup (never throws), the same degradation as a broken
+ *   localStorage payload.
+ * - No migration: editors write to the config key, so the first
+ *   edit promotes the edited setup into the work. The apply engine
+ *   (applyModulation) never writes config.
+ * - Route count keeps the current discipline: sanitizeSetup has
+ *   no cap and none is added here.
+ */
+
+/** Parse a config-key value; null when it carries no authorship. */
+export function parseModulationSetupConfigValue(serialized: unknown): ModulationSetup | null {
+  if (typeof serialized !== 'string' || serialized === '') return null;
+  try {
+    return sanitizeSetup(JSON.parse(serialized) as unknown);
+  } catch {
+    return createDefaultModulationSetup();
+  }
+}
+
+/** Store setup overlaid by the config key's authorship, if any. */
+export function useResolvedModulationSetup(serialized: string | undefined): ModulationSetup {
+  const stored = useModulationSetup();
+  return React.useMemo(() => resolveModulationSetup(serialized, stored), [serialized, stored]);
 }

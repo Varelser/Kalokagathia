@@ -80,10 +80,12 @@ import { GpgpuRuleEvalPass } from './gpgpuRuleEvalPass';
 import { GpgpuContactPass } from './gpgpuContactPass';
 import { GpgpuPredationHoldPass } from './gpgpuPredationHoldPass';
 import {
+  buildRuleAttrWriteFragment,
   buildRuleEvalFragment,
   classifyLiveRules,
   resolveLiveParticleRules,
 } from '../lib/gpgpuParticleRulesLive';
+import { buildAttrMappingFragment, parseAttrMappings } from '../lib/gpgpuAttrMappings';
 import {
   resolveLiveRulesWithPredation,
   resolvePredation,
@@ -94,8 +96,10 @@ import { getColumnSupply } from '../lib/gpgpuPathAssets';
 import {
   PARTICLE_DENSITY_SCALE,
   PARTICLE_DENSITY_SPLAT_GAIN,
+  resolveParticleDensityLayers,
   setParticleDensitySource,
 } from '../lib/particleDensity';
+import { volumeDensityOn } from '../lib/lightVolume';
 import { buildAttrDynFragment } from '../lib/expressionGlsl';
 import { GpgpuAttrFeedbackPass } from './gpgpuAttrFeedbackPass';
 import { GpgpuSpinPass } from './gpgpuSpinPass';
@@ -103,6 +107,10 @@ import { resolveSpin, spinChannelActive } from '../lib/gpgpuSpeedDragSpin';
 import { GpgpuOrientPass, computeVelocityAlignStats, getActiveOrientPass } from './gpgpuOrientPass';
 import { getActiveAuxMaterials } from './useGpgpuSimulationAssets';
 import { orientChannelActive, resolveOrient } from '../lib/gpgpuOrient';
+import {
+  resolveActiveStateCachePlaybackFrame,
+  type StateCachePlaybackFrameData,
+} from '../lib/gpgpuStateCachePlayback';
 import { buildAttrFeedbackFragment } from '../lib/expressionGlslFeedback';
 import { buildAttrChainFragment } from '../lib/expressionGlslChain';
 import {
@@ -211,6 +219,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const diagFrameRef = useRef<DiagnosticFrameContext | null>(null);
   const diagPosBufRef = useRef<Float32Array | null>(null);
   const diagVelBufRef = useRef<Float32Array | null>(null);
+  const diagOrientBufRef = useRef<Float32Array | null>(null);
   const diagFluidBufRef = useRef<Float32Array | null>(null);
   // Phase DL: the fluid pass's resolved final-field target for
   // this frame (see runFluidAdvectionPass). Whitewater and the
@@ -1737,6 +1746,14 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   // is itself an explicit user action. Under the WebGPU
   // backend this reads the WebGL-shaped targets, the same
   // unconfirmed-equivalence caveat as the diag readback.
+  // Bake v2 wiring: while the Orient channel stands, the
+  // snapshot also carries the posture — read from the frame
+  // context's published orient target (the pass's current
+  // read side, the same target captureOrientStats reads),
+  // copied the same way. No new accumulation is created:
+  // the pass's own ping-pong state is the source, read
+  // verbatim. While the channel is off the target is null
+  // and the snapshot keeps its exact legacy shape.
   useEffect(
     () =>
       registerStateCacheFrameProvider(() => {
@@ -1759,6 +1776,22 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         const pos = diagPosBufRef.current;
         const vel = diagVelBufRef.current;
         if (!pos || !vel) return { error: 'readback-failed' };
+        const orientTarget = ctx.orientTarget;
+        if (orientTarget && orientTarget.width === ctx.texSize) {
+          if (!diagOrientBufRef.current || diagOrientBufRef.current.length !== count * 4) {
+            diagOrientBufRef.current = new Float32Array(count * 4);
+          }
+          gl.readRenderTargetPixels(orientTarget, 0, 0, ctx.texSize, ctx.texSize, diagOrientBufRef.current);
+          const orient = diagOrientBufRef.current;
+          if (orient) {
+            return {
+              texSize: ctx.texSize,
+              positions: pos.slice(),
+              velocities: vel.slice(),
+              orientations: orient.slice(),
+            };
+          }
+        }
         return { texSize: ctx.texSize, positions: pos.slice(), velocities: vel.slice() };
       }),
     [gl],
@@ -2004,6 +2037,18 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const orientPassRef = useRef<GpgpuOrientPass | null>(null);
   const orientSignatureRef = useRef('');
   const orientTextureRef = useRef<THREE.Texture | null>(null);
+  // State-cache dedicated playback path (bake gate A-4
+  // premise fix): while the playback store
+  // (lib/gpgpuStateCachePlayback.ts) presents a held v2
+  // cache frame, the draw is fed these two DataTextures —
+  // built from the cache frame's positions + posture —
+  // instead of the live sim's outputs. The frame data
+  // object the textures were built from is kept alongside
+  // so uploads happen only when the presented frame
+  // actually changes.
+  const cachePlaybackPosTexRef = useRef<THREE.DataTexture | null>(null);
+  const cachePlaybackOrientTexRef = useRef<THREE.DataTexture | null>(null);
+  const cachePlaybackFrameRef = useRef<StateCachePlaybackFrameData | null>(null);
   // Vellum XPBD components (Phase 19 stage 3): throttled
   // readback bookkeeping for labelVellumComponents.
   const vellumComponentFrameRef = useRef(0);
@@ -2048,6 +2093,32 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const attrChainSignatureRef = useRef('');
   const attrChainTextureRef = useRef<THREE.Texture | null>(null);
   const attrChainFrameRef = useRef(0);
+
+  // Layer 1 WP2 phase B3: the attribute mapping stage. A
+  // third expression stage whose input is the chain output —
+  // it applies the channel-to-channel mapping table
+  // (gpgpuAttrMappings, lib/gpgpuAttrMappings.ts) as data,
+  // instead of burying the relationships inside per-slot
+  // expressions. Null fragment (empty table, every entry
+  // rejected or unrepresentable, or a baked group gate
+  // standing the re-evaluation passes down) means the pass
+  // is never built and consumers read the chain texture
+  // verbatim. It shares the dyn interval cadence and reuses
+  // the dyn pass class, like the chain stage.
+  const attrMappingFragment = !groupGateBaked
+    ? buildAttrMappingFragment(
+      parseAttrMappings(config.gpgpuAttrMappings ?? ''),
+      config.gpgpuAttrNames,
+      config.gpgpuAttrNames2,
+    )
+    : null;
+  const attrMappingSignature = attrMappingFragment
+    ? `map|${config.gpgpuAttrMappings ?? ''}|${normalizeAttrNames(config.gpgpuAttrNames).join(',')}|${normalizeAttrNames2(config.gpgpuAttrNames2).join(',')}|${attrDynInterval}|${texSize}`
+    : '';
+  const attrMappingPassRef = useRef<GpgpuAttrDynPass | null>(null);
+  const attrMappingSignatureRef = useRef('');
+  const attrMappingTextureRef = useRef<THREE.Texture | null>(null);
+  const attrMappingFrameRef = useRef(0);
 
   // Phase 22 stage 1: the density supply. A generated fragment
   // contains the sampling local `simDen` exactly when one of
@@ -2124,6 +2195,37 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const ruleEvalFrameRef = useRef(0);
   const mergedBlitRef = useRef<{ pass: GpgpuRuleEvalPass; supply: object } | null>(null);
 
+  // Layer 1 WP2 phase B3: the rule attribute-write stage.
+  // While at least one live rule carries a set-attr action,
+  // a dedicated pass re-evaluates those rules' targets and
+  // conditions against the final attribute texture right
+  // after the REP and writes the attribute values they
+  // dictate (buildRuleAttrWriteFragment — built from the
+  // same merged rule list as the REP fragment). Null
+  // fragment (no live set-attr rule) means the pass never
+  // exists and the consumers keep the stage-chain texture
+  // verbatim. The signature is INDEPENDENT of
+  // ruleLiveSignature and covers only what the write
+  // fragment depends on — the effective rule list's inputs
+  // (rule text, predation parameters, groups data), the
+  // attribute names and texSize — so a REP-only change
+  // (the eval interval, the merged plan) never rebuilds it.
+  const ruleAttrWriteFragment = buildRuleAttrWriteFragment(
+    ruleLiveRules,
+    {
+      names: config.gpgpuAttrNames,
+      names2: config.gpgpuAttrNames2,
+      groupDefs: ruleLiveGroupDefs,
+      densityAvailable: true,
+    },
+  );
+  const ruleAttrWriteSignature = ruleAttrWriteFragment
+    ? `raw|${config.gpgpuParticleRulesLive ?? ''}|${config.gpgpuPredationEnabled ? 1 : 0}|${config.gpgpuPredationOutcome}|${config.gpgpuPredationBirth ? 1 : 0}|${config.gpgpuPredationStrike}|${config.gpgpuPredationStrikeFrames}|${config.gpgpuPredationGraceSeconds}|${config.gpgpuGroupsData ?? ''}|${normalizeAttrNames(config.gpgpuAttrNames).join(',')}|${normalizeAttrNames2(config.gpgpuAttrNames2).join(',')}|${texSize}`
+    : '';
+  const ruleAttrWritePassRef = useRef<GpgpuAttrDynPass | null>(null);
+  const ruleAttrWriteSignatureRef = useRef('');
+  const ruleAttrWriteTextureRef = useRef<THREE.Texture | null>(null);
+
   // Contact supply (Grammar 2.0 stage 1, the slice-1B
   // follow-up): the contact pass stands only while the REP
   // fragment actually samples the contact record — the
@@ -2176,7 +2278,11 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
   const predationSignatureRef = useRef('');
   const predationActivationRef = useRef(0);
 
-  const attrUsesDen = [attrDynFragment, attrChainFragment, attrFeedbackFragment, ruleLiveFragment]
+  // The mapping fragment is absent here on purpose: its
+  // expressions resolve only `x` / `t`, so it can never emit
+  // the simDen local. The rule-write fragment can (a set-attr
+  // condition or value reading `den`), so it joins the list.
+  const attrUsesDen = [attrDynFragment, attrChainFragment, attrFeedbackFragment, ruleLiveFragment, ruleAttrWriteFragment]
     .some((f) => typeof f === 'string' && f.includes('simDen'));
   const attrDensityPassRef = useRef<GpgpuAttrDensityPass | null>(null);
   const attrDensityTextureRef = useRef<THREE.Texture | null>(null);
@@ -2184,8 +2290,10 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
 
   // Phase 22 stage 2: Shine density splat state (RT + material
   // + a private scene holding one Points over the shared draw
-  // geometry). Allocated lazily, only while postShineDensity
-  // is positive; the store is nulled when it turns off.
+  // geometry). Allocated lazily, only while a density consumer
+  // is active (postShineDensity positive, or the LightVolume
+  // density strength — Layer 1 WP7 Phase D); the store is
+  // nulled when it turns off.
   const shineDensityRtRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const shineDensityMatRef = useRef<THREE.ShaderMaterial | null>(null);
   const shineDensitySceneRef = useRef<THREE.Scene | null>(null);
@@ -2202,8 +2310,17 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     orientPassRef.current?.dispose();
     orientPassRef.current = null;
     orientTextureRef.current = null;
+    cachePlaybackPosTexRef.current?.dispose();
+    cachePlaybackPosTexRef.current = null;
+    cachePlaybackOrientTexRef.current?.dispose();
+    cachePlaybackOrientTexRef.current = null;
+    cachePlaybackFrameRef.current = null;
     attrChainPassRef.current?.dispose();
     attrChainPassRef.current = null;
+    attrMappingPassRef.current?.dispose();
+    attrMappingPassRef.current = null;
+    ruleAttrWritePassRef.current?.dispose();
+    ruleAttrWritePassRef.current = null;
     attrDensityPassRef.current?.dispose();
     attrDensityPassRef.current = null;
     ruleEvalPassRef.current?.dispose();
@@ -2219,7 +2336,15 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     shineDensityMatRef.current = null;
   }, []);
 
-  const runtime = useGpgpuRuntime({ gl, texSize, config });
+  const runtime = useGpgpuRuntime({
+    gl,
+    texSize,
+    config,
+    // Initial-state posture seeding (bake A-2 premise fix):
+    // the runtime's applier reaches the Orient pass through
+    // this getter (the ref itself is declared above).
+    getOrientPass: () => orientPassRef.current,
+  });
   const {
     rtRef,
     pingIsA,
@@ -2622,7 +2747,39 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       attrChainSignatureRef.current = '';
       attrChainFrameRef.current = 0;
     }
-    const attrFinalTexture = attrChainTexture ?? attrDynTexture;
+    // Layer 1 WP2 phase B3: the mapping stage runs after the
+    // chain stage, on the same interval cadence, with the
+    // chain output (else the stage-1 texture, else the bake)
+    // as its input. Its output completes the attribute stage
+    // chain every consumer below reads. With no mapping
+    // fragment the pass is disposed and the chain texture
+    // flows verbatim.
+    let attrMappingTexture: THREE.Texture | null = null;
+    if (attrMappingFragment) {
+      if (attrMappingSignatureRef.current !== attrMappingSignature || !attrMappingPassRef.current) {
+        attrMappingSignatureRef.current = attrMappingSignature;
+        attrMappingPassRef.current?.dispose();
+        attrMappingPassRef.current = new GpgpuAttrDynPass(texSize, attrMappingFragment);
+        attrMappingTextureRef.current = null;
+        attrMappingFrameRef.current = 0;
+      }
+      const attrMappingPass = attrMappingPassRef.current;
+      const chainAttrTex = attrChainTexture ?? attrDynTexture ?? attrTexRef.current;
+      if (attrMappingPass && chainAttrTex) {
+        if (attrMappingFrameRef.current % attrDynInterval === 0) {
+          attrMappingTextureRef.current = attrMappingPass.run(glCtx, chainAttrTex, timeRef.current, attrPassExtra);
+        }
+        attrMappingTexture = attrMappingTextureRef.current;
+      }
+      attrMappingFrameRef.current += 1;
+    } else if (attrMappingPassRef.current) {
+      attrMappingPassRef.current.dispose();
+      attrMappingPassRef.current = null;
+      attrMappingTextureRef.current = null;
+      attrMappingSignatureRef.current = '';
+      attrMappingFrameRef.current = 0;
+    }
+    const attrFinalTexture = attrMappingTexture ?? attrChainTexture ?? attrDynTexture;
     // Sim-side consumers (the force drive / the group gate) read
     // the re-evaluated texture on the WebGL route only; on the
     // WebGPU route they keep the bake (declared gap, Phase BO
@@ -2705,6 +2862,24 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
     // Between evaluations the last output texture is held.
     let ruleLiveTexture: THREE.Texture | null = null;
     if (ruleLiveFragment && !routing.useWebGPU) {
+      // Rule attribute-write stage lifecycle, tied to the
+      // REP's (Layer 1 WP2 phase B3): built only while a live
+      // set-attr rule stands, rebuilt on its own signature,
+      // disposed otherwise. Its held texture resets with a
+      // rebuild, exactly like the REP's.
+      if (ruleAttrWriteFragment) {
+        if (ruleAttrWriteSignatureRef.current !== ruleAttrWriteSignature || !ruleAttrWritePassRef.current) {
+          ruleAttrWriteSignatureRef.current = ruleAttrWriteSignature;
+          ruleAttrWritePassRef.current?.dispose();
+          ruleAttrWritePassRef.current = new GpgpuAttrDynPass(texSize, ruleAttrWriteFragment);
+          ruleAttrWriteTextureRef.current = null;
+        }
+      } else if (ruleAttrWritePassRef.current) {
+        ruleAttrWritePassRef.current.dispose();
+        ruleAttrWritePassRef.current = null;
+        ruleAttrWriteTextureRef.current = null;
+        ruleAttrWriteSignatureRef.current = '';
+      }
       // Contact supply lifecycle, tied to the REP's: the
       // pass is built only while the fragment reads hit /
       // hits, and reset whenever the REP itself is rebuilt
@@ -2866,6 +3041,19 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
               );
             }
           }
+          // Rule attribute-write stage (Layer 1 WP2 phase
+          // B3): on the REP's own evaluation frames,
+          // immediately after the REP (and its second phase),
+          // re-evaluate the set-attr rules against the final
+          // attribute texture — simAttrTex, the REP's own
+          // input — and hold the written texture for the
+          // consumers below. Between evaluations the held
+          // texture stands, exactly like ruleEvalTextureRef.
+          if (ruleAttrWritePassRef.current) {
+            ruleAttrWriteTextureRef.current = ruleAttrWritePassRef.current.run(
+              glCtx, simAttrTex, timeRef.current, attrPassExtra,
+            );
+          }
         }
         ruleLiveTexture = ruleEvalTextureRef.current;
       }
@@ -2883,11 +3071,31 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       predHoldPassRef.current = null;
       predHoldSignatureRef.current = '';
       predationSignatureRef.current = '';
+      // The write stage's lifecycle is tied to the REP's:
+      // it ends with the live rules too.
+      ruleAttrWritePassRef.current?.dispose();
+      ruleAttrWritePassRef.current = null;
+      ruleAttrWriteTextureRef.current = null;
+      ruleAttrWriteSignatureRef.current = '';
       // The live rules are gone: the fracture history ends
       // with them (re-bakes the morph target unfractured if
       // an activation had fractured part of it).
       runtime.resetLiveFracture();
     }
+
+    // Layer 1 WP2 phase B3: the consumer attribute
+    // textures. simAttrTex above stays the REP's own input
+    // (the final pre-write attribute texture, which the
+    // spin / orient channels and the replica stacks also
+    // keep reading); the sim passes and the draw readout
+    // below read through these instead — the rule-write
+    // stage's held output while it stands, else exactly
+    // what they read before this stage existed (the draw
+    // readout's pre-B3 value is attrFinalTexture ?? bake,
+    // which consumerAttrTex's simAttrTex base only equals
+    // on the WebGL route, so the two are kept distinct).
+    const consumerAttrTex = ruleAttrWriteTextureRef.current ?? simAttrTex;
+    const drawAttrTex = ruleAttrWriteTextureRef.current ?? attrFinalTexture ?? attrTexRef.current;
 
     if (stacksActive) {
       // Replica stacks never drive the contact pass (their
@@ -3067,7 +3275,7 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         velSimMat,
         posSimMat,
         initPosTex: initPosTexRef.current,
-        attrTex: simAttrTex,
+        attrTex: consumerAttrTex,
         ruleLiveTex: ruleLiveTexture,
         contactPass: contactPassRef.current,
         morphTex: morphTexRef.current,
@@ -3467,7 +3675,39 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       sortRTB: sortRTBRef.current,
       sortDepthMat,
       bitonicMat,
+      // Splat draw (Layer 1 WP7 Phase C2): splats consume the
+      // sort texture unconditionally, so the pass is forced
+      // while the splat key is on (the key defaults off, so
+      // the legacy condition's value is unchanged otherwise).
+      forceSort: config.gpgpuSplatEnabled,
     });
+
+    // Splat columns sort (Layer 1 WP7 Phase C3): while the
+    // splat input form is the independent column data, the
+    // depth sort runs once more over the columns centre
+    // texture — the same pass, with the columns sort grid /
+    // targets / depth material from the draw assets (see
+    // lib/gpgpuSplatColumns.ts for why the grid is its own).
+    // Null in every other configuration, and the supply then
+    // keeps the pool bindings exactly.
+    const splatColumnsSortTex = assets.splatColumnsForm === 'columns'
+      && assets.splatColumnsTextures && assets.splatColumnsSortRTs && assets.splatColumnsSortDepthMat
+      ? runDepthSortPass({
+        config,
+        gl: glCtx,
+        camera,
+        simScene,
+        simCamera,
+        simMesh: simMeshRef.current,
+        posTexture: assets.splatColumnsTextures.centerTex,
+        texSize: assets.splatColumnsSortTexSize,
+        sortRTA: assets.splatColumnsSortRTs.a,
+        sortRTB: assets.splatColumnsSortRTs.b,
+        sortDepthMat: assets.splatColumnsSortDepthMat,
+        bitonicMat,
+        forceSort: true,
+      })
+      : null;
 
     pushTrailFrame({
       config,
@@ -3608,14 +3848,61 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       streakGeo,
     });
 
+    // State-cache dedicated playback path (bake gate A-4
+    // premise fix): while the playback store presents a
+    // held v2 cache frame whose texSize matches this pool,
+    // the draw presents THAT frame — positions and posture
+    // from DataTextures built out of the cache frame —
+    // instead of the live sim's outputs. The live passes
+    // above (including the Orient pass) keep running
+    // untouched underneath; only the two textures handed
+    // to syncVisualUniforms are swapped, so stopping the
+    // presentation returns the draw to the live state
+    // exactly as it evolved. A texSize mismatch never
+    // engages (the panel's start refuses it too; this is
+    // the draw-side half of the same discipline).
+    const playbackFrame = resolveActiveStateCachePlaybackFrame();
+    let drawPosTexture: THREE.Texture = routing.outputPosTexture;
+    let drawOrientTexture: THREE.Texture | null = orientTextureRef.current;
+    if (playbackFrame && playbackFrame.texSize === texSize) {
+      if (cachePlaybackFrameRef.current !== playbackFrame) {
+        cachePlaybackFrameRef.current = playbackFrame;
+        cachePlaybackPosTexRef.current?.dispose();
+        cachePlaybackOrientTexRef.current?.dispose();
+        const posTex = new THREE.DataTexture(
+          playbackFrame.positionData, playbackFrame.texSize, playbackFrame.texSize,
+          THREE.RGBAFormat, THREE.FloatType,
+        );
+        posTex.minFilter = THREE.NearestFilter;
+        posTex.magFilter = THREE.NearestFilter;
+        posTex.needsUpdate = true;
+        const orientTex = new THREE.DataTexture(
+          playbackFrame.orientationData, playbackFrame.texSize, playbackFrame.texSize,
+          THREE.RGBAFormat, THREE.FloatType,
+        );
+        orientTex.minFilter = THREE.NearestFilter;
+        orientTex.magFilter = THREE.NearestFilter;
+        orientTex.needsUpdate = true;
+        cachePlaybackPosTexRef.current = posTex;
+        cachePlaybackOrientTexRef.current = orientTex;
+      }
+      if (cachePlaybackPosTexRef.current && cachePlaybackOrientTexRef.current) {
+        drawPosTexture = cachePlaybackPosTexRef.current;
+        drawOrientTexture = cachePlaybackOrientTexRef.current;
+      }
+    }
+
     syncVisualUniforms({
       config,
       activeCount,
       assets,
-      posTexture: routing.outputPosTexture,
+      posTexture: drawPosTexture,
       velTexture: velOut.texture,
       finalSortTex,
-      attrTexture: attrFinalTexture ?? attrTexRef.current,
+      // Splat columns (Phase C3): this frame's sort over the
+      // column data's centres, or null on the pool form.
+      splatColumnsSortTex,
+      attrTexture: drawAttrTex,
       vellumStateTexture: vellumStateRtRef.current
         ? (vellumStatePingIsA.current ? vellumStateRtRef.current.a.texture : vellumStateRtRef.current.b.texture)
         : null,
@@ -3628,21 +3915,27 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
       // texture (null while the channel is off).
       spinTexture: spinTextureRef.current,
       // Orientation channel (S2): the orient pass's latest
-      // posture texture (null while the channel is off).
-      orientTexture: orientTextureRef.current,
+      // posture texture (null while the channel is off) —
+      // or, while the state-cache playback path above
+      // presents a cache frame, that frame's posture
+      // texture instead.
+      orientTexture: drawOrientTexture,
       texSize,
       time: timeRef.current,
       viewportSizePx: { x: gl.domElement.width, y: gl.domElement.height },
     });
 
-    // Shine density splat (Phase 22 stage 2): while
-    // postShineDensity is positive, splat the main layer into
-    // the quarter-resolution density target and publish it for
-    // the LightFx pass. Runs after syncVisualUniforms so the
-    // position texture and uSize it reads are this frame's.
-    // When the key is 0 the splat never runs and the store is
-    // null — the LightFx fragment is the legacy string then.
-    if (config.postShineDensity > 0) {
+    // Shine density splat (Phase 22 stage 2): while a density
+    // consumer is active (postShineDensity positive, or the
+    // LightVolume's density strength — Layer 1 WP7 Phase D),
+    // splat the authored source layers into the
+    // quarter-resolution density target and publish it for the
+    // consumers. Runs after syncVisualUniforms so the position
+    // textures and sizes it reads are this frame's. When no
+    // consumer is active the splat never runs and the store is
+    // null — every consumer's fragment is its legacy string
+    // then.
+    if (config.postShineDensity > 0 || volumeDensityOn(config)) {
       const drawSize = glCtx.getDrawingBufferSize(new THREE.Vector2());
       const dw = Math.max(1, Math.floor(drawSize.x * PARTICLE_DENSITY_SCALE));
       const dh = Math.max(1, Math.floor(drawSize.y * PARTICLE_DENSITY_SCALE));
@@ -3684,24 +3977,71 @@ export const GpgpuSystem: FC<GpgpuSystemProps> = React.memo(({ audioRef, config,
         points.frustumCulled = false;
         shineDensityPointsRef.current = points;
         shineDensitySceneRef.current.add(points);
-      } else if (shineDensityPointsRef.current) {
-        shineDensityPointsRef.current.geometry = drawGeo;
-        shineDensityPointsRef.current.material = mat;
       }
+      // Source layers (Layer 1 WP7 Phase D): the authored
+      // selection (postShineDensityLayers) resolved to
+      // canonical order; each layer contributes its own draw
+      // geometry plus the position texture its draw material
+      // is bound to this frame — the very texture the layer's
+      // own draw samples. A layer whose pool is not running
+      // (no texture bound) contributes nothing and is skipped.
+      // The default 'main' selection yields exactly the
+      // Phase 22 single-layer splat.
+      const layers = resolveParticleDensityLayers(config);
       const drawMatAny = assets.drawMat as unknown as { uniforms?: Record<string, { value: unknown }> } | null;
       const liveSize = drawMatAny?.uniforms?.uSize?.value;
-      mat.uniforms.uPosTex.value = routing.outputPosTexture;
-      mat.uniforms.uSize.value = typeof liveSize === 'number' ? liveSize : 2;
-      const prevTarget = glCtx.getRenderTarget();
-      const prevClearColor = new THREE.Color();
-      glCtx.getClearColor(prevClearColor);
-      const prevClearAlpha = glCtx.getClearAlpha();
-      glCtx.setClearColor(0x000000, 0);
-      glCtx.setRenderTarget(rt);
-      glCtx.render(shineDensitySceneRef.current, camera);
-      glCtx.setRenderTarget(prevTarget);
-      glCtx.setClearColor(prevClearColor, prevClearAlpha);
-      setParticleDensitySource({ texture: rt.texture });
+      const auxUniformsOf = (m: THREE.ShaderMaterial) =>
+        (m as unknown as { uniforms?: Record<string, { value: unknown }> }).uniforms;
+      const sources: { geometry: THREE.BufferGeometry; texture: THREE.Texture; size: number }[] = [];
+      for (const layer of layers) {
+        if (layer === 'main') {
+          sources.push({
+            geometry: drawGeo,
+            texture: routing.outputPosTexture,
+            size: typeof liveSize === 'number' ? liveSize : 2,
+          });
+        } else {
+          const auxMat = layer === 'aux' ? auxDrawMat : layer === 'aux2' ? aux2DrawMat : aux3DrawMat;
+          const auxUniforms = auxUniformsOf(auxMat);
+          const auxTex = (auxUniforms?.uAuxPosTex?.value ?? null) as THREE.Texture | null;
+          if (!auxTex) continue;
+          const auxSize = auxUniforms?.uAuxSize?.value;
+          sources.push({
+            geometry: auxDrawGeo,
+            texture: auxTex,
+            size: typeof auxSize === 'number' ? auxSize : 2,
+          });
+        }
+      }
+      const points = shineDensityPointsRef.current;
+      if (points && sources.length > 0) {
+        points.material = mat;
+        const prevTarget = glCtx.getRenderTarget();
+        const prevClearColor = new THREE.Color();
+        glCtx.getClearColor(prevClearColor);
+        const prevClearAlpha = glCtx.getClearAlpha();
+        const prevAutoClear = glCtx.autoClear;
+        glCtx.setClearColor(0x000000, 0);
+        glCtx.setRenderTarget(rt);
+        // One explicit clear for the whole accumulation: the
+        // per-layer renders must not clear again (autoClear
+        // off), or only the last layer would survive in the
+        // field. Restored before returning the renderer.
+        glCtx.autoClear = false;
+        glCtx.clear(true, true, true);
+        for (const source of sources) {
+          points.geometry = source.geometry;
+          mat.uniforms.uPosTex.value = source.texture;
+          mat.uniforms.uSize.value = source.size;
+          glCtx.render(shineDensitySceneRef.current, camera);
+        }
+        glCtx.autoClear = prevAutoClear;
+        glCtx.setRenderTarget(prevTarget);
+        glCtx.setClearColor(prevClearColor, prevClearAlpha);
+        setParticleDensitySource({ texture: rt.texture });
+      } else {
+        setParticleDensitySource(null);
+      }
     } else {
       setParticleDensitySource(null);
     }

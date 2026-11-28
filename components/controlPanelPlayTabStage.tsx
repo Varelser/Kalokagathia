@@ -3,10 +3,11 @@ import { Activity, ArrowLeftRight, Monitor } from 'lucide-react';
 import type { ParticleConfig, PresetRecord } from '../types';
 import { PARAMETER_CATALOG } from '../lib/parameterCatalog';
 import { getNoiseLinkStatus, type NoiseLinkStatus } from '../lib/noiseLink';
-import { AUDIO_BAND_OPTIONS, ENVELOPE_TRIGGER_OPTIONS, LFO_WAVEFORM_OPTIONS, NOISE_SOURCE_OPTIONS, createStarterModulationRoutes, describeModulationSource, evaluateLfo, fireModulationEnvelope, parseModulationSetupJson, serializeModulationSetup, setModulationSetup, useModulationSetup, type EnvelopeTrigger, type LfoWaveform, type ModulationChainOp, type ModulationRoute, type ModulationSetup, type ModulationSource, type NoiseSourceId } from '../lib/modulation';
+import { AUDIO_BAND_OPTIONS, ENVELOPE_TRIGGER_OPTIONS, LFO_WAVEFORM_OPTIONS, NOISE_SOURCE_OPTIONS, createStarterModulationRoutes, describeModulationSource, evaluateLfo, fireModulationEnvelope, parseModulationSetupJson, serializeModulationSetup, setModulationSetup, useResolvedModulationSetup, type EnvelopeTrigger, type LfoWaveform, type ModulationChainOp, type ModulationRoute, type ModulationSetup, type ModulationSource, type NoiseSourceId } from '../lib/modulation';
 import { compileExpression } from '../lib/expression';
 import { EXPRESSION_PARAM_REF_NAMES } from '../lib/expressionParamRefs';
 import { useDataTable } from '../lib/dataTable';
+import { findUserParameterByName, useUserParameters } from '../lib/userParameters';
 import { closeCleanOutput, isCleanOutputOpen, openCleanOutput } from '../lib/cleanOutput';
 import { collectGpuDiagnostics, type GpuDiagnosticsReport } from '../lib/gpuDiagnostics';
 import { GPU_TIER_LABELS_JA, redetectGpuTier, setGpuTierOverride, type GpuTier } from '../lib/gpuTier';
@@ -445,6 +446,7 @@ const SourceParamEditors: React.FC<{
   routeId?: string;
 }> = ({ source, onChange, routeId }) => {
   const dataTable = useDataTable();
+  const declarations = useUserParameters();
   if (source.kind === 'vnoise') {
     return (
       <div className="grid grid-cols-3 gap-2">
@@ -512,6 +514,48 @@ const SourceParamEditors: React.FC<{
           </p>
         )}
         <Slider label="読取速度 Rate（行/秒）" value={source.rate} min={0.05} max={60} step={0.05} onChange={(v) => onChange({ ...source, rate: v })} />
+      </div>
+    );
+  }
+  if (source.kind === 'uparam') {
+    // User parameter (Layer 1 WP10 phases A/C): the source reads
+    // a declared public parameter by its declared name (label),
+    // resolved against the CURRENT config at apply time. The
+    // declarations live in their own setup store (Global tab's
+    // User Parameters section); until a name resolves the source
+    // samples neutral, so an undeclared name is inert — the data
+    // column's discipline.
+    const resolved = findUserParameterByName(declarations, source.name);
+    return (
+      <div className="space-y-2">
+        {declarations.length > 0 ? (
+          <select
+            value={resolved ? resolved.label : ''}
+            onChange={(event) => onChange({ ...source, name: event.target.value })}
+            className={MOD_SELECT_CLASS}
+            aria-label="ユーザーパラメータ名"
+          >
+            <option value="" className="bg-neutral-900">
+              （宣言名を選択）
+            </option>
+            {declarations.map((declaration) => (
+              <option key={declaration.id} value={declaration.label} className="bg-neutral-900">
+                {declaration.label}（{declaration.key}）
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="text-[10px] text-white/40 leading-relaxed">
+            宣言済みパラメータがありません。Global タブの User Parameters でパラメータを宣言すると、ここで名前を選べます（宣言が無い間は無影響）。
+          </p>
+        )}
+        {declarations.length > 0 && !resolved && (
+          <p className="text-[10px] text-amber-300/90 leading-relaxed">
+            {source.name
+              ? `指定された名前「${source.name}」の宣言が見つかりません（無影響のままです）。`
+              : '宣言名が未指定です（無影響のままです）。'}
+          </p>
+        )}
       </div>
     );
   }
@@ -598,15 +642,21 @@ const ChainEditor: React.FC<{
 };
 
 export const ModulationSection: React.FC<{
-  isPublicLibrary: boolean;
   config: ParticleConfig;
   updateConfig: ControlPanelContentProps['updateConfig'];
-}> = ({ isPublicLibrary, config, updateConfig }) => {
-  const setup = useModulationSetup();
+  isPublicLibrary: boolean;
+}> = ({ config, updateConfig, isPublicLibrary }) => {
+  // WP9 Phase C: display the resolved setup (config key
+  // `modulationSetup` when authored, the localStorage store
+  // otherwise) and write every edit into the config key — the
+  // first edit promotes the setup into the work.
+  const setup = useResolvedModulationSetup(config.modulationSetup);
+  const declarations = useUserParameters();
   // TD §7 face 4: a wiring carried in the config (modulationGraph)
-  // wins over the local setup while applied. The editor below still
-  // edits the local setup; the carry row moves setups between the
-  // two homes.
+  // wins over the edited setup while applied (the runtime resolves
+  // the graph before the setup). The editor below still edits the
+  // resolved setup; the carry row moves setups between the two
+  // homes.
   const carriedSetup = parseModulationSetupJson(config.modulationGraph);
   const localCarryJson = serializeModulationSetup(setup);
   const [nowSec, setNowSec] = React.useState(0);
@@ -640,7 +690,7 @@ export const ModulationSection: React.FC<{
     return () => window.clearInterval(id);
   }, []);
 
-  const update = (next: ModulationSetup) => setModulationSetup(next);
+  const update = (next: ModulationSetup) => updateConfig('modulationSetup', serializeModulationSetup(next));
 
   const setLfo = (index: number, patch: Partial<{ waveform: LfoWaveform; rate: number }>) => {
     update({ ...setup, lfos: setup.lfos.map((lfo, i) => (i === index ? { ...lfo, ...patch } : lfo)) });
@@ -670,6 +720,12 @@ export const ModulationSection: React.FC<{
     if (kind === 'data') {
       return { kind: 'data', column: 'col1', rate: 2 };
     }
+    if (kind === 'uparam') {
+      // User parameter (Layer 1 WP10 phase C): starts on the
+      // first declared name when one exists; the name itself is
+      // picked in SourceParamEditors below.
+      return { kind: 'uparam', name: declarations[0]?.label ?? '' };
+    }
     return { kind: 'lfo', index: Number(rest) || 0 };
   };
 
@@ -686,7 +742,9 @@ export const ModulationSection: React.FC<{
               ? 'expr:formula'
               : source.kind === 'data'
                 ? 'data:column'
-                : `audio:${source.band}`;
+                : source.kind === 'uparam'
+                  ? 'uparam:param'
+                  : `audio:${source.band}`;
 
   const addRoute = () => {
     const route: ModulationRoute = {
@@ -738,7 +796,15 @@ export const ModulationSection: React.FC<{
               </p>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setModulationSetup(carriedSetup)}
+                  onClick={() => {
+                    // Load into both homes: the local store (the
+                    // original TD §7 target) and, per WP9 Phase C,
+                    // the config key the editor actually reads — a
+                    // local-only write would be shadowed whenever
+                    // `modulationSetup` is authored.
+                    setModulationSetup(carriedSetup);
+                    update(carriedSetup);
+                  }}
                   className="px-3 py-1.5 rounded-full bg-white/10 text-white/70 text-[10px] font-bold uppercase tracking-widest hover:bg-white/20 transition-colors"
                 >
                   同梱をこのブラウザに読み込む
@@ -874,6 +940,9 @@ export const ModulationSection: React.FC<{
                     <option value="data:column" className="bg-neutral-900">
                       データ列 Data Column
                     </option>
+                    <option value="uparam:param" className="bg-neutral-900">
+                      ユーザーパラメータ User Parameter
+                    </option>
                   </optgroup>
                 </select>
                 <select
@@ -959,6 +1028,9 @@ export const ModulationSection: React.FC<{
                       </option>
                       <option value="data:column" className="bg-neutral-900">
                         入力: データ列 Data Column
+                      </option>
+                      <option value="uparam:param" className="bg-neutral-900">
+                        入力: ユーザーパラメータ User Parameter
                       </option>
                     </optgroup>
                   </select>

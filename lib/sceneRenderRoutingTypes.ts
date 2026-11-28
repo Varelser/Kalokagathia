@@ -288,6 +288,7 @@ export interface GpgpuRenderOutputPlan {
   smoothTubes: boolean;
   metaballs: boolean;
   volumetric: boolean;
+  splats: boolean;
   sceneBranches: string[];
 }
 

@@ -1246,6 +1246,62 @@ export const VEL_FRAG_FORCE_FIELD_INSTANCES = /* glsl */ `
     // below passes the REP gate locals instead.
     vel += kaloFieldForce(pos, attrData, replicaSeed, replicaTime, grpWind, 1.0, 1.0);
 `;
+export const VEL_FRAG_FORCE_FIELD_INSTANCES_EXT = /* glsl */ `
+    // Field instances, extended grammar (Layer 1 WP5
+    // phase D): the B1 chunk's generalised form — shaped
+    // falloffs, per-instance / per-layer group gates and the
+    // daemon kinds (drag / crown), supplied through the
+    // extension records of the same column texture. The
+    // force law lives in the helpers (kaloFieldForceExt,
+    // which also takes the current velocity for the drag
+    // law); assembled INSTEAD of the B1 chunk while the
+    // fieldExt variant stands.
+    vel += kaloFieldForceExt(pos, vel, attrData, replicaSeed, replicaTime, grpWind, 1.0, 1.0);
+`;
+export const VEL_FRAG_FORCE_SURFACE_TENSION = /* glsl */ `
+    // Surface tension, generic form (Layer 1 WP5 phase D):
+    // the Akinci two-term law on its OWN neighbour scan —
+    // the same stride subsample shape, the same kernel and
+    // the same constants as the SPH form (TS twin:
+    // sphSurfaceTensionAkinciForce in
+    // lib/gpgpuLifecycle.ts), for pools where the SPH solver
+    // does not stand. The two placements are mutually
+    // exclusive, resolved CPU-side
+    // (genericSurfaceTensionActive): while SPH is enabled
+    // its own loop applies the law and this chunk is never
+    // spliced in. The radius and strength uniforms are the
+    // SPH keys' — the law's parameters, not the solver's.
+    if (uSphSurfaceTensionAkinci > 0.0) {
+      vec3 stCohesion = vec3(0.0);
+      vec3 stGrad = vec3(0.0);
+      float stLap = 0.0;
+      float stH = uSphRadius;
+      float stH2 = stH * stH;
+${NEIGHBOR_STRIDE_OPEN_GLSL}${NEIGHBOR_SELF_SKIP_GLSL}        vec3 oPos = texture2D(uPosTex, sUv).xyz;
+        vec3 r = pos - oPos;
+        float r2 = dot(r, r);
+        if (r2 < stH2 && r2 > 0.001) {
+          float q = sqrt(r2) / stH;
+          float w = max(0.0, 1.0 - q * q);
+          float rl = sqrt(r2);
+          float omq = 1.0 - q;
+          float kA = omq * omq * omq * q * q * q;
+          if (q <= 0.5) kA = 2.0 * kA - 0.015625;
+          stCohesion += ((oPos - pos) / rl) * (kA * 32.0);
+          stGrad += (-2.0 * r) / stH2;
+          stLap += (-6.0 / stH2) * w;
+        }
+      }
+      float stGradLen = length(stGrad);
+      vec3 stNormal = stGradLen > 0.000001 ? stGrad / stGradLen : vec3(0.0);
+      float stKappa = stGradLen > 0.000001 ? -stLap / stGradLen : 0.0;
+      float stGate = clamp(stGradLen * stH * 0.25, 0.0, 1.0);
+      vec3 stSum = stCohesion + stNormal * (stKappa * stGradLen * stGate * stGate * 8.0);
+      float stSumLen = length(stSum);
+      if (stSumLen > 3.0) stSum *= 3.0 / stSumLen;
+      vel += stSum * uSphSurfaceTensionAkinci * uDelta * 1.0;
+    }
+`;
 export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
   'pyro-buoyancy': VEL_FRAG_FORCE_PYRO_BUOYANCY,
   'turbulence': VEL_FRAG_FORCE_TURBULENCE,
@@ -1273,6 +1329,7 @@ export const VEL_FRAG_FORCE_CHUNKS: Record<string, string> = {
   'field-instances': VEL_FRAG_FORCE_FIELD_INSTANCES,
   'rel-drag': VEL_FRAG_FORCE_REL_DRAG,
   'meander': VEL_FRAG_FORCE_MEANDER,
+  'surface-tension': VEL_FRAG_FORCE_SURFACE_TENSION,
 };
 /** Assemble head + force chunks in the given order (names are
  * normalised by lib/gpgpuForceOrder: unknown / duplicate names
@@ -1403,6 +1460,14 @@ export const VEL_FRAG_FORCE_FIELD_INSTANCES_LIVE = VEL_FRAG_FORCE_FIELD_INSTANCE
   'grpWind, 1.0, 1.0);',
   'grpWind, grpVortex, grpWell);',
 );
+// WP5 phase D: the extended chunk's live form, derived by
+// the same one-anchor replacement (its call carries the same
+// 'grpWind, 1.0, 1.0);' tail), so the two forms can never
+// drift apart either.
+export const VEL_FRAG_FORCE_FIELD_INSTANCES_EXT_LIVE = VEL_FRAG_FORCE_FIELD_INSTANCES_EXT.replace(
+  'grpWind, 1.0, 1.0);',
+  'grpWind, grpVortex, grpWell);',
+);
 /** The gated unit-N attractor chunk: the unit derivation
  *  (header + uniform rename) applied to the gated unit-1
  *  chunk, so gated units share the gated force law. */
@@ -1454,14 +1519,36 @@ export interface MainForcesVariantOptions {
   // spliced in only while the absolute rate key is set or
   // the spawn envelope is enabled.
   spawnAlloc?: boolean;
+  // Layer 1 WP4 (phase C): the spawn event demand term on
+  // the gate line (and on the emitter-velocity activation
+  // segment's thresholds), spliced in only while an
+  // authored spawn event with a positive demand stands.
+  spawnEventDemand?: boolean;
   // Grammar 2.0 stage 2 (slice E2): the emitter-velocity
   // activation segment, spliced in only while the emitter
   // velocity mode is 'directed'.
   emitterVelocity?: boolean;
+  // Layer 1 WP4 (phase D3): the emitter-list form of the
+  // activation segment, spliced in only while an authored
+  // emitter list stands. While it stands, the list form
+  // REPLACES the single-emitter form (the D2 replacement
+  // discipline): the activation hands each particle its own
+  // emitter's directed velocity.
+  emitterList?: boolean;
   // Grammar 2.0 stage 2 (slice B1): the 'field-instances'
   // chunk, spliced in only while at least one field
   // instance resolves.
   fieldInstances?: boolean;
+  // Layer 1 WP5 (phase D): while set (AND fieldInstances),
+  // the 'field-instances' name assembles the extended chunk
+  // (kaloFieldForceExt) instead of the B1 chunk — shaped
+  // falloffs, group gates and the daemon kinds.
+  fieldExt?: boolean;
+  // Layer 1 WP5 (phase D): the 'surface-tension' chunk,
+  // spliced in only while the generic placement stands
+  // (lib/gpgpuLifecycle.ts: genericSurfaceTensionActive —
+  // Akinci strength above zero AND the SPH solver off).
+  surfaceTension?: boolean;
   // Grammar 2.0 stage 2 (slice B2): while set (AND
   // steeringSeek, AND NOT crowd), the 'steer-seek' name
   // assembles the path-asset variant chunk — the polyline
@@ -1530,6 +1617,18 @@ const RIGID_BRANCH_OPEN_FREE = `    // Coupling stage 2: the free subset of the 
 // default string's verbatim text.
 const VEL_SPAWN_GATE_LINE_LEGACY = /* glsl */ `      float sThr = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime));`;
 const VEL_SPAWN_GATE_LINE_ALLOC = /* glsl */ `      float sThr = min(1.0, uSpawnBurst + uSpawnRateEff * spawnPulseTimeEx(uSpawnClockTime));`;
+// Spawn event demand (Layer 1 WP4, phase C): the gate line
+// gains the cumulative event demand due at uSpawnTime
+// (uSpawnEventDueFrac, resolved CPU-side in
+// lib/gpgpuSpawnAllocator.ts), so this pass parks exactly
+// the particles the position pass parks — a firing event
+// releases its demand of parked slots in both passes on
+// the same frame. Composes with the allocator line the
+// same way (the demand term is on spawn time, like the
+// event block below). The stock lines above stay the
+// default string's verbatim text.
+const VEL_SPAWN_GATE_LINE_DEMAND = /* glsl */ `      float sThr = min(1.0, uSpawnBurst + uSpawnRate * spawnPulseTimeEx(uSpawnTime) + uSpawnEventDueFrac);`;
+const VEL_SPAWN_GATE_LINE_ALLOC_DEMAND = /* glsl */ `      float sThr = min(1.0, uSpawnBurst + uSpawnRateEff * spawnPulseTimeEx(uSpawnClockTime) + uSpawnEventDueFrac);`;
 const VEL_SPAWN_EVENT_ANCHOR = /* glsl */ `    // Spawn burst event (Phase AX): on the single frame the`;
 /**
  * The emitter-velocity activation segment (stage 2, E2),
@@ -1543,23 +1642,54 @@ const VEL_SPAWN_EVENT_ANCHOR = /* glsl */ `    // Spawn burst event (Phase AX): 
  * the legacy no-reset, exactly like the event grammar. The
  * threshold expressions follow the allocator variant when
  * it is also built (same rate / clock the gate above used).
+ * Layer 1 WP4 (phase D3): while an emitter list stands, the
+ * segment takes its list form — same thresholds, but the
+ * handover reads the particle's own emitter record
+ * (kaloEmitterVelocityList) and a 'cube' element hands
+ * nothing over.
  */
-function emitterVelocitySegment(spawnAlloc: boolean): string {
+function emitterVelocitySegment(spawnAlloc: boolean, spawnEventDemand = false, emitterList = false): string {
   const rate = spawnAlloc ? 'uSpawnRateEff' : 'uSpawnRate';
   const timeNow = spawnAlloc ? 'uSpawnClockTime' : 'uSpawnTime';
   const timePrev = spawnAlloc ? 'uSpawnClockPrev' : 'uSpawnTime - uDelta';
-  return `    // Emitter initial velocity (Grammar 2.0 stage 2, E2):
+  // Spawn event demand (Layer 1 WP4, phase C): while the
+  // demand variant also stands, the activation thresholds
+  // gain the same due fractions the gate line gained, so a
+  // demand-released particle is handed the directed
+  // velocity on its activation frame too.
+  const dueNow = spawnEventDemand ? ' + uSpawnEventDueFrac' : '';
+  const duePrev = spawnEventDemand ? ' + uSpawnEventDuePrevFrac' : '';
+  // Emitter list (Layer 1 WP4, phase D3): while the list
+  // stands, the handover reads the particle's own emitter
+  // record instead of the single uniforms; the w flag keeps
+  // a 'cube' element's velocity untouched (no directed
+  // handover — the single-emitter cube behaviour). The
+  // thresholds are the single form's, verbatim.
+  const handover = emitterList
+    ? `        vec4 emVel = kaloEmitterVelocityList(vUv);
+        if (emVel.w > 0.5) vel = emVel.xyz;`
+    : `        vel = kaloEmitterVelocity(vUv);`;
+  const lawNote = emitterList
+    ? `    // Emitter initial velocity (Layer 1 WP4, phase D3):
+    // on the activation frame (the gate threshold crosses
+    // the particle's gate value this step) the particle is
+    // handed ITS OWN emitter's directed initial velocity —
+    // the emitter list's form of the E2 segment, applied
+    // before the event block so the event wins its frame.
+    // A 'cube' element hands nothing over.`
+    : `    // Emitter initial velocity (Grammar 2.0 stage 2, E2):
     // on the activation frame (the gate threshold crosses
     // the particle's gate value this step) the particle is
     // handed the emitter's directed initial velocity — the
     // general port of the event cohort's velocity, applied
-    // before the event block so the event wins its frame.
+    // before the event block so the event wins its frame.`;
+  return `${lawNote}
     if (uSpawnBurst < 1.0) {
       float eGate = spawnGateValue(vUv);
-      float eThr = min(1.0, uSpawnBurst + ${rate} * spawnPulseTimeEx(${timeNow}));
-      float eThrPrev = min(1.0, uSpawnBurst + ${rate} * spawnPulseTimeEx(${timePrev}));
+      float eThr = min(1.0, uSpawnBurst + ${rate} * spawnPulseTimeEx(${timeNow})${dueNow});
+      float eThrPrev = min(1.0, uSpawnBurst + ${rate} * spawnPulseTimeEx(${timePrev})${duePrev});
       if (eGate >= eThrPrev && eGate < eThr) {
-        vel = kaloEmitterVelocity(vUv);
+${handover}
       }
     }
 
@@ -1601,10 +1731,19 @@ export function buildMainForcesFragment(
   if (options?.spawnAlloc) {
     head = head.replace(VEL_SPAWN_GATE_LINE_LEGACY, VEL_SPAWN_GATE_LINE_ALLOC);
   }
-  if (options?.emitterVelocity) {
+  // Spawn event demand (Layer 1 WP4, phase C): the gate
+  // line gains the due fraction, on top of whichever rate
+  // form stands (stock or allocator).
+  if (options?.spawnEventDemand) {
+    head = head.replace(
+      options?.spawnAlloc ? VEL_SPAWN_GATE_LINE_ALLOC : VEL_SPAWN_GATE_LINE_LEGACY,
+      options?.spawnAlloc ? VEL_SPAWN_GATE_LINE_ALLOC_DEMAND : VEL_SPAWN_GATE_LINE_DEMAND,
+    );
+  }
+  if (options?.emitterVelocity || options?.emitterList) {
     head = head.replace(
       VEL_SPAWN_EVENT_ANCHOR,
-      emitterVelocitySegment(!!options?.spawnAlloc) + VEL_SPAWN_EVENT_ANCHOR,
+      emitterVelocitySegment(!!options?.spawnAlloc, !!options?.spawnEventDemand, !!options?.emitterList) + VEL_SPAWN_EVENT_ANCHOR,
     );
   }
   if (rulesGated) {
@@ -1623,6 +1762,7 @@ export function buildMainForcesFragment(
     if (name === 'field-instances' && !options?.fieldInstances) continue;
     if (name === 'rel-drag' && !options?.relDrag) continue;
     if (name === 'meander' && !options?.meanderStandalone) continue;
+    if (name === 'surface-tension' && !options?.surfaceTension) continue;
     // Slice 1C: in the live variant the extension forces run
     // their gated chunk variants (the gate locals are
     // declared by the live segment spliced in above).
@@ -1639,9 +1779,13 @@ export function buildMainForcesFragment(
           ? VEL_FRAG_FORCE_STEER_SEEK_ASSET
           : name === 'particle-life' && options?.meanderStandalone
             ? VEL_FRAG_FORCE_PARTICLE_LIFE_NO_MEANDER
-            : options?.particleRulesLive && VEL_FRAG_FORCE_CHUNKS_LIVE[name]
-              ? VEL_FRAG_FORCE_CHUNKS_LIVE[name]
-              : VEL_FRAG_FORCE_CHUNKS[name];
+            : name === 'field-instances' && options?.fieldExt
+              ? options?.particleRulesLive
+                ? VEL_FRAG_FORCE_FIELD_INSTANCES_EXT_LIVE
+                : VEL_FRAG_FORCE_FIELD_INSTANCES_EXT
+              : options?.particleRulesLive && VEL_FRAG_FORCE_CHUNKS_LIVE[name]
+                ? VEL_FRAG_FORCE_CHUNKS_LIVE[name]
+                : VEL_FRAG_FORCE_CHUNKS[name];
   }
   return out;
 }

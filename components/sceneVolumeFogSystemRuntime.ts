@@ -10,9 +10,16 @@ import { compileCheckShader } from '../lib/glslInjection';
 import {
   buildVolumeFogHarness,
   VOLUME_FOG_CHECK_VERTEX,
+  resolveVolumeFogSnippet,
   setVolumeFogGlslStatus,
   validateVolumeFogGlslCode,
 } from '../lib/volumeFogGlsl';
+import {
+  VOLUME_FOG_REPLACEMENT_CONTRACT,
+  setVolumeFogReplacementStatus,
+  validateVolumeFogReplacementCode,
+} from '../lib/glslReplacementPoints';
+import { resolveGlslSharedSnippetDefs } from '../lib/glslSharedSnippets';
 import { getLayerRuntimeFogSnapshot } from '../lib/sceneRenderRouting';
 import { materialStyleToInt } from '../lib/materialGrammar';
 import type { VolumeFogSystemProps } from './sceneVolumeFogSystemTypes';
@@ -99,7 +106,51 @@ export function useVolumeFogRuntime({ config, layerIndex, audioRef, isPlaying, p
   const [fogFragmentShader, setFogFragmentShader] = React.useState(FRAGMENT_SHADER);
   const appliedFogCodeRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    const code = config.volumeFogGlslEnabled ? config.volumeFogGlslCode : '';
+    // Full-fragment replacement form (Layer 1 WP11 phases
+    // D2/C): while the replacement is enabled with non-empty
+    // code, the user code IS the whole fog fragment on every
+    // slice — the same validate + compile-check + swap
+    // discipline, reported through the slot's own status
+    // store. With the replacement disabled or empty, the
+    // snippet flow below runs exactly as before.
+    const replaceCode = config.volumeFogGlslReplacementEnabled ? config.volumeFogGlslReplacementCode : '';
+    if (replaceCode.trim()) {
+      const replaceKey = `replace|${replaceCode}`;
+      if (appliedFogCodeRef.current !== replaceKey) {
+        const validation = validateVolumeFogReplacementCode(replaceCode);
+        if (!validation.ok) {
+          setVolumeFogReplacementStatus({ state: 'error', message: validation.error ?? 'invalid code' });
+          return;
+        }
+        const check = compileCheckShader(
+          gl.getContext() as WebGL2RenderingContext,
+          VOLUME_FOG_CHECK_VERTEX,
+          VOLUME_FOG_REPLACEMENT_CONTRACT.buildHarness(replaceCode),
+        );
+        if (!check.ok) {
+          setVolumeFogReplacementStatus({ state: 'error', message: check.error ?? 'compile failed' });
+          return;
+        }
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 検証・コンパイル済みのシェーダ差し替えは描画側がこの state 経由で受け取る設計のため、effect 内で同期する
+        setFogFragmentShader(VOLUME_FOG_REPLACEMENT_CONTRACT.buildFragment(replaceCode));
+        appliedFogCodeRef.current = replaceKey;
+        setVolumeFogReplacementStatus({ state: 'active' });
+      }
+      setVolumeFogGlslStatus({ state: 'inactive' });
+      return;
+    }
+    setVolumeFogReplacementStatus({ state: 'inactive' });
+    const rawCode = config.volumeFogGlslEnabled ? config.volumeFogGlslCode : '';
+    // Layer 1 WP11 phase C: shared snippet definitions resolve
+    // before this point's validation / compile check; without
+    // authored definitions or directives the resolution is the
+    // identical string (byte-identical shaders).
+    const resolution = resolveVolumeFogSnippet(rawCode, resolveGlslSharedSnippetDefs(config.glslSharedSnippets));
+    if (!resolution.ok) {
+      setVolumeFogGlslStatus({ state: 'error', message: resolution.error ?? 'invalid code' });
+      return;
+    }
+    const code = resolution.code as string;
     if (!code.trim()) {
       if (appliedFogCodeRef.current !== null) {
         setFogFragmentShader(FRAGMENT_SHADER);
@@ -127,7 +178,7 @@ export function useVolumeFogRuntime({ config, layerIndex, audioRef, isPlaying, p
     setFogFragmentShader(buildVolumeFogShader(code));
     appliedFogCodeRef.current = code;
     setVolumeFogGlslStatus({ state: 'active' });
-  }, [config.volumeFogGlslEnabled, config.volumeFogGlslCode, gl]);
+  }, [config.volumeFogGlslEnabled, config.volumeFogGlslCode, config.volumeFogGlslReplacementEnabled, config.volumeFogGlslReplacementCode, config.glslSharedSnippets, gl]);
 
   // Note: the slice materials are NOT disposed from an effect
   // here. They are created from materialsRef during the render

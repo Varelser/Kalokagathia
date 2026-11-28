@@ -2,10 +2,50 @@ import React from 'react';
 import { Bookmark, Pause, Save } from 'lucide-react';
 import { PRESET_CATEGORY_OPTIONS, getPresetCategories, getPresetPerformanceTier, getPresetSearchText } from '../lib/presetCatalog';
 import { PRESET_HIERARCHY, filterPresetsByHierarchy, getPresetHierarchyPlacement } from '../lib/presetHierarchy';
+import { PARTIAL_GROUPS } from '../lib/presetPartial';
+import {
+  applyPresetReuseUnit,
+  createPresetReuseUnitFromGroups,
+  parsePresetReuseUnits,
+  serializePresetReuseUnits,
+  type PresetReuseUnit,
+} from '../lib/presetReuseUnits';
 import { Slider } from './controlPanelParts';
 import { ControlPanelPresetCard } from './controlPanelPresetCard';
 import { ControlPanelPresetLibraryIO } from './controlPanelPresetLibraryIO';
 import { ControlPanelContentProps, NoticeBanner } from './controlPanelTabsShared';
+
+/**
+ * Named reuse units (Layer 1 WP10 phase C wiring of the
+ * phase-B grammar in lib/presetReuseUnits.ts): a fixed
+ * partial-apply group selection frozen under a name, captured
+ * from the current config and re-applied later. Definitions
+ * are setup-side data — they persist under their own
+ * localStorage key (the user-parameters / designer-blocks
+ * discipline), never inside config or preset records, and no
+ * config key is registered for them. Applying goes through
+ * onApplyConfig with the lib's pure apply result, exactly
+ * like partial apply: the panel never writes the base config
+ * itself.
+ */
+const REUSE_UNITS_STORAGE_KEY = 'kalokagathia.presetReuseUnits.v1';
+
+function loadStoredReuseUnits(): PresetReuseUnit[] {
+  try {
+    return parsePresetReuseUnits(window.localStorage.getItem(REUSE_UNITS_STORAGE_KEY));
+  } catch {
+    return [];
+  }
+}
+
+function storeReuseUnits(units: PresetReuseUnit[]): boolean {
+  try {
+    window.localStorage.setItem(REUSE_UNITS_STORAGE_KEY, serializePresetReuseUnits(units));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export const GlobalPresetsSection: React.FC<ControlPanelContentProps> = ({
   config,
@@ -25,6 +65,7 @@ export const GlobalPresetsSection: React.FC<ControlPanelContentProps> = ({
   libraryInputRef,
   libraryNotice,
   onAddPresetToSequence,
+  onApplyConfig,
   onDeletePreset,
   onDismissLibraryNotice,
   onDuplicatePreset,
@@ -51,6 +92,57 @@ export const GlobalPresetsSection: React.FC<ControlPanelContentProps> = ({
   // exactly the pre-hierarchy behaviour.
   const [hierarchyLineageId, setHierarchyLineageId] = React.useState<string | null>(null);
   const [hierarchyFamilyId, setHierarchyFamilyId] = React.useState<string | null>(null);
+  // Reuse units (WP10 phase C): definitions held in their own
+  // storage key; the group selection mirrors Partial Apply's.
+  const [reuseUnits, setReuseUnits] = React.useState<PresetReuseUnit[]>(() => loadStoredReuseUnits());
+  const [reuseUnitName, setReuseUnitName] = React.useState('');
+  const [reuseGroups, setReuseGroups] = React.useState<ReadonlySet<string>>(new Set(['motion']));
+  const [reuseNote, setReuseNote] = React.useState('');
+
+  const toggleReuseGroup = (id: string) => {
+    setReuseGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleCreateReuseUnit = () => {
+    const unit = createPresetReuseUnitFromGroups({
+      name: reuseUnitName.trim() || 'Reuse Unit',
+      source: config as unknown as Record<string, unknown>,
+      groupIds: reuseGroups,
+    });
+    if (!unit) {
+      setReuseNote('選択したグループに該当する項目が現在の設定にありませんでした。');
+      return;
+    }
+    const next = [unit, ...reuseUnits];
+    if (storeReuseUnits(next)) {
+      setReuseUnits(next);
+      setReuseUnitName('');
+      setReuseNote(`再利用単位「${unit.name}」（${unit.keys.length} 項目）を作成しました。`);
+    } else {
+      setReuseNote('再利用単位を保存できませんでした。');
+    }
+  };
+
+  const handleApplyReuseUnit = (unit: PresetReuseUnit) => {
+    if (!onApplyConfig) return;
+    onApplyConfig(applyPresetReuseUnit(config, unit));
+    setReuseNote(`再利用単位「${unit.name}」（${unit.keys.length} 項目）を適用しました。`);
+  };
+
+  const handleDeleteReuseUnit = (unit: PresetReuseUnit) => {
+    const next = reuseUnits.filter((item) => item.id !== unit.id);
+    if (storeReuseUnits(next)) {
+      setReuseUnits(next);
+      setReuseNote(`再利用単位「${unit.name}」を削除しました。`);
+    } else {
+      setReuseNote('再利用単位の削除を保存できませんでした。');
+    }
+  };
 
   const hierarchyCounts = React.useMemo(() => {
     const byLineage = new Map<string, number>();
@@ -166,6 +258,77 @@ export const GlobalPresetsSection: React.FC<ControlPanelContentProps> = ({
       />
     )}
     {isPublicLibrary && <NoticeBanner notice={libraryNotice} onDismiss={onDismissLibraryNotice} className="mt-4" />}
+    {!isPublicLibrary && onApplyConfig && (
+      <div className="mt-4 rounded border border-white/10 bg-white/5 p-3">
+        <div className="mb-2 text-[10px] uppercase tracking-widest font-bold text-white/70">
+          Reuse Units （再利用単位）
+        </div>
+        <p className="mb-3 text-[10px] leading-relaxed text-white/40">
+          現在の設定の一部（選んだグループの項目だけ）を名前付きの「再利用単位」として切り出し、後から今の設定へ重ねて適用できます。部分適用の固定グループを、名前を付けて保存できる形に一般化したものです。単位の定義はこのブラウザに保存され、プリセット記録や設定キーには混ざりません。
+        </p>
+        <div className="grid grid-cols-[1fr_auto] gap-2 mb-2">
+          <input
+            type="text"
+            value={reuseUnitName}
+            onChange={(event) => setReuseUnitName(event.target.value)}
+            placeholder="再利用単位の名前"
+            className="w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-xs outline-none focus:border-white/35"
+          />
+          <button
+            onClick={handleCreateReuseUnit}
+            disabled={reuseGroups.size === 0}
+            className="px-3 py-2 text-[10px] font-bold uppercase rounded border border-white/20 bg-white text-black disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            現在の設定から作成
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {PARTIAL_GROUPS.map((group) => (
+            <button
+              key={group.id}
+              type="button"
+              onClick={() => toggleReuseGroup(group.id)}
+              title={group.description}
+              className={`px-2 py-1 text-[9px] uppercase tracking-widest rounded border transition-colors ${
+                reuseGroups.has(group.id)
+                  ? 'border-transparent bg-white text-black'
+                  : 'border-white/15 bg-transparent text-white/55 hover:border-white/35 hover:text-white/80'
+              }`}
+            >
+              {group.label}
+            </button>
+          ))}
+        </div>
+        {reuseUnits.length > 0 ? (
+          <div className="flex flex-col gap-1">
+            {reuseUnits.map((unit) => (
+              <div key={unit.id} className="flex flex-wrap items-center gap-2 rounded border border-white/10 px-2 py-1.5">
+                <span className="text-[11px] text-white/85">{unit.name}</span>
+                <span className="text-[10px] text-white/40">
+                  {unit.keys.length} 項目 · {new Date(unit.createdAt).toLocaleDateString()}
+                </span>
+                <span className="flex-1" />
+                <button
+                  onClick={() => handleApplyReuseUnit(unit)}
+                  className="px-3 py-1 rounded-full border border-white/20 text-[10px] uppercase tracking-widest text-white/70 hover:bg-white/10"
+                >
+                  適用
+                </button>
+                <button
+                  onClick={() => handleDeleteReuseUnit(unit)}
+                  className="px-3 py-1 rounded-full border border-white/20 text-[10px] uppercase tracking-widest text-white/70 hover:bg-white/10"
+                >
+                  削除
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-white/35">保存済みの再利用単位はまだありません。</p>
+        )}
+        {reuseNote && <p className="mt-2 text-[11px] text-white/55">{reuseNote}</p>}
+      </div>
+    )}
     <div className="mt-4 rounded border border-white/10 bg-white/5 p-3">
       <div className="mb-3 text-[10px] uppercase tracking-widest font-bold text-white/70">
         Browse Library

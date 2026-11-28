@@ -43,9 +43,13 @@
 //     key loads as source 'invalid-graph' with a reason,
 //     and a color rule survives the whole cycle as an
 //     opaque node;
-// (f) slot assignments are surfaced by the graph save but
-//     the patch contains exactly the three owned keys (the
-//     attribute keys are the wiring slice's business).
+// (f) slot assignments are surfaced by the graph save
+//     and — since the wiring slice (layer 1 WP2 phase A)
+//     — applied into the patch's attribute keys when the
+//     graph claims slots; a graph claiming nothing keeps
+//     exactly the three owned keys. The application cases
+//     are pinned in depth by
+//     layer1-wp2-channel-write-apply.test.mjs.
 //
 // Run: node scripts/stage5-pipeline-persist-s3.test.mjs
 
@@ -248,13 +252,21 @@ let savedPatch;
     colorSaved.ok && colorSaved.patch.gpgpuParticleRulesLive === L.serializeLiveParticleRules(L.parseLiveParticleRules(colorLive)));
 }
 
-// ---- (f) slots surfaced, patch owns exactly three keys ---------------------------
+// ---- (f) slots surfaced and applied; unclaimed = three keys ----------------------
 {
   const saved = PS.savePipelineGraphToConfig(sampleGraph(), { attrNames: ['a', 'b', 'c', 'd'], attrNames2: ['i', 'j', 'k', 'l'] });
   check('f1 slot assignment is surfaced in the save result',
     saved.slots !== null && saved.slots.assignments.some((a) => a.name === 'a'));
-  check('f2 patch contains exactly the three owned keys',
-    sameJson(Object.keys(saved.patch).sort(), ['gpgpuForceOrder', 'gpgpuParticleRulesLive', 'gpgpuPipelineGraph']));
+  check('f2 a claiming graph applies the attribute keys into the patch',
+    sameJson(Object.keys(saved.patch).sort(),
+      ['gpgpuAttrExprs', 'gpgpuAttrNames', 'gpgpuForceOrder', 'gpgpuParticleRulesLive', 'gpgpuPipelineGraph'])
+    && sameJson(saved.patch.gpgpuAttrNames, ['a', 'b', 'c', 'd'])
+    && saved.patch.gpgpuAttrExprs[0] === 'clamp(age * 1.5, 0.0, 1.0)');
+  const noClaim = PS.savePipelineGraphToConfig(graphOf([
+    { id: 'pool', kind: 'pool-source', label: 'Pool', enabled: true },
+  ]));
+  check('f3 a graph claiming no slots keeps exactly the three owned keys',
+    sameJson(Object.keys(noClaim.patch).sort(), ['gpgpuForceOrder', 'gpgpuParticleRulesLive', 'gpgpuPipelineGraph']));
 }
 
 console.log(`stage5-pipeline-persist-s3: ${checks - failures}/${checks} checks passed`);

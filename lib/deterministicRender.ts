@@ -137,6 +137,18 @@ export interface DeterministicRenderJob {
    */
   applyAt?: (tSeconds: number) => void;
   /**
+   * Optional hook awaited once, after the job's scene remount has
+   * settled and before the clock reset and the first step. The
+   * remount rebuilds every system from the config, so this is the
+   * one point where a job can put state the remount discarded
+   * back into the fresh mount — the state-cache capture driver
+   * uses it to re-apply the last applied initial state (bake A-2
+   * premise fix, lib/gpgpuInitialState.ts). Throwing aborts the
+   * job with that reason. Jobs that do not set it run the exact
+   * legacy sequence.
+   */
+  onSceneReady?: () => void | Promise<void>;
+  /**
    * Optional per-captured-frame hook, awaited after that frame has
    * been stepped and captured (never for warmup steps). The stepped
    * simulation state is still current when this runs — the next

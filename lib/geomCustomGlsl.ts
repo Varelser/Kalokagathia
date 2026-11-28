@@ -36,13 +36,16 @@
 import {
   createGlslInjectionStatusStore,
   registerGlslInjection,
+  resolveGlslSnippet,
   validateGlslSnippet,
   GLSL_SNIPPET_MAX_LENGTH,
   type GlslForbiddenToken,
   type GlslInjectionContract,
   type GlslInjectionStatus,
+  type GlslSnippetResolution,
   type GlslSnippetValidation,
 } from './glslInjection';
+import type { GlslSharedSnippetSet } from './glslSharedSnippets';
 
 export const GEOM_CUSTOM_VERTEX_GLSL_MAX_LENGTH = GLSL_SNIPPET_MAX_LENGTH;
 export const GEOM_CUSTOM_FRAGMENT_GLSL_MAX_LENGTH = GLSL_SNIPPET_MAX_LENGTH;
@@ -81,6 +84,27 @@ export function validateGeomCustomVertexGlslCode(code: string): GeomCustomVertex
 
 export function validateGeomCustomFragmentGlslCode(code: string): GeomCustomFragmentGlslValidation {
   return validateGlslSnippet(code, FRAGMENT_FORBIDDEN_TOKENS, GEOM_CUSTOM_FRAGMENT_GLSL_MAX_LENGTH);
+}
+
+/**
+ * Resolve a stored snippet against the shared definition set
+ * (Layer 1 WP11 phase C wiring): `// @use` directives expand
+ * under the point's own forbidden-token list and length cap.
+ * A snippet without directives resolves to the identical
+ * string.
+ */
+export function resolveGeomCustomVertexSnippet(
+  code: string,
+  defs: GlslSharedSnippetSet,
+): GlslSnippetResolution {
+  return resolveGlslSnippet(code, defs, VERTEX_FORBIDDEN_TOKENS, GEOM_CUSTOM_VERTEX_GLSL_MAX_LENGTH);
+}
+
+export function resolveGeomCustomFragmentSnippet(
+  code: string,
+  defs: GlslSharedSnippetSet,
+): GlslSnippetResolution {
+  return resolveGlslSnippet(code, defs, FRAGMENT_FORBIDDEN_TOKENS, GEOM_CUSTOM_FRAGMENT_GLSL_MAX_LENGTH);
 }
 
 // Examples: keep the comments free of the forbidden tokens above —

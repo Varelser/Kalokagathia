@@ -5,6 +5,7 @@
 // module concatenates all five chunks in order; the assembled
 // string is pinned byte-for-byte by phaseav_test.mjs.
 import { DM_HASH11_GLSL_INDENTED } from '../lib/gpgpuRandom';
+import { localTimeFactorGlsl } from '../lib/gpgpuLocalTime';
 export const VEL_FRAG_HELPERS = /* glsl */ `${DM_HASH11_GLSL_INDENTED}  vec3 hash3(vec3 p) {
     p = vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));
     return -1.0 + 2.0 * vec3(dmHash11(p.x), dmHash11(p.y), dmHash11(p.z));
@@ -454,6 +455,71 @@ export const VEL_FRAG_EMITTER_VELOCITY_FN = /* glsl */ `
   }
 `;
 
+// Emitter list (Layer 1 WP4, phase D3): while an authored
+// emitter list stands (lib/gpgpuEmitterList.ts:
+// emitterListActive), the list REPLACES the single-emitter
+// velocity law — each particle is handed ITS OWN emitter's
+// directed velocity, read from the emitter's record in the
+// shared column texture (7 texels per element from
+// uEmittersBase: T2.w velMode / T4 dir + speed / T5.x
+// spread). The assignment hash and band walk are the
+// position pass's (phase D2), and the directed law is
+// directedInitialVelocity with the record's values as
+// parameters — term for term the single-emitter function
+// above, whose uniforms the CPU fills from the same law.
+// Spliced in only behind the emitterList option (see
+// buildVelocityHelpers and buildVelocityFragment) — the
+// stock helpers string above is untouched.
+export const VEL_FRAG_EMITTER_LIST_FN = /* glsl */ `
+  // Emitter list (Layer 1 WP4, phase D3): SYNC:
+  // emitterAssignHash is the GLSL twin of emitterHashForUv
+  // in lib/gpgpuEmitterList.ts — dmHash11 of
+  // ((u + 17.17) * 127.1 + (v + 9.43) * 311.7), written here
+  // in the dot form the velocity helpers use; keep the
+  // offset constants (17.17, 9.43) in sync there.
+  float emitterAssignHash(vec2 uv) {
+    return dmHash11(dot(uv + vec2(17.17, 9.43), vec2(127.1, 311.7)));
+  }
+
+  // Emitter directed velocity, parameterised (Layer 1 WP4,
+  // phase D3): TS twin directedInitialVelocity in
+  // lib/gpgpuLifecycle.ts with the base direction / speed /
+  // spread passed in — the same law kaloEmitterVelocity
+  // evaluates over its uniforms.
+  vec3 kaloEmitterDirectedVelocity(vec3 baseDir, float speed, float spread, vec2 uv) {
+    float th = dmHash11(dot(uv + vec2(2.71, 6.13), vec2(127.1, 311.7))) * 6.28318530718;
+    float phi = acos(2.0 * dmHash11(dot(uv + vec2(9.43, 4.29), vec2(127.1, 311.7))) - 1.0);
+    float magHash = dmHash11(dot(uv + vec2(7.77, 1.93), vec2(127.1, 311.7)));
+    vec3 randDir = vec3(sin(phi) * cos(th), sin(phi) * sin(th), cos(phi));
+    vec3 dir = normalize(mix(baseDir, randDir, spread));
+    float mag = speed * mix(1.0, 0.25 + 0.75 * magHash, spread);
+    return dir * mag;
+  }
+
+  // The particle's own emitter's directed velocity (Layer 1
+  // WP4, phase D3): the assignment walk over the weight
+  // bands (the position pass's walk, phase D2), then the
+  // element record. The w component is the directed flag:
+  // 0 while the element's velocity mode is 'cube' — a cube
+  // element has no directed handover, so the activation
+  // segment leaves the velocity untouched (exactly the
+  // single-emitter cube behaviour).
+  vec4 kaloEmitterVelocityList(vec2 uv) {
+    float emHash = emitterAssignHash(uv);
+    int emIdx = 0;
+    for (int emK = 0; emK < 8; emK++) {
+      if (emK >= uEmitterCount) break;
+      emIdx = emK;
+      if (kaloColFetch(uEmittersBase + float(emK * 7)).w > emHash) break;
+    }
+    float emRec = uEmittersBase + float(emIdx * 7);
+    if (kaloColFetch(emRec + 2.0).w < 0.5) return vec4(0.0);
+    vec4 emT4 = kaloColFetch(emRec + 4.0);
+    vec4 emT5 = kaloColFetch(emRec + 5.0);
+    return vec4(kaloEmitterDirectedVelocity(emT4.xyz, emT4.w, emT5.x, uv), 1.0);
+  }
+`;
+
 /**
  * Texture-unit fix (Grammar 2.0 stage 1): in the live-rules
  * variant, spawnGateValue derives the baked distance from
@@ -581,10 +647,151 @@ export const VEL_FRAG_FIELD_FN = /* glsl */ `
   }
 `;
 
+// Field instances, extended grammar (Layer 1 WP5 phase D):
+// the B1 loop generalised. Per-instance falloff shapes and
+// per-instance / per-layer group gates ride the extension
+// records (lib/gpgpuFieldInstances.ts packFieldExtColumnData);
+// the two daemon kinds — drag (3) and crown (4) — join the
+// kind switch, their parameters read from the extension
+// record's third texel. The drag law needs the particle's
+// current velocity, so this form takes `vel` where the B1
+// form does not. Spliced INSTEAD of VEL_FRAG_FIELD_FN while
+// the fieldExt option stands (which implies fieldInstances);
+// the B1 function above stays byte-identical, and every
+// pre-Phase-D config keeps building it.
+export const VEL_FRAG_FIELD_FN_EXT = /* glsl */ `
+  // Field falloff shapes (WP5 phase D): shape ids from
+  // lib/gpgpuFieldInstances.ts FALLOFF_SHAPE_IDS; id 0 is the
+  // legacy (1-q^2)^2 curve, verbatim.
+  float kaloFieldFalloffShape(float shapeId, float dist, float radius) {
+    if (shapeId > 1.5) {
+      float q = clamp(dist / max(radius, 0.000001), 0.0, 1.0);
+      float t = q * q * (3.0 - 2.0 * q);
+      return 1.0 - t;
+    }
+    if (shapeId > 0.5) {
+      return clamp(1.0 - dist / max(radius, 0.000001), 0.0, 1.0);
+    }
+    float fq = dist / radius;
+    float f = 1.0 - fq * fq;
+    return f * f;
+  }
+  // One normalised group gate (packFieldGate's form): kind 0
+  // is no gate. While the attribute texture is not bound for
+  // the gates (uFieldExtAttrEnabled off) the gate reads as
+  // fully open — the global gate's no-attribute discipline.
+  float kaloFieldGateMult(float gateKind, float slot, float mode, float low, float high, float invert, vec4 attrData) {
+    if (gateKind < 0.5 || !uFieldExtAttrEnabled) return 1.0;
+    return kaloGroupMembership(kaloAttrChannel(attrData, int(slot + 0.5)), int(mode + 0.5), low, high, invert > 0.5);
+  }
+  // Field instances, extended (WP5 phase D): TS twins
+  // fieldInstanceForce (the laws) and packFieldExtColumnData
+  // (the records) in lib/gpgpuFieldInstances.ts.
+  vec3 kaloFieldForceExt(vec3 pos, vec3 vel, vec4 attrData, vec3 replicaSeed, float replicaTime, float grpWind, float grpVortex, float grpWell) {
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < 16; i++) {
+      if (i >= uFieldInstanceCount) break;
+      float fBase = uColFieldsBase + float(i) * 3.0;
+      vec4 fA = kaloColFetch(fBase);
+      vec4 fB = kaloColFetch(fBase + 1.0);
+      vec4 fC = kaloColFetch(fBase + 2.0);
+      float eBase = uColFieldExtBase + float(i) * 3.0;
+      vec4 fE0 = kaloColFetch(eBase);
+      vec4 fE1 = kaloColFetch(eBase + 1.0);
+      vec4 fE2 = kaloColFetch(eBase + 2.0);
+      int kind = int(fC.x + 0.5);
+      float layerW = 1.0;
+      float layerGate = 1.0;
+      if (fC.w > 0.5) {
+        vec4 fL = kaloColFetch(uColLayersBase + (fC.w - 1.0));
+        layerW = fL.r;
+        if (uFieldLayerAttrEnabled && fL.g > 0.5) {
+          layerW *= kaloAttrChannel(attrData, int(fL.g + 0.5) - 1);
+        }
+        float lBase = uColLayerExtBase + (fC.w - 1.0) * 2.0;
+        vec4 fL0 = kaloColFetch(lBase);
+        vec4 fL1 = kaloColFetch(lBase + 1.0);
+        layerGate = kaloFieldGateMult(fL0.x, fL0.y, fL0.z, fL0.w, fL1.x, fL1.y, attrData);
+      }
+      float gateMult = layerGate * kaloFieldGateMult(fE0.y, fE0.z, fE0.w, fE1.x, fE1.y, fE1.z, attrData);
+      if (kind == 4) {
+        // Crown instance: the daemon crown law — a Gaussian
+        // ring in the XZ plane peaking at the radius,
+        // decaying with height through the instance's falloff
+        // shape, direction outward + up. Its envelope is
+        // cylindrical, so it runs before (and instead of)
+        // the spherical skip below.
+        if (fA.w > 0.0 && fE2.x > 0.0) {
+          vec3 rel = pos - fA.xyz;
+          float cy = rel.y;
+          if (cy >= 0.0 && cy < fE2.x) {
+            float rho = length(rel.xz);
+            float cw = fE2.y > 0.0 ? fE2.y : fA.w * 0.5;
+            float rq = (rho - fA.w) / cw;
+            float ring = exp(-rq * rq);
+            float wgt = ring * kaloFieldFalloffShape(fE0.x, cy, fE2.x) * layerW * gateMult;
+            if (wgt > 0.0) {
+              vec2 out2 = rho > 0.000000001 ? rel.xz / rho : vec2(0.0);
+              vec3 dir = vec3(out2.x, 1.0, out2.y);
+              acc += dir * ((fB.w * wgt * uDelta * 30.0) / length(dir));
+            }
+          }
+        }
+        continue;
+      }
+      vec3 rel = pos - fA.xyz;
+      float dist = length(rel);
+      if (fA.w <= 0.0 || dist >= fA.w) continue;
+      float fFall = kaloFieldFalloffShape(fE0.x, dist, fA.w);
+      float wgt = fFall * layerW * gateMult;
+      if (kind == 0) {
+        // Vortex instance: as B1, with the shaped falloff and
+        // the generalised gates folded into wgt.
+        vec3 tangent = cross(fB.xyz, rel);
+        float tl = length(tangent);
+        if (tl > 0.001) acc += (tangent / tl) * (fB.w * wgt * grpVortex) * uDelta * 80.0;
+      } else if (kind == 1) {
+        // Well instance: as B1, same generalisation.
+        vec3 toC = -rel;
+        float d = max(dist + fC.y, 0.001);
+        acc += (toC / (d * d)) * (fB.w * wgt * grpWell) * uDelta * 2000.0;
+        vec3 oTan = cross(normalize(toC + vec3(0.001, 0.0, 0.0)), vec3(0.0, 1.0, 0.0));
+        acc += oTan * (fC.z * wgt * grpWell) * uDelta * 50.0;
+      } else if (kind == 3) {
+        // Drag instance: the placed drag daemon — the
+        // velocity relaxes toward the instance's target
+        // velocity at the clamped rate, localised by the
+        // falloff (TS twin: daemonDragDeltaV in
+        // lib/gpgpuDaemonFields.ts, via fieldInstanceForce).
+        float rate = clamp(fB.w, 0.0, 100.0);
+        float k = 1.0 - exp(-rate * fFall * uDelta);
+        acc += (fE2.xyz - vel) * (k * layerW * gateMult);
+      } else {
+        // Wind instance: as B1, same generalisation.
+        vec3 gust = vec3(
+          vnoise(pos * 0.01 + replicaSeed + vec3(replicaTime * 0.3, 0.0, 0.0)),
+          vnoise(pos * 0.01 + replicaSeed + vec3(1.7, replicaTime * 0.25, 0.0)),
+          vnoise(pos * 0.01 + replicaSeed + vec3(0.0, 3.1, replicaTime * 0.2))
+        ) * uWindGust;
+        acc += (fB.xyz * fB.w + gust) * (wgt * grpWind) * uDelta * 30.0;
+      }
+    }
+    return acc;
+  }
+`;
+
 /** The helpers chunk for a variant build: the stock string,
  *  plus the emitter-velocity function while directed mode is
  *  on. With no option set this IS VEL_FRAG_HELPERS. */
-export function buildVelocityHelpers(options?: { emitterVelocity?: boolean; particleRulesLive?: boolean; fieldInstances?: boolean; pathAssets?: boolean; crowdPathAssets?: boolean; mergedSupply?: boolean }): string {
+// Local time (Layer 1 WP9, phase D): the per-group time
+// factor function (lib/gpgpuLocalTime.ts) — appended only
+// behind the localTime option; the stock helpers carry no
+// trace of it. It reads the preamble's entry-table uniforms
+// and the membership primitives above (kaloAttrChannel /
+// kaloGroupMembership), so it spends no sampler.
+const VEL_FRAG_LOCAL_TIME_FN = localTimeFactorGlsl();
+
+export function buildVelocityHelpers(options?: { emitterVelocity?: boolean; emitterList?: boolean; particleRulesLive?: boolean; fieldInstances?: boolean; fieldExt?: boolean; pathAssets?: boolean; crowdPathAssets?: boolean; mergedSupply?: boolean; localTime?: boolean }): string {
   // B1: the field variant derives the gate value exactly
   // like the live variant (its preamble dropped the order
   // sampler for the column texture — see the preamble note).
@@ -592,11 +799,17 @@ export function buildVelocityHelpers(options?: { emitterVelocity?: boolean; part
   // texture and the same give-back, so it derives the same
   // way; the column fetch is shared by both consumers and
   // spliced once.
-  const base = options?.particleRulesLive || options?.fieldInstances || options?.pathAssets || options?.crowdPathAssets
+  // D3: the emitter-list variant rides the same column
+  // texture and the same give-back, so it derives the same
+  // way; while it stands it replaces the single-emitter
+  // function (the list function below carries the law).
+  const base = options?.particleRulesLive || options?.fieldInstances || options?.fieldExt || options?.pathAssets || options?.crowdPathAssets || options?.emitterList
     ? VEL_FRAG_HELPERS.replace(VEL_FRAG_SPAWN_GATE_READ_STOCK, VEL_FRAG_SPAWN_GATE_READ_LIVE)
     : VEL_FRAG_HELPERS;
   return base
-    + (options?.emitterVelocity ? VEL_FRAG_EMITTER_VELOCITY_FN : '')
-    + (options?.fieldInstances || options?.pathAssets || options?.crowdPathAssets ? (options?.mergedSupply ? VEL_FRAG_COLUMN_FN_MERGED : VEL_FRAG_COLUMN_FN) : '')
-    + (options?.fieldInstances ? VEL_FRAG_FIELD_FN : '');
+    + (options?.emitterVelocity && !options?.emitterList ? VEL_FRAG_EMITTER_VELOCITY_FN : '')
+    + (options?.fieldInstances || options?.fieldExt || options?.pathAssets || options?.crowdPathAssets || options?.emitterList ? (options?.mergedSupply ? VEL_FRAG_COLUMN_FN_MERGED : VEL_FRAG_COLUMN_FN) : '')
+    + (options?.emitterList ? VEL_FRAG_EMITTER_LIST_FN : '')
+    + (options?.fieldExt ? VEL_FRAG_FIELD_FN_EXT : options?.fieldInstances ? VEL_FRAG_FIELD_FN : '')
+    + (options?.localTime ? VEL_FRAG_LOCAL_TIME_FN : '');
 }

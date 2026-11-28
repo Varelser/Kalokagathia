@@ -105,6 +105,16 @@ export function doesGpgpuRouteRenderVolumetric(route: GpgpuExecutionRoute | unde
   return Boolean(route?.enabled && config.gpgpuVolumetricEnabled);
 }
 
+// Gaussian splat draw (Layer 1 WP7 Phase C1): the splat
+// branch mounts alongside the other outputs while its own
+// key is on — it replaces nothing (the "splat mode" of S10
+// is the user turning the points draw off, not a routing
+// conflict). The key defaults off, so the default plan's
+// branch set is unchanged.
+export function doesGpgpuRouteRenderSplats(route: GpgpuExecutionRoute | undefined, config: ParticleConfig): boolean {
+  return Boolean(route?.enabled && config.gpgpuSplatEnabled);
+}
+
 export function getGpgpuSceneBranches(config: ParticleConfig, route?: GpgpuExecutionRoute): string[] {
   return getGpgpuRenderOutputPlan(config, route).sceneBranches;
 }
@@ -146,6 +156,7 @@ export function getGpgpuRenderOutputPlan(config: ParticleConfig, route?: GpgpuEx
   const smoothTubes = doesGpgpuRouteRenderSmoothTube(resolvedRoute, config);
   const metaballs = doesGpgpuRouteRenderMetaball(resolvedRoute, config);
   const volumetric = doesGpgpuRouteRenderVolumetric(resolvedRoute, config);
+  const splats = doesGpgpuRouteRenderSplats(resolvedRoute, config);
   const sceneBranches: string[] = [];
   if (core) sceneBranches.push('gpgpu-core');
   if (instancedSolids) sceneBranches.push('instanced-solids');
@@ -156,6 +167,7 @@ export function getGpgpuRenderOutputPlan(config: ParticleConfig, route?: GpgpuEx
   if (smoothTubes) sceneBranches.push('smooth-tubes');
   if (metaballs) sceneBranches.push('metaballs');
   if (volumetric) sceneBranches.push('volumetric');
+  if (splats) sceneBranches.push('splats');
   return {
     route: resolvedRoute,
     core,
@@ -168,6 +180,7 @@ export function getGpgpuRenderOutputPlan(config: ParticleConfig, route?: GpgpuEx
     smoothTubes,
     metaballs,
     volumetric,
+    splats,
     sceneBranches,
   };
 }

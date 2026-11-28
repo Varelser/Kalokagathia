@@ -22,6 +22,11 @@
 // silently dropping the effect (the capability-registry rule).
 
 import React from 'react';
+import {
+  expandGlslSharedSnippets,
+  validateGlslSharedSnippetDefs,
+  type GlslSharedSnippetSet,
+} from './glslSharedSnippets';
 
 // ---------------------------------------------------------------------------
 // Shared snippet validation
@@ -186,7 +191,10 @@ export interface GlslInjectionVariable {
   name: string;
   // 'vec4' joined in Phase CE: the particle fragment point's
   // write-back `color` is a vec4 (rgb + alpha in one variable).
-  type: 'float' | 'vec2' | 'vec3' | 'vec4';
+  // 'sampler2D' joined in Layer 1 WP11 phase D2: the post
+  // replacement slot documents its declared texture input
+  // (tDiffuse) in the same interface shape.
+  type: 'float' | 'vec2' | 'vec3' | 'vec4' | 'sampler2D';
   access: 'read' | 'readwrite';
 }
 
@@ -231,4 +239,218 @@ export function getGlslInjection(id: string): GlslInjectionContract | undefined 
 
 export function listGlslInjections(): GlslInjectionContract[] {
   return Array.from(REGISTRY.values());
+}
+
+// ---------------------------------------------------------------------------
+// Shared snippet definitions at the injection points (Layer 1
+// WP11, phase A — the Scratch Pad foundation)
+//
+// The grammar itself (definition set, `// @use` directives,
+// deterministic expansion, cycle rejection) lives in
+// lib/glslSharedSnippets.ts as pure functions. This section is
+// the one place it plugs into the points' resolution: a point
+// resolves its snippet through resolveGlslSnippet, which layers
+// this module's shared validation core over the grammar — every
+// definition body and the expanded result are held to the
+// consuming point's own forbidden-token list and length cap, so
+// a shared definition can never smuggle in what the point
+// itself forbids. A configuration that uses no shared
+// definitions resolves to the identical string it always
+// produced (expansion is an identity there), so existing
+// shaders stay byte-identical.
+
+export type { GlslSharedSnippetDef, GlslSharedSnippetSet } from './glslSharedSnippets';
+export {
+  expandGlslSharedSnippets,
+  findGlslSharedSnippetRefs,
+  parseGlslSharedSnippetDefs,
+  serializeGlslSharedSnippetDefs,
+  validateGlslSharedSnippetDefs,
+} from './glslSharedSnippets';
+
+/** Structural validation plus this module's validation core
+ *  applied to every definition body, under the consuming
+ *  point's forbidden-token list and length cap. */
+export function validateGlslSharedSnippetDefsForInjection(
+  defs: GlslSharedSnippetSet,
+  forbiddenTokens: readonly GlslForbiddenToken[],
+  maxLength: number = GLSL_SNIPPET_MAX_LENGTH,
+): GlslSnippetValidation {
+  const structural = validateGlslSharedSnippetDefs(defs);
+  if (!structural.ok) return structural;
+  for (const def of defs) {
+    const body = validateGlslSnippet(def.code, forbiddenTokens, maxLength);
+    if (!body.ok) {
+      return { ok: false, error: `共有スニペット '${def.name}': ${body.error}` };
+    }
+  }
+  return { ok: true };
+}
+
+export interface GlslSnippetResolution {
+  ok: boolean;
+  /** Present when ok: the resolved snippet text. */
+  code?: string;
+  error?: string;
+}
+
+/**
+ * Resolve one point's snippet against a shared definition set:
+ * validate the set under the point's contract, expand the
+ * `// @use` directives, then validate the expanded text under
+ * the same contract. With an empty set and no directives the
+ * input is returned unchanged — the identical string.
+ */
+export function resolveGlslSnippet(
+  code: string,
+  defs: GlslSharedSnippetSet,
+  forbiddenTokens: readonly GlslForbiddenToken[],
+  maxLength: number = GLSL_SNIPPET_MAX_LENGTH,
+): GlslSnippetResolution {
+  const expanded = expandGlslSharedSnippets(code, defs);
+  if (!expanded.ok) return { ok: false, error: expanded.error };
+  const resolved = expanded.code as string;
+  if (resolved === code) return { ok: true, code };
+  const defsCheck = validateGlslSharedSnippetDefsForInjection(defs, forbiddenTokens, maxLength);
+  if (!defsCheck.ok) return { ok: false, error: defsCheck.error };
+  const bodyCheck = validateGlslSnippet(resolved, forbiddenTokens, maxLength);
+  if (!bodyCheck.ok) return bodyCheck;
+  return { ok: true, code: resolved };
+}
+
+// ---------------------------------------------------------------------------
+// Full-fragment replacement slots (Layer 1 WP11, phase D2)
+//
+// The snippet points above splice user code into a host-owned
+// shader at a seam. At the three terminal points whose inputs
+// close over declared uniforms / sampling and whose output is a
+// single colour — the post fragment, the particle points
+// fragment and the volume fog fragment — the WP11 phase-D
+// material (branch 2, option (b)) opens a second form next to
+// the snippet: a replacement slot, where the user code IS the
+// whole fragment shader. The host owns only the declarations
+// (the uniforms / varyings it supplies) and the validation;
+// everything from `void main` on is user code, and the output
+// form the code must satisfy is: define main, and write the
+// final colour to gl_FragColor.
+//
+// The protection machinery is the snippet points' own: the
+// length cap and the forbidden-token scan run first (the shared
+// core above), then the code must pass a harness compile check
+// before it is swapped in, and on any failure the previously
+// working fragment stays active (the per-point status stores
+// report the outcome, as at the snippet points). The harness
+// differs in shape only: it is not a snippet embedded in a
+// block, it is the code itself assembled behind the host
+// declarations — the same assembly the production fragment
+// uses, so the check compiles what will actually run.
+//
+// Not opened, by the same decision: the GEOM points (the vertex
+// point carries placement invariants, the fragment point would
+// include replacing the lighting sum) and the particle points
+// vertex point. They keep snippet insertion only, and no
+// replacement contract is registered for them. The custom force
+// is a simulation pass, outside the drawing-side scope entirely.
+//
+// A configuration that uses no replacement resolves exactly as
+// before: the snippet contracts and their builders are
+// untouched, so existing shaders stay byte-identical.
+
+export interface GlslReplacementContract {
+  /** The injection point this slot belongs to: the same id as
+   *  the point's snippet contract. */
+  pointId: string;
+  /** The pipeline stage the replaced fragment occupies (the
+   *  point's own stage). */
+  stage: GlslInjectionStage;
+  /** Host-supplied declarations, prepended verbatim before the
+   *  user code in both the harness and the built fragment. The
+   *  user code must not redeclare these names — the validation
+   *  forbids declaration tokens outright. */
+  declarations: string;
+  /** The documented interface: the host-supplied names the user
+   *  code may read. The output is not listed here: the user code
+   *  writes gl_FragColor itself, inside its own main. */
+  variables: readonly GlslInjectionVariable[];
+  /** Per-backend support, declared — mirrors the point's own. */
+  backends: Record<GlslInjectionBackend, GlslInjectionBackendSupport>;
+  /** Replacement code length cap (characters). */
+  maxLength: number;
+  /** Point-specific forbidden tokens, scanned after the shared
+   *  replacement base list below. */
+  forbiddenTokens: readonly GlslForbiddenToken[];
+  /** Assembles the fragment the compile check sees: the host
+   *  declarations followed by the user code, whole. */
+  buildHarness: (code: string) => string;
+  /** Assembles the production fragment: the same assembly the
+   *  harness checks (host declarations + user code, whole). */
+  buildFragment: (code: string) => string;
+}
+
+// The forbidden tokens every replacement slot shares. The host
+// supplies all declarations, so declaration tokens are rejected
+// outright (a redeclaration of a supplied name would not
+// compile anyway; the scan turns it into a guided error). The
+// scan covers the whole text, comments included — the same
+// discipline as the snippet lists.
+export const GLSL_REPLACEMENT_BASE_FORBIDDEN_TOKENS: readonly GlslForbiddenToken[] = [
+  { token: '#', reason: 'プリプロセッサ指令（#）は使えません' },
+  { token: 'precision', reason: 'precision は宣言できません（ホスト側が供給します）' },
+  { token: 'uniform', reason: 'uniform は宣言できません（宣言はホスト側が供給します）' },
+  { token: 'varying', reason: 'varying は宣言できません（宣言はホスト側が供給します）' },
+  { token: 'attribute', reason: 'attribute は宣言できません' },
+];
+
+/** Assembles a replacement fragment: host declarations, then
+ *  the user code as the whole rest of the shader. */
+export function assembleGlslReplacementFragment(declarations: string, code: string): string {
+  return `${declarations}\n\n${code}\n`;
+}
+
+/**
+ * Validate replacement code against its slot's contract: the
+ * shared scan (length cap first, then the base list and the
+ * point's own list, in order), then the output form — the code
+ * must define main and write gl_FragColor. The compile check
+ * (compileCheckShader over the contract's harness, paired with
+ * the point's check vertex) runs after this, at swap time, as
+ * at the snippet points.
+ */
+export function validateGlslReplacementCode(
+  code: string,
+  contract: GlslReplacementContract,
+): GlslSnippetValidation {
+  const scanned = validateGlslSnippet(
+    code,
+    [...GLSL_REPLACEMENT_BASE_FORBIDDEN_TOKENS, ...contract.forbiddenTokens],
+    contract.maxLength,
+  );
+  if (!scanned.ok) return scanned;
+  if (!code.includes('void main')) {
+    return { ok: false, error: 'main 関数が定義されていません（フラグメント全体を書いてください）' };
+  }
+  if (!code.includes('gl_FragColor')) {
+    return { ok: false, error: 'gl_FragColor への書き込みがありません（出力は gl_FragColor に書いてください）' };
+  }
+  return { ok: true };
+}
+
+const REPLACEMENT_REGISTRY = new Map<string, GlslReplacementContract>();
+
+export function registerGlslReplacement(contract: GlslReplacementContract): void {
+  // Same duplicate discipline as registerGlslInjection: last
+  // wins, but warn — two modules claiming one slot is a wiring
+  // mistake.
+  if (REPLACEMENT_REGISTRY.has(contract.pointId) && typeof console !== 'undefined') {
+    console.warn(`[glslInjection] duplicate replacement registration for '${contract.pointId}' — the later contract wins`);
+  }
+  REPLACEMENT_REGISTRY.set(contract.pointId, contract);
+}
+
+export function getGlslReplacement(pointId: string): GlslReplacementContract | undefined {
+  return REPLACEMENT_REGISTRY.get(pointId);
+}
+
+export function listGlslReplacements(): GlslReplacementContract[] {
+  return Array.from(REPLACEMENT_REGISTRY.values());
 }

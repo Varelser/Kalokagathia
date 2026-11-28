@@ -2,8 +2,8 @@ import React from 'react';
 import type { ParticleConfig } from '../types';
 import { applyTemporalProfiles } from '../lib/temporalProfiles';
 import { getLayerRuntimeTemporalSnapshot } from '../lib/sceneRenderRouting';
-import { applyModulation, resolveModulationSetup, useModulationSetup } from '../lib/modulation';
-import { applySequenceTracks, useSequenceClockTime, useSequenceTracks } from '../lib/sequenceTracks';
+import { applyModulation, resolveModulationSetup, useResolvedModulationSetup } from '../lib/modulation';
+import { applySequenceTracks, useResolvedSequenceTracks, useSequenceClockTime } from '../lib/sequenceTracks';
 import type { AudioLevels } from '../lib/audioControllerTypes';
 
 export function useAppSceneTemporalConfig(
@@ -14,8 +14,11 @@ export function useAppSceneTemporalConfig(
 ) {
   const [temporalTime, setTemporalTime] = React.useState(0);
   const temporalTimerRef = React.useRef(0);
-  const modulation = useModulationSetup();
-  const sequenceTracks = useSequenceTracks();
+  // WP9 Phase C: the config keys sequenceTracks / modulationSetup
+  // are authoritative when authored (non-empty string); otherwise
+  // the localStorage-backed stores apply, as before.
+  const modulation = useResolvedModulationSetup(config.modulationSetup);
+  const sequenceTracks = useResolvedSequenceTracks(config.sequenceTracks);
   const sequenceClockTime = useSequenceClockTime();
 
   const hasTemporalAnimation = React.useMemo(() => {

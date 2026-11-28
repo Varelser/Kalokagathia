@@ -6,11 +6,15 @@ import { grainsNeighborhoodMode, grainsPileActive, grainsProjectionActive, resol
 import { hasEffectiveParticleRules } from "../lib/gpgpuParticleRules";
 import { hasEffectiveLiveRules } from "../lib/gpgpuParticleRulesLive";
 import { emitterRespawnShapeActive, emitterTransformActive, emitterVelocityDirectedActive } from "../lib/gpgpuEmitter";
+import { emitterListActive } from "../lib/gpgpuEmitterList";
 import { emissionCloudActive, emissionMaskVariantActive, emissionPathActive, emissionPathAssetActive } from "../lib/gpgpuEmissionSource";
 import { steeringPathAssetActive, steeringCrowdPathAssetActive } from "../lib/gpgpuPathAssets";
-import { spawnAllocVariantActive, spawnRuleGateKeyOn } from "../lib/gpgpuSpawnAllocator";
-import { fieldInstancesActive } from "../lib/gpgpuFieldInstances";
+import { spawnAllocVariantActive, spawnEventDemandVariantActive, spawnRuleGateKeyOn } from "../lib/gpgpuSpawnAllocator";
+import { ageJitterVariantActive, genericSurfaceTensionActive } from "../lib/gpgpuLifecycle";
+import { fieldInstancesActive, fieldInstancesExtended } from "../lib/gpgpuFieldInstances";
 import { distributionActive } from "../lib/gpgpuDistribution";
+import { deformColumnActive, deformVariantActive, DEFORM_UNIFORM_VEC4S } from "../lib/gpgpuDeformStack";
+import { localTimeVariantActive, LOCAL_TIME_UNIFORM_VEC4S } from "../lib/gpgpuLocalTime";
 import { predationActive, predationBirthActive } from "../lib/gpgpuPredation";
 // Grammar 2.0 stage 2 (slice B6): the live-rule segments also stand while
 // predation generates its rules — the generated list counts exactly like
@@ -62,7 +66,8 @@ import {
   PYRO_GRID_VORTICITY_FORCE_FRAG,
 } from "./gpgpuShaderPyroGrid";
 import { useThree } from "@react-three/fiber";
-import { buildCustomForceHarness, compileCheckShader, extractCustomForceControls, setCustomForceStatus, syncCtrlUniforms, validateCustomForceCode } from "../lib/gpgpuCustomForce";
+import { buildCustomForceHarness, compileCheckShader, extractCustomForceControls, resolveCustomForceSnippet, setCustomForceStatus, syncCtrlUniforms, validateCustomForceCode } from "../lib/gpgpuCustomForce";
+import { resolveGlslSharedSnippetDefs } from "../lib/glslSharedSnippets";
 import type { UseGpgpuAssetsArgs } from "./gpgpuAssetShared";
 import type { ParticleConfig } from "../types";
 
@@ -133,15 +138,37 @@ export function velocityVariantOptions(config: ParticleConfig, texSize?: number)
     // while the absolute rate key is set or the envelope is
     // enabled (same discipline).
     spawnAlloc: spawnAllocVariantActive(config),
+    // Layer 1 WP4 (phase C): the spawn event demand's
+    // uniform set + gate-line term exist in the built string
+    // only while an authored spawn event with a positive
+    // demand stands (same discipline).
+    spawnEventDemand: spawnEventDemandVariantActive(config, texSize ?? 0),
     // Grammar 2.0 stage 2 (slice E2): the emitter-velocity
     // function + activation segment exist in the built string
     // only while the emitter velocity mode is 'directed'.
     emitterVelocity: emitterVelocityDirectedActive(config),
+    // Layer 1 WP4 (phase D3): the emitter list's function +
+    // list form of the activation segment exist in the built
+    // string only while an authored emitter list stands
+    // (same discipline). While it stands, the list form
+    // replaces the single-emitter form in the builders.
+    emitterList: emitterListActive(config),
     // Grammar 2.0 stage 2 (slice B1): the field-instances
     // chunk + column-data uniform set exist in the built
     // string only while at least one field instance
     // resolves (same discipline).
     fieldInstances: fieldInstancesActive(config),
+    // Layer 1 WP5 (phase D): the extended field grammar
+    // (extension uniform set + kaloFieldForceExt + the
+    // extended chunk form) exists in the built string only
+    // while the extended grammar stands (same discipline).
+    fieldExt: fieldInstancesExtended(config),
+    // Layer 1 WP5 (phase D): the generic surface-tension
+    // chunk exists in the built string only while the
+    // generic placement stands — Akinci strength above zero
+    // with the SPH solver off (the CPU-side mutual
+    // exclusion with the SPH form above).
+    surfaceTension: genericSurfaceTensionActive(config),
     // Grammar 2.0 stage 2 (slice B2): the path-asset variant
     // of the steer-seek chunk + its uniform set over the
     // shared column texture exist in the built string only
@@ -179,6 +206,11 @@ export function velocityVariantOptions(config: ParticleConfig, texSize?: number)
     // while the merged supply stands (same discipline;
     // resolved by lib/gpgpuMergedSupply.ts, needs texSize).
     mergedSupply: texSize !== undefined && mergedSupplyActive(config, texSize),
+    // Layer 1 WP9 (phase D): the local-time entry table +
+    // factor function + tail scaling exist in the built
+    // string only while gpgpuLocalTimeGroups resolves to
+    // effective entries (same discipline).
+    localTime: localTimeVariantActive(config),
   };
 }
 
@@ -304,6 +336,12 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uSpawnRateEff:   { value: 1.0 },
       uSpawnClockTime: { value: 0 },
       uSpawnClockPrev: { value: 0 },
+      // Spawn event demand (Layer 1 WP4, phase C): read
+      // only by the event-demand variant of the velocity
+      // fragment; the passes fill them from the authored
+      // event's cumulative demand per frame.
+      uSpawnEventDueFrac:     { value: 0 },
+      uSpawnEventDuePrevFrac: { value: 0 },
       uEmitterVelDir:    { value: new THREE.Vector3(0, 1, 0) },
       uEmitterVelSpeed:  { value: 2 },
       uEmitterVelSpread: { value: 0.5 },
@@ -355,6 +393,13 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uColLayersBase:        { value: 0 },
       uFieldInstanceCount:   { value: 0 },
       uFieldLayerAttrEnabled: { value: false },
+      // Field extension (Layer 1 WP5, phase D): declared in
+      // the shader only in the fieldExt variant string; the
+      // entries are inert otherwise. The passes fill them
+      // from getColumnSupply per frame.
+      uColFieldExtBase:      { value: 0 },
+      uColLayerExtBase:      { value: 0 },
+      uFieldExtAttrEnabled:  { value: false },
       // Path assets (Grammar 2.0 stage 2, B2): declared in
       // the shader only in the path-assets variant string;
       // the entries are inert otherwise. The passes fill
@@ -363,6 +408,12 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uColPathHeadersBase:   { value: 0 },
       uPathAssetCount:       { value: 0 },
       uPathAssetSlot:        { value: -1 },
+      // Emitter list (Layer 1 WP4, phase D3): declared in
+      // the shader only in the emitter-list variant string;
+      // the entries are inert otherwise. The passes fill
+      // them from getColumnSupply per frame.
+      uEmittersBase:         { value: 0 },
+      uEmitterCount:         { value: 0 },
       // Relative drag / target speed (Grammar 2.0 stage 2,
       // B3): declared in the shader only in their variant
       // strings; the entries are inert otherwise. The passes
@@ -373,6 +424,12 @@ export function createVelSimMaterial(texSize: number, config: ParticleConfig): T
       uTargetSpeed:          { value: 0 },
       uTargetSpeedBlend:     { value: 1 },
       uTargetSpeedSlot:      { value: -1 },
+      // Local time (Layer 1 WP9, phase D): declared in the
+      // shader only in the local-time variant string; the
+      // entries are inert otherwise. The passes fill them
+      // from lib/gpgpuLocalTime per frame.
+      uLocalTimeEntries:     { value: Array.from({ length: LOCAL_TIME_UNIFORM_VEC4S }, () => new THREE.Vector4()) },
+      uLocalTimeCount:       { value: 0 },
       // Terrain slope flow (Phase AE): disabled + no texture is
       // the exact legacy path.
       uSlopeForceEnabled:  { value: false },
@@ -627,6 +684,10 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uBounceRadius:  { value: config.gpgpuBounceRadius },
       uAgeEnabled:    { value: false },
       uAgeMax:        { value: 8.0 },
+      // Lifetime jitter (Layer 1 WP4, phase C): read only
+      // by the age-jitter variant of the position fragment;
+      // the passes fill it from gpgpuAgeMaxJitter per frame.
+      uAgeMaxJitter:  { value: 0 },
       uAgeReplicaStep: { value: 0 },
       uAgeReplicaCount: { value: 1 },
       uReplicaAgeBase: { value: 0 },
@@ -725,12 +786,34 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uEmitColHeight:   { value: 2 },
       uEmitPathBase:    { value: 0 },
       uEmitPathTexCount: { value: 0 },
+      // Emitter list (Layer 1 WP4, phase D2): read only by
+      // the emitterList variant of the position fragment;
+      // the passes fill them from getColumnSupply per frame.
+      uEmittersBase:    { value: 0 },
+      uEmitterCount:    { value: 0 },
       uEmitMaskEnabled: { value: false },
       // Distribution layer + shader seed (stage 2, B5): read
       // only by the B5 variants of the position fragment;
       // resolved per frame in runSimulationPasses.
       uDistOps:       { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
       uDistOpCount:   { value: 0 },
+      // Local time (Layer 1 WP9, phase D): read only by the
+      // local-time variant of the position fragment; the
+      // passes fill them from lib/gpgpuLocalTime per frame.
+      uLocalTimeEntries: { value: Array.from({ length: LOCAL_TIME_UNIFORM_VEC4S }, () => new THREE.Vector4()) },
+      uLocalTimeCount:   { value: 0 },
+      // Deform stack (Layer 1 WP8, phase D): read only by
+      // the deform variant of the position fragment; the
+      // passes fill them from lib/gpgpuDeformStack per frame.
+      uDeformOps:       { value: Array.from({ length: DEFORM_UNIFORM_VEC4S }, () => new THREE.Vector4()) },
+      uDeformOpCount:   { value: 0 },
+      // Deform FFD column (Layer 1 WP8, phase D): read only
+      // by the deform FFD sub-variant; the passes fill them
+      // from the column supply per frame.
+      uDeformColTex:    { value: null },
+      uDeformColWidth:  { value: 256 },
+      uDeformColHeight: { value: 2 },
+      uDeformFfdBase:   { value: 0 },
       uShaderSeedPhase: { value: 0 },
       // Lifecycle grammar (Phase AB): spawn gate + kill conditions.
       uSpawnRate:   { value: 1.0 },
@@ -742,6 +825,12 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uSpawnRateEff:   { value: 1.0 },
       uSpawnClockTime: { value: 0 },
       uSpawnClockPrev: { value: 0 },
+      // Spawn event demand (Layer 1 WP4, phase C): read
+      // only by the event-demand variant of the position
+      // fragment; the passes fill them from the authored
+      // event's cumulative demand per frame.
+      uSpawnEventDueFrac:     { value: 0 },
+      uSpawnEventDuePrevFrac: { value: 0 },
       uSpawnRuleGateEnabled: { value: false },
       uSpawnPulseInterval: { value: 0 },
       uSpawnPulseDuty:     { value: 0.3 },
@@ -799,7 +888,7 @@ export function createPosSimMaterial(texSize: number, config: ParticleConfig): T
       uGroupHigh:    { value: 0.75 },
       uGroupInvert:  { value: false },
     },
-    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()), particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''), particleRulesLive: liveRulesPresent(config), particleRulesLiveMerged: mergedSupplyActive(config, texSize), emitterShape: emitterRespawnShapeActive(config), emitterTransform: emitterTransformActive(config), spawnAlloc: spawnAllocVariantActive(config), spawnRuleGate: spawnRuleGateKeyOn(config) && liveSpawnPresent(config), emitterCloud: emissionCloudActive(config), emitterPath: emissionPathActive(config) && !emissionPathAssetActive(config), emitterPathAsset: emissionPathAssetActive(config), emitterMask: emissionMaskVariantActive(config), fieldInstances: fieldInstancesActive(config), emitDistribution: distributionActive(config), shaderSeed: shaderSeedActive(config), rigidFree: !!config.gpgpuRigidFreeEnabled }),
+    vertexShader: SIM_VERT, fragmentShader: buildPositionFragment({ grainsProjection: grainsProjectionActive(config), grainsCellSort: resolveGrainsCellSortActive(config, getMaxTextureImageUnits()), particleRules: hasEffectiveParticleRules(config.gpgpuParticleRules ?? ''), particleRulesLive: liveRulesPresent(config), particleRulesLiveMerged: mergedSupplyActive(config, texSize), emitterShape: emitterRespawnShapeActive(config), emitterTransform: emitterTransformActive(config), spawnAlloc: spawnAllocVariantActive(config), spawnEventDemand: spawnEventDemandVariantActive(config, texSize), ageJitter: ageJitterVariantActive(config), spawnRuleGate: spawnRuleGateKeyOn(config) && liveSpawnPresent(config), emitterCloud: emissionCloudActive(config), emitterPath: emissionPathActive(config) && !emissionPathAssetActive(config), emitterPathAsset: emissionPathAssetActive(config), emitterList: emitterListActive(config), emitterMask: emissionMaskVariantActive(config), fieldInstances: fieldInstancesActive(config), emitDistribution: distributionActive(config), emitDeform: deformVariantActive(config), emitDeformFfd: deformColumnActive(config), localTime: localTimeVariantActive(config), shaderSeed: shaderSeedActive(config), rigidFree: !!config.gpgpuRigidFreeEnabled }),
   });
 }
 
@@ -1797,13 +1886,28 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // config's variant), so a variant-only change swaps the shader
   // through this same path and the mount behaviour is unchanged.
   const variantKeyOf = (opts: VelocityFragmentVariantOptions) =>
-    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}${opts.crowd ? 1 : 0}${opts.particleRules ? 1 : 0}${opts.particleRulesLive ? 1 : 0}${opts.spawnAlloc ? 1 : 0}${opts.emitterVelocity ? 1 : 0}${opts.fieldInstances ? 1 : 0}${opts.pathAssets ? 1 : 0}${opts.crowdPathAssets ? 1 : 0}${opts.relDrag ? 1 : 0}${opts.targetSpeed ? 1 : 0}${opts.ageFreeVelocity ? 1 : 0}${opts.ageFreeForce ? 1 : 0}${opts.meanderStandalone ? 1 : 0}${opts.mergedSupply ? 1 : 0}${opts.rigidFree ? 1 : 0}`;
+    `${opts.grainsFullScan ? 1 : 0}${opts.flip3dCouple ? 1 : 0}${opts.steeringSeek ? 1 : 0}${opts.sphAkinci ? 1 : 0}${opts.attractor2 ? 1 : 0}${opts.attractor3 ? 1 : 0}${opts.attractor4 ? 1 : 0}${opts.grainsPileXsph ? 1 : 0}${opts.crowd ? 1 : 0}${opts.particleRules ? 1 : 0}${opts.particleRulesLive ? 1 : 0}${opts.spawnAlloc ? 1 : 0}${opts.spawnEventDemand ? 1 : 0}${opts.emitterVelocity ? 1 : 0}${opts.fieldInstances ? 1 : 0}${opts.pathAssets ? 1 : 0}${opts.crowdPathAssets ? 1 : 0}${opts.relDrag ? 1 : 0}${opts.targetSpeed ? 1 : 0}${opts.ageFreeVelocity ? 1 : 0}${opts.ageFreeForce ? 1 : 0}${opts.meanderStandalone ? 1 : 0}${opts.mergedSupply ? 1 : 0}${opts.emitterList ? 1 : 0}${opts.fieldExt ? 1 : 0}${opts.surfaceTension ? 1 : 0}${opts.localTime ? 1 : 0}${opts.rigidFree ? 1 : 0}`;
   const appliedForceCodeRef = useRef<string | null>(
     `\n\n${variantKeyOf(velocityVariantOptions(config, texSize))}`,
   );
   useEffect(() => {
     const enabled = config.gpgpuCustomForceEnabled;
-    const code = enabled ? config.gpgpuCustomForceCode : '';
+    const rawCode = enabled ? config.gpgpuCustomForceCode : '';
+    // Layer 1 WP11 phase C: the shared snippet definitions
+    // (config key glslSharedSnippets) resolve here, before this
+    // point's own processing — ctrl() extraction included, per
+    // the phase A decision. With no authored definitions and
+    // no `// @use` directives the resolution returns the
+    // identical string, so existing shaders stay byte-identical.
+    // A failed resolution reports through the status store and
+    // keeps the previously working shader, like a failed
+    // validation.
+    const resolution = resolveCustomForceSnippet(rawCode, resolveGlslSharedSnippetDefs(config.glslSharedSnippets));
+    if (!resolution.ok) {
+      setCustomForceStatus({ state: 'error', message: resolution.error ?? 'invalid code' });
+      return;
+    }
+    const code = resolution.code as string;
     // Phase 18 stage 2: the force order key rides the same swap
     // path. The applied-key ref tracks code + order together.
     const order = config.gpgpuForceOrder ?? '';
@@ -1841,7 +1945,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
     velSimMat.needsUpdate = true;
     appliedForceCodeRef.current = appliedKey;
     setCustomForceStatus({ state: 'active' });
-  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuGrainsPileEnabled, config.gpgpuGrainsXsphStrength, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, config.gpgpuAttractor2Enabled, config.gpgpuAttractor3Enabled, config.gpgpuAttractor4Enabled, config.gpgpuParticleRules, config.gpgpuParticleRulesLive, config.gpgpuSpawnRateAbsolute, config.gpgpuSpawnEnvelopeEnabled, config.gpgpuEmitterVelMode, config.gpgpuFieldInstances, config.gpgpuFieldLayers, config.gpgpuSteerSeekEnabled, config.gpgpuSteerSeekMode, config.gpgpuCrowdEnabled, config.gpgpuSteerSeekPaths, config.gpgpuSteerSeekPathSvg, config.gpgpuTargetSpeed, config.gpgpuRelDragRate, config.gpgpuAgeCurveVelocityEnabled, config.gpgpuAgeCurveVelocityFreeEnabled, config.gpgpuAgeCurveForceEnabled, config.gpgpuAgeCurveForceFreeEnabled, config.gpgpuMeanderEnabled, config.gpgpuParticleLifeMeanderAmount, config.gpgpuPredationEnabled, config.gpgpuPredationOutcome, config.gpgpuPredationStrike, config.gpgpuPredationStrikeFrames, config.gpgpuPredationGraceSeconds, config.gpgpuGroupsData, gl, velSimMat]);
+  }, [config.gpgpuCustomForceEnabled, config.gpgpuCustomForceCode, config.gpgpuCustomForceCtrlValues, config.gpgpuForceOrder, config.gpgpuGrainsNeighborhood, config.gpgpuGrainsPileEnabled, config.gpgpuGrainsXsphStrength, config.gpgpuFlipMode, config.gpgpuFlipEnabled, config.gpgpuFluidEnabled, config.gpgpuAttractor2Enabled, config.gpgpuAttractor3Enabled, config.gpgpuAttractor4Enabled, config.gpgpuParticleRules, config.gpgpuParticleRulesLive, config.gpgpuSpawnRateAbsolute, config.gpgpuSpawnEnvelopeEnabled, config.gpgpuSpawnEventEnabled, config.gpgpuSpawnEventTime, config.gpgpuSpawnEventCount, config.gpgpuEmitterVelMode, config.gpgpuEmitters, config.gpgpuFieldInstances, config.gpgpuFieldLayers, config.gpgpuSteerSeekEnabled, config.gpgpuSteerSeekMode, config.gpgpuCrowdEnabled, config.gpgpuSteerSeekPaths, config.gpgpuSteerSeekPathSvg, config.gpgpuTargetSpeed, config.gpgpuRelDragRate, config.gpgpuAgeCurveVelocityEnabled, config.gpgpuAgeCurveVelocityFreeEnabled, config.gpgpuAgeCurveForceEnabled, config.gpgpuAgeCurveForceFreeEnabled, config.gpgpuMeanderEnabled, config.gpgpuParticleLifeMeanderAmount, config.gpgpuPredationEnabled, config.gpgpuPredationOutcome, config.gpgpuPredationStrike, config.gpgpuPredationStrikeFrames, config.gpgpuPredationGraceSeconds, config.gpgpuGroupsData, config.gpgpuGroupRef, config.gpgpuLocalTimeGroups, config.gpgpuSphEnabled, config.gpgpuSphSurfaceTensionAkinci, config.glslSharedSnippets, gl, velSimMat]);
 
   // Phase 19 gate fix: the position material's string variant
   // follows the Grains projection activity (the same condition
@@ -1852,7 +1956,7 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
   // (Grains on + complete neighbourhood) — while it holds, the
   // projection segment searches the sorted cell index instead
   // of walking the whole texture.
-  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${resolveGrainsCellSortActive(c, getMaxTextureImageUnits())}:${hasEffectiveParticleRules(c.gpgpuParticleRules ?? '')}:${liveRulesPresent(c)}:${mergedSupplyActive(c, texSize)}:${emitterRespawnShapeActive(c)}:${emitterTransformActive(c)}:${spawnAllocVariantActive(c)}:${spawnRuleGateKeyOn(c) && liveSpawnPresent(c)}:${emissionCloudActive(c)}:${emissionPathActive(c)}:${emissionPathAssetActive(c)}:${emissionMaskVariantActive(c)}:${fieldInstancesActive(c)}:${distributionActive(c)}:${shaderSeedActive(c)}:${!!c.gpgpuRigidFreeEnabled}`;
+  const posVariantKey = (c: ParticleConfig) => `${grainsProjectionActive(c)}:${resolveGrainsCellSortActive(c, getMaxTextureImageUnits())}:${hasEffectiveParticleRules(c.gpgpuParticleRules ?? '')}:${liveRulesPresent(c)}:${mergedSupplyActive(c, texSize)}:${emitterRespawnShapeActive(c)}:${emitterTransformActive(c)}:${spawnAllocVariantActive(c)}:${spawnEventDemandVariantActive(c, texSize)}:${ageJitterVariantActive(c)}:${spawnRuleGateKeyOn(c) && liveSpawnPresent(c)}:${emissionCloudActive(c)}:${emissionPathActive(c)}:${emissionPathAssetActive(c)}:${emissionMaskVariantActive(c)}:${fieldInstancesActive(c)}:${distributionActive(c)}:${deformVariantActive(c)}:${deformColumnActive(c)}:${localTimeVariantActive(c)}:${shaderSeedActive(c)}:${emitterListActive(c)}:${!!c.gpgpuRigidFreeEnabled}`;
   const posProjectionRef = useRef(posVariantKey(config));
   useEffect(() => {
     const key = posVariantKey(config);
@@ -1868,17 +1972,23 @@ export function useGpgpuSimulationAssets({ config, texSize, simScene, simGeo }: 
       emitterShape: emitterRespawnShapeActive(config),
       emitterTransform: emitterTransformActive(config),
       spawnAlloc: spawnAllocVariantActive(config),
+      spawnEventDemand: spawnEventDemandVariantActive(config, texSize),
+      ageJitter: ageJitterVariantActive(config),
       spawnRuleGate: spawnRuleGateKeyOn(config) && liveSpawnPresent(config),
       emitterCloud: emissionCloudActive(config),
       emitterPath: emissionPathActive(config) && !emissionPathAssetActive(config),
       emitterPathAsset: emissionPathAssetActive(config),
+      emitterList: emitterListActive(config),
       emitterMask: emissionMaskVariantActive(config),
       fieldInstances: fieldInstancesActive(config),
       emitDistribution: distributionActive(config),
+      emitDeform: deformVariantActive(config),
+      emitDeformFfd: deformColumnActive(config),
+      localTime: localTimeVariantActive(config),
       shaderSeed: shaderSeedActive(config),
     });
     posSimMat.needsUpdate = true;
-  }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, config.gpgpuParticleRules, config.gpgpuRigidFreeEnabled, config.gpgpuParticleRulesLive, config.gpgpuRespawnShape, config.gpgpuEmitterPosX, config.gpgpuEmitterPosY, config.gpgpuEmitterPosZ, config.gpgpuEmitterRotX, config.gpgpuEmitterRotY, config.gpgpuEmitterRotZ, config.gpgpuEmitterScale, config.gpgpuSpawnRateAbsolute, config.gpgpuSpawnEnvelopeEnabled, config.gpgpuSpawnRuleGateEnabled, config.gpgpuPredationEnabled, config.gpgpuPredationBirth, config.gpgpuEmitSource, config.gpgpuEmitMaskEnabled, config.gpgpuMaskSource, config.gpgpuSteerSeekPath, config.gpgpuSteerSeekPaths, config.gpgpuSteerSeekPathSvg, config.gpgpuFieldInstances, config.gpgpuFieldLayers, config.gpgpuPredationOutcome, config.gpgpuPredationStrike, config.gpgpuGroupsData, config.gpgpuEmitDistribution, config.gpgpuShaderSeed, posSimMat]);
+  }, [config.gpgpuGrainsEnabled, config.gpgpuGrainsProjection, config.gpgpuGrainsNeighborhood, config.gpgpuParticleRules, config.gpgpuParticleRulesLive, config.gpgpuRigidFreeEnabled, config.gpgpuRespawnShape, config.gpgpuEmitterPosX, config.gpgpuEmitterPosY, config.gpgpuEmitterPosZ, config.gpgpuEmitterRotX, config.gpgpuEmitterRotY, config.gpgpuEmitterRotZ, config.gpgpuEmitterScale, config.gpgpuSpawnRateAbsolute, config.gpgpuSpawnEnvelopeEnabled, config.gpgpuSpawnEventEnabled, config.gpgpuSpawnEventTime, config.gpgpuSpawnEventCount, config.gpgpuAgeMaxJitter, config.gpgpuSpawnRuleGateEnabled, config.gpgpuPredationEnabled, config.gpgpuPredationBirth, config.gpgpuEmitSource, config.gpgpuEmitMaskEnabled, config.gpgpuMaskSource, config.gpgpuSteerSeekPath, config.gpgpuSteerSeekPaths, config.gpgpuSteerSeekPathSvg, config.gpgpuFieldInstances, config.gpgpuFieldLayers, config.gpgpuPredationOutcome, config.gpgpuPredationStrike, config.gpgpuGroupsData, config.gpgpuGroupRef, config.gpgpuLocalTimeGroups, config.gpgpuEmitDistribution, config.gpgpuEmitDeform, config.gpgpuShaderSeed, config.gpgpuEmitters, posSimMat]);
 
   // Phase 20 stage 4 (UE5 #22): the Aux pair's string variant
   // follows the SDF-splash activity (SDF collider on + bounceSplash

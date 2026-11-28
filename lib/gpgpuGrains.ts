@@ -843,6 +843,13 @@ export function grainsDensityCorrection(
 // (kalokagathia-pro/dem-spike). Numbers here are the spike's proven
 // operating point rescaled by particle mass; per-scene calibration
 // of the angle is stage 2-2 work, not this foundation's.
+//
+// Units (WP12 C4, declaration only — no value in this section
+// changes): the unit system these numbers live in, the
+// physical dimension of each constant below, and the
+// correspondence to the Hertz–Mindlin standard form (an
+// equivalent stiffness at a chosen operating overlap, with
+// its limits stated) are declared in lib/gpgpuGrainsUnits.ts.
 // ---------------------------------------------------------------------
 
 /** Capability feature name for the DEM engine (webgpuComputeFoundation). */

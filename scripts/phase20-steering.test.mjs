@@ -115,7 +115,7 @@ const {
 
 // --- force order registration + variant gating ---
 {
-  check("'steer-seek' registered (B1 appended 'field-instances', B3 'rel-drag', B7 'meander' after it)", GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 4] === 'steer-seek' && GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 3] === 'field-instances' && GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 2] === 'rel-drag' && GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 1] === 'meander');
+  check("'steer-seek' registered (B1 appended 'field-instances', B3 'rel-drag', B7 'meander' after it; WP5 phase D appended 'surface-tension' last, 2026-11-28)", GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 5] === 'steer-seek' && GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 4] === 'field-instances' && GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 3] === 'rel-drag' && GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 2] === 'meander' && GPGPU_FORCE_CHUNK_NAMES[GPGPU_FORCE_CHUNK_NAMES.length - 1] === 'surface-tension');
   check('chunk registry carries steer-seek', VEL_FRAG_FORCE_CHUNKS['steer-seek'] === VEL_FRAG_FORCE_STEER_SEEK);
   check('normalize keeps steer-seek placement', normalizeGpgpuForceOrder('steer-seek,wind')[0] === 'steer-seek');
   check('variant-off builder skips steer-seek even when ordered first',

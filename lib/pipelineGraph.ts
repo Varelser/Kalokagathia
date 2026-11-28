@@ -35,6 +35,16 @@
  * without loss (for the node kinds the designer model has).
  * This module is additive only: nothing in the render, save
  * or rule-evaluation paths reads it yet.
+ *
+ * Cluster grammar (layer 1 WP10 phase D2, added later):
+ * a `cluster` node encapsulates a subgraph (params.graph,
+ * a full pipeline-graph-v1 document) behind typed ports
+ * declared by the subgraph's `cluster-input` /
+ * `cluster-output` boundary nodes. Validation checks the
+ * embedded document recursively; the compiler inlines
+ * clusters before evaluating. The grammar lives inside
+ * the graph document alone — no config key is added —
+ * and takes no position on the TD §7 component question.
  */
 
 import { GPGPU_FORCE_CHUNK_NAMES } from './gpgpuForceOrder';
@@ -316,6 +326,33 @@ export const PIPELINE_NODE_DEFINITIONS: Readonly<Record<string, PipelineNodeDef>
     // same discipline as the grammar's parse-but-unconsumed
     // actions. No ports: nothing may wire through it.
     { kind: 'opaque', category: 'container', label: 'Opaque', inputs: [], outputs: [] },
+    // -- cluster (layer 1 WP10 phase D2: cluster grammar) -------------------------
+    // An encapsulation node (the GH cluster / node-group
+    // shape): the subgraph rides verbatim in params.graph
+    // (a pipeline-graph-v1 document) and the node's typed
+    // ports are the subgraph's boundary nodes, so the port
+    // list is dynamic and this registry entry declares
+    // none — effective ports resolve through
+    // pipelineNodePorts. The compiler inlines clusters
+    // before evaluating (expandPipelineGraphClusters).
+    // The grammar lives inside the graph document alone:
+    // no config key is added. This is layer-1 grammar
+    // only; it takes no position on the TD §7 component
+    // question (a separate, still-open decision).
+    { kind: 'cluster', category: 'container', label: 'Cluster', inputs: [], outputs: [] },
+    // Boundary nodes of a cluster subgraph. Each declares
+    // one cluster port through params {name, type}; the
+    // single `value` port below is the registry-side shape
+    // only — its effective type is the declared params
+    // type (see pipelineNodePorts).
+    {
+      kind: 'cluster-input', category: 'source', label: 'Cluster Input',
+      inputs: [], outputs: [port('value', 'Scalar')],
+    },
+    {
+      kind: 'cluster-output', category: 'pipeline', label: 'Cluster Output',
+      inputs: [port('value', 'Scalar')], outputs: [],
+    },
   ]);
 
 export function pipelineNodeDefinition(kind: string): PipelineNodeDef | null {
@@ -397,6 +434,23 @@ function validateNode(raw: unknown): PipelineGraphNode | null {
     if (!Array.isArray(raw.children)) return null;
     if (!raw.children.every((c) => typeof c === 'string' && NODE_ID_RE.test(c))) return null;
   }
+  // Cluster family shapes (WP10 D2): a boundary node must
+  // declare its port (name + value type) in params, and a
+  // cluster node must carry an embedded graph document
+  // (validated recursively by validatePipelineGraph).
+  if (raw.kind === 'cluster-input' || raw.kind === 'cluster-output') {
+    if (!isRecord(raw.params)) return null;
+    if (typeof raw.params.name !== 'string' || !CLUSTER_PORT_NAME_RE.test(raw.params.name)) {
+      return null;
+    }
+    if (typeof raw.params.type !== 'string'
+      || !(PIPELINE_VALUE_TYPES as readonly string[]).includes(raw.params.type)) {
+      return null;
+    }
+  }
+  if (raw.kind === 'cluster') {
+    if (!isRecord(raw.params) || !isRecord(raw.params.graph)) return null;
+  }
   const node: PipelineGraphNode = {
     id: raw.id,
     kind: raw.kind,
@@ -410,6 +464,10 @@ function validateNode(raw: unknown): PipelineGraphNode | null {
 }
 
 export function validatePipelineGraph(raw: unknown): PipelineGraphValidation {
+  return validateGraphAtDepth(raw, 0);
+}
+
+function validateGraphAtDepth(raw: unknown, depth: number): PipelineGraphValidation {
   if (!isRecord(raw)) return { ok: false, reason: 'not-an-object' };
   if (raw.format !== PIPELINE_GRAPH_FORMAT) return { ok: false, reason: 'format-mismatch' };
   if (!Array.isArray(raw.nodes)) return { ok: false, reason: 'nodes-not-array' };
@@ -471,6 +529,44 @@ export function validatePipelineGraph(raw: unknown): PipelineGraphValidation {
     if (rawEdge.fromPort !== undefined) edge.fromPort = rawEdge.fromPort;
     if (rawEdge.toPort !== undefined) edge.toPort = rawEdge.toPort;
     edges.push(edge);
+  }
+
+  // Cluster discipline (WP10 D2): the embedded graph must
+  // itself validate (recursively, nesting depth-capped),
+  // its boundary port names must be unique per direction,
+  // and the ids the compiler's inline expansion will mint
+  // (`<clusterId>:<innerId>`) must not collide with ids
+  // already present at this level.
+  for (const node of nodes) {
+    if (node.kind !== 'cluster') continue;
+    if (depth >= PIPELINE_CLUSTER_MAX_DEPTH) {
+      return { ok: false, reason: 'cluster-too-deep' };
+    }
+    const embedded = validateGraphAtDepth(
+      (node.params as Record<string, unknown>).graph,
+      depth + 1,
+    );
+    if (!embedded.ok) {
+      return { ok: false, reason: `invalid-cluster-graph:${embedded.reason}` };
+    }
+    const seenIn = new Set<string>();
+    const seenOut = new Set<string>();
+    for (const inner of embedded.graph.nodes) {
+      const bp = pipelineClusterBoundaryPort(inner);
+      if (bp) {
+        const seen = inner.kind === 'cluster-input' ? seenIn : seenOut;
+        if (seen.has(bp.name)) return { ok: false, reason: 'cluster-port-duplicate' };
+        seen.add(bp.name);
+      }
+      if (nodeIds.has(`${node.id}:${inner.id}`)) {
+        return { ok: false, reason: 'cluster-id-collision' };
+      }
+    }
+    for (const innerEdge of embedded.graph.edges) {
+      if (edgeIds.has(`${node.id}:${innerEdge.id}`)) {
+        return { ok: false, reason: 'cluster-id-collision' };
+      }
+    }
   }
 
   const graph: PipelineGraph = { format: PIPELINE_GRAPH_FORMAT, nodes, edges };
@@ -572,13 +668,11 @@ const CONVERSION_PROPOSALS: Readonly<Record<string, { kinds: string[]; reason: s
   'Group->Bool': { kinds: ['group-is'], reason: 'Test Group membership with a Group Is node' },
 };
 
-function defaultPort(
-  kind: string,
+function defaultPortOf(
+  node: PipelineGraphNode,
   direction: 'input' | 'output',
 ): string | null {
-  const def = pipelineNodeDefinition(kind);
-  if (!def) return null;
-  const ports = direction === 'input' ? def.inputs : def.outputs;
+  const ports = pipelineNodePorts(node, direction);
   return ports.length > 0 ? ports[0].name : null;
 }
 
@@ -599,10 +693,10 @@ export function checkPipelineGraphTypes(graph: PipelineGraph): PipelineTypeCheck
     const fromNode = byId.get(edge.from);
     const toNode = byId.get(edge.to);
     if (!fromNode || !toNode) continue; // validation refuses these earlier
-    const fromPort = edge.fromPort ?? defaultPort(fromNode.kind, 'output');
-    const toPort = edge.toPort ?? defaultPort(toNode.kind, 'input');
-    const fromType = fromPort ? pipelinePortType(fromNode.kind, 'output', fromPort) : null;
-    const toType = toPort ? pipelinePortType(toNode.kind, 'input', toPort) : null;
+    const fromPort = edge.fromPort ?? defaultPortOf(fromNode, 'output');
+    const toPort = edge.toPort ?? defaultPortOf(toNode, 'input');
+    const fromType = fromPort ? pipelineNodePortType(fromNode, 'output', fromPort) : null;
+    const toType = toPort ? pipelineNodePortType(toNode, 'input', toPort) : null;
     if (fromType === null || toType === null) {
       ok = false;
       issues.push({ edgeId: edge.id, status: 'unknown-port', fromType, toType });
@@ -811,6 +905,326 @@ export function collapseRuleBox(
       to: e.to === actionId ? boxId : e.to,
     }));
   return { format: PIPELINE_GRAPH_FORMAT, nodes, edges };
+}
+
+// ---------------------------------------------------------------------------
+// Cluster grammar (layer 1 WP10 phase D2)
+// ---------------------------------------------------------------------------
+
+/** Maximum cluster nesting depth a stored document may use. */
+export const PIPELINE_CLUSTER_MAX_DEPTH = 8;
+
+const CLUSTER_PORT_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
+export interface PipelineClusterBoundary {
+  name: string;
+  type: PipelineValueType;
+}
+
+/**
+ * The boundary declaration a cluster-input / cluster-output
+ * node carries in its params ({name, type}), or null when
+ * the node is not a boundary node or its declaration is
+ * malformed.
+ */
+export function pipelineClusterBoundaryPort(
+  node: PipelineGraphNode,
+): PipelineClusterBoundary | null {
+  if (node.kind !== 'cluster-input' && node.kind !== 'cluster-output') return null;
+  const params = node.params ?? {};
+  if (typeof params.name !== 'string' || !CLUSTER_PORT_NAME_RE.test(params.name)) {
+    return null;
+  }
+  if (typeof params.type !== 'string'
+    || !(PIPELINE_VALUE_TYPES as readonly string[]).includes(params.type)) {
+    return null;
+  }
+  return { name: params.name, type: params.type as PipelineValueType };
+}
+
+/**
+ * The validated subgraph a cluster node embeds in
+ * params.graph, or null when the node is not a cluster or
+ * the embedded document does not validate.
+ */
+export function pipelineClusterEmbeddedGraph(
+  node: PipelineGraphNode,
+): PipelineGraph | null {
+  if (node.kind !== 'cluster') return null;
+  const raw = node.params?.graph;
+  if (!isRecord(raw)) return null;
+  const result = validatePipelineGraph(raw);
+  return result.ok ? result.graph : null;
+}
+
+/**
+ * The ports a subgraph declares through its boundary
+ * nodes, in document order: cluster-input nodes are the
+ * subgraph's inputs, cluster-output nodes its outputs.
+ */
+export function pipelineClusterPorts(graph: PipelineGraph): {
+  inputs: PipelinePortDef[];
+  outputs: PipelinePortDef[];
+} {
+  const inputs: PipelinePortDef[] = [];
+  const outputs: PipelinePortDef[] = [];
+  for (const node of graph.nodes) {
+    const bp = pipelineClusterBoundaryPort(node);
+    if (!bp) continue;
+    if (node.kind === 'cluster-input') inputs.push({ name: bp.name, type: bp.type });
+    else outputs.push({ name: bp.name, type: bp.type });
+  }
+  return { inputs, outputs };
+}
+
+/**
+ * The effective ports of one node instance. Every kind
+ * outside the cluster family resolves through the static
+ * registry; a cluster's ports are its subgraph's boundary
+ * declarations, and a boundary node's single `value` port
+ * takes the type the node itself declares in params.type.
+ */
+export function pipelineNodePorts(
+  node: PipelineGraphNode,
+  direction: 'input' | 'output',
+): readonly PipelinePortDef[] {
+  if (node.kind === 'cluster') {
+    const embedded = pipelineClusterEmbeddedGraph(node);
+    if (!embedded) return [];
+    const ports = pipelineClusterPorts(embedded);
+    return direction === 'input' ? ports.inputs : ports.outputs;
+  }
+  if (node.kind === 'cluster-input' && direction === 'output') {
+    const bp = pipelineClusterBoundaryPort(node);
+    return [{ name: 'value', type: bp ? bp.type : 'Scalar' }];
+  }
+  if (node.kind === 'cluster-output' && direction === 'input') {
+    const bp = pipelineClusterBoundaryPort(node);
+    return [{ name: 'value', type: bp ? bp.type : 'Scalar' }];
+  }
+  const def = pipelineNodeDefinition(node.kind);
+  if (!def) return [];
+  return direction === 'input' ? def.inputs : def.outputs;
+}
+
+/** The effective type of one port of one node instance. */
+export function pipelineNodePortType(
+  node: PipelineGraphNode,
+  direction: 'input' | 'output',
+  portName: string,
+): PipelineValueType | null {
+  return pipelineNodePorts(node, direction).find((p) => p.name === portName)?.type ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Cluster inline expansion (layer 1 WP10 phase D2)
+// ---------------------------------------------------------------------------
+
+interface ClusterFlattenInfo {
+  embedded: PipelineGraph;
+  /** Boundary port name -> boundary node id, per direction. */
+  inBoundary: Map<string, string>;
+  outBoundary: Map<string, string>;
+}
+
+/**
+ * One flattening pass: every expandable cluster node is
+ * replaced, in place, by its subgraph's nodes and edges
+ * (ids prefixed `<clusterId>:`; the cluster's enabled flag
+ * ANDs into every expanded node). Edges that named a
+ * cluster port are rewired onto the corresponding boundary
+ * node (port `value`); edges that touched a cluster
+ * without naming a port, or named a port the subgraph
+ * does not declare, are dropped — ordering-only wires
+ * carry no compile semantics, and an undeclared port is
+ * surfaced by the type checker as unknown-port. Returns
+ * the SAME object when the graph holds no expandable
+ * cluster.
+ */
+function flattenPipelineGraphClustersOnce(graph: PipelineGraph): PipelineGraph {
+  const infos = new Map<string, ClusterFlattenInfo>();
+  for (const node of graph.nodes) {
+    if (node.kind !== 'cluster') continue;
+    const embedded = pipelineClusterEmbeddedGraph(node);
+    if (!embedded) continue;
+    const inBoundary = new Map<string, string>();
+    const outBoundary = new Map<string, string>();
+    for (const inner of embedded.nodes) {
+      const bp = pipelineClusterBoundaryPort(inner);
+      if (!bp) continue;
+      if (inner.kind === 'cluster-input' && !inBoundary.has(bp.name)) {
+        inBoundary.set(bp.name, inner.id);
+      }
+      if (inner.kind === 'cluster-output' && !outBoundary.has(bp.name)) {
+        outBoundary.set(bp.name, inner.id);
+      }
+    }
+    infos.set(node.id, { embedded, inBoundary, outBoundary });
+  }
+  if (infos.size === 0) return graph;
+
+  const nodes: PipelineGraphNode[] = [];
+  const edges: PipelineGraphEdge[] = [];
+  const seenNodeIds = new Set<string>();
+  const seenEdgeIds = new Set<string>();
+  const pushNode = (n: PipelineGraphNode) => {
+    if (seenNodeIds.has(n.id)) {
+      throw new Error(`pipeline graph: cluster expansion id collision (${n.id})`);
+    }
+    seenNodeIds.add(n.id);
+    nodes.push(n);
+  };
+  const pushEdge = (e: PipelineGraphEdge) => {
+    if (seenEdgeIds.has(e.id)) {
+      throw new Error(`pipeline graph: cluster expansion id collision (${e.id})`);
+    }
+    seenEdgeIds.add(e.id);
+    edges.push(e);
+  };
+  const prefixed = (clusterId: string, innerId: string) => `${clusterId}:${innerId}`;
+
+  for (const node of graph.nodes) {
+    const info = infos.get(node.id);
+    if (!info) {
+      pushNode(node);
+      continue;
+    }
+    for (const innerNode of info.embedded.nodes) {
+      const copy: PipelineGraphNode = {
+        ...innerNode,
+        id: prefixed(node.id, innerNode.id),
+        enabled: innerNode.enabled && node.enabled,
+      };
+      if (innerNode.children) {
+        copy.children = innerNode.children.map((c) => prefixed(node.id, c));
+      }
+      pushNode(copy);
+    }
+  }
+  for (const edge of graph.edges) {
+    let { from, to, fromPort, toPort } = edge;
+    if (infos.has(from)) {
+      const boundary = fromPort !== undefined
+        ? infos.get(from)?.outBoundary.get(fromPort)
+        : undefined;
+      if (boundary === undefined) continue;
+      from = prefixed(from, boundary);
+      fromPort = 'value';
+    }
+    if (infos.has(to)) {
+      const boundary = toPort !== undefined
+        ? infos.get(to)?.inBoundary.get(toPort)
+        : undefined;
+      if (boundary === undefined) continue;
+      to = prefixed(to, boundary);
+      toPort = 'value';
+    }
+    const copy: PipelineGraphEdge = { ...edge, from, to };
+    if (fromPort === undefined) delete copy.fromPort;
+    else copy.fromPort = fromPort;
+    if (toPort === undefined) delete copy.toPort;
+    else copy.toPort = toPort;
+    pushEdge(copy);
+  }
+  for (const node of graph.nodes) {
+    const info = infos.get(node.id);
+    if (!info) continue;
+    for (const innerEdge of info.embedded.edges) {
+      pushEdge({
+        ...innerEdge,
+        id: prefixed(node.id, innerEdge.id),
+        from: prefixed(node.id, innerEdge.from),
+        to: prefixed(node.id, innerEdge.to),
+      });
+    }
+  }
+  return { format: PIPELINE_GRAPH_FORMAT, nodes, edges };
+}
+
+/**
+ * Splice every boundary node out of a flattened graph:
+ * each boundary node is replaced by the cartesian product
+ * of its incoming and outgoing wires (the composed wire
+ * keeps the outgoing segment's kind, the incoming
+ * segment's source port and the outgoing segment's target
+ * port). A boundary wire with no counterpart on the other
+ * side is dropped with its node — the value simply never
+ * arrives, the same shape as an unwired optional input
+ * elsewhere in the grammar. Boundary nodes are processed
+ * in document order and composed wires take the position
+ * of the earliest removed wire, so the result depends
+ * only on the document.
+ */
+function splicePipelineGraphBoundaryNodes(graph: PipelineGraph): PipelineGraph {
+  const isBoundary = (n: PipelineGraphNode) =>
+    n.kind === 'cluster-input' || n.kind === 'cluster-output';
+  let nodes = graph.nodes;
+  let edges = graph.edges;
+  for (const boundary of graph.nodes.filter(isBoundary)) {
+    const incoming = edges.filter((e) => e.to === boundary.id);
+    const outgoing = edges.filter((e) => e.from === boundary.id);
+    const composed: PipelineGraphEdge[] = [];
+    for (const inw of incoming) {
+      for (const outw of outgoing) {
+        const edge: PipelineGraphEdge = {
+          id: `${inw.id}~${outw.id}`,
+          from: inw.from,
+          to: outw.to,
+          kind: outw.kind,
+        };
+        if (inw.fromPort !== undefined) edge.fromPort = inw.fromPort;
+        if (outw.toPort !== undefined) edge.toPort = outw.toPort;
+        composed.push(edge);
+      }
+    }
+    const next: PipelineGraphEdge[] = [];
+    let inserted = false;
+    for (const edge of edges) {
+      if (edge.to === boundary.id || edge.from === boundary.id) {
+        if (!inserted) {
+          next.push(...composed);
+          inserted = true;
+        }
+        continue;
+      }
+      next.push(edge);
+    }
+    edges = next;
+    nodes = nodes.filter((n) => n.id !== boundary.id);
+  }
+  return { format: PIPELINE_GRAPH_FORMAT, nodes, edges };
+}
+
+/**
+ * Inline every cluster in a graph: flattening passes
+ * replace clusters by their contents (nested clusters
+ * surface one level per pass, so the loop is bounded by
+ * the nesting depth), then boundary nodes are spliced
+ * out, composing the wires that crossed each boundary —
+ * including cluster-to-cluster wires and pass-through
+ * wires inside a subgraph. The expanded graph is what
+ * the compiler evaluates, so a cluster graph and the
+ * hand-written graph its expansion produces compile to
+ * the same rules, force order and slot assignments.
+ * A graph without an expandable cluster is returned as
+ * the SAME object, so cluster-free documents keep their
+ * exact compile results. A cluster whose embedded graph
+ * does not validate is kept verbatim (validation refuses
+ * such documents at load; a kept cluster compiles to
+ * nothing, like other unrepresentable content — it is
+ * never silently rewritten).
+ */
+export function expandPipelineGraphClusters(graph: PipelineGraph): PipelineGraph {
+  let current = graph;
+  let flattened = false;
+  for (;;) {
+    const next = flattenPipelineGraphClustersOnce(current);
+    if (next === current) break;
+    flattened = true;
+    current = next;
+  }
+  if (!flattened) return graph;
+  return splicePipelineGraphBoundaryNodes(current);
 }
 
 // ---------------------------------------------------------------------------

@@ -30,6 +30,19 @@
  * section below. At the default the pass never runs, the
  * marked objects follow exactly the stage-1 discipline above,
  * and the capture is byte-identical.
+ *
+ * One map, one resolved light (Layer 1 WP7 Phase B): the
+ * capture's viewpoint follows the light unit list through
+ * resolveShadowLightPos (lib/gpgpuLightUnits.ts) — an
+ * explicit gpgpuShadowMapLightUnit selection, else the first
+ * enabled unit, else unit 1. Multiple shadow maps (one per
+ * unit) were considered and rejected on budget grounds: each
+ * map is a full scene re-render into a 2048x2048 depth target
+ * per frame, so N units would cost N captures and N targets,
+ * and every receiver would need a per-unit sampler set. The
+ * recorded design is one map that follows one resolved light;
+ * the Phase Z occlusion bake remains the multi-light union
+ * approximation.
  */
 
 import * as THREE from 'three';

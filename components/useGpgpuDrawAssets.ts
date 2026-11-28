@@ -2,7 +2,18 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { ParticleConfig } from "../types";
 import { createGradientLutTextureResolved } from "../lib/kinetixGradients";
-import { STREAK_FRAG, STREAK_VERT, buildDrawFrag, buildDrawVert } from "./gpgpuShaders";
+import { SIM_VERT, STREAK_FRAG, STREAK_VERT, buildDrawFrag, buildDrawVert } from "./gpgpuShaders";
+import { buildSplatFrag, buildSplatVert } from "./gpgpuShaderSplats";
+import { SPLAT_COLUMNS_SORT_DEPTH_FRAG } from "./gpgpuShaderSimulationSort";
+import {
+  buildSplatInstanceTexCoords,
+  createSplatColumnsTextures,
+  resolveSplatInputForm,
+  splatColumnsSortTexSize,
+  useSplatColumns,
+} from "../lib/gpgpuSplatColumns";
+import { buildSplatParamData } from "../lib/gpgpuSplat";
+import { buildSplatParamSupply } from "../lib/gpgpuSplatSupply";
 import { liveRulesHaveAction } from "../lib/gpgpuParticleRulesLive";
 import { mergedSupplyActive } from "../lib/gpgpuMergedSupply";
 import { extraLightUnitsActive } from "../lib/gpgpuLightUnits";
@@ -10,6 +21,7 @@ import { spinChannelActive } from "../lib/gpgpuSpeedDragSpin";
 import { orientChannelActive } from "../lib/gpgpuOrient";
 import { spriteFrameChannelActive } from "../lib/spriteSheet";
 import { ageFreeVariantOn } from "../lib/gpgpuAgeFreeCurves";
+import { resolveColorMaster } from "../lib/appStateConfigNormalization";
 
 // Phase 19 gate fix: the points draw's string variant follows
 // the config side of the Vellum crack condition (the same terms
@@ -123,6 +135,16 @@ import { auxInheritColorActive } from "../lib/auxInherit";
 import { WW_DRAW_FRAG, WW_DRAW_VERT, WW_TEX_SIZE } from "./gpgpuShaderWhitewater";
 
 export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
+  // Colour master switch (Layer 1 WP7 Phase A): the draw
+  // variant predicates below read the colour-resolved
+  // config, so with the master off the colour variants
+  // (rigid cluster colour, aux inheritance colour) can
+  // never stand and the draw strings stay the stock ones
+  // byte-identically, whatever the individual colour keys
+  // say. The resolution touches only colour keys and is
+  // the identity while the master is on, so every
+  // non-colour predicate is unaffected.
+  const drawConfig = resolveColorMaster(config);
   const drawMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
       uPosTex:            { value: null },
@@ -339,8 +361,8 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uSpriteFrameSlot:        { value: -1 },
       uSpriteFrameRange:       { value: 1 },
     },
-    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config), shadowTunnel: shadowTunnelVariantOn(config), ruleDisplay: liveRuleDisplayVariantOn(config), ruleDisplayMerged: mergedSupplyActive(config, texSize), lightUnits: lightUnitsVariantOn(config), spinChannel: spinChannelVariantOn(config), spriteFrameChannel: spriteFrameChannelVariantOn(config), ageFreeSize: ageFreeSizeVariantOn(config) }),
-    fragmentShader: buildDrawFrag({ vellumCrack: vellumCrackVariantOn(config), clusterColor: rigidClusterColorVariantOn(config), shadowMap: shadowMapVariantOn(config), spinChannel: spinChannelVariantOn(config), spriteFrameChannel: spriteFrameChannelVariantOn(config), ageFreeOpacity: ageFreeOpacityVariantOn(config) }),
+    vertexShader: buildDrawVert({ vellumCrack: vellumCrackVariantOn(drawConfig), clusterColor: rigidClusterColorVariantOn(drawConfig), shadowMap: shadowMapVariantOn(drawConfig), shadowTunnel: shadowTunnelVariantOn(drawConfig), ruleDisplay: liveRuleDisplayVariantOn(drawConfig), ruleDisplayMerged: mergedSupplyActive(drawConfig, texSize), lightUnits: lightUnitsVariantOn(drawConfig), spinChannel: spinChannelVariantOn(drawConfig), spriteFrameChannel: spriteFrameChannelVariantOn(drawConfig), ageFreeSize: ageFreeSizeVariantOn(drawConfig) }),
+    fragmentShader: buildDrawFrag({ vellumCrack: vellumCrackVariantOn(drawConfig), clusterColor: rigidClusterColorVariantOn(drawConfig), shadowMap: shadowMapVariantOn(drawConfig), spinChannel: spinChannelVariantOn(drawConfig), spriteFrameChannel: spriteFrameChannelVariantOn(drawConfig), ageFreeOpacity: ageFreeOpacityVariantOn(drawConfig) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -353,36 +375,36 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
   // strength's sign, not its value, so dragging the slider
   // while positive does not recompile).
   const drawVariantRef = useRef({
-    crack: vellumCrackVariantOn(config),
-    cluster: rigidClusterColorVariantOn(config),
-    shadowMap: shadowMapVariantOn(config),
-    shadowTunnel: shadowTunnelVariantOn(config),
-    ruleDisplay: liveRuleDisplayVariantOn(config),
-    ruleDisplayMerged: mergedSupplyActive(config, texSize),
-    lightUnits: lightUnitsVariantOn(config),
-    spinChannel: spinChannelVariantOn(config),
-    spriteFrameChannel: spriteFrameChannelVariantOn(config),
-    ageFreeSize: ageFreeSizeVariantOn(config),
-    ageFreeOpacity: ageFreeOpacityVariantOn(config),
+    crack: vellumCrackVariantOn(drawConfig),
+    cluster: rigidClusterColorVariantOn(drawConfig),
+    shadowMap: shadowMapVariantOn(drawConfig),
+    shadowTunnel: shadowTunnelVariantOn(drawConfig),
+    ruleDisplay: liveRuleDisplayVariantOn(drawConfig),
+    ruleDisplayMerged: mergedSupplyActive(drawConfig, texSize),
+    lightUnits: lightUnitsVariantOn(drawConfig),
+    spinChannel: spinChannelVariantOn(drawConfig),
+    spriteFrameChannel: spriteFrameChannelVariantOn(drawConfig),
+    ageFreeSize: ageFreeSizeVariantOn(drawConfig),
+    ageFreeOpacity: ageFreeOpacityVariantOn(drawConfig),
   });
   useEffect(() => {
-    const crack = vellumCrackVariantOn(config);
-    const cluster = rigidClusterColorVariantOn(config);
-    const shadowMap = shadowMapVariantOn(config);
-    const shadowTunnel = shadowTunnelVariantOn(config);
-    const ruleDisplay = liveRuleDisplayVariantOn(config);
-    const ruleDisplayMerged = mergedSupplyActive(config, texSize);
-    const lightUnits = lightUnitsVariantOn(config);
-    const spinChannel = spinChannelVariantOn(config);
-    const spriteFrameChannel = spriteFrameChannelVariantOn(config);
-    const ageFreeSize = ageFreeSizeVariantOn(config);
-    const ageFreeOpacity = ageFreeOpacityVariantOn(config);
+    const crack = vellumCrackVariantOn(drawConfig);
+    const cluster = rigidClusterColorVariantOn(drawConfig);
+    const shadowMap = shadowMapVariantOn(drawConfig);
+    const shadowTunnel = shadowTunnelVariantOn(drawConfig);
+    const ruleDisplay = liveRuleDisplayVariantOn(drawConfig);
+    const ruleDisplayMerged = mergedSupplyActive(drawConfig, texSize);
+    const lightUnits = lightUnitsVariantOn(drawConfig);
+    const spinChannel = spinChannelVariantOn(drawConfig);
+    const spriteFrameChannel = spriteFrameChannelVariantOn(drawConfig);
+    const ageFreeSize = ageFreeSizeVariantOn(drawConfig);
+    const ageFreeOpacity = ageFreeOpacityVariantOn(drawConfig);
     if (drawVariantRef.current.crack === crack && drawVariantRef.current.cluster === cluster && drawVariantRef.current.shadowMap === shadowMap && drawVariantRef.current.shadowTunnel === shadowTunnel && drawVariantRef.current.ruleDisplay === ruleDisplay && drawVariantRef.current.ruleDisplayMerged === ruleDisplayMerged && drawVariantRef.current.lightUnits === lightUnits && drawVariantRef.current.spinChannel === spinChannel && drawVariantRef.current.spriteFrameChannel === spriteFrameChannel && drawVariantRef.current.ageFreeSize === ageFreeSize && drawVariantRef.current.ageFreeOpacity === ageFreeOpacity) return;
     drawVariantRef.current = { crack, cluster, shadowMap, shadowTunnel, ruleDisplay, ruleDisplayMerged, lightUnits, spinChannel, spriteFrameChannel, ageFreeSize, ageFreeOpacity };
     drawMat.vertexShader = buildDrawVert({ vellumCrack: crack, clusterColor: cluster, shadowMap, shadowTunnel, ruleDisplay, ruleDisplayMerged, lightUnits, spinChannel, spriteFrameChannel, ageFreeSize });
     drawMat.fragmentShader = buildDrawFrag({ vellumCrack: crack, clusterColor: cluster, shadowMap, spinChannel, spriteFrameChannel, ageFreeOpacity });
     drawMat.needsUpdate = true;
-  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuRigidClusterColorEnabled, config.gpgpuRigidEnabled, config.gpgpuShadowMapStrength, config.gpgpuTerrainMeshTunnel, config.gpgpuShadowEnabled, config.gpgpuShadowStrength, config.gpgpuParticleRulesLive, config.gpgpuFieldInstances, config.gpgpuFieldLayers, config.gpgpuSteerSeekPaths, config.gpgpuSteerSeekPathSvg, config.gpgpuPredationEnabled, config.gpgpuPredationOutcome, config.gpgpuPredationStrike, config.gpgpuPredationStrikeFrames, config.gpgpuPredationGraceSeconds, config.gpgpuGroupsData, config.gpgpuLight2Enabled, config.gpgpuLight3Enabled, config.gpgpuLight4Enabled, config.gpgpuSpinEnabled, config.gpgpuSpriteFrameMode, config.gpgpuAgeCurveSizeEnabled, config.gpgpuAgeCurveSizeFreeEnabled, config.gpgpuAgeCurveOpacityEnabled, config.gpgpuAgeCurveOpacityFreeEnabled, drawMat]);
+  }, [config.gpgpuVellumEnabled, config.gpgpuVellumTearGap, config.gpgpuVellumTear, config.gpgpuRigidClusterColorEnabled, config.gpgpuColorMasterEnabled, config.gpgpuRigidEnabled, config.gpgpuShadowMapStrength, config.gpgpuTerrainMeshTunnel, config.gpgpuShadowEnabled, config.gpgpuShadowStrength, config.gpgpuParticleRulesLive, config.gpgpuFieldInstances, config.gpgpuFieldLayers, config.gpgpuSteerSeekPaths, config.gpgpuSteerSeekPathSvg, config.gpgpuPredationEnabled, config.gpgpuPredationOutcome, config.gpgpuPredationStrike, config.gpgpuPredationStrikeFrames, config.gpgpuPredationGraceSeconds, config.gpgpuGroupsData, config.gpgpuLight2Enabled, config.gpgpuLight3Enabled, config.gpgpuLight4Enabled, config.gpgpuSpinEnabled, config.gpgpuSpriteFrameMode, config.gpgpuAgeCurveSizeEnabled, config.gpgpuAgeCurveSizeFreeEnabled, config.gpgpuAgeCurveOpacityEnabled, config.gpgpuAgeCurveOpacityFreeEnabled, drawMat]);
 
   const drawGeo = useMemo(() => {
     const count = texSize * texSize;
@@ -463,7 +485,7 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uAuxInheritTex: { value: null },
       uAuxInheritColor: { value: 0 },
     },
-    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }),
+    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(drawConfig), inherit: auxInheritColorActive(drawConfig) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(drawConfig), inherit: auxInheritColorActive(drawConfig) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -499,7 +521,7 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uAuxInheritTex: { value: null },
       uAuxInheritColor: { value: 0 },
     },
-    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }),
+    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(drawConfig), inherit: auxInheritColorActive(drawConfig) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(drawConfig), inherit: auxInheritColorActive(drawConfig) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -530,7 +552,7 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       uAuxInheritTex: { value: null },
       uAuxInheritColor: { value: 0 },
     },
-    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(config), inherit: auxInheritColorActive(config) }),
+    vertexShader: buildAuxDrawVert({ shadowMap: shadowMapVariantOn(drawConfig), inherit: auxInheritColorActive(drawConfig) }), fragmentShader: buildAuxDrawFrag({ shadowMap: shadowMapVariantOn(drawConfig), inherit: auxInheritColorActive(drawConfig) }),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
@@ -542,12 +564,12 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
   // Slice 1D-1: the inheritance variant condition (inheritance
   // on + colour mix above 0) swaps through the same effect.
   const auxVariantRef = useRef({
-    shadowMap: shadowMapVariantOn(config),
-    inherit: auxInheritColorActive(config),
+    shadowMap: shadowMapVariantOn(drawConfig),
+    inherit: auxInheritColorActive(drawConfig),
   });
   useEffect(() => {
-    const shadowMap = shadowMapVariantOn(config);
-    const inherit = auxInheritColorActive(config);
+    const shadowMap = shadowMapVariantOn(drawConfig);
+    const inherit = auxInheritColorActive(drawConfig);
     if (auxVariantRef.current.shadowMap === shadowMap
       && auxVariantRef.current.inherit === inherit) return;
     auxVariantRef.current = { shadowMap, inherit };
@@ -556,7 +578,7 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
       m.fragmentShader = buildAuxDrawFrag({ shadowMap, inherit });
       m.needsUpdate = true;
     }
-  }, [config.gpgpuShadowMapStrength, config.gpgpuAuxInheritSlots, config.gpgpuAuxInheritColor, auxDrawMat, aux2DrawMat, aux3DrawMat]);
+  }, [config.gpgpuShadowMapStrength, config.gpgpuAuxInheritSlots, config.gpgpuAuxInheritColor, config.gpgpuColorMasterEnabled, auxDrawMat, aux2DrawMat, aux3DrawMat]);
 
   const auxDrawGeo = useMemo(() => {
     const count = AUX_TEX_SIZE * AUX_TEX_SIZE;
@@ -603,11 +625,225 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
     return geo;
   }, []);
 
+  // Gaussian splat draw (Layer 1 WP7 Phase C1): an independent
+  // instanced-quad primitive alongside the points draw. The
+  // geometry mirrors the volumetric quad's construction
+  // (PlaneGeometry(2,2) instanced over the pool's texel coords,
+  // the drawGeo generation form). The parameter textures are
+  // baked here from the lib twin (uniform scale / opacity /
+  // identity rotation in C1); the centre and sort uniforms
+  // start unbound and are pointed at the pool / sort textures
+  // by the scene loop's supply (Phase C2), exactly like the
+  // volumetric material's uPosTex contract.
+  const splatParamTextures = useMemo(() => {
+    const { paramData, rotData } = buildSplatParamData({ texSize });
+    const paramTex = new THREE.DataTexture(paramData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    paramTex.needsUpdate = true;
+    const rotTex = new THREE.DataTexture(rotData, texSize, texSize, THREE.RGBAFormat, THREE.FloatType);
+    rotTex.needsUpdate = true;
+    return { paramTex, rotTex };
+  }, [texSize]);
+
+  const splatGeo = useMemo(() => {
+    const count = texSize * texSize;
+    const geo = new THREE.InstancedBufferGeometry();
+    const base = new THREE.PlaneGeometry(2, 2);
+    if (base.index) geo.setIndex(base.index);
+    geo.setAttribute('position', base.attributes.position);
+    const coords = new Float32Array(count * 2);
+    for (let i = 0; i < count; i++) {
+      coords[i * 2]     = ((i % texSize) + 0.5) / texSize;
+      coords[i * 2 + 1] = (Math.floor(i / texSize) + 0.5) / texSize;
+    }
+    geo.setAttribute('aTexCoord', new THREE.InstancedBufferAttribute(coords, 2));
+    geo.instanceCount = count;
+    base.dispose();
+    return geo;
+  }, [texSize]);
+
+  const splatMat = useMemo(() => {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uCenterTex:     { value: null },
+        uSplatParamTex: { value: splatParamTextures.paramTex },
+        uSplatRotTex:   { value: splatParamTextures.rotTex },
+        uSortTex:       { value: null },
+        uSortEnabled:   { value: false },
+        uColor:         { value: new THREE.Color(config.gpgpuSplatColor) },
+        uScaleMul:      { value: config.gpgpuSplatScale },
+        uOpacityMul:    { value: config.gpgpuSplatOpacity },
+        // Attribute colour drive (Phase C2): supplied per
+        // frame by gpgpuVisualUpdates, off / -1 until then.
+        uAttrTex:          { value: null },
+        uAttrColorEnabled: { value: false },
+        uAttrColorSlotR:   { value: -1 },
+        uAttrColorSlotG:   { value: -1 },
+        uAttrColorSlotB:   { value: -1 },
+        // Columns DC colour (Phase C3): bound per frame by
+        // gpgpuVisualUpdates while the columns form holds,
+        // off until then.
+        uSplatColorTex:     { value: null },
+        uSplatColorEnabled: { value: false },
+        // Spin channel (Layer 1 WP8, phase D): bound per
+        // frame by gpgpuVisualUpdates while the channel
+        // stands; read only by the spin variant below.
+        uSpinTex:           { value: null },
+      },
+      vertexShader: buildSplatVert({ spinChannel: spinChannelVariantOn(drawConfig) }), fragmentShader: buildSplatFrag(),
+      transparent: true, depthWrite: false, blending: THREE.NormalBlending,
+    });
+    // The baked parameter textures, kept on the material so
+    // the per-frame supply can restore the rotation binding
+    // after an orientation-channel override (Phase C2).
+    mat.userData.splatBakedParamTex = splatParamTextures.paramTex;
+    mat.userData.splatBakedRotTex = splatParamTextures.rotTex;
+    return mat;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splatParamTextures]);
+
+  // Splat spin variant (Layer 1 WP8, phase D): the splat
+  // vertex's string variant follows the Spin channel's
+  // activity — the same condition the points and geometry
+  // draws resolve (spinChannelVariantOn). The factory built
+  // the initial variant from the initial config; this effect
+  // swaps it when the condition flips (the drawMat variant
+  // effect's discipline).
+  const splatSpinRef = useRef(spinChannelVariantOn(drawConfig));
+  useEffect(() => {
+    const spinChannel = spinChannelVariantOn(drawConfig);
+    if (splatSpinRef.current === spinChannel) return;
+    splatSpinRef.current = spinChannel;
+    splatMat.vertexShader = buildSplatVert({ spinChannel });
+    splatMat.needsUpdate = true;
+  }, [config.gpgpuSpinEnabled, splatMat]);
+
+  // Splat parameter supply (Layer 1 WP7 Phase C2): while the
+  // splat draw is enabled, rebake the two parameter textures
+  // from the resolved supply (attribute slots / velocity
+  // stretch — lib/gpgpuSplatSupply.ts) whenever the supply
+  // signature changes. The rebake writes into the SAME
+  // DataTextures the material already binds, so no binding
+  // changes; while the draw is disabled nothing is baked and
+  // the textures keep the uniform C1 bake (the material is
+  // not mounted then anyway).
+  const splatSupplyKey = [
+    config.gpgpuSplatEnabled ? 1 : 0,
+    config.gpgpuSplatScaleAttr ?? '',
+    config.gpgpuSplatOpacityAttr ?? '',
+    JSON.stringify(config.gpgpuAttrNames),
+    JSON.stringify(config.gpgpuAttrNames2),
+    JSON.stringify(config.gpgpuAttrSources),
+    JSON.stringify(config.gpgpuAttrSources2),
+    JSON.stringify(config.gpgpuAttrExprs),
+    JSON.stringify(config.gpgpuAttrExprs2),
+    config.gpgpuAttrColorEnabled ? 1 : 0,
+    config.gpgpuSeed,
+    config.gpgpuEmitShape,
+    config.gpgpuBounceRadius,
+    config.gpgpuAgeMax,
+    texSize,
+  ].join('|');
+  useEffect(() => {
+    if (!config.gpgpuSplatEnabled) return;
+    const supply = buildSplatParamSupply(config, texSize);
+    const paramArr = splatParamTextures.paramTex.image.data as Float32Array;
+    paramArr.set(supply.paramData);
+    splatParamTextures.paramTex.needsUpdate = true;
+    const rotArr = splatParamTextures.rotTex.image.data as Float32Array;
+    rotArr.set(supply.rotData);
+    splatParamTextures.rotTex.needsUpdate = true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splatSupplyKey, splatParamTextures]);
+
+  // Splat column data (Layer 1 WP7 Phase C3): the second
+  // input form of the splat draw. While a column set is in
+  // the store and the splat key is on, the draw consumes the
+  // columns assets below instead of the pool ones (the
+  // selection is resolveSplatInputForm; the per-frame binding
+  // swap lives in gpgpuVisualUpdates, the geometry swap in
+  // gpgpuRenderOutputs, and the extra sort pass in
+  // sceneGpgpuSystem). Everything here is null while no
+  // column set is stored, and the pool assets above are
+  // untouched either way.
+  const splatColumns = useSplatColumns();
+  const splatColumnsForm = resolveSplatInputForm(config, splatColumns);
+  const splatColumnsTextures = useMemo(
+    () => (splatColumns ? createSplatColumnsTextures(splatColumns) : null),
+    [splatColumns],
+  );
+  const splatColumnsSortTexSizeValue = splatColumns ? splatColumnsSortTexSize(splatColumns) : 0;
+  const splatColumnsGeo = useMemo(() => {
+    if (!splatColumns) return null;
+    const geo = new THREE.InstancedBufferGeometry();
+    const base = new THREE.PlaneGeometry(2, 2);
+    if (base.index) geo.setIndex(base.index);
+    geo.setAttribute('position', base.attributes.position);
+    geo.setAttribute(
+      'aTexCoord',
+      new THREE.InstancedBufferAttribute(buildSplatInstanceTexCoords(splatColumns), 2),
+    );
+    geo.instanceCount = splatColumns.count;
+    base.dispose();
+    return geo;
+  }, [splatColumns]);
+  const splatColumnsSortRTs = useMemo(() => {
+    if (!splatColumns) return null;
+    const makeSortRT = (size: number) => new THREE.WebGLRenderTarget(size, size, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.FloatType,
+      depthBuffer: false,
+      stencilBuffer: false,
+    });
+    return {
+      a: makeSortRT(splatColumnsSortTexSizeValue),
+      b: makeSortRT(splatColumnsSortTexSizeValue),
+    };
+  }, [splatColumns, splatColumnsSortTexSizeValue]);
+  const splatColumnsSortDepthMat = useMemo(() => {
+    if (!splatColumns) return null;
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uPosTex:          { value: null },
+        uViewMatrix:      { value: new THREE.Matrix4() },
+        uSortTexSizeF:    { value: splatColumnsSortTexSizeValue },
+        uPayloadTexSizeF: { value: splatColumns.texSize },
+        uSplatCountF:     { value: splatColumns.count },
+      },
+      vertexShader: SIM_VERT, fragmentShader: SPLAT_COLUMNS_SORT_DEPTH_FRAG,
+    });
+  }, [splatColumns, splatColumnsSortTexSizeValue]);
+  useEffect(() => () => {
+    splatColumnsGeo?.dispose();
+  }, [splatColumnsGeo]);
+  useEffect(() => () => {
+    if (!splatColumnsTextures) return;
+    splatColumnsTextures.centerTex.dispose();
+    splatColumnsTextures.paramTex.dispose();
+    splatColumnsTextures.rotTex.dispose();
+    splatColumnsTextures.colorTex.dispose();
+  }, [splatColumnsTextures]);
+  useEffect(() => () => {
+    splatColumnsSortRTs?.a.dispose();
+    splatColumnsSortRTs?.b.dispose();
+  }, [splatColumnsSortRTs]);
+  useEffect(() => () => {
+    splatColumnsSortDepthMat?.dispose();
+  }, [splatColumnsSortDepthMat]);
+
   // Same disposal contract as useGpgpuTrailAssets: texSize-sized
   // geometries must not outlive the generation that created them.
   useEffect(() => () => {
     drawGeo.dispose();
   }, [drawGeo]);
+  useEffect(() => () => {
+    splatGeo.dispose();
+  }, [splatGeo]);
+  useEffect(() => () => {
+    splatParamTextures.paramTex.dispose();
+    splatParamTextures.rotTex.dispose();
+  }, [splatParamTextures]);
   useEffect(() => () => {
     streakGeo.dispose();
   }, [streakGeo]);
@@ -629,5 +865,14 @@ export function useGpgpuDrawAssets(config: ParticleConfig, texSize: number) {
     auxDrawGeo,
     wwDrawMat,
     wwDrawGeo,
+    splatGeo,
+    splatMat,
+    splatColumns,
+    splatColumnsForm,
+    splatColumnsGeo,
+    splatColumnsTextures,
+    splatColumnsSortRTs,
+    splatColumnsSortDepthMat,
+    splatColumnsSortTexSize: splatColumnsSortTexSizeValue,
   };
 }

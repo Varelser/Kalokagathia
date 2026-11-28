@@ -11,6 +11,44 @@ export const SORT_DEPTH_FRAG = /* glsl */ `
   }
 `;
 
+// ── Splat columns depth (Layer 1 WP7 Phase C3): the depth
+// stage of the depth sort for the independent splat column
+// data (lib/gpgpuSplatColumns.ts). The payload grid side
+// (ceil(√N)) is a power of two only by luck, and the bitonic
+// network below totally orders pow2 grids only, so the
+// columns sort runs on its own grid of side uSortTexSizeF
+// (the smallest pow2 ≥ the payload side). Slot k of the sort
+// grid maps to payload texel k: the entry samples the centre
+// texture at the PAYLOAD uv and writes that uv (not the sort
+// grid's), so the splat vertex consumes the sort texture in
+// exactly the pool form. Slots at or past uSplatCountF write
+// the pad depth (SPLAT_COLUMNS_PAD_VIEW_Z in the lib twin),
+// sorting to the tail of the far-to-near order — the first
+// `count` slots are precisely the real splats. Driven by
+// runDepthSortPass like the stock depth material (it writes
+// uPosTex / uViewMatrix); the three grid uniforms are baked
+// at material creation.
+export const SPLAT_COLUMNS_SORT_DEPTH_FRAG = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uPosTex;
+  uniform mat4 uViewMatrix;
+  uniform float uSortTexSizeF;
+  uniform float uPayloadTexSizeF;
+  uniform float uSplatCountF;
+  varying vec2 vUv;
+  void main() {
+    float k = floor(vUv.y * uSortTexSizeF) * uSortTexSizeF + floor(vUv.x * uSortTexSizeF);
+    if (k >= uSplatCountF) {
+      gl_FragColor = vec4(0.0, 0.0, -1.0e18, 1.0);
+      return;
+    }
+    vec2 payloadUv = (vec2(mod(k, uPayloadTexSizeF), floor(k / uPayloadTexSizeF)) + 0.5) / uPayloadTexSizeF;
+    vec3 pos = texture2D(uPosTex, payloadUv).xyz;
+    float viewZ = -(uViewMatrix * vec4(pos, 1.0)).z;
+    gl_FragColor = vec4(payloadUv.x, payloadUv.y, viewZ, 1.0);
+  }
+`;
+
 // ── Grains cell key (Phase 19 fix2): per-texel spatial cell key ──
 // Writes the SORT_DEPTH payload layout (uv.x, uv.y, key, 1) so
 // the bitonic pass above sorts the pool by cell key unchanged.

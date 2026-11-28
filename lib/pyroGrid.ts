@@ -255,3 +255,269 @@ export function setPyroGridRuntimeStatus(next: PyroGridRuntimeStatus): void {
 export function getPyroGridRuntimeStatus(): PyroGridRuntimeStatus {
   return pyroGridStatus;
 }
+
+// ---------------------------------------------------------------------------
+// Layer 1 WP6 (phase B2): pyro grammar extensions — the lib-side
+// pure models for the temperature/buoyancy authoring (V4), the
+// radiative cooling (V5) and the species combustion model (V3).
+// Everything below is additive: the shipped solver's arithmetic
+// still lives in the GLSL forces / scalar-update passes, and these
+// functions are the twins and grammar definitions the authoring
+// surface and the test-suite pin. No config keys are added — the
+// gpgpuPyro* keys keep scaling the rates exactly as before, and at
+// the shipped parameter values every twin below reproduces the
+// GLSL arithmetic bit-for-bit in form.
+// ---------------------------------------------------------------------------
+
+// GLSL smoothstep twin (the scalar-update pass's ignition window
+// uses the GPU builtin; the CPU mirror needs the same curve,
+// including the clamped plateaus outside [edge0, edge1]).
+export function pyroGridSmoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+// --- V4: temperature field and buoyancy ---------------------------
+// The forces pass computes
+//   vel.y += dt * (buoyancy * T - densityWeight * rho) * BUOY_ACCEL.
+// Two authoring gaps: the formula had no lib twin, and the density
+// weight is wired to 0 in the pass runner ("density weight is 0
+// this round"), so density-coupled buoyancy could not be authored
+// at all. The buoyancy is also absolute-temperature: it is
+// referenced to the implicit ambient temperature 0 (the cooling
+// below decays T toward 0). The relative form authors buoyancy on
+// the thermal excess (T - T_amb); at the shipped ambient 0 it is
+// identical to the absolute form.
+export const PYRO_GRID_TEMP_AMBIENT = 0.0; // implicit ambient of the shipped model
+
+// Buoyant acceleration in cells/s^2 (before the dt integration) —
+// the exact twin of the forces-pass term. densityWeight defaults
+// to the shipped 0, where the density term vanishes.
+export function pyroGridBuoyancyAccel(
+  temperature: number,
+  density: number,
+  buoyancyKey: number,
+  densityWeight = 0,
+): number {
+  return (buoyancyKey * temperature - densityWeight * density) * PYRO_GRID_BUOY_ACCEL;
+}
+
+export function pyroGridThermalExcess(
+  temperature: number,
+  ambient: number = PYRO_GRID_TEMP_AMBIENT,
+): number {
+  return temperature - ambient;
+}
+
+// Ambient-referenced buoyancy: only the excess over the ambient
+// temperature drives the thermal term (the density term is not
+// shifted). Reduces to pyroGridBuoyancyAccel at ambient 0.
+export function pyroGridBuoyancyAccelRelative(
+  temperature: number,
+  density: number,
+  buoyancyKey: number,
+  ambient: number = PYRO_GRID_TEMP_AMBIENT,
+  densityWeight = 0,
+): number {
+  return pyroGridBuoyancyAccel(temperature - ambient, density, buoyancyKey, densityWeight);
+}
+
+// --- V5: cooling — exponential twins and radiative cooling --------
+// The shipped cooling is a single exponential toward 0:
+//   T *= exp(-coolingKey * TEMP_COOL_RATE * dt)
+//   rho *= exp(-DENSITY_DECAY_RATE * dt)
+// Radiative cooling (the Stefan-Boltzmann shape) is absent: a hot
+// cell should shed heat at a rate proportional to T^4 - T_amb^4,
+// so the fractional loss grows steeply with temperature instead of
+// staying constant. The radiative rate is calibrated so that at
+// T = 1, ambient 0, its initial fractional rate equals the
+// exponential's at cooling key 1 (TEMP_COOL_RATE per second).
+export const PYRO_GRID_RADIATIVE_COOL_RATE = PYRO_GRID_TEMP_COOL_RATE; // 1/s at T = 1
+
+// Exact twin of the shipped temperature cooling.
+export function pyroGridCoolTemperature(temperature: number, dt: number, coolingKey = 1): number {
+  return temperature * Math.exp(-coolingKey * PYRO_GRID_TEMP_COOL_RATE * dt);
+}
+
+// Exact twin of the shipped density decay.
+export function pyroGridDecayDensity(density: number, dt: number): number {
+  return density * Math.exp(-PYRO_GRID_DENSITY_DECAY_RATE * dt);
+}
+
+// Radiative cooling step: dT/dt = -rate * (T^4 - ambient^4),
+// cooling-only (a cell at or below the ambient is left unchanged —
+// the operator never heats). At ambient 0 the closed form
+// T(t) = T0 / (1 + 3 * rate * T0^3 * dt)^(1/3) is used; above an
+// ambient floor the step is substepped explicitly (the substep
+// count keeps h * rate * T^3 far inside the stable region) and
+// clamped at the floor.
+export function pyroGridRadiativeCoolTemperature(
+  temperature: number,
+  dt: number,
+  rate: number = PYRO_GRID_RADIATIVE_COOL_RATE,
+  ambient: number = PYRO_GRID_TEMP_AMBIENT,
+): number {
+  if (!(dt > 0) || !(rate > 0) || temperature <= ambient) return temperature;
+  if (ambient === 0) {
+    return temperature / Math.cbrt(1 + 3 * rate * temperature ** 3 * dt);
+  }
+  const steps = Math.min(1024, Math.max(1, Math.ceil(48 * rate * temperature ** 3 * dt)));
+  const h = dt / steps;
+  const ambient4 = ambient ** 4;
+  let t = temperature;
+  for (let i = 0; i < steps; i += 1) {
+    t -= rate * (t ** 4 - ambient4) * h;
+    if (t < ambient) return ambient;
+  }
+  return t;
+}
+
+export type PyroCoolingParams = {
+  // gpgpuPyroCooling-style scalar scaling the exponential rate.
+  coolingKey?: number;
+  // Radiative rate (1/s at T = 1); 0 disables the radiative term.
+  radiativeRate?: number;
+  // Ambient floor both terms relax toward.
+  ambient?: number;
+};
+
+// Combined cooling grammar: the radiative step, then the
+// exponential relaxation toward the ambient floor. With
+// radiativeRate 0 and ambient 0 this reduces exactly to the
+// shipped exponential (pyroGridCoolTemperature).
+export function pyroGridCoolTemperatureCombined(
+  temperature: number,
+  dt: number,
+  params: PyroCoolingParams = {},
+): number {
+  const ambient = params.ambient ?? PYRO_GRID_TEMP_AMBIENT;
+  const radiativeRate = params.radiativeRate ?? PYRO_GRID_RADIATIVE_COOL_RATE;
+  const coolingKey = params.coolingKey ?? 1;
+  const t = pyroGridRadiativeCoolTemperature(temperature, dt, radiativeRate, ambient);
+  return ambient + (t - ambient) * Math.exp(-coolingKey * PYRO_GRID_TEMP_COOL_RATE * dt);
+}
+
+// --- V3: combustion with species ----------------------------------
+// The shipped reaction (scalar-update pass) is fuel-only:
+//   burn = min(fuel, fuelRate * REACTION_K * ignite(T) * fuel * dt)
+//   T = min(T + burn * FUEL_HEAT, TEMP_MAX)
+// It has no oxidizer (the reaction implicitly assumes unlimited
+// oxygen and never starves), no product species (burning generates
+// no product field), and no lib-side law at all. The model below
+// keeps the shipped reaction as its fuel term and adds the missing
+// species:
+//   fuel + stoich * oxidizer -> productYield * product  (+ heat)
+// The authoring shape follows the gpgpuPyro* convention: scalar
+// rates scaled by key-like parameters (fuelRate is the
+// gpgpuPyroFuelRate value). The species have no atlas channel yet
+// — the shipped fuel rides the scalar atlas's b channel; oxidizer
+// and product exist here as the lib-side grammar definition, and
+// the GPU connection is out of scope for this phase.
+
+// Ignition factor of a temperature — the scalar-update pass's
+// smoothstep window as a lib twin.
+export function pyroGridIgnitionFactor(temperature: number): number {
+  return pyroGridSmoothstep(PYRO_GRID_FUEL_IGNITE_LO, PYRO_GRID_FUEL_IGNITE_HI, temperature);
+}
+
+// Exact twin of the shipped fuel-only burn amount.
+export function pyroGridFuelBurn(
+  fuel: number,
+  temperature: number,
+  dt: number,
+  fuelRate: number,
+): number {
+  if (!(fuelRate > 0) || !(fuel > 0) || !(dt > 0)) return 0;
+  const ignite = pyroGridIgnitionFactor(temperature);
+  return Math.min(fuel, fuelRate * PYRO_GRID_FUEL_REACTION_K * ignite * fuel * dt);
+}
+
+export const PYRO_GRID_OXIDIZER_AMBIENT = 1.0; // oxidizer level of unburned air (field units)
+// Stoichiometry in normalized field units: oxidizer units consumed
+// per fuel unit burned. The product yield defaults to exact mass
+// closure (fuel + oxidizer in = product out), so the species mass
+// fuel + oxidizer + product is conserved by the reaction itself.
+export const PYRO_GRID_COMBUSTION_STOICH = 1.0;
+export const PYRO_GRID_COMBUSTION_PRODUCT_YIELD = 1 + PYRO_GRID_COMBUSTION_STOICH;
+
+export type PyroCombustionSpecies = {
+  fuel: number;
+  oxidizer: number;
+  product: number;
+  temperature: number;
+};
+
+export type PyroCombustionParams = {
+  fuelRate: number;
+  reactionK: number;
+  fuelHeat: number;
+  igniteLo: number;
+  igniteHi: number;
+  tempMax: number;
+  stoich: number;
+  productYield: number;
+  // 1/s relaxation of the oxidizer back toward the ambient level
+  // (air inflow). 0 = closed cell: burned-out oxidizer stays gone.
+  oxidizerReplenish: number;
+};
+
+export const PYRO_GRID_COMBUSTION_DEFAULTS: PyroCombustionParams = {
+  fuelRate: 1,
+  reactionK: PYRO_GRID_FUEL_REACTION_K,
+  fuelHeat: PYRO_GRID_FUEL_HEAT,
+  igniteLo: PYRO_GRID_FUEL_IGNITE_LO,
+  igniteHi: PYRO_GRID_FUEL_IGNITE_HI,
+  tempMax: PYRO_GRID_TEMP_MAX,
+  stoich: PYRO_GRID_COMBUSTION_STOICH,
+  productYield: PYRO_GRID_COMBUSTION_PRODUCT_YIELD,
+  oxidizerReplenish: 0,
+};
+
+export function pyroCombustionInitialSpecies(fuel = 0, temperature = 0): PyroCombustionSpecies {
+  return { fuel, oxidizer: PYRO_GRID_OXIDIZER_AMBIENT, product: 0, temperature };
+}
+
+export function pyroCombustionSpeciesMass(s: PyroCombustionSpecies): number {
+  return s.fuel + s.oxidizer + s.product;
+}
+
+// One reaction step. Bookkeeping: species mass is conserved
+// exactly when productYield = 1 + stoich (the default); the heat
+// released is burn * fuelHeat, except the tempMax cap acts as a
+// bounded sink — above the cap the excess heat is discarded, the
+// same runaway guard as the shipped pass. The oxidizer limits the
+// burn (burn <= oxidizer / stoich): with the oxidizer exhausted
+// the reaction stops even with fuel and ignition temperature
+// present, and with the fuel exhausted it stops likewise. When
+// the oxidizer is abundant, the fuel/temperature updates reduce
+// exactly to the shipped fuel-only form (pyroGridFuelBurn with
+// the same rates).
+export function pyroCombustionStep(
+  s: PyroCombustionSpecies,
+  dt: number,
+  params: PyroCombustionParams = PYRO_GRID_COMBUSTION_DEFAULTS,
+): PyroCombustionSpecies {
+  let fuel = Math.max(0, s.fuel);
+  let oxidizer = Math.max(0, s.oxidizer);
+  let product = Math.max(0, s.product);
+  let temperature = Math.max(0, s.temperature);
+  if (dt > 0) {
+    const ignite = pyroGridSmoothstep(params.igniteLo, params.igniteHi, temperature);
+    let burn = 0;
+    if (params.fuelRate > 0 && fuel > 0 && ignite > 0) {
+      burn = Math.min(fuel, params.fuelRate * params.reactionK * ignite * fuel * dt);
+      if (params.stoich > 0) burn = Math.min(burn, oxidizer / params.stoich);
+    }
+    if (burn > 0) {
+      fuel -= burn;
+      oxidizer -= burn * params.stoich;
+      product += burn * params.productYield;
+      temperature = Math.min(temperature + burn * params.fuelHeat, params.tempMax);
+    }
+    if (params.oxidizerReplenish > 0 && oxidizer < PYRO_GRID_OXIDIZER_AMBIENT) {
+      oxidizer +=
+        (PYRO_GRID_OXIDIZER_AMBIENT - oxidizer) * Math.min(1, params.oxidizerReplenish * dt);
+    }
+  }
+  return { fuel, oxidizer, product, temperature };
+}

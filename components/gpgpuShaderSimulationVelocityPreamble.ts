@@ -1,5 +1,6 @@
 import { PYRO_GRID_SAMPLING, PYRO_GRID_UNIFORMS, PYRO_GRID_WORLD } from './gpgpuShaderPyroGrid';
 import { ageFreeEvalGlsl } from '../lib/gpgpuAgeFreeCurves';
+import { localTimeUniformsGlsl } from '../lib/gpgpuLocalTime';
 
 // ── Velocity sim fragment, part 1 of 5: preamble: precision + all uniform declarations ──
 // Split from gpgpuShaderSimulationVelocity.ts in Phase AV
@@ -546,6 +547,20 @@ const VEL_FRAG_PREAMBLE_SPAWN_ALLOC = /* glsl */ `  // Spawn allocator (Grammar 
   uniform float uSpawnClockTime;
   uniform float uSpawnClockPrev;
 `;
+const VEL_FRAG_PREAMBLE_SPAWN_EVENT_DEMAND = /* glsl */ `  // Spawn event demand (Layer 1 WP4, phase C): the
+  // cumulative authored-event demand due at uSpawnTime and
+  // at uSpawnTime - uDelta, resolved CPU-side
+  // (spawnEventDemandDueBy over the authored list in
+  // lib/gpgpuSpawnAllocator.ts) as fractions of the pool.
+  // The gate line gains the due fraction, so a firing event
+  // releases its demand of parked slots in gate-value order
+  // — the same particles the position pass activates through
+  // its respawn block. Floats only: no sampler is spent.
+  // Spliced in only behind this option — the default
+  // preamble stays byte-identical.
+  uniform float uSpawnEventDueFrac;
+  uniform float uSpawnEventDuePrevFrac;
+`;
 const VEL_FRAG_PREAMBLE_EMITTER_VEL = /* glsl */ `  // Emitter initial velocity (Grammar 2.0 stage 2, slice
   // E2): the directed port's authored base direction (the
   // CPU-normalised axis from resolveEmitterBaseDirection in
@@ -556,6 +571,18 @@ const VEL_FRAG_PREAMBLE_EMITTER_VEL = /* glsl */ `  // Emitter initial velocity 
   uniform vec3  uEmitterVelDir;
   uniform float uEmitterVelSpeed;
   uniform float uEmitterVelSpread;
+`;
+const VEL_FRAG_PREAMBLE_EMITTER_LIST = /* glsl */ `  // Emitter list (Layer 1 WP4, phase D3): the emitters
+  // section of the shared column texture (lib/
+  // gpgpuEmitterList.ts: the section base and the packed
+  // element count, supplied from getColumnSupply like the
+  // position pass's pair of the same names). Consumed by
+  // kaloEmitterVelocityList in the helpers and the
+  // activation segment in the main forces head. Spliced in
+  // only behind this option — the default preamble stays
+  // byte-identical.
+  uniform float uEmittersBase;
+  uniform int   uEmitterCount;
 `;
 const VEL_FRAG_PREAMBLE_COLUMN = /* glsl */ `  // Column-data texture (Grammar 2.0 stage 2, B1/B2): ONE
   // RGBA float texture carries every column-shaped supply
@@ -583,6 +610,19 @@ const VEL_FRAG_PREAMBLE_FIELDS = /* glsl */ `  // Field instances (Grammar 2.0 s
   uniform float uColLayersBase;
   uniform int   uFieldInstanceCount;
   uniform bool  uFieldLayerAttrEnabled;
+`;
+const VEL_FRAG_PREAMBLE_FIELDS_EXT = /* glsl */ `  // Field instances, extended grammar (Layer 1 WP5 phase D):
+  // the extension sections' bases over the same column
+  // texture, and the gates' attribute discipline —
+  // uFieldExtAttrEnabled is resolved CPU-side (attribute
+  // texture present AND the extension standing), so a false
+  // uniform keeps every group gate fully open inside this
+  // variant string. Floats / bool only — no sampler is
+  // spent. Spliced in only behind the fieldExt option, after
+  // the B1 field set.
+  uniform float uColFieldExtBase;
+  uniform float uColLayerExtBase;
+  uniform bool  uFieldExtAttrEnabled;
 `;
 const VEL_FRAG_PREAMBLE_PATHS = /* glsl */ `  // Path assets (Grammar 2.0 stage 2, B2): the path headers
   // and point lists of lib/gpgpuPathAssets.ts, addressed over
@@ -635,6 +675,16 @@ const VEL_FRAG_PREAMBLE_AKINCI = /* glsl */ `  // Surface tension, Akinci form (
   // stock preamble carries no trace of it.
   uniform float uSphSurfaceTensionAkinci;
 `;
+// Local time (Layer 1 WP9, phase D): the per-group time
+// factor's entry table — a uniform vec4 array plus a count
+// (lib/gpgpuLocalTime.ts: packLocalTimeEntries). Float / int
+// uniforms only: NO sampler is spent (the membership reads
+// the attribute texture the stock preamble already
+// declares), so the fragment's texture-unit count is
+// unchanged. Spliced in only behind the localTime option,
+// in the Phase 19 manner — the stock preamble carries no
+// trace of it.
+const VEL_FRAG_PREAMBLE_LOCAL_TIME = localTimeUniformsGlsl();
 const VEL_FRAG_PREAMBLE_PILE = /* glsl */ `  // XSPH (Grains Stage C): the pile solver's velocity
   // smoothing — strength + support radius, and the Poly6
   // kernel the segment weights by (TS twin: grainsPoly6 in
@@ -706,6 +756,10 @@ export interface VelocityPreambleVariantOptions {
   // Phase 24: the Akinci surface-tension uniform. Same
   // discipline — the default preamble stays byte-identical.
   sphAkinci?: boolean;
+  // Layer 1 WP9 (phase D): the local-time entry table.
+  // Same discipline — the default preamble stays
+  // byte-identical, and the set spends no sampler.
+  localTime?: boolean;
   // Grains Stage C: the XSPH uniform set + kernel. Same
   // discipline — the default preamble stays byte-identical.
   grainsPileXsph?: boolean;
@@ -735,14 +789,43 @@ export interface VelocityPreambleVariantOptions {
   // effective rate + envelope clock, gated identically (only
   // while the absolute rate key is set or the envelope is on).
   spawnAlloc?: boolean;
+  // Layer 1 WP4 (phase C): the spawn event demand's due
+  // fractions, gated identically (only while an authored
+  // spawn event with a positive demand stands —
+  // lib/gpgpuSpawnAllocator.ts:
+  // spawnEventDemandVariantActive).
+  spawnEventDemand?: boolean;
   // Grammar 2.0 stage 2 (slice E2): the emitter's directed
   // initial velocity uniforms, gated identically (only while
   // the emitter velocity mode is 'directed').
   emitterVelocity?: boolean;
+  // Layer 1 WP4 (phase D3): the emitter list's column
+  // section uniforms, gated identically (only while an
+  // authored emitter list stands — lib/gpgpuEmitterList.ts:
+  // emitterListActive). While it stands, the list REPLACES
+  // the single-emitter velocity law (the D2 replacement
+  // discipline): the single uniforms above are not spliced,
+  // and the activation reads each particle's own emitter
+  // record over the shared column texture (the column chunk
+  // + the spawn-order give-back ride along, as for B1/B2).
+  emitterList?: boolean;
   // Grammar 2.0 stage 2 (slice B1): the field-instance
   // column-data uniform set, gated identically (only while
   // at least one field instance resolves).
   fieldInstances?: boolean;
+  // Layer 1 WP5 (phase D): the field extension uniform set,
+  // gated identically (only while the extended field grammar
+  // stands — a daemon kind, a non-default falloff shape, or
+  // a resolved group gate; lib/gpgpuFieldInstances.ts:
+  // fieldInstancesExtended). Implies fieldInstances.
+  fieldExt?: boolean;
+  // Layer 1 WP5 (phase D): the generic surface-tension
+  // chunk stands (lib/gpgpuLifecycle.ts:
+  // genericSurfaceTensionActive). It shares the SPH form's
+  // strength uniform, so this option splices the AKINCI
+  // preamble set — never in addition to sphAkinci (the two
+  // placements are mutually exclusive by construction).
+  surfaceTension?: boolean;
   // Grammar 2.0 stage 2 (slice B2): the path-asset uniform
   // set over the same column texture, gated identically
   // (only while steering follows an extended path asset).
@@ -792,7 +875,7 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
     + VEL_FRAG_PREAMBLE_MID
     + (options?.flip3dCouple ? VEL_FRAG_PREAMBLE_FLIP3D : '')
     + (options?.steeringSeek ? VEL_FRAG_PREAMBLE_STEERING : '')
-    + (options?.sphAkinci ? VEL_FRAG_PREAMBLE_AKINCI : '')
+    + (options?.sphAkinci || options?.surfaceTension ? VEL_FRAG_PREAMBLE_AKINCI : '')
     + (options?.grainsPileXsph ? VEL_FRAG_PREAMBLE_PILE : '')
     + (options?.attractor2 ? VEL_FRAG_PREAMBLE_ATTRACTOR2 : '')
     + (options?.attractor3 ? VEL_FRAG_PREAMBLE_ATTRACTOR3 : '')
@@ -802,14 +885,18 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
     + (options?.mergedSupply ? VEL_FRAG_PREAMBLE_MERGED : '')
     + (options?.particleRulesLive && !options?.mergedSupply ? VEL_FRAG_PREAMBLE_RULE_LIVE : '')
     + (options?.spawnAlloc ? VEL_FRAG_PREAMBLE_SPAWN_ALLOC : '')
-    + (options?.emitterVelocity ? VEL_FRAG_PREAMBLE_EMITTER_VEL : '')
-    + ((options?.fieldInstances || options?.pathAssets || options?.crowdPathAssets) && !options?.mergedSupply ? VEL_FRAG_PREAMBLE_COLUMN : '')
+    + (options?.spawnEventDemand ? VEL_FRAG_PREAMBLE_SPAWN_EVENT_DEMAND : '')
+    + (options?.emitterVelocity && !options?.emitterList ? VEL_FRAG_PREAMBLE_EMITTER_VEL : '')
+    + ((options?.fieldInstances || options?.pathAssets || options?.crowdPathAssets || options?.emitterList) && !options?.mergedSupply ? VEL_FRAG_PREAMBLE_COLUMN : '')
+    + (options?.emitterList ? VEL_FRAG_PREAMBLE_EMITTER_LIST : '')
     + (options?.fieldInstances ? VEL_FRAG_PREAMBLE_FIELDS : '')
+    + (options?.fieldExt ? VEL_FRAG_PREAMBLE_FIELDS_EXT : '')
     + (options?.pathAssets || options?.crowdPathAssets ? VEL_FRAG_PREAMBLE_PATHS : '')
     + (options?.relDrag ? VEL_FRAG_PREAMBLE_REL_DRAG : '')
     + (options?.targetSpeed ? VEL_FRAG_PREAMBLE_TARGET_SPEED : '')
     + (options?.ageFreeVelocity ? VEL_FRAG_PREAMBLE_AGE_FREE_VELOCITY : '')
     + (options?.ageFreeForce ? VEL_FRAG_PREAMBLE_AGE_FREE_FORCE : '')
+    + (options?.localTime ? VEL_FRAG_PREAMBLE_LOCAL_TIME : '')
     + VEL_FRAG_PREAMBLE_TAIL;
   // Live variant only: give the texture unit back (see the
   // note at VEL_FRAG_SPAWN_ORDER_DECL_STOCK). The replace
@@ -830,7 +917,10 @@ export function buildVelocityPreamble(options?: VelocityPreambleVariantOptions):
   // supply (texture-unit follow-up) closes that combination:
   // while it stands, the live and column chunks are replaced
   // by the one merged sampler above and the count is 16.
-  return options?.particleRulesLive || options?.fieldInstances || options?.pathAssets || options?.crowdPathAssets
+  // D3: the emitter-list variant spends the same column
+  // sampler, so it gives the unit back the same way (the
+  // merged form is covered by particleRulesLive above).
+  return options?.particleRulesLive || options?.fieldInstances || options?.pathAssets || options?.crowdPathAssets || options?.emitterList
     ? assembled.replace(VEL_FRAG_SPAWN_ORDER_DECL_STOCK, VEL_FRAG_SPAWN_ORDER_DECL_LIVE)
     : assembled;
 }

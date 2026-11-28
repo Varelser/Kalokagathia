@@ -25,6 +25,8 @@ import { resolveIblEnvironment } from '../lib/iblEnvironment';
 import { allocateSpeciesCounts } from '../lib/speciesAllocation';
 import { horizonEquirectYawRadians } from '../lib/horizonBackground';
 import { clampNoiseMapAmount, clampNoiseMapEvolve, clampNoiseMapOctaves, clampNoiseMapScale, noiseMapKindIndex, normalizeNoiseMapKind } from '../lib/noiseFieldMap';
+import { resolveColorMaster } from '../lib/appStateConfigNormalization';
+import { splatColumnsColorActive } from '../lib/gpgpuSplatColumns';
 
 // Occlusion-map shadow (Phase Z): the bake is a pure function of
 // the shadow-relevant config, so it is cached by that config's
@@ -132,6 +134,12 @@ export function runDepthSortPass(args: {
   sortRTB: THREE.WebGLRenderTarget | null;
   sortDepthMat: THREE.ShaderMaterial;
   bitonicMat: THREE.ShaderMaterial;
+  // Splat draw (Layer 1 WP7 Phase C2): the splat primitive
+  // consumes the sort texture unconditionally, so while it is
+  // enabled the pass runs even with the sort key off. The
+  // caller passes the splat predicate; absent / false keeps
+  // the legacy condition's value exactly.
+  forceSort?: boolean;
 }): THREE.Texture | null {
   const {
     config,
@@ -146,9 +154,10 @@ export function runDepthSortPass(args: {
     sortRTB,
     sortDepthMat,
     bitonicMat,
+    forceSort,
   } = args;
 
-  if (!config.gpgpuSortEnabled || !sortRTA || !sortRTB) return null;
+  if ((!config.gpgpuSortEnabled && !forceSort) || !sortRTA || !sortRTB) return null;
 
   sortDepthMat.uniforms.uPosTex.value = posTexture;
   sortDepthMat.uniforms.uViewMatrix.value.copy(camera.matrixWorldInverse);
@@ -259,6 +268,11 @@ export function syncVisualUniforms(args: {
   // pass's latest posture texture, or null while the channel
   // is off — null keeps the geometry draw on its stock string.
   orientTexture?: THREE.Texture | null;
+  // Splat columns sort (Layer 1 WP7 Phase C3): this frame's
+  // depth-sort texture over the splat column data's centre
+  // texture, or null while the input form is the pool — null
+  // keeps the splat supply on the pool sort texture.
+  splatColumnsSortTex?: THREE.Texture | null;
   texSize?: number;
   time?: number;
   // Density compensation (Phase DN): drawing-buffer size in
@@ -267,7 +281,17 @@ export function syncVisualUniforms(args: {
   // the deterministic renderer's export resize are followed.
   viewportSizePx?: { x: number; y: number };
 }): void {
-  const { config, activeCount, assets, posTexture, velTexture, finalSortTex, texSize, time } = args;
+  const { activeCount, assets, posTexture, velTexture, finalSortTex, texSize, time } = args;
+  // Colour master gate (Layer 1 WP7, Phase A follow-up): this
+  // per-frame sync reads the raw colour-feature keys, so the
+  // config is resolved once at the entry — with the master off,
+  // every colour uniform below syncs its off value even when a
+  // live panel edit left an individual feature key on. The
+  // resolution is idempotent (it returns its input unchanged
+  // when the master is on or every feature is already off) and
+  // touches only the colour-feature keys, so the texture
+  // hand-off and every non-colour read are unaffected.
+  const config = resolveColorMaster(args.config);
   const {
     drawMat,
     trailRTs,
@@ -284,6 +308,10 @@ export function syncVisualUniforms(args: {
     speciesTotals,
     volumetricGeo,
     volumetricMat,
+    splatMat,
+    splatColumns,
+    splatColumnsForm,
+    splatColumnsTextures,
   } = assets;
 
   // Ring (attractor space mode): every visual material that
@@ -635,13 +663,88 @@ export function syncVisualUniforms(args: {
   // self-rotation) read the same state texture. The uniforms
   // exist only in the spin variant strings; the guarded
   // writes keep the stock materials untouched.
+  // Layer 1 WP8 (phase D): the splat draw joins the
+  // consumers — its spin variant reads the same texture.
   if (drawMat.uniforms.uSpinTex) drawMat.uniforms.uSpinTex.value = args.spinTexture ?? null;
   if (geomMat.uniforms.uSpinTex) geomMat.uniforms.uSpinTex.value = args.spinTexture ?? null;
+  if (splatMat.uniforms.uSpinTex) splatMat.uniforms.uSpinTex.value = args.spinTexture ?? null;
   // Orientation channel (stage 4, S2): the geometry draw is
   // the only consumer. The uniform exists only in the orient
   // variant string; the guarded write keeps the stock
   // material untouched.
   if (geomMat.uniforms.uOrientTex) geomMat.uniforms.uOrientTex.value = args.orientTexture ?? null;
+  // Gaussian splat draw (Layer 1 WP7 Phase C2): the per-frame
+  // supply for the splat material — centre = this frame's draw
+  // position texture (the same playback-aware texture the
+  // points draw receives), sort = this frame's depth-sort
+  // texture (the sort pass is force-run while splats are on,
+  // see runDepthSortPass). The whole block is gated on the
+  // splat key: while it is off nothing is written, and the
+  // material is not mounted anyway (plan.splats). Phase C3
+  // branches the bindings for the columns input form.
+  if (config.gpgpuSplatEnabled && splatMat) {
+    // Splat column data (Phase C3): while the input form is
+    // the independent column set, the centre / parameter /
+    // rotation bindings swap to the columns payload textures
+    // and the sort binding to this frame's columns sort; the
+    // tint and multipliers still apply. The pool form (every
+    // other configuration) takes the writes below unchanged.
+    const splatColumnsActive = splatColumnsForm === 'columns' && !!splatColumnsTextures;
+    if (splatMat.uniforms.uCenterTex) splatMat.uniforms.uCenterTex.value = splatColumnsActive ? splatColumnsTextures.centerTex : posTexture;
+    if (splatMat.uniforms.uSortTex) splatMat.uniforms.uSortTex.value = splatColumnsActive ? (args.splatColumnsSortTex ?? null) : finalSortTex;
+    if (splatMat.uniforms.uSortEnabled) splatMat.uniforms.uSortEnabled.value = splatColumnsActive ? args.splatColumnsSortTex != null : finalSortTex !== null;
+    if (splatMat.uniforms.uColor) splatMat.uniforms.uColor.value.setStyle(config.gpgpuSplatColor);
+    if (splatMat.uniforms.uScaleMul) splatMat.uniforms.uScaleMul.value = config.gpgpuSplatScale;
+    if (splatMat.uniforms.uOpacityMul) splatMat.uniforms.uOpacityMul.value = config.gpgpuSplatOpacity;
+    if (splatColumnsActive) {
+      if (splatMat.uniforms.uSplatParamTex) splatMat.uniforms.uSplatParamTex.value = splatColumnsTextures.paramTex;
+      if (splatMat.uniforms.uSplatRotTex) splatMat.uniforms.uSplatRotTex.value = splatColumnsTextures.rotTex;
+      if (splatMat.uniforms.uSplatColorTex) splatMat.uniforms.uSplatColorTex.value = splatColumnsTextures.colorTex;
+      // The DC colour is a colour feature: the predicate
+      // reads the colour master (this config is the resolved
+      // one; the master key survives resolution), so master
+      // off keeps the single tint — Phase A's rule.
+      if (splatMat.uniforms.uSplatColorEnabled) splatMat.uniforms.uSplatColorEnabled.value = splatColumnsColorActive(config, splatColumns);
+      // The attribute colour drive is pool-indexed; it has
+      // no meaning for column instances and stays off here.
+      if (splatMat.uniforms.uAttrColorEnabled) splatMat.uniforms.uAttrColorEnabled.value = false;
+    } else {
+      if (splatMat.uniforms.uSplatColorEnabled) splatMat.uniforms.uSplatColorEnabled.value = false;
+      // Restore the baked parameter texture after a columns
+      // stretch (the rotation binding restores itself below;
+      // the value written here is the one the material was
+      // created with, so the pool path is unchanged).
+      if (splatMat.uniforms.uSplatParamTex) {
+        splatMat.uniforms.uSplatParamTex.value = (splatMat.userData.splatBakedParamTex as THREE.Texture | undefined)
+          ?? splatMat.uniforms.uSplatParamTex.value;
+      }
+      // Attribute colour drive (Phase CL, shared with the
+      // points draw): slots resolved from the names, only while
+      // the drive resolved active. `config` here is the
+      // colour-master-resolved one, so with the master off the
+      // drive resolves inactive and the splat keeps its single
+      // tint — WP7 Phase A's rule, inherited for free.
+      const splatAttrTex = args.attrTexture ?? null;
+      const splatColorSlots = resolveAttrConsumers(config).colorActive
+        ? resolveAttrColorSlots(normalizeAttrNames(config.gpgpuAttrNames))
+        : null;
+      if (splatMat.uniforms.uAttrTex) splatMat.uniforms.uAttrTex.value = splatAttrTex;
+      if (splatMat.uniforms.uAttrColorEnabled) splatMat.uniforms.uAttrColorEnabled.value = !!splatAttrTex && !!splatColorSlots;
+      if (splatMat.uniforms.uAttrColorSlotR) splatMat.uniforms.uAttrColorSlotR.value = splatColorSlots ? splatColorSlots[0] : -1;
+      if (splatMat.uniforms.uAttrColorSlotG) splatMat.uniforms.uAttrColorSlotG.value = splatColorSlots ? splatColorSlots[1] : -1;
+      if (splatMat.uniforms.uAttrColorSlotB) splatMat.uniforms.uAttrColorSlotB.value = splatColorSlots ? splatColorSlots[2] : -1;
+      // Orientation channel reuse (Phase C2): while the orient
+      // pass supplies a posture texture it replaces the baked
+      // rotation texture outright — a bind swap only, the
+      // layout is the same per-texel quaternion. Without it the
+      // baked texture recorded on the material is restored.
+      if (splatMat.uniforms.uSplatRotTex) {
+        splatMat.uniforms.uSplatRotTex.value = args.orientTexture
+          ?? (splatMat.userData.splatBakedRotTex as THREE.Texture | undefined)
+          ?? splatMat.uniforms.uSplatRotTex.value;
+      }
+    }
+  }
   if (geomMat.uniforms.uVellumCrackEnabled) {
     const crackOn = !!args.vellumStateTexture && config.gpgpuVellumEnabled
       && (config.gpgpuVellumTearGap ?? 0) > 0 && (config.gpgpuVellumTear ?? 0) > 0;

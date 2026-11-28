@@ -19,6 +19,7 @@ import type { GpgpuForceChunkName } from './gpgpuForceOrder';
 import { fieldInstancesActive } from './gpgpuFieldInstances';
 import { relDragActive } from './gpgpuSpeedDragSpin';
 import { meanderStandaloneActive } from './gpgpuMeander';
+import { genericSurfaceTensionActive } from './gpgpuLifecycle';
 
 export type ForceChunkActivity = 'active' | 'inactive' | 'derived';
 
@@ -61,6 +62,7 @@ export const GPGPU_FORCE_CHUNK_META: readonly GpgpuForceChunkMeta[] = [
   { name: 'field-instances', label: 'Field Instances', variantGated: true },
   { name: 'rel-drag', label: 'Relative Drag', variantGated: true },
   { name: 'meander', label: 'Meander', variantGated: true },
+  { name: 'surface-tension', label: 'Surface Tension (generic)', variantGated: true, orderNote: READ_NOTE },
 ];
 
 const META_BY_NAME = new Map(GPGPU_FORCE_CHUNK_META.map((m) => [m.name, m]));
@@ -104,6 +106,7 @@ export function resolveForceChunkActive(name: GpgpuForceChunkName, config: Parti
     case 'field-instances': return on(fieldInstancesActive(config));
     case 'rel-drag': return on(relDragActive(config));
     case 'meander': return on(meanderStandaloneActive(config));
+    case 'surface-tension': return on(genericSurfaceTensionActive(config));
     default: return 'inactive';
   }
 }

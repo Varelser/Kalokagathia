@@ -50,14 +50,35 @@
  * (resolveCacheRetimerInterpolation, called by
  * buildPointCacheCloud).
  *
- * NOT included: a free-drawn speed curve. The stage-2 free
- * curves (lib/freeCurve.ts) are simulation-side assets —
- * per-key Enabled + Points pairs consumed by shader passes
- * and edited through the GPGPU panel's curve editor; the
- * playback panel has no curve-editor wiring, and a time
- * warp would turn this closed-form mapping into a numeric
- * integral. Rate + range + reverse + interpolation only.
+ * Speed curve (S2 follow-up slice, 2026-11-28): a free-drawn
+ * curve (lib/freeCurve.ts, the stage-2 asset shape) may
+ * reshape HOW the segment is traversed — its value at a
+ * normalised playback position is the instantaneous speed
+ * multiplier relative to rate. The mapping stays closed
+ * form: a piecewise-linear curve integrates to a piecewise
+ * quadratic, evaluated analytically per segment (no numeric
+ * quadrature), and the integral is normalised by its total
+ * over [0, 1], so the curve redistributes speed INSIDE the
+ * pass while the pass duration stays exactly what rate
+ * alone dictates. An identity curve (all values 1) — and a
+ * disabled curve — resolve to no curve at all, so the
+ * legacy closed-form mapping below runs bit-exactly.
+ * Decisions recorded with the slice: the curve is a
+ * function of playback progress (not of source position);
+ * reverse playback is the exact time mirror of the forward
+ * warped pass (frame = start + end - forward); a curve
+ * segment with value 0 freezes the frame for that stretch
+ * of playback time (the progress integral is flat there —
+ * no inversion is ever needed, the mapping only ever goes
+ * time -> progress -> frame).
  */
+
+import {
+  evaluateFreeCurve,
+  isFreeCurveIdentity,
+  normalizeFreeCurvePoints,
+  type FreeCurvePoint,
+} from './freeCurve';
 
 export type CacheRetimerInterpolation = 'inherit' | 'linear' | 'nearest';
 
@@ -75,6 +96,11 @@ export interface CacheRetimerSettings {
   reverse: boolean;
   /** 'inherit' keeps the manifest's declared interpolation. */
   interpolation: CacheRetimerInterpolation;
+  /** Speed curve on/off. Absent / false = no curve. */
+  speedCurveEnabled?: boolean;
+  /** Speed curve control points as the stored flat array
+   *  [t0, v0, t1, v1, …] (lib/freeCurve.ts asset shape). */
+  speedCurvePoints?: readonly number[];
 }
 
 export const CACHE_RETIMER_IDENTITY: CacheRetimerSettings = {
@@ -83,7 +109,26 @@ export const CACHE_RETIMER_IDENTITY: CacheRetimerSettings = {
   endFrame: CACHE_RETIMER_END_LAST,
   reverse: false,
   interpolation: 'inherit',
+  speedCurveEnabled: false,
+  speedCurvePoints: [0, 1, 1, 1],
 };
+
+/**
+ * A speed curve prepared for the analytic warp: the [0, 1]
+ * partition at every knot, the curve value at each
+ * partition point, and the cumulative integral there. The
+ * curve is piecewise linear between partition points, so
+ * the integral inside one part is a quadratic evaluated
+ * exactly by the trapezoid of the endpoint values.
+ */
+export interface ResolvedCacheRetimerSpeedCurve {
+  points: FreeCurvePoint[];
+  xs: number[];
+  vs: number[];
+  cumulative: number[];
+  /** Integral over the whole [0, 1] (> 0 by construction). */
+  total: number;
+}
 
 /** A validated retimer with the end frame resolved to an
  *  absolute frame index (startFrame <= endFrame always). */
@@ -93,6 +138,54 @@ export interface ResolvedCacheRetimer {
   endFrame: number;
   reverse: boolean;
   interpolation: CacheRetimerInterpolation;
+  /** Prepared speed curve, or null when the curve is
+   *  disabled or the identity curve (legacy mapping). */
+  speedCurve: ResolvedCacheRetimerSpeedCurve | null;
+}
+
+/**
+ * Prepare a normalised point list into the analytic-warp
+ * shape. Returns null when the total integral is not
+ * positive (an all-zero curve can never advance playback).
+ */
+export function resolveCacheRetimerSpeedCurve(
+  points: readonly FreeCurvePoint[],
+): ResolvedCacheRetimerSpeedCurve | null {
+  const xsSet = new Set<number>([0, 1]);
+  points.forEach((point) => xsSet.add(point.t));
+  const xs = [...xsSet].sort((a, b) => a - b);
+  const vs = xs.map((x) => evaluateFreeCurve(points, x));
+  const cumulative: number[] = [0];
+  for (let i = 0; i + 1 < xs.length; i++) {
+    cumulative.push(cumulative[i] + ((xs[i + 1] - xs[i]) * (vs[i] + vs[i + 1])) / 2);
+  }
+  const total = cumulative[cumulative.length - 1];
+  if (!Number.isFinite(total) || total <= 0) return null;
+  return { points: [...points], xs, vs, cumulative, total };
+}
+
+/**
+ * Warped source progress for a normalised playback
+ * position u in [0, 1]: the curve's integral up to u,
+ * normalised by its total. progress(0) = 0 and
+ * progress(1) = 1 exactly; the result is monotonic
+ * non-decreasing (flat exactly where the curve is 0).
+ */
+export function cacheRetimerSpeedCurveProgress(
+  curve: ResolvedCacheRetimerSpeedCurve,
+  u: number,
+): number {
+  const x = Math.min(1, Math.max(0, u));
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const { xs, vs, cumulative } = curve;
+  let i = 0;
+  while (i + 2 < xs.length && xs[i + 1] < x) i++;
+  const spanX = xs[i + 1] - xs[i];
+  const dx = x - xs[i];
+  const vx = spanX > 0 ? vs[i] + ((vs[i + 1] - vs[i]) * dx) / spanX : vs[i];
+  const area = cumulative[i] + (dx * (vs[i] + vx)) / 2;
+  return area / curve.total;
 }
 
 export type CacheRetimerResolveResult =
@@ -137,7 +230,21 @@ export function resolveCacheRetimer(settings: CacheRetimerSettings, frameCount: 
   if (interpolation !== 'inherit' && interpolation !== 'linear' && interpolation !== 'nearest') {
     return fail(`リタイマーの補間方式は "inherit" / "linear" / "nearest" のいずれかが必要です（現在: ${String(interpolation)}）。`);
   }
-  return { ok: true, resolved: { rate, startFrame, endFrame, reverse: !!reverse, interpolation } };
+  // Speed curve: coerced through the free-curve asset
+  // convention (lib/freeCurve.ts). The identity curve
+  // resolves to no curve at all (legacy mapping); an
+  // all-zero curve is refused — it could never advance.
+  let speedCurve: ResolvedCacheRetimerSpeedCurve | null = null;
+  if (settings.speedCurveEnabled) {
+    const points = normalizeFreeCurvePoints(settings.speedCurvePoints);
+    if (!isFreeCurveIdentity(points)) {
+      speedCurve = resolveCacheRetimerSpeedCurve(points);
+      if (!speedCurve) {
+        return fail('リタイマーの速度カーブの値が全て 0 です（再生が進みません）。0 より大きい値を含むカーブにしてください。');
+      }
+    }
+  }
+  return { ok: true, resolved: { rate, startFrame, endFrame, reverse: !!reverse, interpolation, speedCurve } };
 }
 
 /** True when a resolved retimer reproduces the legacy
@@ -147,7 +254,8 @@ export function isCacheRetimerIdentity(resolved: ResolvedCacheRetimer, frameCoun
     && resolved.startFrame === 0
     && resolved.endFrame === frameCount - 1
     && resolved.reverse === false
-    && resolved.interpolation === 'inherit';
+    && resolved.interpolation === 'inherit'
+    && resolved.speedCurve === null;
 }
 
 /** The one place the interpolation override is resolved:
@@ -184,7 +292,20 @@ export function cacheRetimerFrameFloat(
   if (!Number.isFinite(fps) || fps <= 0) return resolved.reverse ? resolved.endFrame : resolved.startFrame;
   const span = resolved.endFrame - resolved.startFrame;
   const raw = Math.max(0, timeSeconds) * fps * resolved.rate;
-  const offset = loop ? raw % (span + 1) : Math.min(raw, span);
+  if (!resolved.speedCurve) {
+    const offset = loop ? raw % (span + 1) : Math.min(raw, span);
+    return resolved.reverse ? resolved.endFrame - offset : resolved.startFrame + offset;
+  }
+  // Speed curve: travel inside the pass is measured in the
+  // same units as the legacy offset (frames of the cycle),
+  // normalised to u in [0, 1], warped through the curve's
+  // normalised integral, and scaled back — so the pass
+  // duration (cycle / (fps * rate)) is unchanged and only
+  // the distribution of speed inside the pass moves.
+  const cycle = loop ? span + 1 : span;
+  if (cycle <= 0) return resolved.startFrame;
+  const travel = loop ? raw % cycle : Math.min(raw, cycle);
+  const offset = cacheRetimerSpeedCurveProgress(resolved.speedCurve, travel / cycle) * cycle;
   return resolved.reverse ? resolved.endFrame - offset : resolved.startFrame + offset;
 }
 
@@ -232,6 +353,8 @@ export interface CacheRetimerConfig {
   pointCacheRetimerEndFrame: number;
   pointCacheRetimerReverse: boolean;
   pointCacheRetimerInterpolation: CacheRetimerInterpolation;
+  pointCacheRetimerSpeedCurveEnabled: boolean;
+  pointCacheRetimerSpeedCurvePoints: number[];
 }
 
 /**
@@ -253,6 +376,8 @@ export function resolveCacheRetimerFromConfig(
     endFrame: config.pointCacheRetimerEndFrame,
     reverse: config.pointCacheRetimerReverse,
     interpolation: config.pointCacheRetimerInterpolation,
+    speedCurveEnabled: config.pointCacheRetimerSpeedCurveEnabled,
+    speedCurvePoints: config.pointCacheRetimerSpeedCurvePoints,
   }, frameCount);
   if (!result.ok) return result;
   return { ok: true, resolved: result.resolved };

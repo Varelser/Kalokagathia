@@ -4,6 +4,11 @@ export const APP_STATE_DEFAULT_VIEW_DISPLAY: Partial<ParticleConfig> = {
   // View & Camera
   viewMode: 'perspective',
   timeScale: 1,
+  // Layer 1 WP9 Phase C: '' = not authored (localStorage fallback).
+  sequenceTracks: '',
+  modulationSetup: '',
+  // Layer 1 WP11 Phase C: '' = not authored (empty definition set).
+  glslSharedSnippets: '',
   cameraControlMode: 'hybrid',
   renderQuality: 'balanced',
   autoLod: false,
@@ -40,10 +45,18 @@ export const APP_STATE_DEFAULT_VIEW_DISPLAY: Partial<ParticleConfig> = {
   // — the stock fragment shader is used unchanged.
   particlePointsFragmentGlslEnabled: false,
   particlePointsFragmentGlslCode: '',
+  // Full-fragment replacement (Layer 1 WP11 Phases D2/C):
+  // disabled / empty — the snippet form above is used unchanged.
+  particlePointsFragmentGlslReplacementEnabled: false,
+  particlePointsFragmentGlslReplacementCode: '',
   // Volume fog fragment GLSL (Phase CE): disabled / empty —
   // the stock fog fragment shader is used unchanged.
   volumeFogGlslEnabled: false,
   volumeFogGlslCode: '',
+  // Full-fragment replacement (Layer 1 WP11 Phases D2/C):
+  // disabled / empty — the snippet form above is used unchanged.
+  volumeFogGlslReplacementEnabled: false,
+  volumeFogGlslReplacementCode: '',
   backgroundColor: 'black',
   backgroundHex: '',
   // Horizon background (Phase I): 'solid' is the legacy background
